@@ -29,3 +29,15 @@ export {
   type CreateCompletionToolControllerOptions,
 } from './completion-tool.js'
 export { COMPLETE_NODE_PARAMETERS } from './output-schemas.js'
+export {
+  loadResourceBundle,
+  ResourceLoaderError,
+  type LoadedResourceBundle,
+  type LoadResourceBundleInput,
+  type PromptFragment,
+  type ResourceBundleDefinition,
+  type ResourceContextFile,
+  type ResourceLoaderErrorCode,
+  type ResourceSkill,
+  type WorkspaceResourceRepository,
+} from './resource-loader.js'
