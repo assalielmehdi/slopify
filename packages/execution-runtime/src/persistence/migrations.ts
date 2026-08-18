@@ -299,6 +299,35 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       database.exec(CREATE_EXECUTION_SCHEMA)
     },
   }),
+  Object.freeze({
+    version: 2,
+    name: 'persist_complete_repository_selection',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        ALTER TABLE run_repository_selections
+          ADD COLUMN rationale TEXT NOT NULL DEFAULT '';
+
+        CREATE TABLE run_repository_selection_snapshots (
+          run_id TEXT PRIMARY KEY,
+          selection_json TEXT NOT NULL CHECK (json_valid(selection_json)),
+          selected_at TEXT NOT NULL,
+          FOREIGN KEY (run_id) REFERENCES runs (run_id)
+        ) STRICT;
+
+        CREATE TRIGGER run_repository_selection_snapshots_no_update
+        BEFORE UPDATE ON run_repository_selection_snapshots
+        BEGIN
+          SELECT RAISE(ABORT, 'repository selections are immutable');
+        END;
+
+        CREATE TRIGGER run_repository_selection_snapshots_no_delete
+        BEFORE DELETE ON run_repository_selection_snapshots
+        BEGIN
+          SELECT RAISE(ABORT, 'repository selections are immutable');
+        END;
+      `)
+    },
+  }),
 ])
 
 interface AppliedMigration {

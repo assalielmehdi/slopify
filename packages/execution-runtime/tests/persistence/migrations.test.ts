@@ -46,7 +46,10 @@ describe('forward-only migrations', () => {
 
     expect(
       raw.prepare('SELECT version, name FROM schema_migrations ORDER BY version').all(),
-    ).toEqual([{ version: 1, name: 'create_execution_schema' }])
+    ).toEqual([
+      { version: 1, name: 'create_execution_schema' },
+      { version: 2, name: 'persist_complete_repository_selection' },
+    ])
   })
 
   it('rolls back a failed migration without recording its version', () => {

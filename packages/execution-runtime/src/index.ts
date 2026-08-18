@@ -6,3 +6,49 @@ export {
   type OpenDatabaseOptions,
   type WorkbenchDatabase,
 } from './persistence/database.js'
+export {
+  createEventStore,
+  type EventPage,
+  type EventStore,
+  type ListEventsInput,
+} from './events/event-store.js'
+export { PersistenceError, type PersistenceErrorCode } from './persistence/errors.js'
+export { type JsonPrimitive, type JsonValue } from './persistence/json.js'
+export {
+  createProfileRepository,
+  type CreateProfileSnapshotInput,
+  type ProfileRepository,
+  type ProfileRepositoryConfiguration,
+  type ProfileRepositorySnapshot,
+  type ProjectProfileConfiguration,
+  type ProjectProfileSnapshot,
+} from './persistence/profile-repository.js'
+export {
+  createRunRepository,
+  type ChangeRunStatusInput,
+  type CompleteNodeInput,
+  type CreateRunInput,
+  type DeliveryEvidence,
+  type DeliveryEvidenceStatus,
+  type ExcludedRepositoryInput,
+  type OutputChunk,
+  type PersistedArtifact,
+  type PersistedExcludedRepository,
+  type PersistedRepositorySelection,
+  type RecordArtifactInput,
+  type RecordOutputInput,
+  type RecordWorkspaceInput,
+  type RepositorySelectionInput,
+  type RepositorySelectionSnapshot,
+  type RunRecord,
+  type RunRepository,
+  type SelectRepositoriesInput,
+  type SelectedRepositoryInput,
+  type StartNodeInput,
+  type UpsertDeliveryEvidenceInput,
+} from './persistence/run-repository.js'
+export {
+  createWorkflowRepository,
+  type WorkflowRepository,
+  type WorkflowRevisionReference,
+} from './persistence/workflow-repository.js'

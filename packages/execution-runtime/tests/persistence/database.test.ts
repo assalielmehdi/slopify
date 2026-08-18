@@ -20,6 +20,7 @@ const EXPECTED_TABLES = [
   'project_profiles',
   'repository_delivery_evidence',
   'run_events',
+  'run_repository_selection_snapshots',
   'run_repository_selections',
   'run_workspaces',
   'runs',
@@ -59,7 +60,7 @@ describe('database connection', () => {
     expect(database.status()).toEqual({
       foreignKeysEnabled: true,
       journalMode: 'wal',
-      schemaVersion: 1,
+      schemaVersion: 2,
       writable: true,
     })
   })

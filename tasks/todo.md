@@ -219,14 +219,14 @@ changes with monotonically sequenced events, output chunks, artifacts, exact
 configuration snapshots, repository selections, and partial delivery evidence.
 
 **Acceptance criteria:**
-- [ ] State and its observable event commit in one transaction or neither commits.
-- [ ] Event sequence is strictly increasing per run and survives pagination/reopen.
-- [ ] Snapshots and partial multi-repository evidence preserve canonical profile order.
+- [x] State and its observable event commit in one transaction or neither commits.
+- [x] Event sequence is strictly increasing per run and survives pagination/reopen.
+- [x] Snapshots and partial multi-repository evidence preserve canonical profile order.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- repositories events`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime typecheck && pnpm --filter @loop/execution-runtime lint`
-- [ ] Manual check: force a persistence error and confirm no state/event half-write remains.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- repositories events` executes all 20 persistence tests.
+- [x] Build succeeds: package and root build, typecheck, lint, test, and format gates pass under pinned Node/pnpm.
+- [x] Manual check: an injected event trigger failure rolls the run status back and leaves only the prior event.
 
 **Dependencies:** Task 7
 
