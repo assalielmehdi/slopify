@@ -80,3 +80,15 @@ export {
   type NodeExecutionContext,
   type NodeExecutor,
 } from './executors/registry.js'
+export {
+  createRegisteredCommandExecutors,
+  type CreateRegisteredCommandExecutorsOptions,
+  type RegisteredCommandDefinition,
+} from './executors/command-executor.js'
+export {
+  createProcessRunner,
+  type CreateProcessRunnerOptions,
+  type ProcessRunInput,
+  type ProcessRunResult,
+  type ProcessRunner,
+} from './processes/process-runner.js'

@@ -279,14 +279,14 @@ stdout/stderr capture, timeouts, sanitized evidence, process-group termination,
 and cancellation confirmation for trusted verification/Git operations.
 
 **Acceptance criteria:**
-- [ ] Processes run without TTY or interpolated shell strings and record bounded sanitized output.
-- [ ] Timeout/cancel terminates the process group and reports success only after confirmed exit.
-- [ ] Commands are selected from application/operator configuration and never from ClickUp content.
+- [x] Processes run without TTY or interpolated shell strings and record bounded sanitized output.
+- [x] Timeout/cancel terminates the process group and reports success only after confirmed exit.
+- [x] Commands are selected from application/operator configuration and never from ClickUp content.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- processes command-executor`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime typecheck && pnpm --filter @loop/execution-runtime lint`
-- [ ] Manual check: use a fake executable that spawns a child and confirm cancellation leaves no live process.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- processes command-executor`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime typecheck && pnpm --filter @loop/execution-runtime lint`
+- [x] Manual check: use a fake executable that spawns a child and confirm cancellation leaves no live process.
 
 **Dependencies:** Task 9
 
