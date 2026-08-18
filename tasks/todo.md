@@ -130,14 +130,14 @@ terminals, registrations, reachability, outcome-to-edge cardinality, cycles,
 and display-ready incoming/outgoing graph relationships.
 
 **Acceptance criteria:**
-- [ ] Every enumerated invalid graph condition returns stable field-addressable findings.
-- [ ] Valid cyclic graphs are accepted without attempting to prove termination.
-- [ ] Every non-terminal outcome resolves to exactly one legal edge and every node is displayable.
+- [x] Every enumerated invalid graph condition returns stable field-addressable findings.
+- [x] Valid cyclic graphs are accepted without attempting to prove termination.
+- [x] Every non-terminal outcome resolves to exactly one legal edge and every node has frozen display-ready relationships.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/workflow-model test -- validate-workflow graph-queries`
-- [ ] Build succeeds: `pnpm --filter @loop/workflow-model typecheck && pnpm --filter @loop/workflow-model lint`
-- [ ] Manual check: inspect fixtures for duplicate IDs, dangling edges, unreachable nodes, cycles, and missing outcomes.
+- [x] Tests pass: the focused command executes all 45 workflow-model schema, validation, and graph-query tests.
+- [x] Build succeeds: package build/typecheck plus root test, lint, and format gates pass from a clean copy under pinned Node/pnpm.
+- [x] Manual check: fixtures explicitly cover duplicate/malformed/missing IDs, start ambiguity, dangling/illegal edges, reachability, registrations, transition bounds, cycles, and missing/ambiguous outcomes.
 
 **Dependencies:** Task 4
 

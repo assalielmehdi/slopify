@@ -170,7 +170,7 @@ their integration checkpoints remain ordered.
 ### Phase 2: Workflow model
 
 - [x] Task 4: Model and parse workflow node and edge variants
-- [ ] Task 5: Validate graph topology, outcomes, registrations, and transition bounds
+- [x] Task 5: Validate graph topology, outcomes, registrations, and transition bounds
 - [ ] Task 6: Ship the predefined revisioned V1 graph and pure inspection queries
 
 ### Checkpoint B: Executable graph contract

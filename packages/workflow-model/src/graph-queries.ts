@@ -1,0 +1,119 @@
+import type { NodeId } from '@loop/contracts'
+
+import type { WorkflowEdge, WorkflowRevision } from './types.js'
+
+export interface WorkflowNodeInspection {
+  readonly node: WorkflowRevision['nodes'][number]
+  readonly isStart: boolean
+  readonly isTerminal: boolean
+  readonly isReachable: boolean
+  readonly incomingEdges: readonly WorkflowEdge[]
+  readonly outgoingEdges: readonly WorkflowEdge[]
+}
+
+export interface WorkflowGraphInspection {
+  readonly hasCycle: boolean
+  readonly nodes: readonly WorkflowNodeInspection[]
+}
+
+export function getIncomingEdges(
+  workflow: WorkflowRevision,
+  nodeId: NodeId,
+): readonly WorkflowEdge[] {
+  return Object.freeze(workflow.edges.filter((edge) => edge.targetNodeId === nodeId))
+}
+
+export function getOutgoingEdges(
+  workflow: WorkflowRevision,
+  nodeId: NodeId,
+): readonly WorkflowEdge[] {
+  return Object.freeze(workflow.edges.filter((edge) => edge.sourceNodeId === nodeId))
+}
+
+export function getReachableNodeIds(workflow: WorkflowRevision): readonly NodeId[] {
+  const knownNodeIds = new Set(workflow.nodes.map((node) => node.id))
+  if (!knownNodeIds.has(workflow.startNodeId)) {
+    return Object.freeze([])
+  }
+
+  const reachable = new Set<NodeId>()
+  const pending: NodeId[] = [workflow.startNodeId]
+
+  for (const nodeId of pending) {
+    if (reachable.has(nodeId)) {
+      continue
+    }
+
+    reachable.add(nodeId)
+    for (const edge of workflow.edges) {
+      if (
+        edge.sourceNodeId === nodeId &&
+        knownNodeIds.has(edge.targetNodeId) &&
+        !reachable.has(edge.targetNodeId)
+      ) {
+        pending.push(edge.targetNodeId)
+      }
+    }
+  }
+
+  return Object.freeze(
+    workflow.nodes.filter((node) => reachable.has(node.id)).map((node) => node.id),
+  )
+}
+
+export function hasDirectedCycle(workflow: WorkflowRevision): boolean {
+  const knownNodeIds = new Set(workflow.nodes.map((node) => node.id))
+  const adjacency = new Map<NodeId, readonly NodeId[]>()
+
+  for (const node of workflow.nodes) {
+    adjacency.set(
+      node.id,
+      workflow.edges
+        .filter((edge) => edge.sourceNodeId === node.id && knownNodeIds.has(edge.targetNodeId))
+        .map((edge) => edge.targetNodeId),
+    )
+  }
+
+  const visiting = new Set<NodeId>()
+  const visited = new Set<NodeId>()
+
+  const visit = (nodeId: NodeId): boolean => {
+    if (visiting.has(nodeId)) {
+      return true
+    }
+    if (visited.has(nodeId)) {
+      return false
+    }
+
+    visiting.add(nodeId)
+    for (const targetNodeId of adjacency.get(nodeId) ?? []) {
+      if (visit(targetNodeId)) {
+        return true
+      }
+    }
+    visiting.delete(nodeId)
+    visited.add(nodeId)
+    return false
+  }
+
+  return workflow.nodes.some((node) => visit(node.id))
+}
+
+export function inspectWorkflowGraph(workflow: WorkflowRevision): WorkflowGraphInspection {
+  const reachableNodeIds = new Set(getReachableNodeIds(workflow))
+  const nodes = workflow.nodes.map((node) =>
+    Object.freeze({
+      node,
+      isStart: node.id === workflow.startNodeId,
+      isTerminal: node.type === 'terminal',
+      isReachable: reachableNodeIds.has(node.id),
+      incomingEdges: getIncomingEdges(workflow, node.id),
+      outgoingEdges: getOutgoingEdges(workflow, node.id),
+    }),
+  )
+
+  return Object.freeze({
+    hasCycle: hasDirectedCycle(workflow),
+    nodes: Object.freeze(nodes),
+  })
+}
