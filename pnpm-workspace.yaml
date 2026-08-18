@@ -1,6 +1,8 @@
 packages:
   - apps/*
   - packages/*
+allowBuilds:
+  better-sqlite3: true
 minimumReleaseAgeExclude:
   - '@vitest/coverage-v8@4.1.11'
   - '@vitest/expect@4.1.11'

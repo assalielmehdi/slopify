@@ -182,7 +182,7 @@ as source-controlled workflow data that both runtime and UI can consume.
 - [x] All workflow-model tests, build, typecheck, and lint checks pass.
 - [x] Every validation rule has an explicit failing fixture.
 - [x] The predefined cyclic graph and immutable revision behavior are inspectable.
-- [ ] Human confirms the encoded topology before runtime work starts.
+- [x] Human confirms the encoded topology before runtime work starts.
 
 ## Task 7: Initialize the SQLite schema and connection boundary
 
@@ -192,14 +192,14 @@ tables for all durable workflow, run, profile, event, artifact, workspace, and
 delivery records.
 
 **Acceptance criteria:**
-- [ ] A new database migrates transactionally to the expected schema with foreign keys and WAL enabled.
-- [ ] The configured database path is created/opened explicitly and writability failures are structured.
-- [ ] The schema can represent immutable revisions/snapshots and ordered multi-repository evidence without storing credentials.
+- [x] A new database migrates transactionally to the expected schema with foreign keys and WAL enabled.
+- [x] The configured database path is created/opened explicitly and writability failures are structured.
+- [x] The schema can represent immutable revisions/snapshots and ordered multi-repository evidence without storing credentials.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- database migrations`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/execution-runtime typecheck`
-- [ ] Manual check: inspect tables and indexes for run-scoped foreign keys, uniqueness, and secret-bearing columns.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- database migrations` executes all 10 persistence tests.
+- [x] Build succeeds: package and root build, typecheck, lint, test, and format gates pass under pinned Node/pnpm.
+- [x] Manual check: 15 application tables expose 31 foreign keys, required run/order indexes, and no secret-bearing columns.
 
 **Dependencies:** Tasks 3 and 6; database schema approval
 
