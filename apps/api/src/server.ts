@@ -6,6 +6,9 @@ import {
   createProfileRepository,
   createProjectProfileService,
   createReadinessService,
+  createEventStore,
+  createRunRepository,
+  createRunService,
   createWorkflowRepository,
   createWorkflowService,
   openDatabase,
@@ -118,8 +121,10 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     return startApiServer({ app: createApiApp({}), configuration })
   }
 
+  const profileRepository = createProfileRepository(database)
+  const workflowRepository = createWorkflowRepository(database)
   const profileService = createProjectProfileService({
-    profiles: createProfileRepository(database),
+    profiles: profileRepository,
     runtimeMode: containerMode(environment.API_CONTAINER_MODE) ? 'container' : 'native',
     workspaceRoot: environment.WORKSPACE_ROOT ?? '/workspace',
   })
@@ -133,12 +138,25 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     processRunner: createProcessRunner({ maxOutputBytes: 65_536, redactedValues }),
     connectors: () => resolveConnectorStatus(environment),
   })
+  const runService = createRunService({
+    events: createEventStore(database),
+    profiles: profileRepository,
+    readiness,
+    runs: createRunRepository(database),
+    tasks: {
+      async resolve() {
+        throw new Error('ClickUp task resolution is not configured')
+      },
+    },
+    workflows: workflowRepository,
+  })
   return startApiServer({
     app: createApiApp({
       database,
       profiles: profileService,
       readiness,
-      workflows: createWorkflowService({ workflows: createWorkflowRepository(database) }),
+      runs: runService,
+      workflows: createWorkflowService({ workflows: workflowRepository }),
     }),
     configuration,
   })

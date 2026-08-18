@@ -1,9 +1,11 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
 import {
   ProjectProfileServiceError,
+  RunServiceError,
   WorkflowServiceError,
   type ProjectProfileService,
   type ReadinessService,
+  type RunService,
   type WorkbenchDatabase,
   type WorkflowService,
 } from '@loop/execution-runtime'
@@ -11,6 +13,7 @@ import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { registerProjectProfileRoutes } from './routes/project-profiles.js'
+import { registerRunRoutes } from './routes/runs.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
@@ -39,6 +42,7 @@ export interface CreateApiAppOptions {
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly profiles?: ProjectProfileService
   readonly readiness?: ReadinessService
+  readonly runs?: RunService
   readonly workflows?: WorkflowService
 }
 
@@ -99,12 +103,33 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   }
 
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
+  if (options.runs !== undefined) registerRunRoutes(app, options.runs)
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof RunServiceError) {
+      const status =
+        error.code === 'RUN_ACTIVE'
+          ? 409
+          : error.code === 'RUN_REQUEST_INVALID'
+            ? 400
+          : error.code === 'PROFILE_NOT_READY' || error.code === 'TASK_RESOLUTION_FAILED'
+            ? 422
+            : 404
+      return context.json(
+        errorBody({
+          code: error.code,
+          message: error.message,
+          ...(error.activeRunId === undefined
+            ? {}
+            : { details: { activeRunId: error.activeRunId } }),
+        }),
+        status,
+      )
+    }
     if (error instanceof WorkflowServiceError) {
       const status =
         error.code === 'WORKFLOW_NOT_FOUND'

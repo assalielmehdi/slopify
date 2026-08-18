@@ -127,6 +127,18 @@ export const ProjectProfileReadinessSchema = z.strictObject({
   ),
 })
 
+export const CreateRunRequestSchema = z.strictObject({
+  taskReference: z.string().trim().min(1).max(512),
+  workflowId: WorkflowIdSchema,
+  revisionId: RevisionIdSchema,
+  profileId: ProjectProfileIdSchema,
+})
+
+export const RunPaginationQuerySchema = z.strictObject({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
 const runEventBase = z.strictObject({
   runId: RunIdSchema,
   sequence: z.number().int().positive().safe(),
@@ -254,4 +266,6 @@ export type ProfileRepositoryConfiguration = z.infer<typeof ProfileRepositoryCon
 export type ProjectProfileConfiguration = z.infer<typeof ProjectProfileConfigurationSchema>
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
 export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
+export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
+export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>
 export type RunEvent = z.infer<typeof RunEventSchema>

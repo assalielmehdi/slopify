@@ -24,8 +24,12 @@ import type { WorkflowRepository } from '../persistence/workflow-repository.js'
 import type { ReadinessService } from './readiness-service.js'
 
 export type RunServiceErrorCode =
+  | 'NODE_NOT_FOUND'
+  | 'NODE_SOURCE_UNAVAILABLE'
   | 'PROFILE_NOT_READY'
   | 'RUN_ACTIVE'
+  | 'RUN_NOT_FOUND'
+  | 'RUN_REQUEST_INVALID'
   | 'TASK_RESOLUTION_FAILED'
   | 'WORKFLOW_NOT_FOUND'
 
@@ -47,6 +51,20 @@ export interface RunTaskResolver {
   resolve(taskReference: string): Promise<JsonValue>
 }
 
+export interface DeterministicNodeSource {
+  readonly commandId: string
+  readonly sourceFile: string
+  readonly content: string
+}
+
+export interface NodeSourceProvider {
+  get(commandId: string): DeterministicNodeSource | undefined
+}
+
+export interface RunNodeSource extends DeterministicNodeSource {
+  readonly nodeId: string
+}
+
 export interface CreateRunServiceInput {
   readonly taskReference: string
   readonly workflowId: string
@@ -60,7 +78,7 @@ export interface RunDetail {
   readonly profileSnapshot: ProjectProfileSnapshot
   readonly events: ReturnType<EventStore['list']>['events']
   readonly nodeExecutions: readonly NodeExecutionRecord[]
-  readonly repositorySelection: RepositorySelectionSnapshot | undefined
+  readonly repositorySelection: RepositorySelectionSnapshot | null
   readonly workspaces: readonly RunWorkspace[]
   readonly deliveryEvidence: readonly DeliveryEvidence[]
   readonly outputChunks: readonly OutputChunk[]
@@ -100,6 +118,7 @@ export interface RunService {
   create(input: CreateRunServiceInput): Promise<RunRecord>
   get(runId: string): RunDetail | undefined
   list(input: { readonly page: number; readonly pageSize: number }): RunSummaryPage
+  getNodeSource(runId: string, nodeId: string): RunNodeSource
 }
 
 export interface CreateRunServiceOptions {
@@ -109,6 +128,7 @@ export interface CreateRunServiceOptions {
   readonly runs: RunRepository
   readonly tasks: RunTaskResolver
   readonly workflows: WorkflowRepository
+  readonly sources?: NodeSourceProvider
   readonly now?: () => string
   readonly createRunId?: () => string
   readonly createProfileSnapshotId?: () => string
@@ -204,7 +224,7 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         profileSnapshot,
         events,
         nodeExecutions: options.runs.listNodeExecutions(runId),
-        repositorySelection: options.runs.getRepositorySelection(runId),
+        repositorySelection: options.runs.getRepositorySelection(runId) ?? null,
         workspaces: options.runs.listWorkspaces(runId),
         deliveryEvidence: options.runs.listDeliveryEvidence(runId),
         outputChunks: options.runs.listOutputChunks(runId),
@@ -249,6 +269,40 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
           }
         }),
       }
+    },
+
+    getNodeSource(runIdInput, nodeId) {
+      const runId = RunIdSchema.parse(runIdInput)
+      const run = options.runs.get(runId)
+      if (run === undefined) throw new RunServiceError('RUN_NOT_FOUND', 'Run was not found')
+      const workflow = options.workflows.getRevision({
+        workflowId: run.workflowId,
+        revisionId: run.revisionId,
+      })
+      const node = workflow?.nodes.find((candidate) => candidate.id === nodeId)
+      if (node === undefined) {
+        throw new RunServiceError('NODE_NOT_FOUND', 'Run node was not found')
+      }
+      if (node.type !== 'command') {
+        throw new RunServiceError(
+          'NODE_SOURCE_UNAVAILABLE',
+          'Deterministic node source is unavailable',
+        )
+      }
+      const source = options.sources?.get(node.commandId)
+      if (
+        source === undefined ||
+        source.commandId !== node.commandId ||
+        source.sourceFile.trim() === '' ||
+        source.sourceFile.length > 4_096 ||
+        source.content.length > 262_144
+      ) {
+        throw new RunServiceError(
+          'NODE_SOURCE_UNAVAILABLE',
+          'Deterministic node source is unavailable',
+        )
+      }
+      return { nodeId: node.id, ...source }
     },
   }
 }
