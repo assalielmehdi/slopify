@@ -306,14 +306,14 @@ request/response and `ApiError` handling, configurable bind address/port, and
 the SQLite-writability `/healthz` contract.
 
 **Acceptance criteria:**
-- [ ] Hono returns the one documented error envelope for validation, domain, and unexpected failures.
-- [ ] `/healthz` is healthy only when the process serves and SQLite is open/writable, independent of external credentials.
-- [ ] The server binds configurably and uses `0.0.0.0` in container mode without exposing secrets.
+- [x] Hono returns the one documented error envelope for validation, domain, and unexpected failures.
+- [x] `/healthz` is healthy only when the process serves and SQLite is open/writable, independent of external credentials.
+- [x] The server binds configurably and uses `0.0.0.0` in container mode without exposing secrets.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/api test -- health errors`
-- [ ] Build succeeds: `pnpm --filter @loop/api build && pnpm --filter @loop/api typecheck`
-- [ ] Manual check: make the configured data path unwritable and confirm health fails without credential details.
+- [x] Tests pass: `pnpm --filter @loop/api test -- health errors`
+- [x] Build succeeds: `pnpm --filter @loop/api build && pnpm --filter @loop/api typecheck`
+- [x] Manual check: make the configured data path unwritable and confirm health fails without credential details.
 
 **Dependencies:** Tasks 3 and 7
 

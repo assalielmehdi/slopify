@@ -36,6 +36,24 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@24.13.3)(@vitest/coverage-v8@4.1.11)(vite@8.2.1(@types/node@24.13.3))
 
+  apps/api:
+    dependencies:
+      '@hono/node-server':
+        specifier: 2.1.1
+        version: 2.1.1(hono@4.13.3)
+      '@loop/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@loop/execution-runtime':
+        specifier: workspace:*
+        version: link:../../packages/execution-runtime
+      hono:
+        specifier: 4.13.3
+        version: 4.13.3
+      zod:
+        specifier: 4.4.3
+        version: 4.4.3
+
   packages/contracts:
     dependencies:
       zod:
@@ -134,6 +152,12 @@ packages:
   '@eslint/plugin-kit@0.7.2':
     resolution: {integrity: sha512-+CNAzxglkrpNf/kKywqQfk74QjtceuOE7Qm+AF8miRvPF/wmmK5+OJOgVh3AVTT3RP2mH3+FOaxlE5v72owk0A==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
+
+  '@hono/node-server@2.1.1':
+    resolution: {integrity: sha512-ELuehkj5VCBdgEw9zs+ivkKwyzzUCSQuE96YmiPvn1ECBoZCczbFXJLeEGMTYjphP6gydh4pHMqEYPVMYUVgQg==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      hono: ^4
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -571,6 +595,10 @@ packages:
   has-flag@4.0.0:
     resolution: {integrity: sha512-EykJT/Q1KjTWctppgIAgfSO0tKVuZUjhgMr17kqTumMl6Afv3EISleU7qZUzoXDFTAHTDC4NOoG/ZxU3EvlMPQ==}
     engines: {node: '>=8'}
+
+  hono@4.13.3:
+    resolution: {integrity: sha512-r8AO2mYHoLxSHkgafNeC/BXyb2vWRxD3jem4Ts+ptav8oTG5FIRifAjuJEmZI4bSvvc2ns0GxmIYiZnHqN3mMw==}
+    engines: {node: '>=16.9.0'}
 
   html-escaper@2.0.2:
     resolution: {integrity: sha512-H2iMtd0I4Mt5eYiapRdIDjp+XzelXQ0tFE4JS7YFwFevXXMmOp9myNrUvCg0D6ws8iqkRPBfKHgbwig1SmlLfg==}
@@ -1084,6 +1112,10 @@ snapshots:
       '@eslint/core': 1.2.1
       levn: 0.4.1
 
+  '@hono/node-server@2.1.1(hono@4.13.3)':
+    dependencies:
+      hono: 4.13.3
+
   '@humanfs/core@0.19.2':
     dependencies:
       '@humanfs/types': 0.15.0
@@ -1518,6 +1550,8 @@ snapshots:
       is-glob: 4.0.3
 
   has-flag@4.0.0: {}
+
+  hono@4.13.3: {}
 
   html-escaper@2.0.2: {}
 

@@ -52,6 +52,10 @@ export const ApiErrorSchema = z.strictObject({
   }),
 })
 
+export const HealthResponseSchema = z.strictObject({
+  status: z.literal('ok'),
+})
+
 export const EvidenceSchema = z.strictObject({
   kind: z.enum(['command', 'test', 'file', 'url', 'note']),
   value: z.string().trim().min(1).max(16_384),
@@ -180,6 +184,7 @@ export type RunStatus = z.infer<typeof RunStatusSchema>
 export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusSchema>
 export type ArtifactType = z.infer<typeof ArtifactTypeSchema>
 export type ApiError = z.infer<typeof ApiErrorSchema>
+export type HealthResponse = z.infer<typeof HealthResponseSchema>
 export type Evidence = z.infer<typeof EvidenceSchema>
 export type RepositoryReference = z.infer<typeof RepositoryReferenceSchema>
 export type RunEvent = z.infer<typeof RunEventSchema>

@@ -4,6 +4,7 @@ import {
   ApiErrorSchema,
   ArtifactTypeSchema,
   EvidenceSchema,
+  HealthResponseSchema,
   NodeIdSchema,
   OutcomeNameSchema,
   RepositoryReferenceSchema,
@@ -67,6 +68,14 @@ describe('public API records', () => {
         error: { code: 'validation-error', message: 'bad' },
         token: 'must-not-be-public',
       }).success,
+    ).toBe(false)
+  })
+
+  it('keeps the health response minimal and closed', () => {
+    expect(HealthResponseSchema.parse({ status: 'ok' })).toEqual({ status: 'ok' })
+    expect(
+      HealthResponseSchema.safeParse({ status: 'ok', databasePath: '/private/state.sqlite' })
+        .success,
     ).toBe(false)
   })
 

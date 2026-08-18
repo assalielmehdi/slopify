@@ -1,0 +1,115 @@
+import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
+import type { WorkbenchDatabase } from '@loop/execution-runtime'
+import { Hono, type Context } from 'hono'
+import { z } from 'zod'
+
+type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
+
+export class ApiApplicationError extends Error {
+  readonly status: ApiApplicationErrorStatus
+  readonly code: string
+  readonly details?: unknown
+
+  constructor(input: {
+    readonly status: ApiApplicationErrorStatus
+    readonly code: string
+    readonly message: string
+    readonly details?: unknown
+    readonly cause?: unknown
+  }) {
+    super(input.message, input.cause === undefined ? undefined : { cause: input.cause })
+    this.name = 'ApiApplicationError'
+    this.status = input.status
+    this.code = input.code
+    if (input.details !== undefined) this.details = input.details
+  }
+}
+
+export interface CreateApiAppOptions {
+  readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
+}
+
+export const parseJsonBody = async (context: Context): Promise<unknown> => {
+  try {
+    return await context.req.json<unknown>()
+  } catch (cause) {
+    throw new ApiApplicationError({
+      status: 400,
+      code: 'VALIDATION_ERROR',
+      message: 'Request validation failed',
+      cause,
+    })
+  }
+}
+
+const errorBody = (input: {
+  readonly code: string
+  readonly message: string
+  readonly details?: unknown
+}): ApiError =>
+  ApiErrorSchema.parse({
+    error: {
+      code: input.code,
+      message: input.message,
+      ...(input.details === undefined ? {} : { details: input.details }),
+    },
+  })
+
+const persistenceUnavailable = (context: Context): Response =>
+  context.json(
+    errorBody({
+      code: 'DATABASE_UNAVAILABLE',
+      message: 'Local persistence is unavailable',
+    }),
+    503,
+  )
+
+export const createApiApp = (options: CreateApiAppOptions): Hono => {
+  const app = new Hono()
+
+  app.get('/healthz', (context) => {
+    if (options.database?.isOpen !== true) return persistenceUnavailable(context)
+
+    try {
+      if (!options.database.status().writable) return persistenceUnavailable(context)
+      return context.json(HealthResponseSchema.parse({ status: 'ok' }), 200)
+    } catch {
+      return persistenceUnavailable(context)
+    }
+  })
+
+  app.notFound((context) =>
+    context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
+  )
+
+  app.onError((error, context) => {
+    if (error instanceof ApiApplicationError) {
+      return context.json(
+        errorBody({
+          code: error.code,
+          message: error.message,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        }),
+        error.status,
+      )
+    }
+    if (error instanceof z.ZodError) {
+      return context.json(
+        errorBody({
+          code: 'VALIDATION_ERROR',
+          message: 'Request validation failed',
+          details: {
+            issues: error.issues.map((issue) => ({ code: issue.code, path: issue.path })),
+          },
+        }),
+        400,
+      )
+    }
+    return context.json(
+      errorBody({ code: 'INTERNAL_ERROR', message: 'Unexpected server error' }),
+      500,
+    )
+  })
+
+  return app
+}
