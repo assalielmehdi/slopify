@@ -481,14 +481,14 @@ operation, preserving prior findings and requiring provider readback while
 leaving finalization authorization to gitlab-delivery.
 
 **Acceptance criteria:**
-- [ ] First review publishes once; later passes update the exact comment ID and preserve findings/history.
-- [ ] Only documented `changes-requested`, `resolved`, and `completed` transitions are accepted and read back.
-- [ ] The ClickUp adapter exposes status movement but cannot independently prove or claim finalization eligibility.
+- [x] First review publishes once; later passes update the exact comment ID and preserve findings/history.
+- [x] Only documented `changes-requested`, `resolved`, and `completed` transitions are accepted and read back.
+- [x] The ClickUp adapter exposes status movement but cannot independently prove or claim finalization eligibility.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/clickup-artifacts test -- review-summary status-transition`
-- [ ] Build succeeds: `pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/clickup-artifacts lint`
-- [ ] Manual check: attempt to update another run/comment and confirm no remote mutation is issued.
+- [x] Tests pass: `pnpm --filter @loop/clickup-artifacts test -- review-summary status-transition`
+- [x] Build succeeds: `pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/clickup-artifacts lint`
+- [x] Manual check: attempt to update another run/comment and confirm no remote mutation is issued.
 
 **Dependencies:** Task 16
 
@@ -503,9 +503,9 @@ leaving finalization authorization to gitlab-delivery.
 
 ## Checkpoint D1: After Tasks 15-17
 
-- [ ] Fake ClickUp tests cover task resolution, timeouts, malformed responses, pagination, publication, update, and status readback.
-- [ ] Exact artifact identity and one-comment review lifecycle are proven.
-- [ ] No automated check uses or mutates a real ClickUp task.
+- [x] Fake ClickUp tests cover task resolution, timeouts, malformed responses, pagination, publication, update, and status readback.
+- [x] Exact artifact identity and one-comment review lifecycle are proven.
+- [x] No automated check uses or mutates a real ClickUp task.
 
 ## Task 18: Define Pi execution contracts and tool profiles
 
