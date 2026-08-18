@@ -14,6 +14,8 @@ export {
   type CreateClickUpArtifactServiceOptions,
   type ExactArtifactReference,
   type PublishArtifactInput,
+  type ReviewSummaryUpdateStatus,
+  type UpdateReviewSummaryInput,
 } from './artifact-service.js'
 export {
   createClickUpClient,
@@ -26,6 +28,7 @@ export {
   type CreateClickUpClientOptions,
   type CreateClickUpCommentInput,
   type CreatedClickUpComment,
+  type UpdateClickUpCommentInput,
 } from './client.js'
 export {
   ClickUpArtifactError,

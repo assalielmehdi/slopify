@@ -34,10 +34,21 @@ export interface PublishArtifactInput extends ArtifactEnvelopeInput {
   readonly taskId: ClickUpTaskId
 }
 
+export type ReviewSummaryUpdateStatus = 'changes-requested' | 'resolved'
+
+export interface UpdateReviewSummaryInput {
+  readonly taskId: ClickUpTaskId
+  readonly runId: RunId
+  readonly commentId: string
+  readonly status: ReviewSummaryUpdateStatus
+  readonly appendContent: string
+}
+
 export interface ClickUpArtifactService {
   listArtifacts(taskId: ClickUpTaskId, runId: RunId): Promise<readonly ClickUpArtifact[]>
   getArtifact(input: ExactArtifactReference): Promise<ClickUpArtifact>
   publishArtifact(input: PublishArtifactInput): Promise<ClickUpArtifact>
+  updateReviewSummary(input: UpdateReviewSummaryInput): Promise<ClickUpArtifact>
 }
 
 export interface CreateClickUpArtifactServiceOptions {
@@ -89,6 +100,9 @@ const contextFor = (
   artifactType?: ArtifactType,
 ): ClickUpArtifactErrorContext =>
   artifactType === undefined ? { taskId, runId } : { taskId, runId, artifactType }
+
+const validCommentId = (commentId: string): boolean =>
+  commentId.trim() === commentId && commentId.length > 0 && commentId.length <= 128
 
 export const createClickUpArtifactService = (
   options: CreateClickUpArtifactServiceOptions,
@@ -218,6 +232,71 @@ export const createClickUpArtifactService = (
       )
       if (readback.length !== 1 || readback[0]?.commentId !== created.commentId) {
         throw artifactError('COMMENT_REJECTED', 'PUBLISH_ARTIFACT', context)
+      }
+      return readback[0]
+    },
+
+    async updateReviewSummary(input) {
+      const operation = 'UPDATE_REVIEW_SUMMARY'
+      const taskId = canonicalTaskId(input.taskId, operation)
+      const runId = validateRunId(input.runId, operation)
+      const context = contextFor(taskId, runId, 'REVIEW_SUMMARY')
+      if (
+        !validCommentId(input.commentId) ||
+        (input.status !== 'changes-requested' && input.status !== 'resolved') ||
+        typeof input.appendContent !== 'string' ||
+        input.appendContent.trim() === '' ||
+        input.appendContent.length > 1_000_000
+      ) {
+        throw artifactError('ARTIFACT_INPUT_INVALID', operation, context)
+      }
+      if (containsHiddenReasoning(input.appendContent)) {
+        throw artifactError('COMMENT_REJECTED', operation, context)
+      }
+
+      const matches = (await listValidated(taskId, runId)).filter(
+        (artifact) => artifact.envelope.artifactType === 'REVIEW_SUMMARY',
+      )
+      if (
+        matches.length !== 1 ||
+        matches[0]?.commentId !== input.commentId ||
+        matches[0].envelope.status === 'completed'
+      ) {
+        throw artifactError('COMMENT_REJECTED', operation, {
+          ...context,
+          commentIds: matches.map(({ commentId }) => commentId).toSorted(),
+        })
+      }
+
+      const existing = matches[0]
+      const appendContent = redactArtifactContent(input.appendContent, sensitiveValues)
+      const content = `${existing.content}\n\n---\n\n${appendContent}`
+      let rendered: string
+      try {
+        rendered = codec.render({
+          ...existing.envelope,
+          status: input.status,
+          content,
+        })
+      } catch {
+        throw artifactError('ARTIFACT_INPUT_INVALID', operation, context)
+      }
+      if (new TextEncoder().encode(rendered).byteLength > maxCommentBytes) {
+        throw artifactError('COMMENT_REJECTED', operation, context)
+      }
+
+      await options.client.updateComment({ commentId: input.commentId, content: rendered })
+      const comments = await options.client.listComments(taskId)
+      const updatedComments = comments.filter(({ commentId }) => commentId === input.commentId)
+      if (updatedComments.length !== 1 || updatedComments[0]?.text !== rendered) {
+        throw artifactError('COMMENT_REJECTED', operation, context)
+      }
+      const readback = parseArtifacts(taskId, comments).filter(
+        (artifact) =>
+          artifact.envelope.runId === runId && artifact.envelope.artifactType === 'REVIEW_SUMMARY',
+      )
+      if (readback.length !== 1 || readback[0]?.commentId !== input.commentId) {
+        throw artifactError('COMMENT_REJECTED', operation, context)
       }
       return readback[0]
     },

@@ -63,6 +63,8 @@ export const ClickUpCreateCommentResponseSchema = z.looseObject({
   date: timestamp,
 })
 
+export const ClickUpUpdateCommentResponseSchema = z.looseObject({})
+
 export const ClickUpTaskResponseSchema = z.looseObject({
   id: z.string().trim().min(1).max(128),
   custom_id: z.string().trim().min(1).max(128).nullable().optional(),

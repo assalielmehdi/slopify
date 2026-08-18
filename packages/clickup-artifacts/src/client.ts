@@ -3,6 +3,7 @@ import {
   ClickUpCommentsResponseSchema,
   ClickUpCreateCommentResponseSchema,
   ClickUpTaskResponseSchema,
+  ClickUpUpdateCommentResponseSchema,
   type ClickUpCommentResponse,
   type ClickUpTaskResponse,
 } from './schemas.js'
@@ -51,6 +52,7 @@ export interface ClickUpTaskClient {
   getTask(reference: string): Promise<ClickUpTaskSnapshot>
   listComments(taskId: ClickUpTaskId): Promise<readonly ClickUpTaskComment[]>
   createComment(input: CreateClickUpCommentInput): Promise<CreatedClickUpComment>
+  updateComment(input: UpdateClickUpCommentInput): Promise<void>
 }
 
 export interface CreateClickUpCommentInput {
@@ -61,6 +63,11 @@ export interface CreateClickUpCommentInput {
 export interface CreatedClickUpComment {
   readonly commentId: string
   readonly createdAt: string
+}
+
+export interface UpdateClickUpCommentInput {
+  readonly commentId: string
+  readonly content: string
 }
 
 export interface CreateClickUpClientOptions {
@@ -176,8 +183,11 @@ const readBoundedJson = async (
 
 const httpError = (status: number, operation: ClickUpClientOperation): ClickUpClientError => {
   if (status === 401 || status === 403) return new ClickUpClientError('UNAUTHORIZED', operation)
-  if (status === 404) return new ClickUpClientError('TASK_NOT_FOUND', operation)
   if (status === 429) return new ClickUpClientError('RATE_LIMITED', operation)
+  if (operation === 'UPDATE_COMMENT' && status >= 400 && status < 500) {
+    return new ClickUpClientError('COMMENT_REJECTED', operation)
+  }
+  if (status === 404) return new ClickUpClientError('TASK_NOT_FOUND', operation)
   if (operation === 'CREATE_COMMENT' && status >= 400 && status < 500) {
     return new ClickUpClientError('COMMENT_REJECTED', operation)
   }
@@ -185,7 +195,7 @@ const httpError = (status: number, operation: ClickUpClientOperation): ClickUpCl
 }
 
 interface JsonRequestOptions {
-  readonly method: 'GET' | 'POST'
+  readonly method: 'GET' | 'POST' | 'PUT'
   readonly body?: string
 }
 
@@ -440,6 +450,29 @@ export const createClickUpClient = (options: CreateClickUpClientOptions): ClickU
       const createdAt = new Date(Number(parsed.data.date))
       if (Number.isNaN(createdAt.valueOf())) throw invalidResponse('CREATE_COMMENT')
       return { commentId: parsed.data.id, createdAt: createdAt.toISOString() }
+    },
+
+    async updateComment(input) {
+      if (
+        input.commentId.trim() !== input.commentId ||
+        input.commentId === '' ||
+        input.commentId.length > 128 ||
+        input.content.trim() === '' ||
+        input.content.length > 1_000_000
+      ) {
+        throw new ClickUpClientError('COMMENT_REJECTED', 'UPDATE_COMMENT')
+      }
+      const url = new URL(
+        `comment/${encodeURIComponent(input.commentId)}`,
+        configuration.baseUrl,
+      )
+      const parsed = ClickUpUpdateCommentResponseSchema.safeParse(
+        await requestJson(configuration, url, 'UPDATE_COMMENT', {
+          method: 'PUT',
+          body: JSON.stringify({ comment_text: input.content }),
+        }),
+      )
+      if (!parsed.success) throw invalidResponse('UPDATE_COMMENT')
     },
   }
 }
