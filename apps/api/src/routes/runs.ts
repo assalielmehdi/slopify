@@ -1,5 +1,9 @@
-import { CreateRunRequestSchema, RunPaginationQuerySchema } from '@loop/contracts'
-import { RunServiceError, type RunService } from '@loop/execution-runtime'
+import {
+  CancelRunRequestSchema,
+  CreateRunRequestSchema,
+  RunPaginationQuerySchema,
+} from '@loop/contracts'
+import { RunServiceError, type CancellationService, type RunService } from '@loop/execution-runtime'
 import type { Context, Hono } from 'hono'
 
 const parseRunBody = async (context: Context): Promise<unknown> => {
@@ -10,7 +14,20 @@ const parseRunBody = async (context: Context): Promise<unknown> => {
   }
 }
 
-export const registerRunRoutes = (app: Hono, runs: RunService): void => {
+const parseOptionalRunBody = async (context: Context): Promise<unknown> => {
+  try {
+    const body = await context.req.text()
+    return body.trim() === '' ? {} : (JSON.parse(body) as unknown)
+  } catch (cause) {
+    throw new RunServiceError('RUN_REQUEST_INVALID', 'Run request is invalid', { cause })
+  }
+}
+
+export const registerRunRoutes = (
+  app: Hono,
+  runs: RunService,
+  cancellation?: CancellationService,
+): void => {
   app.post('/api/runs', async (context) => {
     const input = CreateRunRequestSchema.parse(await parseRunBody(context))
     return context.json(await runs.create(input), 201)
@@ -23,6 +40,19 @@ export const registerRunRoutes = (app: Hono, runs: RunService): void => {
     })
     return context.json(runs.list(query), 200)
   })
+
+  if (cancellation !== undefined) {
+    app.post('/api/runs/:runId/cancel', async (context) => {
+      const input = CancelRunRequestSchema.parse(await parseOptionalRunBody(context))
+      return context.json(
+        await cancellation.cancel({
+          runId: context.req.param('runId'),
+          ...(input.reason === undefined ? {} : { reason: input.reason }),
+        }),
+        200,
+      )
+    })
+  }
 
   app.get('/api/runs/:runId/nodes/:nodeId/source', (context) =>
     context.json(runs.getNodeSource(context.req.param('runId'), context.req.param('nodeId')), 200),

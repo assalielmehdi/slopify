@@ -1,9 +1,11 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
 import {
+  CancellationServiceError,
   ProjectProfileServiceError,
   RunEventFeedError,
   RunServiceError,
   WorkflowServiceError,
+  type CancellationService,
   type ProjectProfileService,
   type ReadinessService,
   type RunService,
@@ -42,6 +44,7 @@ export class ApiApplicationError extends Error {
 }
 
 export interface CreateApiAppOptions {
+  readonly cancellation?: CancellationService
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly profiles?: ProjectProfileService
   readonly readiness?: ReadinessService
@@ -107,7 +110,7 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   }
 
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
-  if (options.runs !== undefined) registerRunRoutes(app, options.runs)
+  if (options.runs !== undefined) registerRunRoutes(app, options.runs, options.cancellation)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
 
   app.notFound((context) =>
@@ -115,6 +118,12 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   )
 
   app.onError((error, context) => {
+    if (error instanceof CancellationServiceError) {
+      return context.json(
+        errorBody({ code: error.code, message: error.message }),
+        error.code === 'RUN_NOT_FOUND' ? 404 : 409,
+      )
+    }
     if (error instanceof RunEventFeedError) {
       return context.json(
         errorBody({ code: error.code, message: error.message }),

@@ -134,6 +134,10 @@ export const CreateRunRequestSchema = z.strictObject({
   profileId: ProjectProfileIdSchema,
 })
 
+export const CancelRunRequestSchema = z.strictObject({
+  reason: z.string().trim().min(1).max(1_024).optional(),
+})
+
 export const RunPaginationQuerySchema = z.strictObject({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -267,5 +271,6 @@ export type ProjectProfileConfiguration = z.infer<typeof ProjectProfileConfigura
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
 export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
+export type CancelRunRequest = z.infer<typeof CancelRunRequestSchema>
 export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>
 export type RunEvent = z.infer<typeof RunEventSchema>
