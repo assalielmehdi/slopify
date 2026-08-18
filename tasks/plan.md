@@ -171,13 +171,13 @@ their integration checkpoints remain ordered.
 
 - [x] Task 4: Model and parse workflow node and edge variants
 - [x] Task 5: Validate graph topology, outcomes, registrations, and transition bounds
-- [ ] Task 6: Ship the predefined revisioned V1 graph and pure inspection queries
+- [x] Task 6: Ship the predefined revisioned V1 graph and pure inspection queries
 
 ### Checkpoint B: Executable graph contract
 
-- [ ] All workflow-model invariants have explicit passing and failing fixtures
-- [ ] The cyclic V1 graph validates with the approved transition limit
-- [ ] Published revisions are immutable and fully displayable
+- [x] All workflow-model invariants have explicit passing and failing fixtures
+- [x] The cyclic V1 graph validates with the approved transition limit
+- [x] Published revisions are immutable and fully displayable
 
 ### Phase 3: Runtime core
 

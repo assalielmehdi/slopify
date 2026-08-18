@@ -157,14 +157,14 @@ registered command references, transition limit, and revision-derivation rules
 as source-controlled workflow data that both runtime and UI can consume.
 
 **Acceptance criteria:**
-- [ ] The predefined graph matches every node, outcome, edge, workspace policy, and permission invariant in the workflow-model spec.
-- [ ] Editing any configurable agent field produces a distinct revision while the parent remains byte-for-byte unchanged.
-- [ ] The approved transition limit permits the required review/fix loop and fails invalid overrides.
+- [x] The predefined graph matches every node, outcome, edge, workspace policy, and permission invariant in the workflow-model spec.
+- [x] Editing every legally configurable agent field produces a distinct frozen revision while the parent remains byte-for-byte unchanged; invariant-locked policy changes fail visibly.
+- [x] The approved transition limit permits two review/fix cycles in 23 transitions and rejects override fields.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/workflow-model test`
-- [ ] Build succeeds: `pnpm --filter @loop/workflow-model build && pnpm --filter @loop/workflow-model lint`
-- [ ] Manual check: compare the encoded graph and node table against `SPEC-workflow-model.md`.
+- [x] Tests pass: `pnpm --filter @loop/workflow-model test` executes all 68 package tests.
+- [x] Build succeeds: package and root build, typecheck, lint, test, and format gates pass from a clean copy under pinned Node/pnpm.
+- [x] Manual check: the built graph has the specified 14 nodes, 21 edges, transition limit 24, valid derivation, and unchanged parent revision.
 
 **Dependencies:** Task 5; approved transition limit
 
@@ -179,9 +179,9 @@ as source-controlled workflow data that both runtime and UI can consume.
 
 ## Checkpoint B: After Tasks 4-6
 
-- [ ] All workflow-model tests, build, typecheck, and lint checks pass.
-- [ ] Every validation rule has an explicit failing fixture.
-- [ ] The predefined cyclic graph and immutable revision behavior are inspectable.
+- [x] All workflow-model tests, build, typecheck, and lint checks pass.
+- [x] Every validation rule has an explicit failing fixture.
+- [x] The predefined cyclic graph and immutable revision behavior are inspectable.
 - [ ] Human confirms the encoded topology before runtime work starts.
 
 ## Task 7: Initialize the SQLite schema and connection boundary
