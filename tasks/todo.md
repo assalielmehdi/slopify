@@ -541,14 +541,14 @@ with outcome/output-schema validation, content limits, result capture, and the
 exactly-once/missing/late-call failure rules.
 
 **Acceptance criteria:**
-- [ ] Only one validated completion-tool call can produce a routable result.
-- [ ] Undeclared outcomes, malformed node data, repeated/missing/late calls, and oversized content fail the node.
-- [ ] Free-form assistant text and tool output never become a routing result.
+- [x] Only one validated completion-tool call can produce a routable result.
+- [x] Undeclared outcomes, malformed node data, repeated/missing/late calls, and oversized content fail the node.
+- [x] Free-form assistant text and tool output never become a routing result.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/agent-runtimes test -- completion-tool`
-- [ ] Build succeeds: `pnpm --filter @loop/agent-runtimes typecheck && pnpm --filter @loop/agent-runtimes lint`
-- [ ] Manual check: exercise each failure rule with a fake tool invocation transcript.
+- [x] Tests pass: `pnpm --filter @loop/agent-runtimes test -- completion-tool`
+- [x] Build succeeds: `pnpm --filter @loop/agent-runtimes typecheck && pnpm --filter @loop/agent-runtimes lint`
+- [x] Manual check: exercise each failure rule with a fake tool invocation transcript.
 
 **Dependencies:** Task 18
 
