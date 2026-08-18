@@ -2,6 +2,10 @@ import { z } from 'zod'
 
 const boundedText = z.string().max(1_000_000)
 const identifier = z.union([z.string().trim().min(1).max(128), z.number().safe()]).transform(String)
+const timestamp = z
+  .union([z.string().trim().min(1).max(32), z.number().safe()])
+  .transform(String)
+  .refine((value) => /^\d+$/u.test(value) && Number.isSafeInteger(Number(value)))
 
 const ClickUpStatusResponseSchema = z
   .looseObject({
@@ -21,6 +25,39 @@ const ClickUpPriorityResponseSchema = z
   })
   .refine((priority) => priority.priority !== undefined || priority.name !== undefined)
 
+const ClickUpAttachmentResponseSchema = z.looseObject({
+  url: z.url().max(4_096).optional(),
+})
+
+const ClickUpCommentAuthorResponseSchema = z
+  .looseObject({
+    username: z.string().trim().min(1).max(10_000).optional(),
+    name: z.string().trim().min(1).max(10_000).optional(),
+  })
+  .refine((author) => author.username !== undefined || author.name !== undefined)
+
+const ClickUpCommentSegmentResponseSchema = z.looseObject({
+  text: boundedText,
+})
+
+export const ClickUpCommentResponseSchema = z
+  .looseObject({
+    id: identifier,
+    date: timestamp,
+    comment: z
+      .union([boundedText, z.array(ClickUpCommentSegmentResponseSchema).max(1_000)])
+      .optional(),
+    comment_text: boundedText.optional(),
+    user: ClickUpCommentAuthorResponseSchema.optional(),
+    created_by: ClickUpCommentAuthorResponseSchema.optional(),
+  })
+  .refine((comment) => comment.comment !== undefined || comment.comment_text !== undefined)
+  .refine((comment) => comment.user !== undefined || comment.created_by !== undefined)
+
+export const ClickUpCommentsResponseSchema = z.looseObject({
+  comments: z.array(ClickUpCommentResponseSchema).max(25),
+})
+
 export const ClickUpTaskResponseSchema = z.looseObject({
   id: z.string().trim().min(1).max(128),
   custom_id: z.string().trim().min(1).max(128).nullable().optional(),
@@ -30,7 +67,8 @@ export const ClickUpTaskResponseSchema = z.looseObject({
   status: ClickUpStatusResponseSchema,
   priority: ClickUpPriorityResponseSchema.nullable(),
   url: z.url().max(4_096),
-  attachments: z.array(z.unknown()).max(1_000).optional(),
+  attachments: z.array(ClickUpAttachmentResponseSchema).max(1_000).optional(),
 })
 
+export type ClickUpCommentResponse = z.infer<typeof ClickUpCommentResponseSchema>
 export type ClickUpTaskResponse = z.infer<typeof ClickUpTaskResponseSchema>

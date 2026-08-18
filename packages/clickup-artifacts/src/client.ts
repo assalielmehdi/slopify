@@ -1,5 +1,10 @@
 import { ClickUpClientError, type ClickUpClientOperation } from './errors.js'
-import { ClickUpTaskResponseSchema, type ClickUpTaskResponse } from './schemas.js'
+import {
+  ClickUpCommentsResponseSchema,
+  ClickUpTaskResponseSchema,
+  type ClickUpCommentResponse,
+  type ClickUpTaskResponse,
+} from './schemas.js'
 import {
   normalizeClickUpTaskReference,
   type ClickUpTaskId,
@@ -62,6 +67,18 @@ interface ClientConfiguration {
   readonly maxResponseBytes: number
   readonly maxCommentPages: number
 }
+
+interface MappedTask {
+  readonly snapshot: Omit<ClickUpTaskSnapshot, 'comments' | 'resourceLinks'>
+  readonly attachmentUrls: readonly string[]
+}
+
+interface CommentPageCursor {
+  readonly id: string
+  readonly date: string
+}
+
+const COMMENT_PAGE_SIZE = 25
 
 const configurationError = (): ClickUpClientError =>
   new ClickUpClientError('CLIENT_CONFIGURATION_INVALID', 'CONFIGURE')
@@ -202,7 +219,7 @@ const responseIdentity = (
   return identity.taskId
 }
 
-const mapTask = (value: unknown, reference: ClickUpTaskReference): ClickUpTaskSnapshot => {
+const mapTask = (value: unknown, reference: ClickUpTaskReference): MappedTask => {
   const parsed = ClickUpTaskResponseSchema.safeParse(value)
   if (!parsed.success) throw invalidResponse('GET_TASK')
   const task = parsed.data
@@ -218,23 +235,139 @@ const mapTask = (value: unknown, reference: ClickUpTaskReference): ClickUpTaskSn
   if (statusName === undefined || (task.priority !== null && priorityName === undefined)) {
     throw invalidResponse('GET_TASK')
   }
+  const priority =
+    task.priority === null || priorityName === undefined
+      ? null
+      : { id: task.priority.id, name: priorityName }
 
   return {
-    taskId,
-    customTaskId: task.custom_id ?? null,
-    url: task.url,
-    title: task.name,
-    description: task.description ?? task.text_content ?? '',
-    status: {
-      id: task.status.id ?? null,
-      name: statusName,
-      type: task.status.type ?? task.status.status_type ?? null,
+    snapshot: {
+      taskId,
+      customTaskId: task.custom_id ?? null,
+      url: task.url,
+      title: task.name,
+      description: task.description ?? task.text_content ?? '',
+      status: {
+        id: task.status.id ?? null,
+        name: statusName,
+        type: task.status.type ?? task.status.status_type ?? null,
+      },
+      priority,
     },
-    priority:
-      task.priority === null ? null : { id: task.priority.id, name: priorityName as string },
-    comments: [],
-    resourceLinks: [],
+    attachmentUrls: (task.attachments ?? []).flatMap((attachment) =>
+      attachment.url === undefined ? [] : [attachment.url],
+    ),
   }
+}
+
+const applyCustomTaskParameters = (
+  url: URL,
+  reference: ClickUpTaskReference,
+  workspaceId: string,
+): void => {
+  if (reference.kind !== 'custom') return
+  url.searchParams.set('custom_task_ids', 'true')
+  url.searchParams.set('team_id', workspaceId)
+}
+
+const commentText = (comment: ClickUpCommentResponse): string => {
+  if (typeof comment.comment === 'string') return comment.comment
+  if (Array.isArray(comment.comment)) return comment.comment.map((segment) => segment.text).join('')
+  if (comment.comment_text !== undefined) return comment.comment_text
+  throw invalidResponse('LIST_COMMENTS')
+}
+
+const mapComment = (comment: ClickUpCommentResponse): ClickUpTaskComment => {
+  const author = comment.created_by ?? comment.user
+  const authorName = author?.username ?? author?.name
+  const createdAt = new Date(Number(comment.date))
+  if (authorName === undefined || Number.isNaN(createdAt.valueOf()))
+    throw invalidResponse('LIST_COMMENTS')
+  return {
+    commentId: comment.id,
+    text: commentText(comment),
+    author: authorName,
+    createdAt: createdAt.toISOString(),
+  }
+}
+
+const listComments = async (
+  configuration: ClientConfiguration,
+  reference: ClickUpTaskReference,
+): Promise<readonly ClickUpTaskComment[]> => {
+  const comments: ClickUpTaskComment[] = []
+  let cursor: CommentPageCursor | undefined
+
+  for (let page = 0; page < configuration.maxCommentPages; page += 1) {
+    const url = new URL(
+      `task/${encodeURIComponent(reference.taskId)}/comment`,
+      configuration.baseUrl,
+    )
+    applyCustomTaskParameters(url, reference, configuration.workspaceId)
+    if (cursor !== undefined) {
+      url.searchParams.set('start', cursor.date)
+      url.searchParams.set('start_id', cursor.id)
+    }
+
+    const parsed = ClickUpCommentsResponseSchema.safeParse(
+      await requestJson(configuration, url, 'LIST_COMMENTS'),
+    )
+    if (!parsed.success) throw invalidResponse('LIST_COMMENTS')
+    comments.push(...parsed.data.comments.map(mapComment))
+    if (parsed.data.comments.length < COMMENT_PAGE_SIZE) return comments
+
+    const lastComment = parsed.data.comments.at(-1)
+    if (lastComment === undefined) throw invalidResponse('LIST_COMMENTS')
+    const nextCursor = { id: lastComment.id, date: lastComment.date }
+    if (cursor?.id === nextCursor.id && cursor.date === nextCursor.date) {
+      throw invalidResponse('LIST_COMMENTS')
+    }
+    if (page + 1 === configuration.maxCommentPages) {
+      throw new ClickUpClientError('PAGINATION_LIMIT_REACHED', 'LIST_COMMENTS')
+    }
+    cursor = nextCursor
+  }
+
+  throw new ClickUpClientError('PAGINATION_LIMIT_REACHED', 'LIST_COMMENTS')
+}
+
+const trailingUrlPunctuation = /[),.;:!?\]}]+$/u
+const resourceUrl = /https?:\/\/[^\s<>"'`]+/giu
+
+const collectResourceLinks = (
+  description: string,
+  comments: readonly ClickUpTaskComment[],
+  attachmentUrls: readonly string[],
+): readonly ClickUpResourceLink[] => {
+  const resources: ClickUpResourceLink[] = []
+  const seen = new Set<string>()
+  const add = (candidate: string, source: ClickUpResourceLink['source']): void => {
+    const trimmed = candidate.replace(trailingUrlPunctuation, '')
+    if (trimmed.length > 4_096 || seen.has(trimmed)) return
+    let parsed: URL
+    try {
+      parsed = new URL(trimmed)
+    } catch {
+      return
+    }
+    if (
+      (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') ||
+      parsed.username !== '' ||
+      parsed.password !== ''
+    ) {
+      return
+    }
+    seen.add(trimmed)
+    resources.push({ url: trimmed, source })
+  }
+  const addFromText = (text: string, source: ClickUpResourceLink['source']): void => {
+    for (const candidate of text.match(resourceUrl) ?? []) add(candidate, source)
+  }
+
+  addFromText(description, 'description')
+  for (const comment of comments) addFromText(comment.text, 'comment')
+  for (const attachmentUrl of attachmentUrls) add(attachmentUrl, 'attachment')
+  return resources
 }
 
 export const createClickUpClient = (options: CreateClickUpClientOptions): ClickUpTaskClient => {
@@ -245,11 +378,18 @@ export const createClickUpClient = (options: CreateClickUpClientOptions): ClickU
       const reference = normalizeClickUpTaskReference(referenceInput)
       const url = new URL(`task/${encodeURIComponent(reference.taskId)}`, configuration.baseUrl)
       url.searchParams.set('include_markdown_description', 'true')
-      if (reference.kind === 'custom') {
-        url.searchParams.set('custom_task_ids', 'true')
-        url.searchParams.set('team_id', configuration.workspaceId)
+      applyCustomTaskParameters(url, reference, configuration.workspaceId)
+      const task = mapTask(await requestJson(configuration, url, 'GET_TASK'), reference)
+      const comments = await listComments(configuration, reference)
+      return {
+        ...task.snapshot,
+        comments,
+        resourceLinks: collectResourceLinks(
+          task.snapshot.description,
+          comments,
+          task.attachmentUrls,
+        ),
       }
-      return mapTask(await requestJson(configuration, url, 'GET_TASK'), reference)
     },
   }
 }
