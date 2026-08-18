@@ -29,6 +29,7 @@ export {
   type CreateClickUpCommentInput,
   type CreatedClickUpComment,
   type UpdateClickUpCommentInput,
+  type UpdateClickUpTaskStatusInput,
 } from './client.js'
 export {
   ClickUpArtifactError,

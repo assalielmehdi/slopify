@@ -53,6 +53,7 @@ export interface ClickUpTaskClient {
   listComments(taskId: ClickUpTaskId): Promise<readonly ClickUpTaskComment[]>
   createComment(input: CreateClickUpCommentInput): Promise<CreatedClickUpComment>
   updateComment(input: UpdateClickUpCommentInput): Promise<void>
+  updateTaskStatus(input: UpdateClickUpTaskStatusInput): Promise<void>
 }
 
 export interface CreateClickUpCommentInput {
@@ -68,6 +69,11 @@ export interface CreatedClickUpComment {
 export interface UpdateClickUpCommentInput {
   readonly commentId: string
   readonly content: string
+}
+
+export interface UpdateClickUpTaskStatusInput {
+  readonly taskId: ClickUpTaskId
+  readonly statusId: string
 }
 
 export interface CreateClickUpClientOptions {
@@ -187,6 +193,9 @@ const httpError = (status: number, operation: ClickUpClientOperation): ClickUpCl
   if (operation === 'UPDATE_COMMENT' && status >= 400 && status < 500) {
     return new ClickUpClientError('COMMENT_REJECTED', operation)
   }
+  if (operation === 'UPDATE_TASK' && status >= 400 && status < 500) {
+    return new ClickUpClientError('STATUS_TRANSITION_FAILED', operation)
+  }
   if (status === 404) return new ClickUpClientError('TASK_NOT_FOUND', operation)
   if (operation === 'CREATE_COMMENT' && status >= 400 && status < 500) {
     return new ClickUpClientError('COMMENT_REJECTED', operation)
@@ -236,6 +245,7 @@ const requestJson = async (
 const responseIdentity = (
   task: ClickUpTaskResponse,
   reference: ClickUpTaskReference,
+  operation: 'GET_TASK' | 'UPDATE_TASK',
 ): ClickUpTaskId => {
   const identity = normalizeClickUpTaskReference(task.id)
   const responseUrl = normalizeClickUpTaskReference(task.url)
@@ -248,26 +258,30 @@ const responseIdentity = (
     responseUrl.taskId !== identity.taskId ||
     !requestedIdentityMatches
   ) {
-    throw invalidResponse('GET_TASK')
+    throw invalidResponse(operation)
   }
   return identity.taskId
 }
 
-const mapTask = (value: unknown, reference: ClickUpTaskReference): MappedTask => {
+const mapTask = (
+  value: unknown,
+  reference: ClickUpTaskReference,
+  operation: 'GET_TASK' | 'UPDATE_TASK' = 'GET_TASK',
+): MappedTask => {
   const parsed = ClickUpTaskResponseSchema.safeParse(value)
-  if (!parsed.success) throw invalidResponse('GET_TASK')
+  if (!parsed.success) throw invalidResponse(operation)
   const task = parsed.data
   let taskId: ClickUpTaskId
   try {
-    taskId = responseIdentity(task, reference)
+    taskId = responseIdentity(task, reference, operation)
   } catch (cause) {
     if (cause instanceof ClickUpClientError) throw cause
-    throw invalidResponse('GET_TASK')
+    throw invalidResponse(operation)
   }
   const statusName = task.status.status ?? task.status.status_name
   const priorityName = task.priority?.priority ?? task.priority?.name
   if (statusName === undefined || (task.priority !== null && priorityName === undefined)) {
-    throw invalidResponse('GET_TASK')
+    throw invalidResponse(operation)
   }
   const priority =
     task.priority === null || priorityName === undefined
@@ -473,6 +487,29 @@ export const createClickUpClient = (options: CreateClickUpClientOptions): ClickU
         }),
       )
       if (!parsed.success) throw invalidResponse('UPDATE_COMMENT')
+    },
+
+    async updateTaskStatus(input) {
+      if (
+        input.statusId.trim() !== input.statusId ||
+        input.statusId === '' ||
+        input.statusId.length > 256
+      ) {
+        throw new ClickUpClientError('STATUS_TRANSITION_FAILED', 'UPDATE_TASK')
+      }
+      const reference = normalizeClickUpTaskReference(input.taskId)
+      if (reference.kind !== 'native') {
+        throw new ClickUpClientError('STATUS_TRANSITION_FAILED', 'UPDATE_TASK')
+      }
+      const url = new URL(`task/${encodeURIComponent(reference.taskId)}`, configuration.baseUrl)
+      mapTask(
+        await requestJson(configuration, url, 'UPDATE_TASK', {
+          method: 'PUT',
+          body: JSON.stringify({ status: input.statusId }),
+        }),
+        reference,
+        'UPDATE_TASK',
+      )
     },
   }
 }

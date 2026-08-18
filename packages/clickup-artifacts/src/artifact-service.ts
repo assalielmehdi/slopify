@@ -6,7 +6,7 @@ import {
   type ArtifactEnvelopeInput,
   type ArtifactProducerPolicy,
 } from './artifact-envelope.js'
-import type { ClickUpTaskClient, ClickUpTaskComment } from './client.js'
+import type { ClickUpTaskClient, ClickUpTaskComment, ClickUpTaskSnapshot } from './client.js'
 import {
   ClickUpArtifactError,
   type ClickUpArtifactErrorContext,
@@ -49,6 +49,7 @@ export interface ClickUpArtifactService {
   getArtifact(input: ExactArtifactReference): Promise<ClickUpArtifact>
   publishArtifact(input: PublishArtifactInput): Promise<ClickUpArtifact>
   updateReviewSummary(input: UpdateReviewSummaryInput): Promise<ClickUpArtifact>
+  moveToInReview(taskId: ClickUpTaskId): Promise<ClickUpTaskSnapshot>
 }
 
 export interface CreateClickUpArtifactServiceOptions {
@@ -56,6 +57,7 @@ export interface CreateClickUpArtifactServiceOptions {
   readonly producerPolicy: ArtifactProducerPolicy
   readonly sensitiveValues?: readonly string[]
   readonly maxCommentBytes?: number
+  readonly inReviewStatusId?: string
 }
 
 const artifactTypeOrder: Readonly<Record<ArtifactType, number>> = {
@@ -66,7 +68,12 @@ const artifactTypeOrder: Readonly<Record<ArtifactType, number>> = {
 }
 
 const artifactError = (
-  code: 'ARTIFACT_AMBIGUOUS' | 'ARTIFACT_INPUT_INVALID' | 'ARTIFACT_NOT_FOUND' | 'COMMENT_REJECTED',
+  code:
+    | 'ARTIFACT_AMBIGUOUS'
+    | 'ARTIFACT_INPUT_INVALID'
+    | 'ARTIFACT_NOT_FOUND'
+    | 'COMMENT_REJECTED'
+    | 'STATUS_TRANSITION_FAILED',
   operation: ClickUpArtifactOperation,
   context?: ClickUpArtifactErrorContext,
 ) => new ClickUpArtifactError(code, operation, context)
@@ -110,12 +117,17 @@ export const createClickUpArtifactService = (
   const codec = createArtifactEnvelopeCodec(options.producerPolicy)
   const maxCommentBytes = options.maxCommentBytes ?? 65_536
   const sensitiveValues = options.sensitiveValues ?? []
+  const inReviewStatusId = options.inReviewStatusId
   if (
     !Number.isSafeInteger(maxCommentBytes) ||
     maxCommentBytes < 1 ||
     maxCommentBytes > 1_000_000 ||
     sensitiveValues.length > 64 ||
-    sensitiveValues.some((value) => value.length < 1 || value.length > 4_096)
+    sensitiveValues.some((value) => value.length < 1 || value.length > 4_096) ||
+    (inReviewStatusId !== undefined &&
+      (inReviewStatusId.trim() !== inReviewStatusId ||
+        inReviewStatusId === '' ||
+        inReviewStatusId.length > 256))
   ) {
     throw artifactError('ARTIFACT_INPUT_INVALID', 'CONFIGURE_ARTIFACTS')
   }
@@ -299,6 +311,23 @@ export const createClickUpArtifactService = (
         throw artifactError('COMMENT_REJECTED', operation, context)
       }
       return readback[0]
+    },
+
+    async moveToInReview(taskIdInput) {
+      const operation = 'MOVE_TO_IN_REVIEW'
+      const taskId = canonicalTaskId(taskIdInput, operation)
+      if (taskIdInput !== taskId) {
+        throw artifactError('ARTIFACT_INPUT_INVALID', operation, { taskId })
+      }
+      if (inReviewStatusId === undefined) {
+        throw artifactError('STATUS_TRANSITION_FAILED', operation, { taskId })
+      }
+      await options.client.updateTaskStatus({ taskId, statusId: inReviewStatusId })
+      const readback = await options.client.getTask(taskId)
+      if (readback.status.id !== inReviewStatusId) {
+        throw artifactError('STATUS_TRANSITION_FAILED', operation, { taskId })
+      }
+      return readback
     },
   }
 }

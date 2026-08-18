@@ -4,6 +4,7 @@ export type ClickUpClientOperation =
   | 'GET_TASK'
   | 'LIST_COMMENTS'
   | 'UPDATE_COMMENT'
+  | 'UPDATE_TASK'
 
 export type ClickUpArtifactOperation =
   | 'CONFIGURE_ARTIFACTS'
@@ -12,9 +13,14 @@ export type ClickUpArtifactOperation =
   | 'PUBLISH_ARTIFACT'
   | 'RENDER_ARTIFACT'
   | 'UPDATE_REVIEW_SUMMARY'
+  | 'MOVE_TO_IN_REVIEW'
 
 export type ClickUpArtifactErrorCode =
-  'ARTIFACT_AMBIGUOUS' | 'ARTIFACT_INPUT_INVALID' | 'ARTIFACT_NOT_FOUND' | 'COMMENT_REJECTED'
+  | 'ARTIFACT_AMBIGUOUS'
+  | 'ARTIFACT_INPUT_INVALID'
+  | 'ARTIFACT_NOT_FOUND'
+  | 'COMMENT_REJECTED'
+  | 'STATUS_TRANSITION_FAILED'
 
 export type ClickUpClientErrorCode =
   | 'CLIENT_CONFIGURATION_INVALID'
@@ -24,6 +30,7 @@ export type ClickUpClientErrorCode =
   | 'PROVIDER_UNAVAILABLE'
   | 'RATE_LIMITED'
   | 'REQUEST_TIMEOUT'
+  | 'STATUS_TRANSITION_FAILED'
   | 'TASK_NOT_FOUND'
   | 'UNAUTHORIZED'
 
@@ -35,6 +42,7 @@ const messages: Readonly<Record<ClickUpClientErrorCode, string>> = {
   PROVIDER_UNAVAILABLE: 'ClickUp is unavailable',
   RATE_LIMITED: 'ClickUp rate limit was reached',
   REQUEST_TIMEOUT: 'ClickUp request timed out',
+  STATUS_TRANSITION_FAILED: 'ClickUp rejected the status transition',
   TASK_NOT_FOUND: 'ClickUp task was not found',
   UNAUTHORIZED: 'ClickUp authorization failed',
 }
@@ -51,6 +59,7 @@ const artifactMessages: Readonly<Record<ClickUpArtifactErrorCode, string>> = {
   ARTIFACT_INPUT_INVALID: 'ClickUp artifact input is invalid',
   ARTIFACT_NOT_FOUND: 'ClickUp artifact was not found',
   COMMENT_REJECTED: 'ClickUp artifact comment was rejected',
+  STATUS_TRANSITION_FAILED: 'ClickUp artifact status transition failed',
 }
 
 export class ClickUpClientError extends Error {
