@@ -77,10 +77,7 @@ const startStatusServer = async (options: StatusServerOptions = {}) => {
       sendJson(response, options.updateResponse ?? taskResponse(currentStatusId))
       return
     }
-    if (
-      method === 'GET' &&
-      url === '/api/v2/task/86abc123?include_markdown_description=true'
-    ) {
+    if (method === 'GET' && url === '/api/v2/task/86abc123?include_markdown_description=true') {
       requests.push({ method, url, body: undefined })
       sendJson(response, taskResponse(currentStatusId))
       return

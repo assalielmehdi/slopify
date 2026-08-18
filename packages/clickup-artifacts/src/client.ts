@@ -476,10 +476,7 @@ export const createClickUpClient = (options: CreateClickUpClientOptions): ClickU
       ) {
         throw new ClickUpClientError('COMMENT_REJECTED', 'UPDATE_COMMENT')
       }
-      const url = new URL(
-        `comment/${encodeURIComponent(input.commentId)}`,
-        configuration.baseUrl,
-      )
+      const url = new URL(`comment/${encodeURIComponent(input.commentId)}`, configuration.baseUrl)
       const parsed = ClickUpUpdateCommentResponseSchema.safeParse(
         await requestJson(configuration, url, 'UPDATE_COMMENT', {
           method: 'PUT',

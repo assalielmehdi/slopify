@@ -1,10 +1,5 @@
 export type ClickUpClientOperation =
-  | 'CONFIGURE'
-  | 'CREATE_COMMENT'
-  | 'GET_TASK'
-  | 'LIST_COMMENTS'
-  | 'UPDATE_COMMENT'
-  | 'UPDATE_TASK'
+  'CONFIGURE' | 'CREATE_COMMENT' | 'GET_TASK' | 'LIST_COMMENTS' | 'UPDATE_COMMENT' | 'UPDATE_TASK'
 
 export type ClickUpArtifactOperation =
   | 'CONFIGURE_ARTIFACTS'
