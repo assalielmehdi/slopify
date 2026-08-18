@@ -42,14 +42,14 @@ and root-script configuration needed for all packages and applications to use
 the normative pnpm commands consistently.
 
 **Acceptance criteria:**
-- [ ] Root scripts expose `build`, `typecheck`, `lint`, `test`, `test:e2e`, and `format:check` through pnpm only.
-- [ ] Shared configuration is strict, framework-neutral where possible, and consumable by future workspace packages.
-- [ ] A clean no-op workspace invocation fails on configuration errors rather than silently skipping them.
+- [x] Root scripts expose `build`, `typecheck`, `lint`, `test`, `test:e2e`, and `format:check` through pnpm only.
+- [x] Shared configuration is strict, framework-neutral where possible, and consumable by future workspace packages.
+- [x] A clean no-op workspace invocation fails on configuration errors rather than silently skipping them.
 
 **Verification:**
-- [ ] Tests pass: `pnpm test -- --passWithNoTests`
-- [ ] Build succeeds: `pnpm typecheck && pnpm lint && pnpm format:check`
-- [ ] Manual check: confirm no npm, yarn, monorepo framework, or duplicate package-level policy is introduced.
+- [x] Tests pass: `pnpm test` exits cleanly with the configured no-tests bootstrap behavior.
+- [x] Build succeeds: `pnpm build`, `pnpm typecheck`, `pnpm lint`, and `pnpm format:check` pass under pinned Node/pnpm.
+- [x] Manual check: no npm, yarn, monorepo framework, or duplicate package-level policy was introduced.
 
 **Dependencies:** Task 1
 
@@ -58,7 +58,7 @@ the normative pnpm commands consistently.
 - `tsconfig.base.json`
 - `eslint.config.mjs`
 - `prettier.config.mjs`
-- `vitest.workspace.ts`
+- `vitest.config.ts`
 
 **Estimated scope:** Medium: 3-5 files
 
@@ -92,7 +92,7 @@ run events, and provider-neutral evidence used across module boundaries.
 ## Checkpoint A: After Tasks 1-3
 
 - [x] `pnpm install --frozen-lockfile` succeeds from a clean checkout.
-- [ ] Root verification commands execute using the exact pinned toolchain.
+- [x] Root verification commands execute using the exact pinned toolchain.
 - [ ] Shared contracts build without importing an app or provider adapter.
 - [x] Human-approved plan plus Task 1 research establish the dependency and graph-renderer baseline.
 

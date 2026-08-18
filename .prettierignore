@@ -1,0 +1,9 @@
+.local/
+.next/
+coverage/
+dist/
+node_modules/
+playwright-report/
+pnpm-lock.yaml
+tasks/
+test-results/
