@@ -1,6 +1,13 @@
 import { pathToFileURL } from 'node:url'
 import { serve, type ServerType } from '@hono/node-server'
-import { openDatabase } from '@loop/execution-runtime'
+import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
+import {
+  createProcessRunner,
+  createProfileRepository,
+  createProjectProfileService,
+  createReadinessService,
+  openDatabase,
+} from '@loop/execution-runtime'
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
@@ -77,6 +84,16 @@ export const resolveApiServerConfiguration = (
   }
 }
 
+const configured = (value: string | undefined): boolean =>
+  value !== undefined && value.trim() !== ''
+
+export const resolveConnectorStatus = (environment: ApiEnvironment): ConnectorStatus =>
+  ConnectorStatusSchema.parse({
+    clickup: configured(environment.CLICKUP_API_TOKEN),
+    gitlab: configured(environment.GITLAB_TOKEN),
+    modelProvider: configured(environment.MODEL_PROVIDER_API_KEY),
+  })
+
 export const startApiServer = (input: {
   readonly app: Hono
   readonly configuration: ApiServerConfiguration
@@ -95,8 +112,27 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   } catch {
     database = undefined
   }
+  if (database === undefined) {
+    return startApiServer({ app: createApiApp({}), configuration })
+  }
+
+  const profileService = createProjectProfileService({
+    profiles: createProfileRepository(database),
+    runtimeMode: containerMode(environment.API_CONTAINER_MODE) ? 'container' : 'native',
+    workspaceRoot: environment.WORKSPACE_ROOT ?? '/workspace',
+  })
+  const redactedValues = [
+    environment.CLICKUP_API_TOKEN,
+    environment.GITLAB_TOKEN,
+    environment.MODEL_PROVIDER_API_KEY,
+  ].filter((value): value is string => configured(value))
+  const readiness = createReadinessService({
+    profiles: profileService,
+    processRunner: createProcessRunner({ maxOutputBytes: 65_536, redactedValues }),
+    connectors: () => resolveConnectorStatus(environment),
+  })
   return startApiServer({
-    app: createApiApp({ ...(database === undefined ? {} : { database }) }),
+    app: createApiApp({ database, profiles: profileService, readiness }),
     configuration,
   })
 }

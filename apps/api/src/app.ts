@@ -1,7 +1,14 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
-import type { WorkbenchDatabase } from '@loop/execution-runtime'
+import {
+  ProjectProfileServiceError,
+  type ProjectProfileService,
+  type ReadinessService,
+  type WorkbenchDatabase,
+} from '@loop/execution-runtime'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
+
+import { registerProjectProfileRoutes } from './routes/project-profiles.js'
 
 type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
 
@@ -27,6 +34,8 @@ export class ApiApplicationError extends Error {
 
 export interface CreateApiAppOptions {
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
+  readonly profiles?: ProjectProfileService
+  readonly readiness?: ReadinessService
 }
 
 export const parseJsonBody = async (context: Context): Promise<unknown> => {
@@ -78,11 +87,24 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
     }
   })
 
+  if (options.profiles !== undefined && options.readiness !== undefined) {
+    registerProjectProfileRoutes(app, {
+      profiles: options.profiles,
+      readiness: options.readiness,
+    })
+  }
+
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof ProjectProfileServiceError) {
+      return context.json(
+        errorBody({ code: error.code, message: error.message }),
+        error.code === 'PROFILE_NOT_FOUND' ? 404 : 400,
+      )
+    }
     if (error instanceof ApiApplicationError) {
       return context.json(
         errorBody({

@@ -56,6 +56,8 @@ export interface CreateProfileSnapshotInput {
 
 export interface ProfileRepository {
   save(profile: ProjectProfileConfiguration, timestamp: string): void
+  get(profileId: string): ProjectProfileConfiguration | undefined
+  list(): readonly ProjectProfileConfiguration[]
   createSnapshot(input: CreateProfileSnapshotInput): ProjectProfileSnapshot
   getSnapshot(snapshotId: string): ProjectProfileSnapshot | undefined
 }
@@ -89,9 +91,8 @@ interface RepositoryRow {
   readonly merge_request_labels_json: string
 }
 
-const parseRepository = (row: RepositoryRow): ProfileRepositorySnapshot => ({
+const configuredRepository = (row: RepositoryRow): ProfileRepositoryConfiguration => ({
   repositoryId: RepositoryIdSchema.parse(row.repository_id),
-  profilePosition: row.profile_position,
   displayName: row.display_name,
   purpose: row.purpose,
   repositoryPath: row.repository_path,
@@ -103,6 +104,12 @@ const parseRepository = (row: RepositoryRow): ProfileRepositorySnapshot => ({
   executableChecks: parseJson(row.executable_checks_json) as readonly JsonValue[],
   verificationCommands: parseJson(row.verification_commands_json) as readonly JsonValue[],
   mergeRequestLabels: parseJson(row.merge_request_labels_json) as readonly string[],
+})
+
+const parseRepository = (row: RepositoryRow): ProfileRepositorySnapshot => ({
+  ...configuredRepository(row),
+  repositoryId: RepositoryIdSchema.parse(row.repository_id),
+  profilePosition: row.profile_position,
 })
 
 const validateProfile = (profile: ProjectProfileConfiguration): void => {
@@ -129,6 +136,38 @@ const validateProfile = (profile: ProjectProfileConfiguration): void => {
 
 export const createProfileRepository = (database: WorkbenchDatabase): ProfileRepository => {
   const connection = getDatabaseHandle(database)
+
+  const get = (profileIdInput: string): ProjectProfileConfiguration | undefined => {
+    const profileId = ProjectProfileIdSchema.parse(profileIdInput)
+    const row = connection
+      .prepare(
+        `SELECT profile_id, display_name, clickup_workspace_id,
+                clickup_list_id, clickup_in_review_status_id
+         FROM project_profiles
+         WHERE profile_id = ?`,
+      )
+      .get(profileId) as ProfileRow | undefined
+    if (row === undefined) return undefined
+    const repositories = connection
+      .prepare(
+        `SELECT repository_id, profile_position, display_name, purpose,
+                repository_path, gitlab_project, remote, target_branch,
+                worktree_parent, branch_template, executable_checks_json,
+                verification_commands_json, merge_request_labels_json
+         FROM project_profile_repositories
+         WHERE profile_id = ?
+         ORDER BY profile_position`,
+      )
+      .all(profileId) as RepositoryRow[]
+    return {
+      profileId,
+      displayName: row.display_name,
+      clickupWorkspaceId: row.clickup_workspace_id,
+      clickupListId: row.clickup_list_id,
+      clickupInReviewStatusId: row.clickup_in_review_status_id,
+      repositories: repositories.map(configuredRepository),
+    }
+  }
 
   const getSnapshot = (snapshotId: string): ProjectProfileSnapshot | undefined => {
     const row = connection
@@ -245,6 +284,16 @@ export const createProfileRepository = (database: WorkbenchDatabase): ProfileRep
       } catch (cause) {
         throw mapPersistenceError(cause, 'Could not persist project profile')
       }
+    },
+
+    get,
+
+    list() {
+      const profileIds = connection
+        .prepare('SELECT profile_id FROM project_profiles ORDER BY profile_id')
+        .pluck()
+        .all() as string[]
+      return profileIds.map((profileId) => get(profileId) as ProjectProfileConfiguration)
     },
 
     createSnapshot(input) {

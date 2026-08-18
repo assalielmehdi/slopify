@@ -333,14 +333,14 @@ validated native/Compose paths, Git/tool/version checks, connector readiness,
 and CRUD/readiness endpoints without performing task-sourced work.
 
 **Acceptance criteria:**
-- [ ] Profiles reject empty/duplicate catalogs and preserve stable repository order and IDs.
-- [ ] Readiness returns repository-addressable filesystem, Git, tool, ClickUp, GitLab, and model-provider findings without secret values.
-- [ ] Compose-mode paths outside `/workspace` and unbounded/interpolated checks are rejected.
+- [x] Profiles reject empty/duplicate catalogs and preserve stable repository order and IDs.
+- [x] Readiness returns repository-addressable filesystem, Git, tool, ClickUp, GitLab, and model-provider findings without secret values.
+- [x] Compose-mode paths outside `/workspace` and unbounded/interpolated checks are rejected.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- project-profile readiness && pnpm --filter @loop/api test -- profiles connectors`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/api build`
-- [ ] Manual check: exercise missing path, wrong remote, missing executable, incompatible version, and absent credential fixtures.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- project-profile readiness && pnpm --filter @loop/api test -- profiles connectors`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/api build`
+- [x] Manual check: exercise missing path, wrong remote, missing executable, incompatible version, and absent credential fixtures.
 
 **Dependencies:** Tasks 8, 10, and 11
 
@@ -355,9 +355,9 @@ and CRUD/readiness endpoints without performing task-sourced work.
 
 ## Checkpoint C2: After Tasks 10-12
 
-- [ ] Process timeout/cancel and descendant cleanup tests pass.
-- [ ] API health remains distinct from connector/profile readiness.
-- [ ] Profile ordering, snapshots, path boundaries, and required-tool findings are proven.
+- [x] Process timeout/cancel and descendant cleanup tests pass.
+- [x] API health remains distinct from connector/profile readiness.
+- [x] Profile ordering, snapshots, path boundaries, and required-tool findings are proven.
 
 ## Task 13: Expose run creation, inspection, pagination, and SSE
 

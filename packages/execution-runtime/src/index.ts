@@ -92,3 +92,16 @@ export {
   type ProcessRunResult,
   type ProcessRunner,
 } from './processes/process-runner.js'
+export {
+  ProjectProfileServiceError,
+  createProjectProfileService,
+  type CreateProjectProfileServiceOptions,
+  type ProjectProfileService,
+  type ProjectProfileServiceErrorCode,
+} from './services/project-profile-service.js'
+export {
+  createReadinessService,
+  type CreateReadinessServiceOptions,
+  type ReadinessFilesystem,
+  type ReadinessService,
+} from './services/readiness-service.js'

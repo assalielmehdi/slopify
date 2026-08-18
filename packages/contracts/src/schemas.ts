@@ -68,6 +68,65 @@ export const RepositoryReferenceSchema = z.strictObject({
   access: z.enum(['read-only', 'workspace-write']),
 })
 
+const configuredCommand = z.strictObject({
+  executable: z.string().trim().min(1).max(1_024),
+  arguments: z.array(z.string().max(4_096)).max(64).readonly(),
+})
+
+export const ExecutableCheckConfigurationSchema = configuredCommand.extend({
+  expectedOutputIncludes: z.string().min(1).max(512).optional(),
+})
+
+export const VerificationCommandConfigurationSchema = configuredCommand
+
+export const ProfileRepositoryConfigurationSchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
+  displayName: z.string().trim().min(1).max(256),
+  purpose: z.string().trim().min(1).max(2_048),
+  repositoryPath: z.string().trim().min(1).max(4_096),
+  gitlabProject: z.string().trim().min(1).max(512),
+  remote: z.string().trim().min(1).max(256),
+  targetBranch: z.string().trim().min(1).max(512),
+  worktreeParent: z.string().trim().min(1).max(4_096),
+  branchTemplate: z.string().trim().min(1).max(512),
+  executableChecks: z.array(ExecutableCheckConfigurationSchema).max(16).readonly(),
+  verificationCommands: z.array(VerificationCommandConfigurationSchema).max(32).readonly(),
+  mergeRequestLabels: z.array(z.string().trim().min(1).max(256)).max(32).readonly(),
+})
+
+export const ProjectProfileConfigurationSchema = z.strictObject({
+  profileId: ProjectProfileIdSchema,
+  displayName: z.string().trim().min(1).max(256),
+  clickupWorkspaceId: z.string().trim().min(1).max(256),
+  clickupListId: z.string().trim().min(1).max(256),
+  clickupInReviewStatusId: z.string().trim().min(1).max(256),
+  repositories: z.array(ProfileRepositoryConfigurationSchema).min(1).max(32).readonly(),
+})
+
+export const ConnectorStatusSchema = z.strictObject({
+  clickup: z.boolean(),
+  gitlab: z.boolean(),
+  modelProvider: z.boolean(),
+})
+
+const ReadinessFindingSchema = z.strictObject({
+  category: z.enum(['filesystem', 'git', 'tool', 'clickup', 'gitlab', 'model-provider']),
+  code: errorCode,
+  message,
+})
+
+export const ProjectProfileReadinessSchema = z.strictObject({
+  profileId: ProjectProfileIdSchema,
+  ready: z.boolean(),
+  repositories: z.array(
+    z.strictObject({
+      repositoryId: RepositoryIdSchema,
+      ready: z.boolean(),
+      findings: z.array(ReadinessFindingSchema).readonly(),
+    }),
+  ),
+})
+
 const runEventBase = z.strictObject({
   runId: RunIdSchema,
   sequence: z.number().int().positive().safe(),
@@ -187,4 +246,12 @@ export type ApiError = z.infer<typeof ApiErrorSchema>
 export type HealthResponse = z.infer<typeof HealthResponseSchema>
 export type Evidence = z.infer<typeof EvidenceSchema>
 export type RepositoryReference = z.infer<typeof RepositoryReferenceSchema>
+export type ExecutableCheckConfiguration = z.infer<typeof ExecutableCheckConfigurationSchema>
+export type VerificationCommandConfiguration = z.infer<
+  typeof VerificationCommandConfigurationSchema
+>
+export type ProfileRepositoryConfiguration = z.infer<typeof ProfileRepositoryConfigurationSchema>
+export type ProjectProfileConfiguration = z.infer<typeof ProjectProfileConfigurationSchema>
+export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
+export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
 export type RunEvent = z.infer<typeof RunEventSchema>

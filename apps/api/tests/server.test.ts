@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
+  resolveConnectorStatus,
   resolveApiServerConfiguration,
   startApiServer,
 } from '../src/server.js'
@@ -70,5 +71,17 @@ describe('API server configuration', () => {
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error === undefined ? resolve() : reject(error)))
     })
+  })
+
+  it('reduces connector credentials to non-secret readiness booleans', () => {
+    const status = resolveConnectorStatus({
+      CLICKUP_API_TOKEN: 'clickup-secret',
+      GITLAB_TOKEN: '',
+      MODEL_PROVIDER_API_KEY: 'provider-secret',
+    })
+
+    expect(status).toEqual({ clickup: true, gitlab: false, modelProvider: true })
+    expect(JSON.stringify(status)).not.toContain('clickup-secret')
+    expect(JSON.stringify(status)).not.toContain('provider-secret')
   })
 })
