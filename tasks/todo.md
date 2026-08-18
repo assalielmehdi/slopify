@@ -427,14 +427,14 @@ read-only API operation that returns the immutable task snapshot used to
 confirm and start a run.
 
 **Acceptance criteria:**
-- [ ] A supported ID and URL resolve to the same validated canonical task identity and resource links.
-- [ ] Authentication, timeout, missing task, pagination, and malformed responses map to stable sanitized errors.
-- [ ] Task descriptions/comments remain untrusted text and are never interpreted as executable commands.
+- [x] A supported ID and URL resolve to the same validated canonical task identity and resource links.
+- [x] Authentication, timeout, missing task, pagination, and malformed responses map to stable sanitized errors.
+- [x] Task descriptions/comments remain untrusted text and are never interpreted as executable commands.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/clickup-artifacts test -- task-reference client`
-- [ ] Build succeeds: `pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/clickup-artifacts typecheck`
-- [ ] Manual check: run fixture responses containing shell-like content and confirm they remain inert strings.
+- [x] Tests pass: `pnpm --filter @loop/clickup-artifacts test -- task-reference client`
+- [x] Build succeeds: `pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/clickup-artifacts typecheck`
+- [x] Manual check: run fixture responses containing shell-like content and confirm they remain inert strings.
 
 **Dependencies:** Tasks 3 and 11
 
