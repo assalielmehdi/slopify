@@ -1,5 +1,11 @@
 export type ClickUpClientOperation = 'CONFIGURE' | 'GET_TASK' | 'LIST_COMMENTS'
 
+export type ClickUpArtifactOperation =
+  'CONFIGURE_ARTIFACTS' | 'GET_ARTIFACT' | 'LIST_ARTIFACTS' | 'PUBLISH_ARTIFACT' | 'RENDER_ARTIFACT'
+
+export type ClickUpArtifactErrorCode =
+  'ARTIFACT_AMBIGUOUS' | 'ARTIFACT_INPUT_INVALID' | 'ARTIFACT_NOT_FOUND' | 'COMMENT_REJECTED'
+
 export type ClickUpClientErrorCode =
   | 'CLIENT_CONFIGURATION_INVALID'
   | 'INVALID_RESPONSE'
@@ -21,6 +27,13 @@ const messages: Readonly<Record<ClickUpClientErrorCode, string>> = {
   UNAUTHORIZED: 'ClickUp authorization failed',
 }
 
+const artifactMessages: Readonly<Record<ClickUpArtifactErrorCode, string>> = {
+  ARTIFACT_AMBIGUOUS: 'Multiple exact ClickUp artifacts were found',
+  ARTIFACT_INPUT_INVALID: 'ClickUp artifact input is invalid',
+  ARTIFACT_NOT_FOUND: 'ClickUp artifact was not found',
+  COMMENT_REJECTED: 'ClickUp artifact comment was rejected',
+}
+
 export class ClickUpClientError extends Error {
   override readonly name = 'ClickUpClientError'
 
@@ -29,5 +42,16 @@ export class ClickUpClientError extends Error {
     readonly operation: ClickUpClientOperation,
   ) {
     super(messages[code])
+  }
+}
+
+export class ClickUpArtifactError extends Error {
+  override readonly name = 'ClickUpArtifactError'
+
+  constructor(
+    readonly code: ClickUpArtifactErrorCode,
+    readonly operation: ClickUpArtifactOperation,
+  ) {
+    super(artifactMessages[code])
   }
 }

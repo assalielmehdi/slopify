@@ -1,4 +1,13 @@
 export {
+  createArtifactEnvelopeCodec,
+  type ArtifactEnvelope,
+  type ArtifactEnvelopeCodec,
+  type ArtifactEnvelopeInput,
+  type ArtifactEnvelopeParseResult,
+  type ArtifactProducerPolicy,
+  type ArtifactStatus,
+} from './artifact-envelope.js'
+export {
   createClickUpClient,
   type ClickUpResourceLink,
   type ClickUpTaskClient,
@@ -9,7 +18,10 @@ export {
   type CreateClickUpClientOptions,
 } from './client.js'
 export {
+  ClickUpArtifactError,
   ClickUpClientError,
+  type ClickUpArtifactErrorCode,
+  type ClickUpArtifactOperation,
   type ClickUpClientErrorCode,
   type ClickUpClientOperation,
 } from './errors.js'
