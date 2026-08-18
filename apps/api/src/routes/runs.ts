@@ -25,10 +25,7 @@ export const registerRunRoutes = (app: Hono, runs: RunService): void => {
   })
 
   app.get('/api/runs/:runId/nodes/:nodeId/source', (context) =>
-    context.json(
-      runs.getNodeSource(context.req.param('runId'), context.req.param('nodeId')),
-      200,
-    ),
+    context.json(runs.getNodeSource(context.req.param('runId'), context.req.param('nodeId')), 200),
   )
 
   app.get('/api/runs/:runId', (context) => {

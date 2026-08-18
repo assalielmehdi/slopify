@@ -127,9 +127,9 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
           ? 409
           : error.code === 'RUN_REQUEST_INVALID'
             ? 400
-          : error.code === 'PROFILE_NOT_READY' || error.code === 'TASK_RESOLUTION_FAILED'
-            ? 422
-            : 404
+            : error.code === 'PROFILE_NOT_READY' || error.code === 'TASK_RESOLUTION_FAILED'
+              ? 422
+              : 404
       return context.json(
         errorBody({
           code: error.code,

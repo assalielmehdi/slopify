@@ -46,10 +46,7 @@ const definedChanges = (
   Object.fromEntries(Object.entries(changes).filter((entry) => entry[1] !== undefined))
 
 export type WorkflowServiceErrorCode =
-  | 'REVISION_CONFLICT'
-  | 'REVISION_INVALID'
-  | 'WORKFLOW_NOT_FOUND'
-  | 'WORKFLOW_REQUEST_INVALID'
+  'REVISION_CONFLICT' | 'REVISION_INVALID' | 'WORKFLOW_NOT_FOUND' | 'WORKFLOW_REQUEST_INVALID'
 
 export class WorkflowServiceError extends Error {
   override readonly name = 'WorkflowServiceError'

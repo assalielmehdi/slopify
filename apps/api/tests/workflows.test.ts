@@ -53,18 +53,15 @@ describe('workflow API', () => {
   it('creates a validated derived revision without changing its parent', async () => {
     const { fixture, app } = createFixture()
 
-    const response = await app.request(
-      `/api/workflows/${fixture.revision.workflowId}/revisions`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          parentRevisionId: fixture.revision.revisionId,
-          revisionId: 'revision-02',
-          updates: [{ nodeId: 'plan', changes: { model: 'test-model-v2' } }],
-        }),
-      },
-    )
+    const response = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        parentRevisionId: fixture.revision.revisionId,
+        revisionId: 'revision-02',
+        updates: [{ nodeId: 'plan', changes: { model: 'test-model-v2' } }],
+      }),
+    })
     const created = (await response.json()) as typeof fixture.revision
     const parent = fixture.workflows.getRevision({
       workflowId: fixture.revision.workflowId,
@@ -88,26 +85,20 @@ describe('workflow API', () => {
   it('maps malformed and semantically invalid revision requests to stable errors', async () => {
     const { fixture, app } = createFixture()
 
-    const malformed = await app.request(
-      `/api/workflows/${fixture.revision.workflowId}/revisions`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ parentRevisionId: fixture.revision.revisionId }),
-      },
-    )
-    const invalid = await app.request(
-      `/api/workflows/${fixture.revision.workflowId}/revisions`,
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          parentRevisionId: fixture.revision.revisionId,
-          revisionId: 'revision-02',
-          updates: [{ nodeId: 'verify', changes: { model: 'not-allowed' } }],
-        }),
-      },
-    )
+    const malformed = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ parentRevisionId: fixture.revision.revisionId }),
+    })
+    const invalid = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        parentRevisionId: fixture.revision.revisionId,
+        revisionId: 'revision-02',
+        updates: [{ nodeId: 'verify', changes: { model: 'not-allowed' } }],
+      }),
+    })
 
     expect(malformed.status).toBe(400)
     expect(await malformed.json()).toMatchObject({

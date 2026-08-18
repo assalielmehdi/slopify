@@ -9,7 +9,10 @@ import type { WorkflowRevision } from '@loop/workflow-model'
 
 import type { EventStore } from '../events/event-store.js'
 import type { JsonValue } from '../persistence/json.js'
-import type { ProfileRepository, ProjectProfileSnapshot } from '../persistence/profile-repository.js'
+import type {
+  ProfileRepository,
+  ProjectProfileSnapshot,
+} from '../persistence/profile-repository.js'
 import type {
   DeliveryEvidence,
   NodeExecutionRecord,

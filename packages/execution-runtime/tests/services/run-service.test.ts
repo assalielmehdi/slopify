@@ -103,10 +103,12 @@ describe('run service admission', () => {
     const { service } = createServiceFixture()
     const active = await service.create(createInput)
 
-    await expect(service.create({ ...createInput, taskReference: 'TASK-2' })).rejects.toMatchObject({
-      code: 'RUN_ACTIVE',
-      activeRunId: active.runId,
-    } satisfies Partial<RunServiceError>)
+    await expect(service.create({ ...createInput, taskReference: 'TASK-2' })).rejects.toMatchObject(
+      {
+        code: 'RUN_ACTIVE',
+        activeRunId: active.runId,
+      } satisfies Partial<RunServiceError>,
+    )
 
     expect(service.list({ page: 1, pageSize: 20 })).toMatchObject({
       data: [expect.objectContaining({ runId: active.runId, status: active.status })],

@@ -34,22 +34,24 @@ export interface CreateRunEventFeedOptions {
 
 const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'INTERRUPTED'])
 
-const waitForPoll = (milliseconds: number) => (signal: AbortSignal): Promise<void> => {
-  if (signal.aborted) return Promise.resolve()
-  return new Promise((resolve) => {
-    const onAbort = (): void => {
-      clearTimeout(timeout)
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }
-    const timeout = setTimeout(() => {
-      signal.removeEventListener('abort', onAbort)
-      resolve()
-    }, milliseconds)
-    signal.addEventListener('abort', onAbort, { once: true })
-    if (signal.aborted) onAbort()
-  })
-}
+const waitForPoll =
+  (milliseconds: number) =>
+  (signal: AbortSignal): Promise<void> => {
+    if (signal.aborted) return Promise.resolve()
+    return new Promise((resolve) => {
+      const onAbort = (): void => {
+        clearTimeout(timeout)
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }
+      const timeout = setTimeout(() => {
+        signal.removeEventListener('abort', onAbort)
+        resolve()
+      }, milliseconds)
+      signal.addEventListener('abort', onAbort, { once: true })
+      if (signal.aborted) onAbort()
+    })
+  }
 
 export const createRunEventFeed = (options: CreateRunEventFeedOptions): RunEventFeed => {
   const pageSize = options.pageSize ?? 100
@@ -67,10 +69,7 @@ export const createRunEventFeed = (options: CreateRunEventFeedOptions): RunEvent
       const runId: RunId = RunIdSchema.parse(input.runId)
       const afterSequence = input.afterSequence ?? 0
       if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) {
-        throw new RunEventFeedError(
-          'RUN_EVENT_CURSOR_INVALID',
-          'Run event cursor is invalid',
-        )
+        throw new RunEventFeedError('RUN_EVENT_CURSOR_INVALID', 'Run event cursor is invalid')
       }
       if (options.runs.get(runId) === undefined) {
         throw new RunEventFeedError('RUN_NOT_FOUND', 'Run was not found')

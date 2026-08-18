@@ -1,11 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { RunEventFeedError, createRunEventFeed } from '../../src/index.js'
-import {
-  TEST_RUN_ID,
-  createPersistenceFixture,
-  createRun,
-} from '../persistence/test-fixture.js'
+import { TEST_RUN_ID, createPersistenceFixture, createRun } from '../persistence/test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
 

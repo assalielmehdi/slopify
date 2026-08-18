@@ -18,15 +18,8 @@ export const registerRunEventRoutes = (app: Hono, eventFeed: RunEventFeed): void
   app.get('/api/runs/:runId/events', (context) => {
     const queryCursor = cursor(context.req.query('afterSequence'))
     const headerCursor = cursor(context.req.header('Last-Event-ID'))
-    if (
-      queryCursor !== undefined &&
-      headerCursor !== undefined &&
-      queryCursor !== headerCursor
-    ) {
-      throw new RunEventFeedError(
-        'RUN_EVENT_CURSOR_INVALID',
-        'Run event cursors must not conflict',
-      )
+    if (queryCursor !== undefined && headerCursor !== undefined && queryCursor !== headerCursor) {
+      throw new RunEventFeedError('RUN_EVENT_CURSOR_INVALID', 'Run event cursors must not conflict')
     }
     const controller = new AbortController()
     const events = eventFeed.subscribe({
