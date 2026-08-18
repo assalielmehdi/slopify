@@ -8,6 +8,7 @@ import {
   WorkflowIdSchema,
 } from '@loop/contracts'
 import { createPredefinedV1Revision } from '@loop/workflow-model'
+import type { WorkflowRevision } from '@loop/workflow-model'
 
 import {
   createEventStore,
@@ -75,7 +76,7 @@ export const TEST_PROFILE = {
   ],
 } as const
 
-export const createPersistenceFixture = () => {
+export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
   const directory = join(tmpdir(), `slopify-repositories-${crypto.randomUUID()}`)
   const path = join(directory, 'state', 'workbench.sqlite')
   const database = openDatabase({ path })
@@ -83,15 +84,17 @@ export const createPersistenceFixture = () => {
   const profiles = createProfileRepository(database)
   const runs = createRunRepository(database)
   const events = createEventStore(database)
-  const revision = createPredefinedV1Revision({
-    revisionId: TEST_REVISION_ID,
-    createdAt: TEST_TIMESTAMP,
-    agentDefaults: {
-      provider: 'test-provider',
-      model: 'test-model',
-      thinkingLevel: 'medium',
-    },
-  })
+  const revision =
+    revisionInput ??
+    createPredefinedV1Revision({
+      revisionId: TEST_REVISION_ID,
+      createdAt: TEST_TIMESTAMP,
+      agentDefaults: {
+        provider: 'test-provider',
+        model: 'test-model',
+        thinkingLevel: 'medium',
+      },
+    })
 
   workflows.addRevision(revision)
   profiles.save(TEST_PROFILE, TEST_TIMESTAMP)

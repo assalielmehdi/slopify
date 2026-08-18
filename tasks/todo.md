@@ -246,14 +246,14 @@ validated result handling, edge selection, terminal handling, and maximum-
 transition enforcement without provider-specific logic.
 
 **Acceptance criteria:**
-- [ ] The engine activates only the legal next node after persisting the validated result and selected edge.
-- [ ] Unknown, missing, ambiguous, malformed, timed-out, or executor-failed results stop visibly rather than becoming business outcomes.
-- [ ] Terminal, blocked, and transition-limit paths produce truthful run and node states.
+- [x] The engine activates only the legal next node after persisting the validated result and selected edge.
+- [x] Unknown, missing, ambiguous, malformed, timed-out, or executor-failed results stop visibly rather than becoming business outcomes.
+- [x] Terminal, blocked, and transition-limit paths produce truthful run and node states.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- engine routing`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/execution-runtime lint`
-- [ ] Manual check: trace a clean path and a bounded cycle through persisted event sequences.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- engine routing` executes all 72 runtime tests.
+- [x] Build succeeds: package and root build, typecheck, lint, test, and format gates pass under pinned Node/pnpm.
+- [x] Manual check: the clean trace selects one edge before terminal completion; the cycle persists exactly two edges before the transition-limit failure.
 
 **Dependencies:** Tasks 6 and 8
 
@@ -268,9 +268,9 @@ transition enforcement without provider-specific logic.
 
 ## Checkpoint C1: After Tasks 7-9
 
-- [ ] SQLite migration, transaction, event-ordering, and restart-open tests pass.
-- [ ] A provider-free fake graph reaches success, failure, and transition-limit terminal states.
-- [ ] No executor can bypass graph routing or persist an undeclared outcome.
+- [x] SQLite migration, transaction, event-ordering, and restart-open tests pass.
+- [x] A provider-free fake graph reaches success, failure, and transition-limit terminal states.
+- [x] No executor can bypass graph routing or persist an undeclared outcome.
 
 ## Task 10: Run bounded deterministic child processes truthfully
 

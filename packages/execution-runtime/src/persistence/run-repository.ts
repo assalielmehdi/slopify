@@ -97,6 +97,37 @@ export interface CompleteNodeInput {
   readonly timestamp: string
 }
 
+export interface CompleteNodeAndSelectEdgeInput extends CompleteNodeInput {
+  readonly targetNodeId: string
+}
+
+export interface CompletedNodeRoute {
+  readonly completionEvent: RunEvent
+  readonly edgeEvent: RunEvent
+  readonly transitionCount: number
+}
+
+export interface FailNodeAndRunInput {
+  readonly runId: RunId
+  readonly nodeExecutionId: string
+  readonly nodeId: string
+  readonly nodeStatus: 'FAILED' | 'CANCELLED'
+  readonly runStatus: 'FAILED' | 'CANCELLED'
+  readonly code: string
+  readonly message: string
+  readonly nodeDurationMs: number
+  readonly runDurationMs: number
+  readonly timestamp: string
+}
+
+export interface CompleteRunInput {
+  readonly runId: RunId
+  readonly expectedStatus: RunStatus
+  readonly status: 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'INTERRUPTED'
+  readonly durationMs: number
+  readonly timestamp: string
+}
+
 export interface SelectedRepositoryInput {
   readonly repositoryId: string
   readonly rationale: string
@@ -206,6 +237,9 @@ export interface RunRepository {
   recordOutput(input: RecordOutputInput): RunEvent
   recordArtifact(input: RecordArtifactInput): RunEvent
   completeNode(input: CompleteNodeInput): RunEvent
+  completeNodeAndSelectEdge(input: CompleteNodeAndSelectEdgeInput): CompletedNodeRoute
+  failNodeAndRun(input: FailNodeAndRunInput): RunRecord
+  completeRun(input: CompleteRunInput): RunRecord
   selectRepositories(input: SelectRepositoriesInput): readonly PersistedRepositorySelection[]
   listSelections(runId: RunId): readonly PersistedRepositorySelection[]
   getRepositorySelection(runId: RunId): RepositorySelectionSnapshot | undefined
@@ -748,6 +782,258 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       } catch (cause) {
         throw mapPersistenceError(cause, 'Could not complete node execution')
       }
+    },
+
+    completeNodeAndSelectEdge(input) {
+      const runId = RunIdSchema.parse(input.runId)
+      const nodeId = NodeIdSchema.parse(input.nodeId)
+      const targetNodeId = NodeIdSchema.parse(input.targetNodeId)
+      const outcome = OutcomeNameSchema.parse(input.outcome)
+      const artifactIds = input.artifactIds.map((artifactId) => ArtifactIdSchema.parse(artifactId))
+      if (!Number.isSafeInteger(input.durationMs) || input.durationMs < 0) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_VALIDATION_FAILED',
+          message: 'Node duration must be a non-negative safe integer',
+          details: { field: 'durationMs' },
+        })
+      }
+      const outputJson = serializeJson(input.output, 'output')
+
+      try {
+        return connection
+          .transaction(() => {
+            const nodeResult = connection
+              .prepare(
+                `UPDATE node_executions
+                 SET status = 'SUCCEEDED', output_json = ?, outcome = ?,
+                     selected_target_node_id = ?, completed_at = ?, duration_ms = ?
+                 WHERE run_id = ? AND node_execution_id = ?
+                   AND node_id = ? AND status = 'RUNNING'`,
+              )
+              .run(
+                outputJson,
+                outcome,
+                targetNodeId,
+                input.timestamp,
+                input.durationMs,
+                runId,
+                input.nodeExecutionId,
+                nodeId,
+              )
+            if (nodeResult.changes !== 1) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_CONFLICT',
+                message: 'Node execution is not running',
+                details: { runId, nodeExecutionId: input.nodeExecutionId },
+              })
+            }
+            const runResult = connection
+              .prepare(
+                `UPDATE runs
+                 SET current_node_id = ?, transition_count = transition_count + 1
+                 WHERE run_id = ? AND status = 'RUNNING'`,
+              )
+              .run(targetNodeId, runId)
+            if (runResult.changes !== 1) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_CONFLICT',
+                message: 'Run is not running',
+                details: { runId },
+              })
+            }
+
+            const completionEvent = appendEvent(
+              connection,
+              runId,
+              {
+                type: 'NODE_COMPLETED',
+                nodeId,
+                timestamp: input.timestamp,
+                data: { outcome, durationMs: input.durationMs, artifactIds },
+              },
+              input.nodeExecutionId,
+            )
+            const edgeEvent = appendEvent(
+              connection,
+              runId,
+              {
+                type: 'EDGE_SELECTED',
+                nodeId,
+                timestamp: input.timestamp,
+                data: { outcome, targetNodeId },
+              },
+              input.nodeExecutionId,
+            )
+            const transitionCount = connection
+              .prepare('SELECT transition_count FROM runs WHERE run_id = ?')
+              .pluck()
+              .get(runId)
+            if (typeof transitionCount !== 'number') {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_READ_FAILED',
+                message: 'Updated run transition count could not be read',
+              })
+            }
+
+            return { completionEvent, edgeEvent, transitionCount }
+          })
+          .immediate()
+      } catch (cause) {
+        throw mapPersistenceError(cause, 'Could not complete and route node execution')
+      }
+    },
+
+    failNodeAndRun(input) {
+      const runId = RunIdSchema.parse(input.runId)
+      const nodeId = NodeIdSchema.parse(input.nodeId)
+      if (
+        !Number.isSafeInteger(input.nodeDurationMs) ||
+        input.nodeDurationMs < 0 ||
+        !Number.isSafeInteger(input.runDurationMs) ||
+        input.runDurationMs < 0
+      ) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_VALIDATION_FAILED',
+          message: 'Failure durations must be non-negative safe integers',
+        })
+      }
+
+      try {
+        connection
+          .transaction(() => {
+            const nodeResult = connection
+              .prepare(
+                `UPDATE node_executions
+                 SET status = ?, error_code = ?, error_message = ?,
+                     completed_at = ?, duration_ms = ?
+                 WHERE run_id = ? AND node_execution_id = ?
+                   AND node_id = ? AND status = 'RUNNING'`,
+              )
+              .run(
+                input.nodeStatus,
+                input.code,
+                input.message,
+                input.timestamp,
+                input.nodeDurationMs,
+                runId,
+                input.nodeExecutionId,
+                nodeId,
+              )
+            if (nodeResult.changes !== 1) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_CONFLICT',
+                message: 'Node execution is not running',
+                details: { runId, nodeExecutionId: input.nodeExecutionId },
+              })
+            }
+            const runResult = connection
+              .prepare(
+                `UPDATE runs
+                 SET status = ?, completed_at = ?
+                 WHERE run_id = ? AND status = 'RUNNING'`,
+              )
+              .run(input.runStatus, input.timestamp, runId)
+            if (runResult.changes !== 1) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_CONFLICT',
+                message: 'Run is not running',
+                details: { runId },
+              })
+            }
+
+            appendEvent(
+              connection,
+              runId,
+              {
+                type: 'NODE_FAILED',
+                nodeId,
+                timestamp: input.timestamp,
+                data: {
+                  code: input.code,
+                  message: input.message,
+                  durationMs: input.nodeDurationMs,
+                },
+              },
+              input.nodeExecutionId,
+            )
+            appendEvent(connection, runId, {
+              type: 'RUN_STATUS_CHANGED',
+              timestamp: input.timestamp,
+              data: { from: 'RUNNING', to: input.runStatus },
+            })
+            appendEvent(connection, runId, {
+              type: 'RUN_COMPLETED',
+              timestamp: input.timestamp,
+              data: { status: input.runStatus, durationMs: input.runDurationMs },
+            })
+          })
+          .immediate()
+      } catch (cause) {
+        throw mapPersistenceError(cause, 'Could not fail node execution and run')
+      }
+
+      const failedRun = get(runId)
+      if (failedRun === undefined) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_READ_FAILED',
+          message: 'Failed run could not be read',
+        })
+      }
+      return failedRun
+    },
+
+    completeRun(input) {
+      const runId = RunIdSchema.parse(input.runId)
+      const expectedStatus = RunStatusSchema.parse(input.expectedStatus)
+      if (!Number.isSafeInteger(input.durationMs) || input.durationMs < 0) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_VALIDATION_FAILED',
+          message: 'Run duration must be a non-negative safe integer',
+          details: { field: 'durationMs' },
+        })
+      }
+
+      try {
+        connection
+          .transaction(() => {
+            const result = connection
+              .prepare(
+                `UPDATE runs
+                 SET status = ?, completed_at = ?
+                 WHERE run_id = ? AND status = ?`,
+              )
+              .run(input.status, input.timestamp, runId, expectedStatus)
+            if (result.changes !== 1) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_CONFLICT',
+                message: 'Run status does not match the expected state',
+                details: { runId, expectedStatus },
+              })
+            }
+            appendEvent(connection, runId, {
+              type: 'RUN_STATUS_CHANGED',
+              timestamp: input.timestamp,
+              data: { from: expectedStatus, to: input.status },
+            })
+            appendEvent(connection, runId, {
+              type: 'RUN_COMPLETED',
+              timestamp: input.timestamp,
+              data: { status: input.status, durationMs: input.durationMs },
+            })
+          })
+          .immediate()
+      } catch (cause) {
+        throw mapPersistenceError(cause, 'Could not complete run')
+      }
+
+      const completedRun = get(runId)
+      if (completedRun === undefined) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_READ_FAILED',
+          message: 'Completed run could not be read',
+        })
+      }
+      return completedRun
     },
 
     selectRepositories(input) {

@@ -26,11 +26,15 @@ export {
 export {
   createRunRepository,
   type ChangeRunStatusInput,
+  type CompleteNodeAndSelectEdgeInput,
   type CompleteNodeInput,
+  type CompletedNodeRoute,
+  type CompleteRunInput,
   type CreateRunInput,
   type DeliveryEvidence,
   type DeliveryEvidenceStatus,
   type ExcludedRepositoryInput,
+  type FailNodeAndRunInput,
   type OutputChunk,
   type PersistedArtifact,
   type PersistedExcludedRepository,
@@ -52,3 +56,27 @@ export {
   type WorkflowRepository,
   type WorkflowRevisionReference,
 } from './persistence/workflow-repository.js'
+export {
+  createRunEngine,
+  type CreateRunEngineOptions,
+  type EngineFailure,
+  type RunEngine,
+  type RunEngineResult,
+} from './engine/run-engine.js'
+export {
+  EngineError,
+  NodeResultSchema,
+  isNodeTransitionAllowed,
+  isRunTransitionAllowed,
+  parseNodeResult,
+  resolveNextEdge,
+  type EngineErrorCode,
+  type NodeResult,
+} from './engine/state-machine.js'
+export {
+  createExecutorRegistry,
+  type ExecutorRegistry,
+  type ExecutorRegistryOptions,
+  type NodeExecutionContext,
+  type NodeExecutor,
+} from './executors/registry.js'
