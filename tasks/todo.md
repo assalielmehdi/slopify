@@ -103,14 +103,14 @@ workflow definitions, immutable revisions, all four node variants, finite
 outcomes, labeled edges, and the global transition bound.
 
 **Acceptance criteria:**
-- [ ] Agent, command, router, and terminal variants parse through an exhaustive discriminated union.
-- [ ] IDs and outcome names enforce kebab-case and required variant fields.
-- [ ] Valid and invalid public fixtures act as compatibility contracts.
+- [x] Agent, command, router, and terminal variants parse through an exhaustive discriminated union.
+- [x] Node IDs and outcome names enforce kebab-case and every variant requires its declared fields.
+- [x] Valid and invalid public fixtures act as compatibility contracts, including deeply frozen parsed revisions.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/workflow-model test -- schemas`
-- [ ] Build succeeds: `pnpm --filter @loop/workflow-model build && pnpm --filter @loop/workflow-model typecheck`
-- [ ] Manual check: confirm the workflow document has no configurable agent-harness field.
+- [x] Tests pass: `pnpm --filter @loop/workflow-model test -- schemas` executes all 25 workflow-schema tests.
+- [x] Build succeeds: focused and root build, typecheck, lint, test, and format gates pass from a clean copy under pinned Node/pnpm.
+- [x] Manual check: the built public schema parses a frozen revision and source inspection confirms no configurable agent-harness or secret field.
 
 **Dependencies:** Task 3
 
