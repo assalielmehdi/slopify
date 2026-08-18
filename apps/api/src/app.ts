@@ -1,14 +1,17 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
 import {
   ProjectProfileServiceError,
+  WorkflowServiceError,
   type ProjectProfileService,
   type ReadinessService,
   type WorkbenchDatabase,
+  type WorkflowService,
 } from '@loop/execution-runtime'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { registerProjectProfileRoutes } from './routes/project-profiles.js'
+import { registerWorkflowRoutes } from './routes/workflows.js'
 
 type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
 
@@ -36,6 +39,7 @@ export interface CreateApiAppOptions {
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly profiles?: ProjectProfileService
   readonly readiness?: ReadinessService
+  readonly workflows?: WorkflowService
 }
 
 export const parseJsonBody = async (context: Context): Promise<unknown> => {
@@ -94,11 +98,31 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
     })
   }
 
+  if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
+
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof WorkflowServiceError) {
+      const status =
+        error.code === 'WORKFLOW_NOT_FOUND'
+          ? 404
+          : error.code === 'REVISION_CONFLICT'
+            ? 409
+            : error.code === 'REVISION_INVALID'
+              ? 422
+              : 400
+      return context.json(
+        errorBody({
+          code: error.code,
+          message: error.message,
+          ...(error.details === undefined ? {} : { details: error.details }),
+        }),
+        status,
+      )
+    }
     if (error instanceof ProjectProfileServiceError) {
       return context.json(
         errorBody({ code: error.code, message: error.message }),

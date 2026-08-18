@@ -121,3 +121,10 @@ export {
   type RunSummaryPage,
   type RunTaskResolver,
 } from './services/run-service.js'
+export {
+  WorkflowServiceError,
+  createWorkflowService,
+  type WorkflowCatalogEntry,
+  type WorkflowService,
+  type WorkflowServiceErrorCode,
+} from './services/workflow-service.js'

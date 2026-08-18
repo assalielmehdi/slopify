@@ -13,6 +13,7 @@ export interface WorkflowRevisionReference {
 export interface WorkflowRepository {
   addRevision(revision: WorkflowRevision): void
   getRevision(reference: WorkflowRevisionReference): WorkflowRevision | undefined
+  listRevisions(): readonly WorkflowRevision[]
 }
 
 interface WorkflowRevisionRow {
@@ -87,5 +88,15 @@ export const createWorkflowRepository = (database: WorkbenchDatabase): WorkflowR
       }
     },
     getRevision,
+    listRevisions() {
+      const rows = connection
+        .prepare(
+          `SELECT definition_json
+           FROM workflow_revisions
+           ORDER BY created_at DESC, revision_id DESC`,
+        )
+        .all() as WorkflowRevisionRow[]
+      return rows.map((row) => WorkflowRevisionSchema.parse(JSON.parse(row.definition_json)))
+    },
   }
 }

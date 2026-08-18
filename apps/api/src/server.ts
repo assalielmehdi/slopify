@@ -6,6 +6,8 @@ import {
   createProfileRepository,
   createProjectProfileService,
   createReadinessService,
+  createWorkflowRepository,
+  createWorkflowService,
   openDatabase,
 } from '@loop/execution-runtime'
 import type { Hono } from 'hono'
@@ -132,7 +134,12 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     connectors: () => resolveConnectorStatus(environment),
   })
   return startApiServer({
-    app: createApiApp({ database, profiles: profileService, readiness }),
+    app: createApiApp({
+      database,
+      profiles: profileService,
+      readiness,
+      workflows: createWorkflowService({ workflows: createWorkflowRepository(database) }),
+    }),
     configuration,
   })
 }
