@@ -13,3 +13,9 @@ export {
   type AgentNodeResult,
   type AgentWorkspace,
 } from './contract.js'
+export {
+  AGENT_TOOL_PROFILES,
+  getAgentToolProfile,
+  type AgentToolName,
+  type AgentToolProfile,
+} from './tool-profiles.js'
