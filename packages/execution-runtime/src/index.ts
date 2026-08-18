@@ -43,6 +43,7 @@ export {
   type PersistedRepositorySelection,
   type RecordArtifactInput,
   type RecordOutputInput,
+  type RequestRunCancellationInput,
   type RecordWorkspaceInput,
   type RepositorySelectionInput,
   type RepositorySelectionSnapshot,
@@ -109,6 +110,15 @@ export {
   type ReadinessFilesystem,
   type ReadinessService,
 } from './services/readiness-service.js'
+export {
+  CancellationServiceError,
+  createCancellationService,
+  type ActiveRunCancellationResult,
+  type ActiveRunExecution,
+  type CancellationService,
+  type CancellationServiceErrorCode,
+  type CreateCancellationServiceOptions,
+} from './services/cancellation-service.js'
 export {
   RunServiceError,
   createRunService,

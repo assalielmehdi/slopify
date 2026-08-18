@@ -72,6 +72,12 @@ export interface ChangeRunStatusInput {
   readonly timestamp: string
 }
 
+export interface RequestRunCancellationInput {
+  readonly runId: RunId
+  readonly reason?: string
+  readonly timestamp: string
+}
+
 export interface StartNodeInput {
   readonly runId: RunId
   readonly nodeExecutionId: string
@@ -278,6 +284,7 @@ export interface RunRepository {
   findActive(): RunRecord | undefined
   list(input: ListRunsInput): RunPage
   changeStatus(input: ChangeRunStatusInput): RunEvent
+  requestCancellation(input: RequestRunCancellationInput): RunEvent
   startNode(input: StartNodeInput): RunEvent
   recordOutput(input: RecordOutputInput): RunEvent
   recordArtifact(input: RecordArtifactInput): RunEvent
@@ -680,6 +687,41 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
           .immediate()
       } catch (cause) {
         throw mapPersistenceError(cause, 'Could not change run status')
+      }
+    },
+
+    requestCancellation(input) {
+      const runId = RunIdSchema.parse(input.runId)
+      try {
+        return connection
+          .transaction(() => {
+            const status = connection
+              .prepare('SELECT status FROM runs WHERE run_id = ?')
+              .pluck()
+              .get(runId)
+            if (status === undefined) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_NOT_FOUND',
+                message: 'Run was not found',
+                details: { runId },
+              })
+            }
+            if (status !== 'RUNNING') {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_CONFLICT',
+                message: 'Run is not running',
+                details: { runId, status },
+              })
+            }
+            return appendEvent(connection, runId, {
+              type: 'RUN_CANCEL_REQUESTED',
+              timestamp: input.timestamp,
+              data: input.reason === undefined ? {} : { reason: input.reason },
+            })
+          })
+          .immediate()
+      } catch (cause) {
+        throw mapPersistenceError(cause, 'Could not request run cancellation')
       }
     },
 
