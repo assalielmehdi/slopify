@@ -366,14 +366,14 @@ conflict handling, newest-first pagination, exact run detail, source lookup,
 and persisted-then-live SSE delivery with disconnect cleanup.
 
 **Acceptance criteria:**
-- [ ] Run creation validates workflow/profile readiness, snapshots inputs, and returns 409 without changing an active run.
-- [ ] Run lists/details reproduce exact revisions, snapshots, timings, path, evidence, and errors.
-- [ ] SSE replays ordered persisted events, continues live without gaps in-process, and closes on terminal/disconnect.
+- [x] Run creation validates workflow/profile readiness, snapshots inputs, and returns 409 without changing an active run.
+- [x] Run lists/details reproduce exact revisions, snapshots, timings, path, evidence, and errors.
+- [x] SSE replays ordered persisted events, continues live without gaps in-process, and closes on terminal/disconnect.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/api test -- workflows runs events`
-- [ ] Build succeeds: `pnpm --filter @loop/api build && pnpm --filter @loop/api lint`
-- [ ] Manual check: reconnect after a known sequence and confirm ordered replay plus prompt socket cleanup.
+- [x] Tests pass: `pnpm --filter @loop/api test -- workflows runs events`
+- [x] Build succeeds: `pnpm --filter @loop/api build && pnpm --filter @loop/api lint`
+- [x] Manual check: reconnect after a known sequence and confirm ordered replay plus prompt socket cleanup.
 
 **Dependencies:** Tasks 9, 11, and 12
 
