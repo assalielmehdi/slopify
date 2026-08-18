@@ -5,12 +5,12 @@ import tseslint from 'typescript-eslint'
 export default defineConfig([
   globalIgnores([
     '.local/**',
-    '.next/**',
-    'coverage/**',
-    'dist/**',
-    'node_modules/**',
-    'playwright-report/**',
-    'test-results/**',
+    '**/.next/**',
+    '**/coverage/**',
+    '**/dist/**',
+    '**/node_modules/**',
+    '**/playwright-report/**',
+    '**/test-results/**',
   ]),
   {
     files: ['**/*.{js,mjs,cjs}'],

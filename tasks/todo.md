@@ -69,14 +69,14 @@ shared Zod contracts for API errors, artifact types, repository references,
 run events, and provider-neutral evidence used across module boundaries.
 
 **Acceptance criteria:**
-- [ ] Public TypeScript types are inferred from or checked by Zod schemas at trust boundaries.
-- [ ] Identifiers for workflow, revision, run, node, artifact, profile, and repository cannot be mixed accidentally.
-- [ ] Contract fixtures reject malformed identifiers, events, evidence, and secret-bearing public fields.
+- [x] Public TypeScript types are inferred from or checked by Zod schemas at trust boundaries.
+- [x] Identifiers for workflow, revision, run, node, artifact, profile, and repository cannot be mixed accidentally.
+- [x] Contract fixtures reject malformed identifiers, events, evidence, and secret-bearing public fields.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/contracts test`
-- [ ] Build succeeds: `pnpm --filter @loop/contracts build && pnpm --filter @loop/contracts typecheck`
-- [ ] Manual check: inspect the package export surface for provider-specific or framework-specific leakage.
+- [x] Tests pass: `pnpm --filter @loop/contracts test` executes all 26 contract tests.
+- [x] Build succeeds: package and root build, typecheck, lint, test, and format gates pass under pinned Node/pnpm.
+- [x] Manual check: the built public export imports no application framework or provider adapter.
 
 **Dependencies:** Task 2
 
@@ -93,7 +93,7 @@ run events, and provider-neutral evidence used across module boundaries.
 
 - [x] `pnpm install --frozen-lockfile` succeeds from a clean checkout.
 - [x] Root verification commands execute using the exact pinned toolchain.
-- [ ] Shared contracts build without importing an app or provider adapter.
+- [x] Shared contracts build without importing an app or provider adapter.
 - [x] Human-approved plan plus Task 1 research establish the dependency and graph-renderer baseline.
 
 ## Task 4: Model workflow nodes, edges, and revisions
