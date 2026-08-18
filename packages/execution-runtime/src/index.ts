@@ -111,6 +111,11 @@ export {
   type ReadinessService,
 } from './services/readiness-service.js'
 export {
+  createRecoveryService,
+  type CreateRecoveryServiceOptions,
+  type RecoveryService,
+} from './services/recovery-service.js'
+export {
   CancellationServiceError,
   createCancellationService,
   type ActiveRunCancellationResult,

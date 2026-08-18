@@ -133,7 +133,7 @@ export interface FailNodeAndRunInput {
   readonly nodeExecutionId: string
   readonly nodeId: string
   readonly nodeStatus: 'FAILED' | 'CANCELLED'
-  readonly runStatus: 'FAILED' | 'CANCELLED'
+  readonly runStatus: 'FAILED' | 'CANCELLED' | 'INTERRUPTED'
   readonly code: string
   readonly message: string
   readonly nodeDurationMs: number
