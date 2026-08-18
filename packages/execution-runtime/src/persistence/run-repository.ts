@@ -50,6 +50,21 @@ export interface CreateRunInput {
   readonly createdAt: string
 }
 
+export interface ListRunsInput {
+  readonly page: number
+  readonly pageSize: number
+}
+
+export interface RunPage {
+  readonly data: readonly RunRecord[]
+  readonly pagination: {
+    readonly page: number
+    readonly pageSize: number
+    readonly totalItems: number
+    readonly totalPages: number
+  }
+}
+
 export interface ChangeRunStatusInput {
   readonly runId: RunId
   readonly expectedStatus: RunStatus
@@ -229,9 +244,39 @@ export interface PersistedArtifact {
   readonly createdAt: string
 }
 
+export interface NodeExecutionRecord {
+  readonly nodeExecutionId: string
+  readonly nodeId: string
+  readonly executionIndex: number
+  readonly status: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
+  readonly inputReferences: JsonValue
+  readonly output: JsonValue | null
+  readonly outcome: string | null
+  readonly errorCode: string | null
+  readonly errorMessage: string | null
+  readonly selectedTargetNodeId: string | null
+  readonly startedAt: string | null
+  readonly completedAt: string | null
+  readonly durationMs: number | null
+}
+
+export interface RunWorkspace {
+  readonly repositoryId: RepositoryId
+  readonly profilePosition: number
+  readonly repositoryPath: string
+  readonly worktreePath: string
+  readonly remote: string
+  readonly targetBranch: string
+  readonly sourceBranch: string
+  readonly baseSha: string
+  readonly createdAt: string
+}
+
 export interface RunRepository {
   create(input: CreateRunInput): RunRecord
   get(runId: RunId): RunRecord | undefined
+  findActive(): RunRecord | undefined
+  list(input: ListRunsInput): RunPage
   changeStatus(input: ChangeRunStatusInput): RunEvent
   startNode(input: StartNodeInput): RunEvent
   recordOutput(input: RecordOutputInput): RunEvent
@@ -246,6 +291,8 @@ export interface RunRepository {
   recordWorkspace(input: RecordWorkspaceInput): void
   upsertDeliveryEvidence(input: UpsertDeliveryEvidenceInput): void
   listDeliveryEvidence(runId: RunId): readonly DeliveryEvidence[]
+  listNodeExecutions(runId: RunId): readonly NodeExecutionRecord[]
+  listWorkspaces(runId: RunId): readonly RunWorkspace[]
   listOutputChunks(runId: RunId): readonly OutputChunk[]
   listArtifacts(runId: RunId): readonly PersistedArtifact[]
 }
@@ -334,6 +381,32 @@ interface ArtifactRow {
   readonly created_at: string
 }
 
+interface NodeExecutionRow {
+  readonly node_execution_id: string
+  readonly node_id: string
+  readonly execution_index: number
+  readonly status: NodeExecutionRecord['status']
+  readonly input_references_json: string
+  readonly output_json: string | null
+  readonly outcome: string | null
+  readonly error_code: string | null
+  readonly error_message: string | null
+  readonly selected_target_node_id: string | null
+  readonly started_at: string | null
+  readonly completed_at: string | null
+  readonly duration_ms: number | null
+}
+
+interface WorkspaceRow extends CandidateRepositoryRow {
+  readonly repository_path: string
+  readonly worktree_path: string
+  readonly remote: string
+  readonly target_branch: string
+  readonly source_branch: string
+  readonly base_sha: string
+  readonly created_at: string
+}
+
 const requireNonBlank = (value: string, field: string): string => {
   if (value.trim() === '') {
     throw new PersistenceError({
@@ -378,6 +451,22 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
          WHERE run_id = ?`,
       )
       .get(runId) as RunRow | undefined
+    return row === undefined ? undefined : mapRun(row)
+  }
+
+  const findActive = (): RunRecord | undefined => {
+    const row = connection
+      .prepare(
+        `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
+                task_reference, task_snapshot_json, effective_configuration_json,
+                status, current_node_id, transition_count, created_at,
+                started_at, completed_at
+         FROM runs
+         WHERE status IN ('PENDING', 'RUNNING')
+         ORDER BY CASE status WHEN 'RUNNING' THEN 0 ELSE 1 END, created_at DESC, run_id DESC
+         LIMIT 1`,
+      )
+      .get() as RunRow | undefined
     return row === undefined ? undefined : mapRun(row)
   }
 
@@ -500,6 +589,51 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
     },
 
     get,
+
+    findActive,
+
+    list(input) {
+      if (
+        !Number.isSafeInteger(input.page) ||
+        input.page < 1 ||
+        !Number.isSafeInteger(input.pageSize) ||
+        input.pageSize < 1 ||
+        input.pageSize > 100
+      ) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_VALIDATION_FAILED',
+          message: 'Run pagination is outside the supported range',
+          details: { page: input.page, pageSize: input.pageSize },
+        })
+      }
+      const totalItems = connection.prepare('SELECT COUNT(*) FROM runs').pluck().get()
+      if (typeof totalItems !== 'number') {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_READ_FAILED',
+          message: 'Run count could not be read',
+        })
+      }
+      const rows = connection
+        .prepare(
+          `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
+                  task_reference, task_snapshot_json, effective_configuration_json,
+                  status, current_node_id, transition_count, created_at,
+                  started_at, completed_at
+           FROM runs
+           ORDER BY created_at DESC, run_id DESC
+           LIMIT ? OFFSET ?`,
+        )
+        .all(input.pageSize, (input.page - 1) * input.pageSize) as RunRow[]
+      return {
+        data: rows.map(mapRun),
+        pagination: {
+          page: input.page,
+          pageSize: input.pageSize,
+          totalItems,
+          totalPages: Math.ceil(totalItems / input.pageSize),
+        },
+      }
+    },
 
     changeStatus(input) {
       const runId = RunIdSchema.parse(input.runId)
@@ -1265,6 +1399,66 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
         headSha: row.head_sha,
         evidence: parseJson(row.evidence_json),
         updatedAt: row.updated_at,
+      }))
+    },
+
+    listNodeExecutions(runIdInput) {
+      const runId = RunIdSchema.parse(runIdInput)
+      const rows = connection
+        .prepare(
+          `SELECT node_execution_id, node_id, execution_index, status,
+                  input_references_json, output_json, outcome, error_code,
+                  error_message, selected_target_node_id, started_at,
+                  completed_at, duration_ms
+           FROM node_executions
+           WHERE run_id = ?
+           ORDER BY execution_index`,
+        )
+        .all(runId) as NodeExecutionRow[]
+      return rows.map((row) => ({
+        nodeExecutionId: row.node_execution_id,
+        nodeId: NodeIdSchema.parse(row.node_id),
+        executionIndex: row.execution_index,
+        status: row.status,
+        inputReferences: parseJson(row.input_references_json),
+        output: row.output_json === null ? null : parseJson(row.output_json),
+        outcome: row.outcome,
+        errorCode: row.error_code,
+        errorMessage: row.error_message,
+        selectedTargetNodeId: row.selected_target_node_id,
+        startedAt: row.started_at,
+        completedAt: row.completed_at,
+        durationMs: row.duration_ms,
+      }))
+    },
+
+    listWorkspaces(runIdInput) {
+      const runId = RunIdSchema.parse(runIdInput)
+      const rows = connection
+        .prepare(
+          `SELECT workspace.repository_id, selection.profile_position,
+                  workspace.repository_path, workspace.worktree_path,
+                  workspace.remote, workspace.target_branch,
+                  workspace.source_branch, workspace.base_sha,
+                  workspace.created_at
+           FROM run_workspaces AS workspace
+           JOIN run_repository_selections AS selection
+             ON selection.run_id = workspace.run_id
+            AND selection.repository_id = workspace.repository_id
+           WHERE workspace.run_id = ?
+           ORDER BY selection.profile_position`,
+        )
+        .all(runId) as WorkspaceRow[]
+      return rows.map((row) => ({
+        repositoryId: RepositoryIdSchema.parse(row.repository_id),
+        profilePosition: row.profile_position,
+        repositoryPath: row.repository_path,
+        worktreePath: row.worktree_path,
+        remote: row.remote,
+        targetBranch: row.target_branch,
+        sourceBranch: row.source_branch,
+        baseSha: row.base_sha,
+        createdAt: row.created_at,
       }))
     },
 
