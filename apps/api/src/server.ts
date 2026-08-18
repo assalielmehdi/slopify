@@ -1,11 +1,14 @@
 import { pathToFileURL } from 'node:url'
-import { serve, type ServerType } from '@hono/node-server'
+import type { Server } from 'node:http'
+import { serve } from '@hono/node-server'
 import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
 import {
   createProcessRunner,
+  createCancellationService,
   createProfileRepository,
   createProjectProfileService,
   createReadinessService,
+  createRecoveryService,
   createEventStore,
   createRunRepository,
   createRunService,
@@ -17,9 +20,14 @@ import {
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
+import { createShutdownCoordinator, registerShutdownSignals } from './shutdown.js'
 
 export type ServerConfigurationErrorCode =
-  'API_CONTAINER_MODE_INVALID' | 'API_HOST_INVALID' | 'API_PORT_INVALID' | 'DATABASE_PATH_INVALID'
+  | 'API_CONTAINER_MODE_INVALID'
+  | 'API_HOST_INVALID'
+  | 'API_PORT_INVALID'
+  | 'API_SHUTDOWN_GRACE_INVALID'
+  | 'DATABASE_PATH_INVALID'
 
 export class ServerConfigurationError extends Error {
   readonly code: ServerConfigurationErrorCode
@@ -35,6 +43,7 @@ export interface ApiServerConfiguration {
   readonly hostname: string
   readonly port: number
   readonly databasePath: string
+  readonly shutdownGracePeriodMs: number
 }
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
@@ -71,6 +80,18 @@ const port = (value: string | undefined): number => {
   return parsed
 }
 
+const shutdownGracePeriod = (value: string | undefined): number => {
+  if (value === undefined) return 10_000
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 300_000) {
+    throw new ServerConfigurationError(
+      'API_SHUTDOWN_GRACE_INVALID',
+      'API_SHUTDOWN_GRACE_MS must be an integer from 1 to 300000',
+    )
+  }
+  return parsed
+}
+
 export const resolveApiServerConfiguration = (
   environment: ApiEnvironment = process.env,
 ): ApiServerConfiguration => {
@@ -87,6 +108,7 @@ export const resolveApiServerConfiguration = (
       './data/workbench.sqlite',
       'DATABASE_PATH_INVALID',
     ),
+    shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
   }
 }
 
@@ -103,14 +125,14 @@ export const resolveConnectorStatus = (environment: ApiEnvironment): ConnectorSt
 export const startApiServer = (input: {
   readonly app: Hono
   readonly configuration: ApiServerConfiguration
-}): ServerType =>
+}): Server =>
   serve({
     fetch: input.app.fetch,
     hostname: input.configuration.hostname,
     port: input.configuration.port,
-  })
+  }) as Server
 
-export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): ServerType => {
+export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): Server => {
   const configuration = resolveApiServerConfiguration(environment)
   let database
   try {
@@ -126,6 +148,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const workflowRepository = createWorkflowRepository(database)
   const runRepository = createRunRepository(database)
   const eventStore = createEventStore(database)
+  createRecoveryService({ runs: runRepository }).reconcile()
   const profileService = createProjectProfileService({
     profiles: profileRepository,
     runtimeMode: containerMode(environment.API_CONTAINER_MODE) ? 'container' : 'native',
@@ -153,8 +176,13 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     },
     workflows: workflowRepository,
   })
-  return startApiServer({
+  const cancellation = createCancellationService({
+    runs: runRepository,
+    activeExecution: () => undefined,
+  })
+  const server = startApiServer({
     app: createApiApp({
+      cancellation,
       database,
       eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
       profiles: profileService,
@@ -164,6 +192,16 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     }),
     configuration,
   })
+  registerShutdownSignals({
+    coordinator: createShutdownCoordinator({
+      server,
+      runs: runService,
+      cancellation,
+      database,
+      gracePeriodMs: configuration.shutdownGracePeriodMs,
+    }),
+  })
+  return server
 }
 
 const executable = process.argv[1]

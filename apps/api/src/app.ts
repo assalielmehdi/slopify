@@ -132,13 +132,15 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
     }
     if (error instanceof RunServiceError) {
       const status =
-        error.code === 'RUN_ACTIVE'
-          ? 409
-          : error.code === 'RUN_REQUEST_INVALID'
-            ? 400
-            : error.code === 'PROFILE_NOT_READY' || error.code === 'TASK_RESOLUTION_FAILED'
-              ? 422
-              : 404
+        error.code === 'RUN_ADMISSION_CLOSED'
+          ? 503
+          : error.code === 'RUN_ACTIVE'
+            ? 409
+            : error.code === 'RUN_REQUEST_INVALID'
+              ? 400
+              : error.code === 'PROFILE_NOT_READY' || error.code === 'TASK_RESOLUTION_FAILED'
+                ? 422
+                : 404
       return context.json(
         errorBody({
           code: error.code,

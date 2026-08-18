@@ -31,6 +31,7 @@ export type RunServiceErrorCode =
   | 'NODE_SOURCE_UNAVAILABLE'
   | 'PROFILE_NOT_READY'
   | 'RUN_ACTIVE'
+  | 'RUN_ADMISSION_CLOSED'
   | 'RUN_NOT_FOUND'
   | 'RUN_REQUEST_INVALID'
   | 'TASK_RESOLUTION_FAILED'
@@ -118,6 +119,7 @@ export interface RunSummaryPage {
 }
 
 export interface RunService {
+  stopAdmissions(): void
   create(input: CreateRunServiceInput): Promise<RunRecord>
   get(runId: string): RunDetail | undefined
   list(input: { readonly page: number; readonly pageSize: number }): RunSummaryPage
@@ -149,6 +151,13 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
   const createRunId = options.createRunId ?? (() => `run-${crypto.randomUUID()}`)
   const createProfileSnapshotId =
     options.createProfileSnapshotId ?? (() => `profile-snapshot-${crypto.randomUUID()}`)
+  let acceptingRuns = true
+
+  const requireAdmissionsOpen = (): void => {
+    if (!acceptingRuns) {
+      throw new RunServiceError('RUN_ADMISSION_CLOSED', 'Run admissions are closed')
+    }
+  }
 
   const requireNoActiveRun = (): void => {
     const active = options.runs.findActive()
@@ -160,7 +169,12 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
   }
 
   return {
+    stopAdmissions() {
+      acceptingRuns = false
+    },
+
     async create(input) {
+      requireAdmissionsOpen()
       const workflowId = WorkflowIdSchema.parse(input.workflowId)
       const revisionId = RevisionIdSchema.parse(input.revisionId)
       const profileId = ProjectProfileIdSchema.parse(input.profileId)
@@ -184,6 +198,7 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         throw new RunServiceError('TASK_RESOLUTION_FAILED', 'Task could not be resolved', { cause })
       }
 
+      requireAdmissionsOpen()
       requireNoActiveRun()
       const runId = RunIdSchema.parse(createRunId())
       const profileSnapshot = options.profiles.createSnapshot({

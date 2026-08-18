@@ -62,7 +62,7 @@ const createFixture = () => {
     createRunId: () => `run-api-${++identity}`,
     createProfileSnapshotId: () => `snapshot-api-${identity}`,
   })
-  return { fixture, app: createApiApp({ database: fixture.database, runs }) }
+  return { fixture, runs, app: createApiApp({ database: fixture.database, runs }) }
 }
 
 const createBody = {
@@ -137,6 +137,23 @@ describe('run JSON API', () => {
     expect(await (await app.request('/api/runs')).json()).toMatchObject({
       pagination: { totalItems: 1 },
     })
+  })
+
+  it('returns 503 without creating a run after shutdown closes admissions', async () => {
+    const { app, runs } = createFixture()
+    runs.stopAdmissions()
+
+    const response = await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createBody),
+    })
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({
+      error: { code: 'RUN_ADMISSION_CLOSED', message: 'Run admissions are closed' },
+    })
+    expect(runs.list({ page: 1, pageSize: 20 }).data).toEqual([])
   })
 
   it('rejects invalid pagination and reports an unknown run consistently', async () => {

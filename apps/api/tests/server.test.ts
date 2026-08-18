@@ -25,6 +25,7 @@ describe('API server configuration', () => {
     expect(resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true' })).toMatchObject({
       hostname: '0.0.0.0',
       port: 3001,
+      shutdownGracePeriodMs: 10_000,
     })
   })
 
@@ -33,11 +34,13 @@ describe('API server configuration', () => {
       resolveApiServerConfiguration({
         API_HOST: '127.0.0.2',
         API_PORT: '4310',
+        API_SHUTDOWN_GRACE_MS: '2500',
         DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
       port: 4310,
+      shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
     })
     expect(resolveApiServerConfiguration({})).toMatchObject({ hostname: '127.0.0.1' })
@@ -53,6 +56,15 @@ describe('API server configuration', () => {
     },
   )
 
+  it.each(['0', '300001', '3.14', 'invalid'])(
+    'rejects invalid API_SHUTDOWN_GRACE_MS %j with a stable configuration error',
+    (API_SHUTDOWN_GRACE_MS) => {
+      expect(() => resolveApiServerConfiguration({ API_SHUTDOWN_GRACE_MS })).toThrowError(
+        expect.objectContaining({ code: 'API_SHUTDOWN_GRACE_INVALID' }),
+      )
+    },
+  )
+
   it('starts the Hono fetch handler on the requested address', async () => {
     const server = startApiServer({
       app: createApiApp({ database }),
@@ -60,6 +72,7 @@ describe('API server configuration', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
+        shutdownGracePeriodMs: 10_000,
       },
     })
     if (!server.listening) await once(server, 'listening')

@@ -68,6 +68,17 @@ const createInput = {
 }
 
 describe('run service admission', () => {
+  it('rejects new runs after admissions close for shutdown', async () => {
+    const { service } = createServiceFixture()
+
+    service.stopAdmissions()
+
+    await expect(service.create(createInput)).rejects.toMatchObject({
+      code: 'RUN_ADMISSION_CLOSED',
+    } satisfies Partial<RunServiceError>)
+    expect(service.list({ page: 1, pageSize: 20 }).data).toEqual([])
+  })
+
   it('validates readiness and snapshots the exact task, profile, and workflow configuration', async () => {
     const { fixture, service } = createServiceFixture()
 
