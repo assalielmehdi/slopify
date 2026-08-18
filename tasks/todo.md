@@ -514,14 +514,14 @@ input/event/result contracts and the exact read-only/workspace-write Pi tool
 allowlists, keeping SDK types private to the adapter.
 
 **Acceptance criteria:**
-- [ ] Each input names one run/node, explicit workspace map, provider/model/thinking, resource bundle, timeout, permissions, and declared outcomes.
-- [ ] Read-only exposes only `read`, `grep`, `find`, `ls`, and completion; write adds only the approved mutation tools.
-- [ ] Workflow/task/prompt data cannot add tools, repositories, or a second harness.
+- [x] Each input names one run/node, explicit workspace map, provider/model/thinking, resource bundle, timeout, permissions, and declared outcomes.
+- [x] Read-only exposes only `read`, `grep`, `find`, `ls`, and completion; write adds only the approved mutation tools.
+- [x] Workflow/task/prompt data cannot add tools, repositories, or a second harness.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/agent-runtimes test -- contract tool-profiles`
-- [ ] Build succeeds: `pnpm --filter @loop/agent-runtimes build && pnpm --filter @loop/agent-runtimes typecheck`
-- [ ] Manual check: compare allowlists and public types to `SPEC-agent-runtimes.md`.
+- [x] Tests pass: `pnpm --filter @loop/agent-runtimes test -- contract tool-profiles`
+- [x] Build succeeds: `pnpm --filter @loop/agent-runtimes build && pnpm --filter @loop/agent-runtimes typecheck`
+- [x] Manual check: compare allowlists and public types to `SPEC-agent-runtimes.md`.
 
 **Dependencies:** Tasks 1 and 3
 
