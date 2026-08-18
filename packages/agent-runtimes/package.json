@@ -25,6 +25,7 @@
   "dependencies": {
     "@loop/contracts": "workspace:*",
     "@loop/workflow-model": "workspace:*",
+    "typebox": "1.3.7",
     "zod": "4.4.3"
   }
 }

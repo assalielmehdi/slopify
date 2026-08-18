@@ -19,3 +19,13 @@ export {
   type AgentToolName,
   type AgentToolProfile,
 } from './tool-profiles.js'
+export {
+  CompletionToolError,
+  createCompletionToolController,
+  type CompleteNodeTool,
+  type CompleteNodeToolResult,
+  type CompletionToolController,
+  type CompletionToolErrorCode,
+  type CreateCompletionToolControllerOptions,
+} from './completion-tool.js'
+export { COMPLETE_NODE_PARAMETERS } from './output-schemas.js'
