@@ -393,14 +393,14 @@ terminal states, startup reconciliation of Running runs to Interrupted, and
 bounded SIGTERM/SIGINT shutdown that stops new runs and flushes SQLite.
 
 **Acceptance criteria:**
-- [ ] Cancel affects only the active cancellable run and reports Cancelled only after executor confirmation.
-- [ ] Unconfirmed cancellation fails explicitly; process restart exposes prior events and changes Running to Interrupted without resume.
-- [ ] Shutdown stops admissions, requests active cancellation, flushes state, and exits within the configured grace period.
+- [x] Cancel affects only the active cancellable run and reports Cancelled only after executor confirmation.
+- [x] Unconfirmed cancellation fails explicitly; process restart exposes prior events and changes Running to Interrupted without resume.
+- [x] Shutdown stops admissions, requests active cancellation, flushes state, and exits within the configured grace period.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- cancellation restart && pnpm --filter @loop/api test -- cancel shutdown`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/api build`
-- [ ] Manual check: terminate a fake active run and inspect the post-restart state/event history.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- cancellation restart && pnpm --filter @loop/api test -- cancel shutdown`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/api build`
+- [x] Manual check: terminate a fake active run and inspect the post-restart state/event history.
 
 **Dependencies:** Tasks 10 and 13
 
@@ -415,9 +415,9 @@ bounded SIGTERM/SIGINT shutdown that stops new runs and flushes SQLite.
 
 ## Checkpoint C3: After Tasks 13-14
 
-- [ ] Every required runtime/API endpoint has success, validation, and status-code contracts.
-- [ ] One-active-run, SSE replay/live order, cancellation, shutdown, and interruption tests pass.
-- [ ] A fake graph remains fully inspectable after success, failure, cancel, and restart.
+- [x] Every required runtime/API endpoint has success, validation, and status-code contracts.
+- [x] One-active-run, SSE replay/live order, cancellation, shutdown, and interruption tests pass.
+- [x] A fake graph remains fully inspectable after success, failure, cancel, and restart.
 
 ## Task 15: Resolve canonical ClickUp task snapshots
 
