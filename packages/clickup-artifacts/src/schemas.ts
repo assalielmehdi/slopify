@@ -58,6 +58,11 @@ export const ClickUpCommentsResponseSchema = z.looseObject({
   comments: z.array(ClickUpCommentResponseSchema).max(25),
 })
 
+export const ClickUpCreateCommentResponseSchema = z.looseObject({
+  id: identifier,
+  date: timestamp,
+})
+
 export const ClickUpTaskResponseSchema = z.looseObject({
   id: z.string().trim().min(1).max(128),
   custom_id: z.string().trim().min(1).max(128).nullable().optional(),
@@ -71,4 +76,5 @@ export const ClickUpTaskResponseSchema = z.looseObject({
 })
 
 export type ClickUpCommentResponse = z.infer<typeof ClickUpCommentResponseSchema>
+export type ClickUpCreateCommentResponse = z.infer<typeof ClickUpCreateCommentResponseSchema>
 export type ClickUpTaskResponse = z.infer<typeof ClickUpTaskResponseSchema>

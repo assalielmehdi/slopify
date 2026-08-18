@@ -8,6 +8,14 @@ export {
   type ArtifactStatus,
 } from './artifact-envelope.js'
 export {
+  createClickUpArtifactService,
+  type ClickUpArtifact,
+  type ClickUpArtifactService,
+  type CreateClickUpArtifactServiceOptions,
+  type ExactArtifactReference,
+  type PublishArtifactInput,
+} from './artifact-service.js'
+export {
   createClickUpClient,
   type ClickUpResourceLink,
   type ClickUpTaskClient,
@@ -16,11 +24,14 @@ export {
   type ClickUpTaskSnapshot,
   type ClickUpTaskStatus,
   type CreateClickUpClientOptions,
+  type CreateClickUpCommentInput,
+  type CreatedClickUpComment,
 } from './client.js'
 export {
   ClickUpArtifactError,
   ClickUpClientError,
   type ClickUpArtifactErrorCode,
+  type ClickUpArtifactErrorContext,
   type ClickUpArtifactOperation,
   type ClickUpClientErrorCode,
   type ClickUpClientOperation,

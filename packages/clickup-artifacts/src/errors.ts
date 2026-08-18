@@ -1,4 +1,4 @@
-export type ClickUpClientOperation = 'CONFIGURE' | 'GET_TASK' | 'LIST_COMMENTS'
+export type ClickUpClientOperation = 'CONFIGURE' | 'CREATE_COMMENT' | 'GET_TASK' | 'LIST_COMMENTS'
 
 export type ClickUpArtifactOperation =
   'CONFIGURE_ARTIFACTS' | 'GET_ARTIFACT' | 'LIST_ARTIFACTS' | 'PUBLISH_ARTIFACT' | 'RENDER_ARTIFACT'
@@ -8,6 +8,7 @@ export type ClickUpArtifactErrorCode =
 
 export type ClickUpClientErrorCode =
   | 'CLIENT_CONFIGURATION_INVALID'
+  | 'COMMENT_REJECTED'
   | 'INVALID_RESPONSE'
   | 'PAGINATION_LIMIT_REACHED'
   | 'PROVIDER_UNAVAILABLE'
@@ -18,6 +19,7 @@ export type ClickUpClientErrorCode =
 
 const messages: Readonly<Record<ClickUpClientErrorCode, string>> = {
   CLIENT_CONFIGURATION_INVALID: 'ClickUp client configuration is invalid',
+  COMMENT_REJECTED: 'ClickUp rejected the comment',
   INVALID_RESPONSE: 'ClickUp returned an invalid response',
   PAGINATION_LIMIT_REACHED: 'ClickUp comment pagination exceeded its configured limit',
   PROVIDER_UNAVAILABLE: 'ClickUp is unavailable',
@@ -25,6 +27,13 @@ const messages: Readonly<Record<ClickUpClientErrorCode, string>> = {
   REQUEST_TIMEOUT: 'ClickUp request timed out',
   TASK_NOT_FOUND: 'ClickUp task was not found',
   UNAUTHORIZED: 'ClickUp authorization failed',
+}
+
+export interface ClickUpArtifactErrorContext {
+  readonly taskId?: string
+  readonly runId?: string
+  readonly artifactType?: string
+  readonly commentIds?: readonly string[]
 }
 
 const artifactMessages: Readonly<Record<ClickUpArtifactErrorCode, string>> = {
@@ -51,6 +60,7 @@ export class ClickUpArtifactError extends Error {
   constructor(
     readonly code: ClickUpArtifactErrorCode,
     readonly operation: ClickUpArtifactOperation,
+    readonly context?: ClickUpArtifactErrorContext,
   ) {
     super(artifactMessages[code])
   }

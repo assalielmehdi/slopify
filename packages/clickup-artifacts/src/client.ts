@@ -1,6 +1,7 @@
 import { ClickUpClientError, type ClickUpClientOperation } from './errors.js'
 import {
   ClickUpCommentsResponseSchema,
+  ClickUpCreateCommentResponseSchema,
   ClickUpTaskResponseSchema,
   type ClickUpCommentResponse,
   type ClickUpTaskResponse,
@@ -48,6 +49,18 @@ export interface ClickUpTaskSnapshot {
 
 export interface ClickUpTaskClient {
   getTask(reference: string): Promise<ClickUpTaskSnapshot>
+  listComments(taskId: ClickUpTaskId): Promise<readonly ClickUpTaskComment[]>
+  createComment(input: CreateClickUpCommentInput): Promise<CreatedClickUpComment>
+}
+
+export interface CreateClickUpCommentInput {
+  readonly taskId: ClickUpTaskId
+  readonly content: string
+}
+
+export interface CreatedClickUpComment {
+  readonly commentId: string
+  readonly createdAt: string
 }
 
 export interface CreateClickUpClientOptions {
@@ -165,23 +178,34 @@ const httpError = (status: number, operation: ClickUpClientOperation): ClickUpCl
   if (status === 401 || status === 403) return new ClickUpClientError('UNAUTHORIZED', operation)
   if (status === 404) return new ClickUpClientError('TASK_NOT_FOUND', operation)
   if (status === 429) return new ClickUpClientError('RATE_LIMITED', operation)
+  if (operation === 'CREATE_COMMENT' && status >= 400 && status < 500) {
+    return new ClickUpClientError('COMMENT_REJECTED', operation)
+  }
   return new ClickUpClientError('PROVIDER_UNAVAILABLE', operation)
+}
+
+interface JsonRequestOptions {
+  readonly method: 'GET' | 'POST'
+  readonly body?: string
 }
 
 const requestJson = async (
   configuration: ClientConfiguration,
   url: URL,
   operation: ClickUpClientOperation,
+  options: JsonRequestOptions = { method: 'GET' },
 ): Promise<unknown> => {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), configuration.timeoutMs)
   try {
     const response = await fetch(url, {
-      method: 'GET',
+      method: options.method,
       headers: {
         accept: 'application/json',
         authorization: configuration.token,
+        ...(options.body === undefined ? {} : { 'content-type': 'application/json' }),
       },
+      ...(options.body === undefined ? {} : { body: options.body }),
       redirect: 'error',
       signal: controller.signal,
     })
@@ -390,6 +414,32 @@ export const createClickUpClient = (options: CreateClickUpClientOptions): ClickU
           task.attachmentUrls,
         ),
       }
+    },
+
+    async listComments(taskId) {
+      return listComments(configuration, normalizeClickUpTaskReference(taskId))
+    },
+
+    async createComment(input) {
+      if (input.content.trim() === '' || input.content.length > 1_000_000) {
+        throw new ClickUpClientError('COMMENT_REJECTED', 'CREATE_COMMENT')
+      }
+      const reference = normalizeClickUpTaskReference(input.taskId)
+      const url = new URL(
+        `task/${encodeURIComponent(reference.taskId)}/comment`,
+        configuration.baseUrl,
+      )
+      applyCustomTaskParameters(url, reference, configuration.workspaceId)
+      const parsed = ClickUpCreateCommentResponseSchema.safeParse(
+        await requestJson(configuration, url, 'CREATE_COMMENT', {
+          method: 'POST',
+          body: JSON.stringify({ comment_text: input.content, notify_all: false }),
+        }),
+      )
+      if (!parsed.success) throw invalidResponse('CREATE_COMMENT')
+      const createdAt = new Date(Number(parsed.data.date))
+      if (Number.isNaN(createdAt.valueOf())) throw invalidResponse('CREATE_COMMENT')
+      return { commentId: parsed.data.id, createdAt: createdAt.toISOString() }
     },
   }
 }
