@@ -1,14 +1,7 @@
 import { PermissionProfileSchema, type PermissionProfile } from '@loop/workflow-model'
 
 export type AgentToolName =
-  | 'read'
-  | 'bash'
-  | 'edit'
-  | 'write'
-  | 'grep'
-  | 'find'
-  | 'ls'
-  | 'complete_node'
+  'read' | 'bash' | 'edit' | 'write' | 'grep' | 'find' | 'ls' | 'complete_node'
 
 export type AgentToolProfile = readonly AgentToolName[]
 

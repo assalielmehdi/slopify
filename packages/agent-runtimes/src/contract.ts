@@ -15,7 +15,11 @@ const ERROR_CODE_PATTERN = /^[A-Z][A-Z0-9_]*$/u
 
 const identifier = z.string().min(1).max(128).regex(OPAQUE_ID_PATTERN)
 const boundedText = z.string().trim().min(1).max(16_384)
-const content = z.string().min(1).max(1_000_000).refine((value) => value.trim().length > 0)
+const content = z
+  .string()
+  .min(1)
+  .max(1_000_000)
+  .refine((value) => value.trim().length > 0)
 const durationMs = z.number().int().nonnegative().safe()
 const tokenCount = z.number().int().nonnegative().safe()
 
