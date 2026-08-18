@@ -131,3 +131,10 @@ export {
   type WorkflowService,
   type WorkflowServiceErrorCode,
 } from './services/workflow-service.js'
+export {
+  RunEventFeedError,
+  createRunEventFeed,
+  type CreateRunEventFeedOptions,
+  type RunEventFeed,
+  type SubscribeToRunEventsInput,
+} from './services/run-event-feed.js'

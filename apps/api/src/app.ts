@@ -1,11 +1,13 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
 import {
   ProjectProfileServiceError,
+  RunEventFeedError,
   RunServiceError,
   WorkflowServiceError,
   type ProjectProfileService,
   type ReadinessService,
   type RunService,
+  type RunEventFeed,
   type WorkbenchDatabase,
   type WorkflowService,
 } from '@loop/execution-runtime'
@@ -14,6 +16,7 @@ import { z } from 'zod'
 
 import { registerProjectProfileRoutes } from './routes/project-profiles.js'
 import { registerRunRoutes } from './routes/runs.js'
+import { registerRunEventRoutes } from './routes/run-events.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
@@ -43,6 +46,7 @@ export interface CreateApiAppOptions {
   readonly profiles?: ProjectProfileService
   readonly readiness?: ReadinessService
   readonly runs?: RunService
+  readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
 }
 
@@ -104,12 +108,19 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
 
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
   if (options.runs !== undefined) registerRunRoutes(app, options.runs)
+  if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof RunEventFeedError) {
+      return context.json(
+        errorBody({ code: error.code, message: error.message }),
+        error.code === 'RUN_NOT_FOUND' ? 404 : 400,
+      )
+    }
     if (error instanceof RunServiceError) {
       const status =
         error.code === 'RUN_ACTIVE'
