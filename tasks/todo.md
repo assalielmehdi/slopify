@@ -454,14 +454,14 @@ and producer/status validation, redaction/size limits, publication readback,
 and exact task/run/type retrieval that rejects missing or duplicate matches.
 
 **Acceptance criteria:**
-- [ ] All four artifact types round-trip through the documented visible envelope with exact identity.
-- [ ] Publication enforces one comment per type/run, approved producer/status values, redaction, and provider readback.
-- [ ] Retrieval never uses newest-comment ordering or fuzzy prose and fails explicitly on zero/multiple matches.
+- [x] All four artifact types round-trip through the documented visible envelope with exact identity.
+- [x] Publication enforces one comment per type/run, approved producer/status values, redaction, and provider readback.
+- [x] Retrieval never uses newest-comment ordering or fuzzy prose and fails explicitly on zero/multiple matches.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/clickup-artifacts test -- artifact-envelope artifact-service`
-- [ ] Build succeeds: `pnpm --filter @loop/clickup-artifacts typecheck && pnpm --filter @loop/clickup-artifacts lint`
-- [ ] Manual check: inspect Markdown/whitespace, unrelated-run, duplicate, oversize, and secret fixtures.
+- [x] Tests pass: `pnpm --filter @loop/clickup-artifacts test -- artifact-envelope artifact-service`
+- [x] Build succeeds: `pnpm --filter @loop/clickup-artifacts typecheck && pnpm --filter @loop/clickup-artifacts lint`
+- [x] Manual check: inspect Markdown/whitespace, unrelated-run, duplicate, oversize, and secret fixtures.
 
 **Dependencies:** Task 15
 
