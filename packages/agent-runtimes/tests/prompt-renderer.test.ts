@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  loadResourceBundle,
-  PromptRendererError,
-  renderAgentPrompt,
-} from '../src/index.js'
+import { loadResourceBundle, PromptRendererError, renderAgentPrompt } from '../src/index.js'
 
 const candidateRepositories = [
   {
@@ -338,9 +334,9 @@ describe('renderAgentPrompt review and inspection', () => {
     expect(() => renderAgentPrompt(baseInput)).toThrow(
       expect.objectContaining({ code: 'PROMPT_REVIEW_INPUT_INVALID' }),
     )
-    expect(() => renderAgentPrompt({ ...baseInput, hiddenTranscript: 'secret routing input' })).toThrow(
-      expect.objectContaining({ code: 'PROMPT_INPUT_INVALID' }),
-    )
+    expect(() =>
+      renderAgentPrompt({ ...baseInput, hiddenTranscript: 'secret routing input' }),
+    ).toThrow(expect.objectContaining({ code: 'PROMPT_INPUT_INVALID' }))
     expect(() =>
       renderAgentPrompt({
         ...commonInput,

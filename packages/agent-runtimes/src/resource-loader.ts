@@ -4,8 +4,17 @@ import { RepositoryIdSchema } from '@loop/contracts'
 import { ResourceBundleIdSchema } from '@loop/workflow-model'
 import { z } from 'zod'
 
-const identifier = z.string().trim().min(1).max(128).regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u)
-const content = z.string().min(1).max(1_000_000).refine((value) => value.trim().length > 0)
+const identifier = z
+  .string()
+  .trim()
+  .min(1)
+  .max(128)
+  .regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u)
+const content = z
+  .string()
+  .min(1)
+  .max(1_000_000)
+  .refine((value) => value.trim().length > 0)
 
 const ResourceSkillSchema = z
   .strictObject({
@@ -54,9 +63,7 @@ const LoadResourceBundleInputSchema = z.strictObject({
 })
 
 export type ResourceLoaderErrorCode =
-  | 'RESOURCE_BUNDLE_NOT_FOUND'
-  | 'RESOURCE_CONTEXT_OUTSIDE_WORKSPACE'
-  | 'RESOURCE_INPUT_INVALID'
+  'RESOURCE_BUNDLE_NOT_FOUND' | 'RESOURCE_CONTEXT_OUTSIDE_WORKSPACE' | 'RESOURCE_INPUT_INVALID'
 
 const messages: Readonly<Record<ResourceLoaderErrorCode, string>> = {
   RESOURCE_BUNDLE_NOT_FOUND: 'Resource bundle was not found',

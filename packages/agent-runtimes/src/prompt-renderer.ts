@@ -16,7 +16,11 @@ import type { LoadedResourceBundle } from './resource-loader.js'
 const MAX_RENDERED_PROMPT_BYTES = 1_000_000
 const nonBlank = z.string().trim().min(1)
 const boundedText = nonBlank.max(16_384)
-const content = z.string().min(1).max(1_000_000).refine((value) => value.trim().length > 0)
+const content = z
+  .string()
+  .min(1)
+  .max(1_000_000)
+  .refine((value) => value.trim().length > 0)
 const absolutePath = z.string().min(1).max(4_096).refine(isAbsolute)
 const sha = z.string().regex(/^[0-9a-f]{7,64}$/u)
 const profilePosition = z.number().int().nonnegative().safe()
