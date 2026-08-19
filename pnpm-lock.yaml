@@ -120,6 +120,9 @@ importers:
 
   packages/gitlab-delivery:
     dependencies:
+      '@loop/clickup-artifacts':
+        specifier: workspace:*
+        version: link:../clickup-artifacts
       '@loop/contracts':
         specifier: workspace:*
         version: link:../contracts

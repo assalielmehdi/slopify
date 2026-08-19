@@ -4,6 +4,7 @@ import {
   ApiErrorSchema,
   ArtifactTypeSchema,
   EvidenceSchema,
+  FinalizeClickUpInputSchema,
   HealthResponseSchema,
   NodeIdSchema,
   OutcomeNameSchema,
@@ -105,6 +106,33 @@ describe('public API records', () => {
     expect(ArtifactTypeSchema.parse('EXECUTION_PLAN')).toBe('EXECUTION_PLAN')
     expect(RunStatusSchema.parse('INTERRUPTED')).toBe('INTERRUPTED')
     expect(ArtifactTypeSchema.safeParse('RAW_LOG').success).toBe(false)
+  })
+
+  it.each([
+    { sourceBranch: 'ai/run\n## injected' },
+    { targetBranch: 'main?unexpected=true' },
+    { url: 'javascript:alert(1)' },
+  ])('rejects unsafe merge request identity fields at finalization', (override) => {
+    const mergeRequest = {
+      repositoryId: 'api',
+      project: 'group/api',
+      iid: 17,
+      url: 'https://gitlab.example/group/api/-/merge_requests/17',
+      state: 'opened',
+      sourceBranch: 'ai/run-01',
+      targetBranch: 'main',
+      baseSha: 'a'.repeat(40),
+      headSha: 'b'.repeat(40),
+      ...override,
+    }
+
+    expect(
+      FinalizeClickUpInputSchema.safeParse({
+        runId: 'run-01',
+        taskId: '86abc123',
+        mergeRequests: [mergeRequest],
+      }).success,
+    ).toBe(false)
   })
 })
 

@@ -47,6 +47,19 @@ export {
   createFinalizationGitClient,
   type CreateFinalizationGitClientOptions,
 } from './finalization-git.js'
+export {
+  createClickUpFinalizer,
+  createDeliveryFinalizer,
+  type ClickUpFinalizationProfileStore,
+  type ClickUpFinalizationResult,
+  type ClickUpFinalizationRunStore,
+  type ClickUpFinalizationService,
+  type ClickUpFinalizer,
+  type CreateClickUpFinalizerOptions,
+  type CreateDeliveryFinalizerOptions,
+  type DeliveryFinalizationResult,
+  type DeliveryFinalizer,
+} from './clickup-finalization.js'
 export { type DeliveryError, type DeliveryErrorCode } from './errors.js'
 export {
   MergeRequestTemplateInputSchema,

@@ -9,6 +9,28 @@ const kebabCaseId = z.string().min(1).max(128).regex(KEBAB_CASE_PATTERN)
 const errorCode = z.string().min(1).max(128).regex(ERROR_CODE_PATTERN)
 const message = z.string().trim().min(1).max(4_096)
 const durationMs = z.number().int().nonnegative().finite()
+const mergeRequestProject = z
+  .string()
+  .trim()
+  .min(3)
+  .max(512)
+  .regex(/^[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?(?:\/[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?)+$/iu)
+const mergeRequestBranch = z
+  .string()
+  .trim()
+  .min(1)
+  .max(512)
+  .regex(/^[^\s?&#]+$/u)
+const httpsUrl = z
+  .url()
+  .max(4_096)
+  .refine((value) => {
+    try {
+      return new URL(value).protocol === 'https:'
+    } catch {
+      return false
+    }
+  })
 
 export const WorkflowIdSchema = opaqueId.brand<'WorkflowId'>()
 export const RevisionIdSchema = opaqueId.brand<'RevisionId'>()
@@ -85,12 +107,12 @@ export const GitWorkspaceSchema = z.strictObject({
 
 export const MergeRequestEvidenceSchema = z.strictObject({
   repositoryId: RepositoryIdSchema,
-  project: z.string().trim().min(1).max(512),
+  project: mergeRequestProject,
   iid: z.number().int().positive().safe(),
-  url: z.url().max(4_096),
+  url: httpsUrl,
   state: z.literal('opened'),
-  sourceBranch: z.string().trim().min(1).max(512),
-  targetBranch: z.string().trim().min(1).max(512),
+  sourceBranch: mergeRequestBranch,
+  targetBranch: mergeRequestBranch,
   baseSha: GitShaSchema,
   headSha: GitShaSchema,
 })
@@ -105,6 +127,18 @@ export const FinalizeGitLabInputSchema = z
     ({ workspaces }) =>
       new Set(workspaces.map(({ repositoryId }) => repositoryId)).size === workspaces.length,
     { message: 'Workspace repository IDs must be unique', path: ['workspaces'] },
+  )
+
+export const FinalizeClickUpInputSchema = z
+  .strictObject({
+    runId: RunIdSchema,
+    taskId: z.string().trim().min(1).max(128),
+    mergeRequests: z.array(MergeRequestEvidenceSchema).min(1).max(32).readonly(),
+  })
+  .refine(
+    ({ mergeRequests }) =>
+      new Set(mergeRequests.map(({ repositoryId }) => repositoryId)).size === mergeRequests.length,
+    { message: 'Merge request repository IDs must be unique', path: ['mergeRequests'] },
   )
 
 export const PrepareGitWorkspacesInputSchema = z
@@ -324,6 +358,7 @@ export type GitSha = z.infer<typeof GitShaSchema>
 export type GitWorkspace = z.infer<typeof GitWorkspaceSchema>
 export type MergeRequestEvidence = z.infer<typeof MergeRequestEvidenceSchema>
 export type FinalizeGitLabInput = z.infer<typeof FinalizeGitLabInputSchema>
+export type FinalizeClickUpInput = z.infer<typeof FinalizeClickUpInputSchema>
 export type PrepareGitWorkspacesInput = z.infer<typeof PrepareGitWorkspacesInputSchema>
 export type ExecutableCheckConfiguration = z.infer<typeof ExecutableCheckConfigurationSchema>
 export type VerificationCommandConfiguration = z.infer<
