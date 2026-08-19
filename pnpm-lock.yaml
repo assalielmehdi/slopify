@@ -41,6 +41,9 @@ importers:
       '@hono/node-server':
         specifier: 2.1.1
         version: 2.1.1(hono@4.13.3)
+      '@loop/clickup-artifacts':
+        specifier: workspace:*
+        version: link:../../packages/clickup-artifacts
       '@loop/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -92,6 +95,9 @@ importers:
 
   packages/execution-runtime:
     dependencies:
+      '@loop/agent-runtimes':
+        specifier: workspace:*
+        version: link:../agent-runtimes
       '@loop/contracts':
         specifier: workspace:*
         version: link:../contracts

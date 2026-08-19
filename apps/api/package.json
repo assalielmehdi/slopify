@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",
+    "@loop/clickup-artifacts": "workspace:*",
     "@loop/contracts": "workspace:*",
     "@loop/execution-runtime": "workspace:*",
     "hono": "4.13.3",
