@@ -602,14 +602,14 @@ disablement, execution timeout, abort/idle confirmation, and disposal for one
 fresh session per node.
 
 **Acceptance criteria:**
-- [ ] Every execution creates a fresh in-memory session with approved provider/model/thinking and no global/session-file state.
-- [ ] Cancel/timeout aborts, propagates cancellation to active tools, waits for idle, disposes, and fails if stop cannot be confirmed.
-- [ ] Credentials are read only from approved runtime sources and only the selected provider receives them.
+- [x] Every execution creates a fresh in-memory session with approved provider/model/thinking and no global/session-file state.
+- [x] Cancel/timeout aborts, propagates cancellation to active tools, waits for idle, disposes, and fails if stop cannot be confirmed.
+- [x] Credentials are read only from approved runtime sources and only the selected provider receives them.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/agent-runtimes test -- session-factory pi-sdk-executor model-runtime`
-- [ ] Build succeeds: `pnpm --filter @loop/agent-runtimes build && pnpm --filter @loop/agent-runtimes typecheck`
-- [ ] Manual check: confirm tests need neither a Pi CLI nor real provider credentials and leave no session alive.
+- [x] Tests pass: `pnpm --filter @loop/agent-runtimes test -- session-factory pi-sdk-executor model-runtime`
+- [x] Build succeeds: `pnpm --filter @loop/agent-runtimes build && pnpm --filter @loop/agent-runtimes typecheck`
+- [x] Manual check: confirm tests need neither a Pi CLI nor real provider credentials and leave no session alive.
 
 **Dependencies:** Tasks 18-20; approved Pi defaults and compaction policy
 
