@@ -630,14 +630,14 @@ discard thinking deltas, redact credentials, and dispose subscriptions on all
 termination paths.
 
 **Acceptance criteria:**
-- [ ] Representative SDK events map exhaustively and in order to the documented normalized event types.
-- [ ] Hidden reasoning and configured credential values never reach raw storage, normalized events, logs, or browser payloads.
-- [ ] Failure, result, cancel, and disposal paths emit one truthful terminal event and release the subscription.
+- [x] Representative SDK events map exhaustively and in order to the documented normalized event types.
+- [x] Hidden reasoning and configured credential values never reach raw storage, normalized events, logs, or browser payloads.
+- [x] Failure, result, cancel, and disposal paths emit one truthful terminal event and release the subscription.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/agent-runtimes test -- event-normalizer redaction pi-sdk-executor`
-- [ ] Build succeeds: `pnpm --filter @loop/agent-runtimes typecheck && pnpm --filter @loop/agent-runtimes lint`
-- [ ] Manual check: seed credential-like values across message/tool/error fixtures and inspect all emitted payloads.
+- [x] Tests pass: `pnpm --filter @loop/agent-runtimes test -- event-normalizer redaction pi-sdk-executor`
+- [x] Build succeeds: `pnpm --filter @loop/agent-runtimes typecheck && pnpm --filter @loop/agent-runtimes lint`
+- [x] Manual check: seed credential-like values across message/tool/error fixtures and inspect all emitted payloads.
 
 **Dependencies:** Task 21
 
@@ -652,9 +652,9 @@ termination paths.
 
 ## Checkpoint D3: After Tasks 21-22
 
-- [ ] Fake-model integration proves read-only/write profiles, completion ordering, provider/tool failure, timeout, and cancellation.
-- [ ] Sessions and subscriptions are always disposed without a global Pi executable.
-- [ ] Inspectable events include required metadata but no credentials or hidden reasoning.
+- [x] Fake-model integration proves read-only/write profiles, completion ordering, provider/tool failure, timeout, and cancellation.
+- [x] Sessions and subscriptions are always disposed without a global Pi executable.
+- [x] Inspectable events include required metadata but no credentials or hidden reasoning.
 
 ## Task 23: Run task loading and immutable repository selection
 
