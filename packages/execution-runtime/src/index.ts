@@ -135,6 +135,20 @@ export {
   type ProcessRunner,
 } from './processes/process-runner.js'
 export {
+  RepositoryVerificationEvidenceSchema,
+  VerificationCommandEvidenceSchema,
+  VerificationEvidenceError,
+  VerificationOutputSchema,
+  normalizeVerificationEvidence,
+  type NormalizeVerificationEvidenceInput,
+  type RepositoryVerificationEvidence,
+  type RepositoryVerificationExecution,
+  type VerificationCommandEvidence,
+  type VerificationCommandExecution,
+  type VerificationEvidenceErrorCode,
+  type VerificationOutput,
+} from './services/verification-evidence.js'
+export {
   ProjectProfileServiceError,
   createProjectProfileService,
   type CreateProjectProfileServiceOptions,
