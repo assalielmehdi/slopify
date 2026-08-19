@@ -113,6 +113,15 @@ export {
   type VerificationNodeErrorCode,
   type VerificationNodeOutput,
 } from './executors/verification-node.js'
+export {
+  createGitReviewInputInspector,
+  createReviewNodeExecutor,
+  type CreateGitReviewInputInspectorOptions,
+  type CreateReviewNodeExecutorOptions,
+  type ReviewInputInspectionResult,
+  type ReviewInputInspector,
+  type ReviewRepositoryInput,
+} from './executors/review-node.js'
 export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
 export {
   ArtifactPublicationError,
@@ -155,6 +164,18 @@ export {
   type VerificationEvidenceErrorCode,
   type VerificationOutput,
 } from './services/verification-evidence.js'
+export {
+  PersistedReviewNodeOutputSchema,
+  ReviewFindingSchema,
+  ReviewFindingsOutputSchema,
+  ReviewKindSchema,
+  canonicalizeReviewedFindings,
+  type PersistedReviewNodeOutput,
+  type ReviewFinding,
+  type ReviewFindingsOutput,
+  type ReviewKind,
+  type ReviewRepositoryIdentity,
+} from './services/review-findings.js'
 export {
   ProjectProfileServiceError,
   createProjectProfileService,
