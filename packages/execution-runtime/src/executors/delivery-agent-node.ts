@@ -57,6 +57,16 @@ export interface SelectedAgentNodeExecution {
   readonly taskId: string
 }
 
+export interface PreparedSelectedAgentWorkspace {
+  readonly repositories: readonly SelectedAgentRepository[]
+  readonly taskId: string
+  readonly rootPath: string
+  readonly workspaceRepositories: readonly Readonly<{
+    repositoryId: string
+    path: string
+  }>[]
+}
+
 const taskId = (snapshot: unknown): string => {
   if (
     snapshot === null ||
@@ -125,13 +135,31 @@ const ensureWorkspaceView = async (
   return result
 }
 
+export const prepareSelectedAgentWorkspace = async (
+  options: Pick<ExecuteSelectedAgentNodeOptions, 'runs' | 'selectedWorkspaceRoot'>,
+  context: NodeExecutionContext,
+): Promise<PreparedSelectedAgentWorkspace> => {
+  if (!isAbsolute(options.selectedWorkspaceRoot)) {
+    throw new SelectedAgentNodeError('SELECTED_NODE_CONTEXT_INVALID')
+  }
+  const repositories = selectedRepositories(options.runs, context)
+  const canonicalTaskId = taskId(context.run.taskSnapshot)
+  const rootPath = join(options.selectedWorkspaceRoot, context.run.runId, 'selected')
+  const workspaceRepositories = await ensureWorkspaceView(rootPath, repositories)
+  return {
+    repositories,
+    taskId: canonicalTaskId,
+    rootPath,
+    workspaceRepositories,
+  }
+}
+
 export const executeSelectedAgentNode = async (
   options: ExecuteSelectedAgentNodeOptions,
   input: ExecuteSelectedAgentNodeInput,
 ): Promise<SelectedAgentNodeExecution> => {
   const { context } = input
   if (
-    !isAbsolute(options.selectedWorkspaceRoot) ||
     context.node.type !== 'agent' ||
     context.node.id !== input.expectedNodeId ||
     context.node.workspacePolicy !== 'selected-worktrees' ||
@@ -141,10 +169,8 @@ export const executeSelectedAgentNode = async (
   ) {
     throw new SelectedAgentNodeError('SELECTED_NODE_CONTEXT_INVALID')
   }
-  const repositories = selectedRepositories(options.runs, context)
-  const canonicalTaskId = taskId(context.run.taskSnapshot)
-  const rootPath = join(options.selectedWorkspaceRoot, context.run.runId, 'selected')
-  const workspaceRepositories = await ensureWorkspaceView(rootPath, repositories)
+  const prepared = await prepareSelectedAgentWorkspace(options, context)
+  const { repositories, rootPath, workspaceRepositories } = prepared
   const rendered = renderAgentPrompt({
     kind: 'execution',
     templateRevision: context.run.revisionId,
@@ -214,6 +240,6 @@ export const executeSelectedAgentNode = async (
   return {
     result: await adapter.execute(context, executionInput),
     repositories,
-    taskId: canonicalTaskId,
+    taskId: prepared.taskId,
   }
 }
