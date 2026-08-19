@@ -33,6 +33,22 @@ export {
   type ListOpenMergeRequestsInput,
 } from './glab.js'
 export {
+  createGitLabFinalizer,
+  type CreateGitLabFinalizerOptions,
+  type FinalizationGitClient,
+  type FinalizationGitInspection,
+  type FinalizationGitResult,
+  type FinalizationProfileStore,
+  type FinalizationRunStore,
+  type GitLabFinalizationResult,
+  type GitLabFinalizer,
+} from './finalizer.js'
+export {
+  createFinalizationGitClient,
+  type CreateFinalizationGitClientOptions,
+} from './finalization-git.js'
+export { type DeliveryError, type DeliveryErrorCode } from './errors.js'
+export {
   MergeRequestTemplateInputSchema,
   MergeRequestTemplateError,
   RenderedMergeRequestTemplateSchema,

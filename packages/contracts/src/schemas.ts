@@ -83,6 +83,30 @@ export const GitWorkspaceSchema = z.strictObject({
   baseSha: GitShaSchema,
 })
 
+export const MergeRequestEvidenceSchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
+  project: z.string().trim().min(1).max(512),
+  iid: z.number().int().positive().safe(),
+  url: z.url().max(4_096),
+  state: z.literal('opened'),
+  sourceBranch: z.string().trim().min(1).max(512),
+  targetBranch: z.string().trim().min(1).max(512),
+  baseSha: GitShaSchema,
+  headSha: GitShaSchema,
+})
+
+export const FinalizeGitLabInputSchema = z
+  .strictObject({
+    runId: RunIdSchema,
+    taskId: z.string().trim().min(1).max(512),
+    workspaces: z.array(GitWorkspaceSchema).min(1).max(32).readonly(),
+  })
+  .refine(
+    ({ workspaces }) =>
+      new Set(workspaces.map(({ repositoryId }) => repositoryId)).size === workspaces.length,
+    { message: 'Workspace repository IDs must be unique', path: ['workspaces'] },
+  )
+
 export const PrepareGitWorkspacesInputSchema = z
   .strictObject({
     runId: RunIdSchema,
@@ -298,6 +322,8 @@ export type Evidence = z.infer<typeof EvidenceSchema>
 export type RepositoryReference = z.infer<typeof RepositoryReferenceSchema>
 export type GitSha = z.infer<typeof GitShaSchema>
 export type GitWorkspace = z.infer<typeof GitWorkspaceSchema>
+export type MergeRequestEvidence = z.infer<typeof MergeRequestEvidenceSchema>
+export type FinalizeGitLabInput = z.infer<typeof FinalizeGitLabInputSchema>
 export type PrepareGitWorkspacesInput = z.infer<typeof PrepareGitWorkspacesInputSchema>
 export type ExecutableCheckConfiguration = z.infer<typeof ExecutableCheckConfigurationSchema>
 export type VerificationCommandConfiguration = z.infer<
