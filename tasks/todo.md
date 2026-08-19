@@ -663,14 +663,14 @@ view, fresh read-only Pi session, selection schema, partition validation, and
 profile-order normalization into the first vertical workflow slice.
 
 **Acceptance criteria:**
-- [ ] A run starts only from a resolved task and ready profile, then validates a non-empty unique selected set plus exact excluded partition.
-- [ ] Unknown/duplicate/missing IDs fail; a valid selection is stored immutably in profile order with rationales/responsibilities.
-- [ ] No fetch, branch, worktree, active-checkout mutation, or later implicit selection change occurs in this slice.
+- [x] A run starts only from a resolved task and ready profile, then validates a non-empty unique selected set plus exact excluded partition.
+- [x] Unknown/duplicate/missing IDs fail; a valid selection is stored immutably in profile order with rationales/responsibilities.
+- [x] No fetch, branch, worktree, active-checkout mutation, or later implicit selection change occurs in this slice.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- repository-selection && pnpm --filter @loop/api test -- task-resolve start-run`
-- [ ] Build succeeds: `pnpm --filter @loop/api build && pnpm --filter @loop/agent-runtimes build`
-- [ ] Manual check: run one- and multi-repository selection fixtures and inspect snapshots/events.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- repository-selection && pnpm --filter @loop/api test -- task-resolve start-run`
+- [x] Build succeeds: `pnpm --filter @loop/api build && pnpm --filter @loop/agent-runtimes build`
+- [x] Manual check: run one- and multi-repository selection fixtures and inspect snapshots/events.
 
 **Dependencies:** Tasks 12, 14, 15, and 22
 
