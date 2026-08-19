@@ -1,6 +1,7 @@
 import { defineConfig } from 'vitest/config'
 
 export default defineConfig({
+  root: '../..',
   oxc: {
     jsx: {
       runtime: 'automatic',
@@ -12,7 +13,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['apps/**/{src,tests}/**/*.test.{ts,tsx}', 'packages/**/{src,tests}/**/*.test.ts'],
-    passWithNoTests: true,
+    include: ['apps/web/tests/**/*.test.{ts,tsx}'],
+    passWithNoTests: false,
   },
 })
