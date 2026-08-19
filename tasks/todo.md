@@ -840,14 +840,14 @@ opened MR back, and persist exact project/IID/URL/branch/base/head evidence in
 profile order.
 
 **Acceptance criteria:**
-- [ ] Finalization rejects dirty/mismatched worktrees, missing commits, unresolved review, duplicate MR, or inconsistent identities before unsafe mutation.
-- [ ] Each selected branch is pushed without history rewrite and yields one read-back-validated opened MR whose approved title/body covers task, changes, checks, risks, and rollback when applicable.
-- [ ] Failures preserve sanitized command evidence and every already-created external identity without retry, merge, approval, or pipeline claims.
+- [x] Finalization rejects dirty/mismatched worktrees, missing commits, unresolved review, duplicate MR, or inconsistent identities before unsafe mutation.
+- [x] Each selected branch is pushed without history rewrite and yields one read-back-validated opened MR whose approved title/body covers task, changes, checks, risks, and rollback when applicable.
+- [x] Failures preserve sanitized command evidence and every already-created external identity without retry, merge, approval, or pipeline claims.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/gitlab-delivery test -- preconditions mr-template finalizer`
-- [ ] Build succeeds: `pnpm --filter @loop/gitlab-delivery build && pnpm --filter @loop/gitlab-delivery lint`
-- [ ] Manual check: use bare remotes and a fake `glab`; inspect arguments, ordering, head SHA, and partial-failure evidence.
+- [x] Tests pass: `pnpm --filter @loop/gitlab-delivery test -- preconditions mr-template finalizer`
+- [x] Build succeeds: `pnpm --filter @loop/gitlab-delivery build && pnpm --filter @loop/gitlab-delivery lint`
+- [x] Manual check: use bare remotes and a fake `glab`; inspect arguments, ordering, head SHA, and partial-failure evidence.
 
 **Dependencies:** Tasks 24 and 28; approved MR templates
 
