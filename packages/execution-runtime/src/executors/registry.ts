@@ -16,6 +16,7 @@ export interface NodeExecutor {
 
 export interface ExecutorRegistryOptions {
   readonly commands: Readonly<Record<string, NodeExecutor>>
+  readonly agents?: Readonly<Record<string, NodeExecutor>>
   readonly agent?: NodeExecutor
   readonly router?: NodeExecutor
 }
@@ -27,13 +28,14 @@ export interface ExecutorRegistry {
 
 export const createExecutorRegistry = (options: ExecutorRegistryOptions): ExecutorRegistry => {
   const commands = new Map(Object.entries(options.commands))
+  const agents = new Map(Object.entries(options.agents ?? {}))
   const registeredCommandIds = new Set(commands.keys())
 
   return {
     registeredCommandIds,
     resolve(node) {
       if (node.type === 'command') return commands.get(node.commandId)
-      if (node.type === 'agent') return options.agent
+      if (node.type === 'agent') return agents.get(node.id) ?? options.agent
       if (node.type === 'router') return options.router
       return undefined
     },

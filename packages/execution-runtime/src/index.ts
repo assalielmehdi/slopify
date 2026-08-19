@@ -91,7 +91,37 @@ export {
   type AgentExecutorAdapterResult,
   type CreateAgentExecutorAdapterOptions,
 } from './executors/agent-executor-adapter.js'
+export {
+  ExecutionPlanOutputSchema,
+  createPlanNodeExecutor,
+  type CreatePlanNodeExecutorOptions,
+} from './executors/plan-node.js'
+export {
+  ImplementationOutputSchema,
+  createGitCommitInspector,
+  createImplementationNodeExecutor,
+  type CommitInspectionEvidence,
+  type CommitInspectionResult,
+  type CreateGitCommitInspectorOptions,
+  type CreateImplementationNodeExecutorOptions,
+  type GitCommitInspector,
+} from './executors/implement-node.js'
 export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
+export {
+  ArtifactPublicationError,
+  createArtifactPublicationService,
+  type ArtifactConnector,
+  type ArtifactPublicationErrorCode,
+  type ArtifactPublicationService,
+  type ConnectorArtifact,
+  type ConnectorArtifactEnvelope,
+  type ConnectorArtifactReference,
+  type ConnectorPublishArtifactInput,
+  type CreateArtifactPublicationServiceOptions,
+  type DurableArtifactReference,
+  type LoadExactArtifactInput,
+  type PublishAgentArtifactInput,
+} from './services/artifact-publication.js'
 export {
   createRegisteredCommandExecutors,
   type CreateRegisteredCommandExecutorsOptions,
