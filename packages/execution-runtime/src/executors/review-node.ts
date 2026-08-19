@@ -91,13 +91,7 @@ export const createGitReviewInputInspector = (
         )
         const diff = await run(
           repository,
-          [
-            'diff',
-            '--no-ext-diff',
-            '--no-color',
-            '--no-renames',
-            `${repository.baseSha}..HEAD`,
-          ],
+          ['diff', '--no-ext-diff', '--no-color', '--no-renames', `${repository.baseSha}..HEAD`],
           signal,
         )
         const results = [branch, status, head, changedFiles, diff]
@@ -265,7 +259,8 @@ export const createReviewNodeExecutor = (
       inspected.status === 'failed' ||
       inspected.repositories.length !== prepared.repositories.length ||
       inspected.repositories.some(
-        (repository, index) => repository.repositoryId !== prepared.repositories[index]?.repositoryId,
+        (repository, index) =>
+          repository.repositoryId !== prepared.repositories[index]?.repositoryId,
       )
     ) {
       return failed('REVIEW_INPUT_INVALID', 'Repository review inputs are unavailable')

@@ -31,10 +31,7 @@ const reviewed = z.strictObject({
   repositories: z.array(reviewedRepository).min(1).max(32).readonly(),
 })
 
-export const ReviewFindingsOutputSchema = z.discriminatedUnion('status', [
-  blockedReview,
-  reviewed,
-])
+export const ReviewFindingsOutputSchema = z.discriminatedUnion('status', [blockedReview, reviewed])
 
 const agentEvidence = z.strictObject({
   kind: z.enum(['command', 'test', 'file', 'url', 'note']),
@@ -78,8 +75,8 @@ export const canonicalizeReviewedFindings = (
   )
   return {
     ...input,
-    repositories: repositories.map((repository) => byId.get(repository.repositoryId) as z.output<
-      typeof reviewedRepository
-    >),
+    repositories: repositories.map(
+      (repository) => byId.get(repository.repositoryId) as z.output<typeof reviewedRepository>,
+    ),
   }
 }
