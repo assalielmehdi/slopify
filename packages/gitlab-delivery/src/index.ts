@@ -20,6 +20,19 @@ export {
   type WorkspaceRunStore,
 } from './workspace.js'
 export {
+  createGlabClient,
+  type CreateGlabClientOptions,
+  type CreateMergeRequestInput,
+  type GlabClient,
+  type GlabCommandEvidence,
+  type GlabFailure,
+  type GlabFailureCode,
+  type GlabMergeRequest,
+  type GlabOperation,
+  type GlabOperationResult,
+  type ListOpenMergeRequestsInput,
+} from './glab.js'
+export {
   MergeRequestTemplateInputSchema,
   MergeRequestTemplateError,
   RenderedMergeRequestTemplateSchema,
