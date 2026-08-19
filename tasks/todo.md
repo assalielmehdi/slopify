@@ -719,14 +719,14 @@ content, deterministic ClickUp publication, and committed implementation
 evidence without changing the selected set.
 
 **Acceptance criteria:**
-- [ ] Planning publishes/read-backs one `EXECUTION_PLAN` with cross-repository contracts and per-repository work.
-- [ ] Implementation commits each selected repository and publishes/read-backs one `IMPLEMENTATION_SUMMARY` with per-repository evidence.
-- [ ] Wrong selection discovery returns `blocked`; agents never publish to ClickUp directly or operate outside selected worktrees.
+- [x] Planning publishes/read-backs one `EXECUTION_PLAN` with cross-repository contracts and per-repository work.
+- [x] Implementation commits each selected repository and publishes/read-backs one `IMPLEMENTATION_SUMMARY` with per-repository evidence.
+- [x] Wrong selection discovery returns `blocked`; agents never publish to ClickUp directly or operate outside selected worktrees.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- plan-node implement-node`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/clickup-artifacts build`
-- [ ] Manual check: inspect fake multi-repository prompts, commits, artifact envelopes, and routing events.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- plan-node implement-node`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/clickup-artifacts build`
+- [x] Manual check: inspect fake multi-repository prompts, commits, artifact envelopes, and routing events.
 
 **Dependencies:** Tasks 16, 22, and 24
 
