@@ -867,14 +867,14 @@ one combined `FINALIZATION` artifact and only then move/read-back the task to
 the configured In Review status, retaining partial evidence on any failure.
 
 **Acceptance criteria:**
-- [ ] The artifact contains every selected repository, MR URL, exact base, and final head SHA in profile order.
-- [ ] Status movement cannot occur before complete MR/artifact readback and never occurs for a partial set.
-- [ ] Comment/status failure stops the run with GitLab evidence intact and no automatic repair, duplicate cleanup, merge, or deploy.
+- [x] The artifact contains every selected repository, MR URL, exact base, and final head SHA in profile order.
+- [x] Status movement cannot occur before complete MR/artifact readback and never occurs for a partial set.
+- [x] Comment/status failure stops the run with GitLab evidence intact and no automatic repair, duplicate cleanup, merge, or deploy.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/gitlab-delivery test -- clickup-finalization multi-repository`
-- [ ] Build succeeds: `pnpm --filter @loop/gitlab-delivery build && pnpm --filter @loop/clickup-artifacts build`
-- [ ] Manual check: record fake connector call order for one/many repositories and every mutation failure point.
+- [x] Tests pass: `pnpm --filter @loop/gitlab-delivery test -- clickup-finalization multi-repository`
+- [x] Build succeeds: `pnpm --filter @loop/gitlab-delivery build && pnpm --filter @loop/clickup-artifacts build`
+- [x] Manual check: record fake connector call order for one/many repositories and every mutation failure point.
 
 **Dependencies:** Tasks 17 and 29; configured In Review identifier
 
@@ -888,9 +888,9 @@ the configured In Review status, retaining partial evidence on any failure.
 
 ## Checkpoint E3: After Tasks 29-30
 
-- [ ] Headless one- and multi-repository workflows finish with one verified fake MR per selected repository.
-- [ ] External failure fixtures preserve truthful partial evidence and never move ClickUp early.
-- [ ] The runtime makes no pipeline, approval, merge, deployment, or stage-verification claim.
+- [x] Headless one- and multi-repository workflows finish with one verified fake MR per selected repository.
+- [x] External failure fixtures preserve truthful partial evidence and never move ClickUp early.
+- [x] The runtime makes no pipeline, approval, merge, deployment, or stage-verification claim.
 
 ### UI implementation rule for Tasks 31-39
 
