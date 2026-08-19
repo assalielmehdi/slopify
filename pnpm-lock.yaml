@@ -118,6 +118,15 @@ importers:
         specifier: 9.6.0
         version: 9.6.0
 
+  packages/gitlab-delivery:
+    dependencies:
+      '@loop/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@loop/execution-runtime':
+        specifier: workspace:*
+        version: link:../execution-runtime
+
   packages/workflow-model:
     dependencies:
       '@loop/contracts':

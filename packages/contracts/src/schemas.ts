@@ -68,6 +68,34 @@ export const RepositoryReferenceSchema = z.strictObject({
   access: z.enum(['read-only', 'workspace-write']),
 })
 
+export const GitShaSchema = z
+  .string()
+  .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
+  .brand<'GitSha'>()
+
+export const GitWorkspaceSchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
+  repositoryPath: z.string().trim().min(1).max(4_096),
+  worktreePath: z.string().trim().min(1).max(4_096),
+  remote: z.string().trim().min(1).max(256),
+  targetBranch: z.string().trim().min(1).max(512),
+  sourceBranch: z.string().trim().min(1).max(512),
+  baseSha: GitShaSchema,
+})
+
+export const PrepareGitWorkspacesInputSchema = z
+  .strictObject({
+    runId: RunIdSchema,
+    taskId: z.string().trim().min(1).max(512),
+    profileId: ProjectProfileIdSchema,
+    selectedRepositoryIds: z.array(RepositoryIdSchema).min(1).max(32).readonly(),
+  })
+  .refine(
+    ({ selectedRepositoryIds }) =>
+      new Set(selectedRepositoryIds).size === selectedRepositoryIds.length,
+    { message: 'Selected repository IDs must be unique', path: ['selectedRepositoryIds'] },
+  )
+
 const configuredCommand = z.strictObject({
   executable: z.string().trim().min(1).max(1_024),
   arguments: z.array(z.string().max(4_096)).max(64).readonly(),
@@ -267,6 +295,9 @@ export type ApiError = z.infer<typeof ApiErrorSchema>
 export type HealthResponse = z.infer<typeof HealthResponseSchema>
 export type Evidence = z.infer<typeof EvidenceSchema>
 export type RepositoryReference = z.infer<typeof RepositoryReferenceSchema>
+export type GitSha = z.infer<typeof GitShaSchema>
+export type GitWorkspace = z.infer<typeof GitWorkspaceSchema>
+export type PrepareGitWorkspacesInput = z.infer<typeof PrepareGitWorkspacesInputSchema>
 export type ExecutableCheckConfiguration = z.infer<typeof ExecutableCheckConfigurationSchema>
 export type VerificationCommandConfiguration = z.infer<
   typeof VerificationCommandConfigurationSchema
