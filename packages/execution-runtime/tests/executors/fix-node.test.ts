@@ -18,6 +18,7 @@ import {
   createGitFindingResolutionInspector,
   createProcessRunner,
   type ArtifactConnector,
+  type ConnectorArtifact,
 } from '../../src/index.js'
 import {
   TEST_REVISION_ID,
@@ -72,7 +73,7 @@ const terminalEvent = (input: AgentExecutionInput, result: AgentNodeResult) =>
     executionId: input.executionId,
     runId: input.runId,
     nodeId: input.nodeId,
-    timestamp: '2026-08-19T13:00:03Z',
+    timestamp: '2026-08-19T13:00:07Z',
     type: 'AGENT_RESULT',
     data: {
       result,
@@ -86,14 +87,41 @@ const terminalEvent = (input: AgentExecutionInput, result: AgentNodeResult) =>
     },
   })
 
-const createConnector = (): ArtifactConnector => ({
-  async publishArtifact() {
-    throw new Error('Unexpected artifact publication')
-  },
-  async getArtifact() {
-    throw new Error('Artifact not found')
-  },
-})
+const createConnector = (): ArtifactConnector => {
+  let artifact: ConnectorArtifact | undefined
+  return {
+    async publishArtifact(input) {
+      artifact = {
+        taskId: input.taskId,
+        commentId: 'review-summary-comment-01',
+        author: 'Slopify Test',
+        createdAt: '2026-08-19T13:00:02Z',
+        envelope: {
+          runId: input.runId,
+          workflowId: input.workflowId,
+          revisionId: input.revisionId,
+          nodeId: input.nodeId,
+          artifactType: input.artifactType,
+          producer: input.producer,
+          status: input.status,
+        },
+        content: input.content,
+      }
+      return artifact
+    },
+    async getArtifact(input) {
+      if (
+        artifact === undefined ||
+        artifact.taskId !== input.taskId ||
+        artifact.envelope.runId !== input.runId ||
+        artifact.envelope.artifactType !== input.artifactType
+      ) {
+        throw new Error('Artifact not found')
+      }
+      return artifact
+    },
+  }
+}
 
 const createFixture = () => {
   const persistence = createPersistenceFixture()
@@ -238,6 +266,131 @@ const recordFailedVerification = (fixture: ReturnType<typeof createFixture>) => 
   })
 }
 
+const recordPassedVerificationAndFindings = async (
+  fixture: ReturnType<typeof createFixture>,
+) => {
+  fixture.persistence.runs.startNode({
+    runId: TEST_RUN_ID,
+    nodeExecutionId: 'node-execution-verify-01',
+    nodeId: 'verify',
+    inputReferences: [],
+    timestamp: '2026-08-19T13:00:01Z',
+  })
+  fixture.persistence.runs.completeNode({
+    runId: TEST_RUN_ID,
+    nodeExecutionId: 'node-execution-verify-01',
+    nodeId: 'verify',
+    outcome: 'passed',
+    durationMs: 10,
+    artifactIds: [],
+    output: {
+      commandId: 'verify-selected-repositories',
+      recordedAt: '2026-08-19T13:00:02Z',
+      repositories: [
+        {
+          repositoryId: 'api',
+          profilePosition: 0,
+          status: 'passed',
+          commands: [
+            {
+              commandIndex: 0,
+              command: { executable: 'pnpm', arguments: ['test'] },
+              status: 'passed',
+              processStatus: 'exited',
+              exitCode: 0,
+              signal: null,
+              durationMs: 5,
+              stdout: 'API tests passed',
+              stderr: '',
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            },
+          ],
+        },
+        {
+          repositoryId: 'docs',
+          profilePosition: 2,
+          status: 'passed',
+          commands: [
+            {
+              commandIndex: 0,
+              command: { executable: 'pnpm', arguments: ['lint'] },
+              status: 'passed',
+              processStatus: 'exited',
+              exitCode: 0,
+              signal: null,
+              durationMs: 5,
+              stdout: 'Docs lint passed',
+              stderr: '',
+              stdoutTruncated: false,
+              stderrTruncated: false,
+            },
+          ],
+        },
+      ],
+      totals: {
+        repositoryCount: 2,
+        commandCount: 2,
+        passedCommandCount: 2,
+        failedCommandCount: 0,
+      },
+    },
+    timestamp: '2026-08-19T13:00:02Z',
+  })
+  fixture.persistence.runs.startNode({
+    runId: TEST_RUN_ID,
+    nodeExecutionId: 'node-execution-aggregate-01',
+    nodeId: 'aggregate-review',
+    inputReferences: [],
+    timestamp: '2026-08-19T13:00:03Z',
+  })
+  const content = [
+    '# Review pass 1',
+    '',
+    'Status: changes-required',
+    '',
+    'API error responses still expose an internal field.',
+  ].join('\n')
+  const artifact = await fixture.artifacts.publish({
+    taskId: '86abc123',
+    runId: TEST_RUN_ID,
+    workflowId: TEST_WORKFLOW_ID,
+    revisionId: TEST_REVISION_ID,
+    nodeId: 'aggregate-review-findings',
+    nodeExecutionId: 'node-execution-aggregate-01',
+    artifactType: 'REVIEW_SUMMARY',
+    title: 'Review summary',
+    content,
+    status: 'changes-requested',
+  })
+  fixture.persistence.runs.completeNode({
+    runId: TEST_RUN_ID,
+    nodeExecutionId: 'node-execution-aggregate-01',
+    nodeId: 'aggregate-review',
+    outcome: 'changes-required',
+    durationMs: 10,
+    artifactIds: [artifact.artifactId],
+    output: {
+      status: 'changes-required',
+      reviewPass: 1,
+      findingCount: 1,
+      findings: [
+        {
+          reviewKind: 'security',
+          repositoryId: 'api',
+          severity: 'medium',
+          title: 'Internal response field exposed',
+          description: 'The API response contains an internal field.',
+          evidence: 'Response body assertion',
+          remediation: 'Remove the internal field.',
+        },
+      ],
+    },
+    timestamp: '2026-08-19T13:00:05Z',
+  })
+  return { artifact, content }
+}
+
 const contextFor = (fixture: ReturnType<typeof createFixture>) => {
   const node = fixture.persistence.revision.nodes.find(({ id }) => id === 'fix-findings')
   const run = fixture.persistence.runs.get(TEST_RUN_ID)
@@ -247,7 +400,7 @@ const contextFor = (fixture: ReturnType<typeof createFixture>) => {
     nodeExecutionId: 'node-execution-fix-01',
     nodeId: node.id,
     inputReferences: [],
-    timestamp: '2026-08-19T13:00:03Z',
+    timestamp: '2026-08-19T13:00:06Z',
   })
   return {
     run,
@@ -363,5 +516,131 @@ describe('fix findings node', () => {
       fixture.worktrees.docs.headSha,
     )
     expect(fixture.persistence.runs.listArtifacts(TEST_RUN_ID)).toEqual([])
+  })
+
+  it('loads the exact changes-requested review summary for aggregated findings', async () => {
+    const fixture = createFixture()
+    const review = await recordPassedVerificationAndFindings(fixture)
+    const inputs: AgentExecutionInput[] = []
+    const agent: AgentExecutor = {
+      execute: vi.fn<AgentExecutor['execute']>((input) =>
+        (async function* () {
+          inputs.push(input)
+          writeFileSync(join(fixture.worktrees.api.path, 'fix.txt'), 'Remove internal field\n')
+          git(fixture.worktrees.api.path, 'add', 'fix.txt')
+          git(fixture.worktrees.api.path, 'commit', '-m', 'Remove internal response field')
+          const result: AgentNodeResult = {
+            outcome: 'fixed',
+            summary: 'Resolved the aggregated API finding.',
+            data: {
+              status: 'fixed',
+              source: 'aggregated-findings',
+              repositories: [
+                {
+                  repositoryId: 'docs',
+                  status: 'unchanged',
+                  headSha: fixture.worktrees.docs.headSha,
+                  summary: 'The review summary contained no docs finding.',
+                  evidence: [{ kind: 'note', value: 'Docs HEAD was preserved.' }],
+                },
+                {
+                  repositoryId: 'api',
+                  status: 'changed',
+                  previousHeadSha: fixture.worktrees.api.headSha,
+                  commitSha: git(fixture.worktrees.api.path, 'rev-parse', 'HEAD'),
+                  summary: 'Removed the reviewed internal response field.',
+                  evidence: [{ kind: 'test', value: 'Response contract is now clean.' }],
+                },
+              ],
+            },
+            artifacts: [],
+            evidence: [],
+          }
+          yield terminalEvent(input, result)
+        })(),
+      ),
+      cancel: vi.fn<AgentExecutor['cancel']>(async () => ({ status: 'cancelled' })),
+    }
+    const executor = createFixNodeExecutor({
+      agent,
+      artifacts: fixture.artifacts,
+      inspector: fixture.inspector,
+      resourceBundle: resolutionBundle,
+      runs: fixture.persistence.runs,
+      selectedWorkspaceRoot: fixture.selectedWorkspaceRoot,
+    })
+
+    const result = await executor.execute(contextFor(fixture))
+
+    expect(result).toMatchObject({
+      status: 'succeeded',
+      outcome: 'fixed',
+      artifactIds: [],
+      output: { data: { status: 'fixed', source: 'aggregated-findings' } },
+    })
+    expect(inputs).toHaveLength(1)
+    expect(inputs[0]?.renderedPrompt).toContain(
+      'API error responses still expose an internal field.',
+    )
+    expect(inputs[0]?.renderedPrompt).toContain(review.artifact.artifactId)
+    expect(inputs[0]?.renderedPrompt).toContain('aggregated-findings')
+    expect(fixture.persistence.runs.listArtifacts(TEST_RUN_ID)).toHaveLength(1)
+  })
+
+  it('rejects resolution evidence when the agent leaves an uncommitted change', async () => {
+    const fixture = createFixture()
+    recordFailedVerification(fixture)
+    const agent: AgentExecutor = {
+      execute: vi.fn<AgentExecutor['execute']>((input) =>
+        (async function* () {
+          writeFileSync(join(fixture.worktrees.api.path, 'fix.txt'), 'Uncommitted fix\n')
+          const result: AgentNodeResult = {
+            outcome: 'fixed',
+            summary: 'Claimed a fix without committing it.',
+            data: {
+              status: 'fixed',
+              source: 'failed-verification',
+              repositories: [
+                {
+                  repositoryId: 'api',
+                  status: 'changed',
+                  previousHeadSha: fixture.worktrees.api.headSha,
+                  commitSha: fixture.worktrees.api.headSha,
+                  summary: 'Claimed API fix.',
+                  evidence: [{ kind: 'test', value: 'Claimed verification.' }],
+                },
+                {
+                  repositoryId: 'docs',
+                  status: 'unchanged',
+                  headSha: fixture.worktrees.docs.headSha,
+                  summary: 'Docs unchanged.',
+                  evidence: [{ kind: 'note', value: 'Docs preserved.' }],
+                },
+              ],
+            },
+            artifacts: [],
+            evidence: [],
+          }
+          yield terminalEvent(input, result)
+        })(),
+      ),
+      cancel: vi.fn<AgentExecutor['cancel']>(async () => ({ status: 'cancelled' })),
+    }
+    const executor = createFixNodeExecutor({
+      agent,
+      artifacts: fixture.artifacts,
+      inspector: fixture.inspector,
+      resourceBundle: resolutionBundle,
+      runs: fixture.persistence.runs,
+      selectedWorkspaceRoot: fixture.selectedWorkspaceRoot,
+    })
+
+    const result = await executor.execute(contextFor(fixture))
+
+    expect(result).toEqual({
+      status: 'failed',
+      code: 'FINDING_RESOLUTION_EVIDENCE_INVALID',
+      message: 'Fix commits do not match the selected worktrees',
+    })
   })
 })
