@@ -568,14 +568,14 @@ while excluding user-global Pi resources and repositories outside the active
 candidate or selected map.
 
 **Acceptance criteria:**
-- [ ] Repository selection sees every candidate read-only; later nodes see only immutable selected worktrees in profile order.
-- [ ] Review prompts include deterministic base-to-HEAD changes and latest evidence grouped by repository.
-- [ ] Template revision, rendered prompt, resources, stop conditions, and completion contract are inspectable without hidden transcript injection.
+- [x] Repository selection sees every candidate read-only; later nodes see only immutable selected worktrees in profile order.
+- [x] Review prompts include deterministic base-to-HEAD changes and latest evidence grouped by repository.
+- [x] Template revision, rendered prompt, resources, stop conditions, and completion contract are inspectable without hidden transcript injection.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/agent-runtimes test -- resource-loader prompt-renderer`
-- [ ] Build succeeds: `pnpm --filter @loop/agent-runtimes build && pnpm --filter @loop/agent-runtimes lint`
-- [ ] Manual check: place fake global Pi files outside the bundle and confirm they are not loaded.
+- [x] Tests pass: `pnpm --filter @loop/agent-runtimes test -- resource-loader prompt-renderer`
+- [x] Build succeeds: `pnpm --filter @loop/agent-runtimes build && pnpm --filter @loop/agent-runtimes lint`
+- [x] Manual check: place fake global Pi files outside the bundle and confirm they are not loaded.
 
 **Dependencies:** Tasks 18 and 19
 
@@ -590,9 +590,9 @@ candidate or selected map.
 
 ## Checkpoint D2: After Tasks 18-20
 
-- [ ] Pi application contracts expose no raw SDK type or selectable harness.
-- [ ] Completion is the only routing boundary and every invalid-call case is tested.
-- [ ] Prompt/resource fixtures prove candidate-versus-selected workspace isolation.
+- [x] Pi application contracts expose no raw SDK type or selectable harness.
+- [x] Completion is the only routing boundary and every invalid-call case is tested.
+- [x] Prompt/resource fixtures prove candidate-versus-selected workspace isolation.
 
 ## Task 21: Construct and terminate fresh Pi SDK sessions
 
