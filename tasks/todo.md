@@ -943,14 +943,14 @@ current component docs/registry, and retain only the compact accessible shell
 needed by the five routes.
 
 **Acceptance criteria:**
-- [ ] `components.json`, semantic tokens, aliases, primitive base, icon library, and pointer behavior come from `bddBUGsC` without decoding/reconstruction.
-- [ ] Official block/component search, docs, and dry-run/view evidence is recorded before custom shell markup is accepted.
-- [ ] The shell uses the 4 px/8 px rhythm, approved type hierarchy, keyboard navigation, visible focus, and no essential text below 12 px.
+- [x] `components.json`, semantic tokens, aliases, primitive base, icon library, and pointer behavior come from `bddBUGsC` without decoding/reconstruction.
+- [x] Official block/component search, docs, and dry-run/view evidence is recorded before custom shell markup is accepted.
+- [x] The shell uses the 4 px/8 px rhythm, approved type hierarchy, keyboard navigation, visible focus, and no essential text below 12 px.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- app-shell`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
-- [ ] Manual check: review every generated/retained source file and compare the shell at 1280 px with the visual/accessibility requirements.
+- [x] Tests pass: `pnpm --filter @loop/web test -- app-shell`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
+- [x] Manual check: review every generated/retained source file and compare the shell at 1280 px with the visual/accessibility requirements.
 
 **Dependencies:** Task 31; approved shadcn preset and current official catalog access
 
@@ -962,6 +962,13 @@ needed by the five routes.
 - `apps/web/tests/app-shell.test.tsx`
 
 **Estimated scope:** Medium: 3-5 primary files; preset-owned generated files are one reviewed scaffold
+
+**Task review (2026-08-19):**
+- Ran the exact approved preset command from `apps/web` without decoding the opaque code. The current CLI first required the minimal Next.js detection and Tailwind v4 baseline; after those prerequisites, `shadcn info` confirmed preset `bddBUGsC`, style `base-lyra`, Base UI primitives, Lucide icons, Inter, zinc semantic tokens, the existing aliases, and pointer behavior generated in `globals.css`.
+- Browsed the current official blocks and component catalogs; searched the official registry for operator shell, dashboard/sidebar, `dashboard-01`, and `sidebar-07`; read the Sidebar, Breadcrumb, Separator, and Button documentation; and inspected both mandated blocks with project-resolved dry runs and source views.
+- `dashboard-01` would add 34 files and 10 dependencies, while `sidebar-07` would add 18 demo-oriented files. The retained official Sidebar + Separator composition adds only the seven Sidebar dependencies plus the preset Button. Every generated/retained source file was reviewed; no custom primitive or third-party registry was used.
+- Captured RED for the absent application shell and again for the `/runs/new` current-page collision. The GREEN suite covers semantic navigation, all five route patterns, one current-page cue, rendered route content, the keyboard-reachable toggle, and the official Ctrl/Cmd+B shortcut.
+- Verified the shell at 1280×800 in Chromium: expanded and collapsed layouts render cleanly, focus shows a 2 px ring, no visible text computes below 12 px, the page has meaningful content, and there are no console errors or framework overlays.
 
 ## Task 33: Inspect the immutable workflow graph and node contracts
 

@@ -233,7 +233,7 @@ their integration checkpoints remain ordered.
 ### Phase 6: Operator workbench
 
 - [ ] Task 31: Scaffold the minimal Next.js workbench application
-- [ ] Task 32: Initialize the approved shadcn preset and operator shell
+- [x] Task 32: Initialize the approved shadcn preset and operator shell
 - [ ] Task 33: Inspect the immutable workflow graph and node contracts
 - [ ] Task 34: Save agent configuration as a new immutable revision
 - [ ] Task 35: Configure ordered project profiles and inspect readiness

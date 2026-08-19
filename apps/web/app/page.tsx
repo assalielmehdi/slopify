@@ -1,8 +1,10 @@
 export default function Page() {
   return (
-    <main>
-      <h1>Slopify</h1>
-      <p>Local software delivery workbench</p>
-    </main>
+    <section className="flex max-w-3xl flex-col gap-2">
+      <h1 className="font-heading text-2xl/8 font-semibold tracking-tight">Workflow</h1>
+      <p className="text-base/6 text-muted-foreground">
+        Inspect the immutable delivery workflow and its revisions.
+      </p>
+    </section>
   )
 }

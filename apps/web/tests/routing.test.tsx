@@ -12,8 +12,10 @@ describe('App Router root', () => {
   it('renders the workbench root through an accessible page heading', () => {
     render(<Page />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Slopify' })).toBeTruthy()
-    expect(screen.getByText('Local software delivery workbench')).toBeTruthy()
+    expect(screen.getByRole('heading', { level: 1, name: 'Workflow' })).toBeTruthy()
+    expect(
+      screen.getByText('Inspect the immutable delivery workflow and its revisions.'),
+    ).toBeTruthy()
   })
 
   it('provides the required English root document layout', () => {
