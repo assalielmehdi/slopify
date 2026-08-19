@@ -752,14 +752,14 @@ repository's bounded configured checks in profile order and produce structured,
 sanitized repository-specific pass/failure evidence for routing and review.
 
 **Acceptance criteria:**
-- [ ] Every selected repository command runs as an argument array with timeout and separate sanitized output.
-- [ ] All-pass selects `passed`; any failed check selects `failed-checks` with complete repository/command evidence.
-- [ ] Exit status alone never substitutes for a required structured verification record.
+- [x] Every selected repository command runs as an argument array with timeout and separate sanitized output.
+- [x] All-pass selects `passed`; any failed check selects `failed-checks` with complete repository/command evidence.
+- [x] Exit status alone never substitutes for a required structured verification record.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- verification-node`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/execution-runtime lint`
-- [ ] Manual check: execute mixed pass/fail fake repositories and inspect canonical ordering and redaction.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- verification-node`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/execution-runtime lint`
+- [x] Manual check: execute mixed pass/fail fake repositories and inspect canonical ordering and redaction.
 
 **Dependencies:** Tasks 10 and 25
 
