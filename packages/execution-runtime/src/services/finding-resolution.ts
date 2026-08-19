@@ -104,10 +104,7 @@ export const createGitFindingResolutionInspector = (
       signal,
     })
 
-  const inspectIdentity = async (
-    repository: SelectedAgentRepository,
-    signal: AbortSignal,
-  ) => {
+  const inspectIdentity = async (repository: SelectedAgentRepository, signal: AbortSignal) => {
     const branch = await run(repository, ['symbolic-ref', '--quiet', '--short', 'HEAD'], signal)
     const status = await run(repository, ['status', '--porcelain=v1'], signal)
     const head = await run(repository, ['rev-parse', '--verify', 'HEAD^{commit}'], signal)

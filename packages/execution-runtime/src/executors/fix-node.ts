@@ -25,13 +25,14 @@ export interface CreateFixNodeExecutorOptions extends ExecuteSelectedAgentNodeOp
 
 const failed = (code: string, message: string) => ({ status: 'failed' as const, code, message })
 
-const blockedResult = (summary = 'Fix result does not match the immutable repository selection') =>
-  ({
-    status: 'succeeded' as const,
-    outcome: 'blocked' as const,
-    artifactIds: [],
-    output: { summary },
-  })
+const blockedResult = (
+  summary = 'Fix result does not match the immutable repository selection',
+) => ({
+  status: 'succeeded' as const,
+  outcome: 'blocked' as const,
+  artifactIds: [],
+  output: { summary },
+})
 
 const sameValues = (left: readonly string[], right: readonly string[]): boolean =>
   left.length === right.length && left.every((value, index) => value === right[index])
@@ -93,8 +94,7 @@ export const createFixNodeExecutor = (options: CreateFixNodeExecutorOptions): No
       ({ nodeExecutionId }) => nodeExecutionId === context.nodeExecutionId,
     )
     const beforeCurrent = executions.filter(
-      ({ executionIndex }) =>
-        current !== undefined && executionIndex < current.executionIndex,
+      ({ executionIndex }) => current !== undefined && executionIndex < current.executionIndex,
     )
     const predecessor = beforeCurrent.at(-1)
     const latestVerificationExecution = beforeCurrent
@@ -106,8 +106,7 @@ export const createFixNodeExecutor = (options: CreateFixNodeExecutorOptions): No
     const source: ResolutionSource | undefined =
       predecessor?.nodeId === 'verify' && predecessor.outcome === 'failed-checks'
         ? 'failed-verification'
-        : predecessor?.nodeId === 'aggregate-review' &&
-            predecessor.outcome === 'changes-required'
+        : predecessor?.nodeId === 'aggregate-review' && predecessor.outcome === 'changes-required'
           ? 'aggregated-findings'
           : undefined
     const parsedAggregate = AggregateReviewOutputSchema.safeParse(predecessor?.output)

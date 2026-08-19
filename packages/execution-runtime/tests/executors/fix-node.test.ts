@@ -266,9 +266,7 @@ const recordFailedVerification = (fixture: ReturnType<typeof createFixture>) => 
   })
 }
 
-const recordPassedVerificationAndFindings = async (
-  fixture: ReturnType<typeof createFixture>,
-) => {
+const recordPassedVerificationAndFindings = async (fixture: ReturnType<typeof createFixture>) => {
   fixture.persistence.runs.startNode({
     runId: TEST_RUN_ID,
     nodeExecutionId: 'node-execution-verify-01',

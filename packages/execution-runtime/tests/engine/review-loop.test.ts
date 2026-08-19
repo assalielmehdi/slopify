@@ -1,10 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  createExecutorRegistry,
-  createRunEngine,
-  type NodeExecutor,
-} from '../../src/index.js'
+import { createExecutorRegistry, createRunEngine, type NodeExecutor } from '../../src/index.js'
 import { TEST_RUN_ID, createPersistenceFixture, createRun } from '../persistence/test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -71,8 +67,7 @@ const createReviewLoop = (fixCyclesBeforeClean: number, blockedFixPass?: number)
         'aggregate-review-findings': {
           execute: async () => {
             aggregatePass += 1
-            const status =
-              aggregatePass <= fixCyclesBeforeClean ? 'changes-required' : 'clean'
+            const status = aggregatePass <= fixCyclesBeforeClean ? 'changes-required' : 'clean'
             return succeeded(status, { reviewPass: aggregatePass, status })
           },
         },
@@ -117,9 +112,7 @@ describe('bounded predefined review loop', () => {
         executions.length,
       )
       expect(
-        executions
-          .filter(({ nodeId }) => nodeId === 'fix-findings')
-          .map(({ output }) => output),
+        executions.filter(({ nodeId }) => nodeId === 'fix-findings').map(({ output }) => output),
       ).toEqual(
         Array.from({ length: fixCycles }, (_, index) => ({
           fixPass: index + 1,
@@ -181,9 +174,7 @@ describe('bounded predefined review loop', () => {
     expect(executions.filter(({ nodeId }) => nodeId === 'fix-findings')).toHaveLength(3)
     expect(executions.filter(({ nodeId }) => nodeId === 'verify')).toHaveLength(4)
     expect(
-      executions
-        .filter(({ nodeId }) => nodeId === 'aggregate-review')
-        .map(({ output }) => output),
+      executions.filter(({ nodeId }) => nodeId === 'aggregate-review').map(({ output }) => output),
     ).toEqual([
       { reviewPass: 1, status: 'changes-required' },
       { reviewPass: 2, status: 'changes-required' },

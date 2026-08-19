@@ -807,14 +807,14 @@ commit fixes per repository, and route back through complete verification and
 all three fresh reviews until clean or transition exhaustion.
 
 **Acceptance criteria:**
-- [ ] Fix receives only the exact current run evidence and cannot alter repository selection.
-- [ ] Every fix pass returns to verification and reruns all reviews; no retry/resume shortcut exists.
-- [ ] Commits and resolution evidence are preserved, while `blocked` or limit exhaustion terminates visibly.
+- [x] Fix receives only the exact current run evidence and cannot alter repository selection.
+- [x] Every fix pass returns to verification and reruns all reviews; no retry/resume shortcut exists.
+- [x] Commits and resolution evidence are preserved, while `blocked` or limit exhaustion terminates visibly.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- fix-node review-loop transition-limit`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/execution-runtime typecheck`
-- [ ] Manual check: trace zero, one, two, and over-limit fix cycles with exact event/summary history.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- fix-node review-loop transition-limit`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/execution-runtime typecheck`
+- [x] Manual check: trace zero, one, two, and over-limit fix cycles with exact event/summary history.
 
 **Dependencies:** Tasks 9, 25, 26, and 27
 
@@ -828,9 +828,9 @@ all three fresh reviews until clean or transition exhaustion.
 
 ## Checkpoint E2: After Tasks 26-28
 
-- [ ] Verification evidence is complete, ordered, bounded, and redacted.
-- [ ] Reviews are fresh, sequential, read-only, and aggregated into one durable lifecycle.
-- [ ] The explicit fix loop re-verifies/re-reviews and stops at the approved transition limit.
+- [x] Verification evidence is complete, ordered, bounded, and redacted.
+- [x] Reviews are fresh, sequential, read-only, and aggregated into one durable lifecycle.
+- [x] The explicit fix loop re-verifies/re-reviews and stops at the approved transition limit.
 
 ## Task 29: Create and verify one GitLab merge request per repository
 

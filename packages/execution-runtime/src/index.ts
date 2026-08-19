@@ -129,10 +129,7 @@ export {
   type AggregateReviewOutput,
   type CreateAggregateReviewNodeExecutorOptions,
 } from './executors/aggregate-review.js'
-export {
-  createFixNodeExecutor,
-  type CreateFixNodeExecutorOptions,
-} from './executors/fix-node.js'
+export { createFixNodeExecutor, type CreateFixNodeExecutorOptions } from './executors/fix-node.js'
 export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
 export {
   ArtifactPublicationError,
