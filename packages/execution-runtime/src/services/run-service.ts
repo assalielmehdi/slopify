@@ -6,6 +6,7 @@ import {
   type RunId,
 } from '@loop/contracts'
 import type { WorkflowRevision } from '@loop/workflow-model'
+import { z } from 'zod'
 
 import type { EventStore } from '../events/event-store.js'
 import type { JsonValue } from '../persistence/json.js'
@@ -52,7 +53,10 @@ export class RunServiceError extends Error {
 }
 
 export interface RunTaskResolver {
-  resolve(taskReference: string): Promise<JsonValue>
+  resolve(
+    taskReference: string,
+    context?: Readonly<{ clickupWorkspaceId: string }>,
+  ): Promise<JsonValue>
 }
 
 export interface DeterministicNodeSource {
@@ -187,13 +191,21 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
       if (workflow === undefined) {
         throw new RunServiceError('WORKFLOW_NOT_FOUND', 'Workflow revision was not found')
       }
+      const profile = options.profiles.get(profileId)
+      if (profile === undefined) {
+        throw new RunServiceError('PROFILE_NOT_READY', 'Project profile is not ready')
+      }
       const readiness = await options.readiness.check(profileId)
       if (!readiness.ready) {
         throw new RunServiceError('PROFILE_NOT_READY', 'Project profile is not ready')
       }
       let taskSnapshot: JsonValue
       try {
-        taskSnapshot = await options.tasks.resolve(taskReference)
+        taskSnapshot = z.json().parse(
+          await options.tasks.resolve(taskReference, {
+            clickupWorkspaceId: profile.clickupWorkspaceId,
+          }),
+        )
       } catch (cause) {
         throw new RunServiceError('TASK_RESOLUTION_FAILED', 'Task could not be resolved', { cause })
       }

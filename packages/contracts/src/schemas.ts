@@ -134,6 +134,11 @@ export const CreateRunRequestSchema = z.strictObject({
   profileId: ProjectProfileIdSchema,
 })
 
+export const ResolveClickUpTaskRequestSchema = z.strictObject({
+  taskReference: z.string().trim().min(1).max(512),
+  profileId: ProjectProfileIdSchema,
+})
+
 export const CancelRunRequestSchema = z.strictObject({
   reason: z.string().trim().min(1).max(1_024).optional(),
 })
@@ -271,6 +276,7 @@ export type ProjectProfileConfiguration = z.infer<typeof ProjectProfileConfigura
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
 export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
+export type ResolveClickUpTaskRequest = z.infer<typeof ResolveClickUpTaskRequestSchema>
 export type CancelRunRequest = z.infer<typeof CancelRunRequestSchema>
 export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>
 export type RunEvent = z.infer<typeof RunEventSchema>

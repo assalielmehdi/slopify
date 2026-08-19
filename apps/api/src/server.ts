@@ -1,6 +1,7 @@
 import { pathToFileURL } from 'node:url'
 import type { Server } from 'node:http'
 import { serve } from '@hono/node-server'
+import { createClickUpClient } from '@loop/clickup-artifacts'
 import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
 import {
   createProcessRunner,
@@ -16,8 +17,10 @@ import {
   createWorkflowRepository,
   createWorkflowService,
   openDatabase,
+  type RunTaskResolver,
 } from '@loop/execution-runtime'
 import type { Hono } from 'hono'
+import { z } from 'zod'
 
 import { createApiApp } from './app.js'
 import { createShutdownCoordinator, registerShutdownSignals } from './shutdown.js'
@@ -122,6 +125,26 @@ export const resolveConnectorStatus = (environment: ApiEnvironment): ConnectorSt
     modelProvider: configured(environment.MODEL_PROVIDER_API_KEY),
   })
 
+type ClickUpTaskClientFactory = (options: {
+  readonly token: string
+  readonly workspaceId: string
+}) => Readonly<{ getTask(taskReference: string): Promise<unknown> }>
+
+export const createConfiguredTaskResolver = (
+  environment: ApiEnvironment,
+  createClient: ClickUpTaskClientFactory = createClickUpClient,
+): RunTaskResolver => ({
+  async resolve(taskReference, context) {
+    if (context === undefined) throw new Error('ClickUp workspace context is required')
+    return z.json().parse(
+      await createClient({
+        token: environment.CLICKUP_API_TOKEN ?? '',
+        workspaceId: context.clickupWorkspaceId,
+      }).getTask(taskReference),
+    )
+  },
+})
+
 export const startApiServer = (input: {
   readonly app: Hono
   readonly configuration: ApiServerConfiguration
@@ -164,16 +187,13 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     processRunner: createProcessRunner({ maxOutputBytes: 65_536, redactedValues }),
     connectors: () => resolveConnectorStatus(environment),
   })
+  const tasks = createConfiguredTaskResolver(environment)
   const runService = createRunService({
     events: eventStore,
     profiles: profileRepository,
     readiness,
     runs: runRepository,
-    tasks: {
-      async resolve() {
-        throw new Error('ClickUp task resolution is not configured')
-      },
-    },
+    tasks,
     workflows: workflowRepository,
   })
   const cancellation = createCancellationService({
@@ -188,6 +208,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       profiles: profileService,
       readiness,
       runs: runService,
+      tasks,
       workflows: createWorkflowService({ workflows: workflowRepository }),
     }),
     configuration,

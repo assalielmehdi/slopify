@@ -1,10 +1,11 @@
 import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
+  createConfiguredTaskResolver,
   resolveConnectorStatus,
   resolveApiServerConfiguration,
   startApiServer,
@@ -96,5 +97,29 @@ describe('API server configuration', () => {
     expect(status).toEqual({ clickup: true, gitlab: false, modelProvider: true })
     expect(JSON.stringify(status)).not.toContain('clickup-secret')
     expect(JSON.stringify(status)).not.toContain('provider-secret')
+  })
+
+  it('creates ClickUp task clients with profile-scoped workspace context', async () => {
+    const getTask = vi.fn(async (taskReference: string) => ({
+      taskId: '86abc123',
+      title: `Resolved ${taskReference}`,
+    }))
+    const createClient = vi.fn(() => ({ getTask }))
+    const resolver = createConfiguredTaskResolver(
+      { CLICKUP_API_TOKEN: 'clickup-secret' },
+      createClient,
+    )
+
+    const snapshot = await resolver.resolve('CU-123', {
+      clickupWorkspaceId: 'workspace-01',
+    })
+
+    expect(snapshot).toEqual({ taskId: '86abc123', title: 'Resolved CU-123' })
+    expect(createClient).toHaveBeenCalledWith({
+      token: 'clickup-secret',
+      workspaceId: 'workspace-01',
+    })
+    expect(getTask).toHaveBeenCalledWith('CU-123')
+    expect(JSON.stringify(snapshot)).not.toContain('clickup-secret')
   })
 })

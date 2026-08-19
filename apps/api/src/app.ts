@@ -10,38 +10,21 @@ import {
   type ReadinessService,
   type RunService,
   type RunEventFeed,
+  type RunTaskResolver,
   type WorkbenchDatabase,
   type WorkflowService,
 } from '@loop/execution-runtime'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
+import { ApiApplicationError } from './api-error.js'
+import { registerClickUpTaskRoutes } from './routes/clickup-tasks.js'
 import { registerProjectProfileRoutes } from './routes/project-profiles.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
-type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
-
-export class ApiApplicationError extends Error {
-  readonly status: ApiApplicationErrorStatus
-  readonly code: string
-  readonly details?: unknown
-
-  constructor(input: {
-    readonly status: ApiApplicationErrorStatus
-    readonly code: string
-    readonly message: string
-    readonly details?: unknown
-    readonly cause?: unknown
-  }) {
-    super(input.message, input.cause === undefined ? undefined : { cause: input.cause })
-    this.name = 'ApiApplicationError'
-    this.status = input.status
-    this.code = input.code
-    if (input.details !== undefined) this.details = input.details
-  }
-}
+export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
 export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
@@ -49,21 +32,9 @@ export interface CreateApiAppOptions {
   readonly profiles?: ProjectProfileService
   readonly readiness?: ReadinessService
   readonly runs?: RunService
+  readonly tasks?: RunTaskResolver
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
-}
-
-export const parseJsonBody = async (context: Context): Promise<unknown> => {
-  try {
-    return await context.req.json<unknown>()
-  } catch (cause) {
-    throw new ApiApplicationError({
-      status: 400,
-      code: 'VALIDATION_ERROR',
-      message: 'Request validation failed',
-      cause,
-    })
-  }
 }
 
 const errorBody = (input: {
@@ -107,6 +78,9 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       profiles: options.profiles,
       readiness: options.readiness,
     })
+  }
+  if (options.profiles !== undefined && options.tasks !== undefined) {
+    registerClickUpTaskRoutes(app, { profiles: options.profiles, tasks: options.tasks })
   }
 
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
