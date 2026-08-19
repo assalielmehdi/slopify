@@ -165,6 +165,44 @@ describe('renderAgentPrompt repository scope', () => {
     ])
     expect(rendered.renderedPrompt).not.toContain('unselected-docs')
   })
+
+  it('renders bounded current evidence explicitly for a write-capable execution', () => {
+    const resourceBundle = loadBundle(
+      selectedRepositories.map((repository) => ({
+        repositoryId: repository.repositoryId,
+        path: repository.worktreePath,
+      })),
+    )
+
+    const rendered = renderAgentPrompt({
+      ...commonInput,
+      kind: 'execution',
+      permissionProfile: 'workspace-write',
+      executionEvidence: [
+        {
+          kind: 'test',
+          value: 'api: pnpm test failed with exit code 1',
+        },
+        {
+          kind: 'note',
+          value: 'resolution source: failed-verification',
+        },
+      ],
+      resourceBundle,
+      workspace: {
+        policy: 'selected-worktrees',
+        repositories: selectedRepositories,
+      },
+    })
+
+    expect(rendered.executionEvidence).toEqual([
+      { kind: 'test', value: 'api: pnpm test failed with exit code 1' },
+      { kind: 'note', value: 'resolution source: failed-verification' },
+    ])
+    expect(rendered.renderedPrompt).toContain('Current execution evidence')
+    expect(rendered.renderedPrompt).toContain('api: pnpm test failed with exit code 1')
+    expect(Object.isFrozen(rendered.executionEvidence)).toBe(true)
+  })
 })
 
 describe('renderAgentPrompt review and inspection', () => {

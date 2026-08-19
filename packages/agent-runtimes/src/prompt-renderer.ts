@@ -131,6 +131,7 @@ const ExecutionPromptSchema = z.strictObject({
   ...commonShape,
   kind: z.literal('execution'),
   permissionProfile: PermissionProfileSchema,
+  executionEvidence: z.array(VerificationEvidenceSchema).max(128).default([]),
   workspace: z.strictObject({
     policy: z.literal('selected-worktrees'),
     repositories: z.array(SelectedRepositorySchema).min(1).max(32),
@@ -217,6 +218,7 @@ export interface RenderedAgentPrompt {
     outputSchemaRef: string
   }>
   readonly workspace: RenderedPromptWorkspace
+  readonly executionEvidence?: readonly Readonly<{ kind: string; value: string }>[]
   readonly reviewRepositories?: readonly RenderedReviewRepository[]
 }
 
@@ -333,6 +335,12 @@ export const renderAgentPrompt = (input: RenderAgentPromptInput): RenderedAgentP
   })
 
   let reviewRepositories: readonly RenderedReviewRepository[] | undefined
+  let executionEvidence: readonly Readonly<{ kind: string; value: string }>[] | undefined
+  if (parsed.data.kind === 'execution' && parsed.data.executionEvidence.length > 0) {
+    executionEvidence = Object.freeze(
+      parsed.data.executionEvidence.map((evidence) => Object.freeze({ ...evidence })),
+    )
+  }
   if (parsed.data.kind === 'review') {
     const reviewsById = new Map(
       parsed.data.reviewRepositories.map((review) => [review.repositoryId, review]),
@@ -385,6 +393,9 @@ export const renderAgentPrompt = (input: RenderAgentPromptInput): RenderedAgentP
   if (reviewRepositories !== undefined) {
     sections.push(renderJsonSection('Repository-grouped review inputs', reviewRepositories))
   }
+  if (executionEvidence !== undefined) {
+    sections.push(renderJsonSection('Current execution evidence', executionEvidence))
+  }
   sections.push(
     `## Completion boundary\n\nCall \`complete_node\` exactly once. Free-form assistant text and other tool output are not routing results.\n\n\`\`\`json\n${JSON.stringify(canonicalize(completionContract), null, 2)}\n\`\`\``,
     renderJsonSection('Stop conditions', stopConditions),
@@ -401,6 +412,7 @@ export const renderAgentPrompt = (input: RenderAgentPromptInput): RenderedAgentP
     stopConditions,
     completionContract,
     workspace,
+    ...(executionEvidence === undefined ? {} : { executionEvidence }),
     ...(reviewRepositories === undefined ? {} : { reviewRepositories }),
   })
 }
