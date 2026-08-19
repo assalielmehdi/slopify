@@ -54,11 +54,15 @@ const pending = new Promise<void>(() => undefined)
 
 const createSession = (overrides: Partial<PiSession> = {}) => {
   let idle = true
+  let listener: ((event: unknown) => void) | undefined
   const unsubscribe = vi.fn()
   const session: PiSession = {
     sessionId: 'session-01',
     prompt: vi.fn(async () => undefined),
-    subscribe: vi.fn(() => unsubscribe),
+    subscribe: vi.fn((nextListener) => {
+      listener = nextListener
+      return unsubscribe
+    }),
     abort: vi.fn(async () => {
       idle = true
     }),
@@ -80,10 +84,17 @@ const createSession = (overrides: Partial<PiSession> = {}) => {
     setIdle(value: boolean) {
       idle = value
     },
+    emit(event: unknown) {
+      listener?.(event)
+    },
   }
 }
 
-const createExecutor = (session: PiSession, now = () => Date.parse('2026-08-19T00:00:00Z')) => {
+const createExecutor = (
+  session: PiSession,
+  now = () => Date.parse('2026-08-19T00:00:00Z'),
+  sensitiveValues: readonly string[] = [],
+) => {
   const sessionFactory: PiSessionFactory = {
     create: vi.fn(async () => session),
   }
@@ -94,6 +105,7 @@ const createExecutor = (session: PiSession, now = () => Date.parse('2026-08-19T0
         outputSchema: z.object({ sections: z.number().int().positive() }),
         resourceBundle,
       }),
+      sensitiveValues,
       now,
     }),
     sessionFactory,
@@ -146,6 +158,72 @@ describe('Pi SDK executor', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1)
   })
 
+  it('emits normalized subscribed events before one redacted result', async () => {
+    const secret = 'sk-provider-secret'
+    const created = createSession({
+      finish: vi.fn(() => ({
+        ...result,
+        summary: `Prepared with ${secret}`,
+        data: { sections: 3, credential: secret },
+      })),
+    })
+    vi.mocked(created.session.prompt).mockImplementation(async () => {
+      created.emit({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'text_delta', delta: `Visible ${secret}` },
+      })
+      created.emit({
+        type: 'message_update',
+        assistantMessageEvent: { type: 'thinking_delta', delta: `Hidden ${secret}` },
+      })
+      created.emit({
+        type: 'tool_execution_start',
+        toolCallId: 'tool-01',
+        toolName: 'read',
+        args: { credential: secret },
+      })
+      created.emit({
+        type: 'tool_execution_update',
+        toolCallId: 'tool-01',
+        toolName: 'read',
+        partialResult: { content: [{ type: 'text', text: `token=${secret}` }] },
+      })
+      created.emit({
+        type: 'tool_execution_end',
+        toolCallId: 'tool-01',
+        toolName: 'read',
+        result: { content: [{ type: 'text', text: `done ${secret}` }] },
+        isError: false,
+      })
+    })
+    const { executor } = createExecutor(created.session, () => Date.parse('2026-08-19T00:00:00Z'), [
+      secret,
+    ])
+
+    const events = await collect(executor.execute(input))
+
+    expect(events.map(({ type }) => type)).toEqual([
+      'AGENT_STARTED',
+      'AGENT_SESSION_IDENTIFIED',
+      'AGENT_MESSAGE',
+      'AGENT_TOOL_STARTED',
+      'AGENT_TOOL_UPDATED',
+      'AGENT_TOOL_COMPLETED',
+      'AGENT_RESULT',
+    ])
+    expect(JSON.stringify(events)).not.toContain(secret)
+    expect(JSON.stringify(events)).not.toContain('Hidden')
+    expect(events.at(-1)).toMatchObject({
+      type: 'AGENT_RESULT',
+      data: {
+        result: {
+          summary: 'Prepared with [REDACTED]',
+          data: { sections: 3, credential: '[REDACTED]' },
+        },
+      },
+    })
+  })
+
   it('cancels through abort, idle confirmation, subscription release, and disposal', async () => {
     const { session, unsubscribe } = createSession({ prompt: vi.fn(() => pending) })
     const { executor } = createExecutor(session)
@@ -165,6 +243,37 @@ describe('Pi SDK executor', () => {
     expect(session.isIdle).toHaveBeenCalledTimes(1)
     expect(unsubscribe).toHaveBeenCalledTimes(1)
     expect(session.dispose).toHaveBeenCalledTimes(1)
+    await iterator.next()
+  })
+
+  it('retains tool-finalization evidence emitted while the SDK aborts', async () => {
+    const created = createSession({ prompt: vi.fn(() => pending) })
+    vi.mocked(created.session.abort).mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+      created.emit({
+        type: 'tool_execution_end',
+        toolCallId: 'tool-01',
+        toolName: 'bash',
+        result: { content: [{ type: 'text', text: 'Command aborted' }] },
+        isError: true,
+      })
+    })
+    const { executor } = createExecutor(created.session)
+    const iterator = executor.execute(input)[Symbol.asyncIterator]()
+    await iterator.next()
+    await iterator.next()
+    const observation = iterator.next()
+
+    await expect(executor.cancel(input.executionId)).resolves.toEqual({ status: 'cancelled' })
+    await expect(observation).resolves.toMatchObject({
+      value: {
+        type: 'AGENT_TOOL_COMPLETED',
+        data: { toolCallId: 'tool-01', status: 'failed', content: 'Command aborted' },
+      },
+    })
+    await expect(iterator.next()).resolves.toMatchObject({
+      value: { type: 'AGENT_CANCELLED' },
+    })
     await iterator.next()
   })
 

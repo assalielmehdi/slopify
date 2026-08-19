@@ -74,3 +74,16 @@ export {
   type AgentExecutionContext,
   type CreatePiSdkAgentExecutorOptions,
 } from './pi-sdk-executor.js'
+export {
+  createEventRedactor,
+  redactAgentNodeResult,
+  type CreateEventRedactorOptions,
+  type EventRedactor,
+  type RedactionStream,
+} from './redaction.js'
+export {
+  createPiEventNormalizer,
+  type CreatePiEventNormalizerOptions,
+  type NormalizedPiEvent,
+  type PiEventNormalizer,
+} from './event-normalizer.js'

@@ -9,6 +9,12 @@ import {
   type AgentExecutionInput,
   type AgentExecutor,
 } from './contract.js'
+import {
+  createPiEventNormalizer,
+  type NormalizedPiEvent,
+  type PiEventNormalizer,
+} from './event-normalizer.js'
+import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import type { LoadedResourceBundle } from './resource-loader.js'
 import type { PiSession, PiSessionFactory } from './session-factory.js'
 
@@ -20,6 +26,7 @@ export interface AgentExecutionContext {
 export interface CreatePiSdkAgentExecutorOptions {
   readonly sessionFactory: PiSessionFactory
   readonly resolveContext: (input: AgentExecutionInput) => Promise<AgentExecutionContext>
+  readonly sensitiveValues: readonly string[]
   readonly now?: () => number
 }
 
@@ -38,6 +45,41 @@ type PromptOutcome =
   | { readonly kind: 'failed' }
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'timed-out' }
+
+type ExecutionLoopOutcome = PromptOutcome | { readonly kind: 'observations' }
+
+class ObservationQueue {
+  readonly #items: NormalizedPiEvent[] = []
+  #signal: Promise<{ readonly kind: 'observations' }>
+  #resolveSignal: () => void = () => undefined
+
+  constructor() {
+    this.#signal = this.#createSignal()
+  }
+
+  #createSignal(): Promise<{ readonly kind: 'observations' }> {
+    return new Promise((resolve) => {
+      this.#resolveSignal = () => resolve({ kind: 'observations' })
+    })
+  }
+
+  push(events: readonly NormalizedPiEvent[]): void {
+    if (events.length === 0) return
+    const wasEmpty = this.#items.length === 0
+    this.#items.push(...events)
+    if (wasEmpty) this.#resolveSignal()
+  }
+
+  shift(): NormalizedPiEvent | undefined {
+    const event = this.#items.shift()
+    if (this.#items.length === 0) this.#signal = this.#createSignal()
+    return event
+  }
+
+  wait(): Promise<{ readonly kind: 'observations' }> {
+    return this.#items.length === 0 ? this.#signal : Promise.resolve({ kind: 'observations' })
+  }
+}
 
 const terminalMessages = {
   AGENT_SESSION_FAILED: 'Agent session failed',
@@ -99,6 +141,7 @@ export const createPiSdkAgentExecutor = (
 ): AgentExecutor => {
   const activeExecutions = new Map<AgentExecutionId, ActiveExecution>()
   const now = options.now ?? Date.now
+  const redactor = createEventRedactor({ sensitiveValues: options.sensitiveValues })
 
   const event = (
     input: AgentExecutionInput,
@@ -120,6 +163,7 @@ export const createPiSdkAgentExecutor = (
       const startedAt = now()
       const durationMs = () => Math.max(0, now() - startedAt)
       let active: ActiveExecution | undefined
+      let normalizer: PiEventNormalizer | undefined
       let timeout: ReturnType<typeof setTimeout> | undefined
 
       yield event(input, 'AGENT_STARTED', {})
@@ -141,7 +185,11 @@ export const createPiSdkAgentExecutor = (
           resourceBundle: context.resourceBundle,
         })
         active = createActiveExecution(session)
-        active.unsubscribe = session.subscribe(() => undefined)
+        normalizer = createPiEventNormalizer({ redactor })
+        const observations = new ObservationQueue()
+        active.unsubscribe = session.subscribe((sdkEvent) => {
+          observations.push(normalizer?.normalize(sdkEvent) ?? [])
+        })
         activeExecutions.set(input.executionId, active)
 
         yield event(input, 'AGENT_SESSION_IDENTIFIED', { sessionId: session.sessionId })
@@ -155,11 +203,34 @@ export const createPiSdkAgentExecutor = (
               () => ({ kind: 'completed' }),
               () => ({ kind: 'failed' }),
             )
-        const outcome = await Promise.race([promptOutcome, timeoutOutcome, active.cancellation])
+        let outcome: PromptOutcome | undefined
+        while (outcome === undefined) {
+          const observation = observations.shift()
+          if (observation !== undefined) {
+            yield event(input, observation.type, observation.data)
+            continue
+          }
+          const next: ExecutionLoopOutcome = await Promise.race([
+            promptOutcome,
+            timeoutOutcome,
+            active.cancellation,
+            observations.wait(),
+          ])
+          if (next.kind !== 'observations') outcome = next
+        }
+        const stopConfirmed =
+          outcome.kind === 'cancelled' || outcome.kind === 'timed-out'
+            ? await stop(active)
+            : undefined
+        normalizer.finish()
+        let remaining = observations.shift()
+        while (remaining !== undefined) {
+          yield event(input, remaining.type, remaining.data)
+          remaining = observations.shift()
+        }
 
         if (outcome.kind === 'cancelled') {
-          const confirmed = await stop(active)
-          yield confirmed
+          yield stopConfirmed === true
             ? event(input, 'AGENT_CANCELLED', {
                 reason: 'Cancellation requested',
                 durationMs: durationMs(),
@@ -173,12 +244,12 @@ export const createPiSdkAgentExecutor = (
         }
 
         if (outcome.kind === 'timed-out') {
-          const confirmed = await stop(active)
           yield event(input, 'AGENT_FAILED', {
-            code: confirmed ? 'AGENT_TIMEOUT' : 'AGENT_STOP_UNCONFIRMED',
-            message: confirmed
-              ? terminalMessages.AGENT_TIMEOUT
-              : terminalMessages.AGENT_STOP_UNCONFIRMED,
+            code: stopConfirmed === true ? 'AGENT_TIMEOUT' : 'AGENT_STOP_UNCONFIRMED',
+            message:
+              stopConfirmed === true
+                ? terminalMessages.AGENT_TIMEOUT
+                : terminalMessages.AGENT_STOP_UNCONFIRMED,
             durationMs: durationMs(),
           })
           return
@@ -194,7 +265,7 @@ export const createPiSdkAgentExecutor = (
         }
 
         yield event(input, 'AGENT_RESULT', {
-          result: session.finish(),
+          result: redactAgentNodeResult(session.finish(), redactor),
           usage: session.getUsage(),
           durationMs: durationMs(),
         })
@@ -219,6 +290,7 @@ export const createPiSdkAgentExecutor = (
           })
         }
       } finally {
+        normalizer?.finish()
         if (timeout !== undefined) clearTimeout(timeout)
         if (active !== undefined) {
           release(active)
