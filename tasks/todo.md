@@ -691,14 +691,14 @@ resolve exact base, reject collisions, create branch/worktree, and persist
 partial ordered evidence.
 
 **Acceptance criteria:**
-- [ ] Each selected repository gets one branch/worktree from its fetched target SHA in canonical profile order.
-- [ ] Collisions or later-repository failure stop without reuse/cleanup and retain every earlier local identity.
-- [ ] The user's active checkout and every excluded repository remain unchanged.
+- [x] Each selected repository gets one branch/worktree from its fetched target SHA in canonical profile order.
+- [x] Collisions or later-repository failure stop without reuse/cleanup and retain every earlier local identity.
+- [x] The user's active checkout and every excluded repository remain unchanged.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/gitlab-delivery test -- workspace git`
-- [ ] Build succeeds: `pnpm --filter @loop/gitlab-delivery build && pnpm --filter @loop/gitlab-delivery typecheck`
-- [ ] Manual check: use temporary repositories/bare remotes and compare active checkout state before and after all failure fixtures.
+- [x] Tests pass: `pnpm --filter @loop/gitlab-delivery test -- workspace git`
+- [x] Build succeeds: `pnpm --filter @loop/gitlab-delivery build && pnpm --filter @loop/gitlab-delivery typecheck`
+- [x] Manual check: use temporary repositories/bare remotes and compare active checkout state before and after all failure fixtures.
 
 **Dependencies:** Tasks 10 and 23; approved branch template
 
