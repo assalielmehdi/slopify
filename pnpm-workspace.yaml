@@ -2,7 +2,9 @@ packages:
   - apps/*
   - packages/*
 allowBuilds:
+  '@google/genai': false
   better-sqlite3: true
+  protobufjs: false
 minimumReleaseAgeExclude:
   - '@vitest/coverage-v8@4.1.11'
   - '@vitest/expect@4.1.11'
