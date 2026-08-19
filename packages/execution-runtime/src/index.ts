@@ -86,6 +86,13 @@ export {
   type NodeExecutor,
 } from './executors/registry.js'
 export {
+  createAgentExecutorAdapter,
+  type AgentExecutorAdapter,
+  type AgentExecutorAdapterResult,
+  type CreateAgentExecutorAdapterOptions,
+} from './executors/agent-executor-adapter.js'
+export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
+export {
   createRegisteredCommandExecutors,
   type CreateRegisteredCommandExecutorsOptions,
   type RegisteredCommandDefinition,
@@ -110,6 +117,11 @@ export {
   type ReadinessFilesystem,
   type ReadinessService,
 } from './services/readiness-service.js'
+export {
+  RepositorySelectionSchema,
+  createRepositorySelectionExecutor,
+  type CreateRepositorySelectionExecutorOptions,
+} from './services/repository-selection.js'
 export {
   createRecoveryService,
   type CreateRecoveryServiceOptions,
