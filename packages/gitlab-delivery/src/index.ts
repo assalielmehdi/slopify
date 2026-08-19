@@ -19,3 +19,11 @@ export {
   type WorkspaceProfileStore,
   type WorkspaceRunStore,
 } from './workspace.js'
+export {
+  MergeRequestTemplateInputSchema,
+  MergeRequestTemplateError,
+  RenderedMergeRequestTemplateSchema,
+  renderMergeRequestTemplate,
+  type MergeRequestTemplateInput,
+  type RenderedMergeRequestTemplate,
+} from './mr-template.js'

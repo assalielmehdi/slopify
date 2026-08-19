@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@loop/contracts": "workspace:*",
-    "@loop/execution-runtime": "workspace:*"
+    "@loop/execution-runtime": "workspace:*",
+    "zod": "4.4.3"
   }
 }
