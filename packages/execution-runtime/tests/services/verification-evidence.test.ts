@@ -130,4 +130,30 @@ describe('verification evidence normalization', () => {
       }),
     )
   })
+
+  it('maps schema failures to the stable evidence error contract', () => {
+    expect(() =>
+      normalizeVerificationEvidence({
+        recordedAt: '2026-08-19T13:00:00Z',
+        sensitiveValues: [],
+        repositories: [
+          {
+            repositoryId: 'api',
+            profilePosition: 0,
+            commands: [
+              {
+                commandIndex: 0,
+                command: { executable: 'pnpm', arguments: ['test'] },
+                result: exited(0, 'x'.repeat(1_000_001)),
+              },
+            ],
+          },
+        ],
+      }),
+    ).toThrowError(
+      expect.objectContaining<Partial<VerificationEvidenceError>>({
+        code: 'VERIFICATION_EVIDENCE_INVALID',
+      }),
+    )
+  })
 })

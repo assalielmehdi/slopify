@@ -106,6 +106,13 @@ export {
   type CreateImplementationNodeExecutorOptions,
   type GitCommitInspector,
 } from './executors/implement-node.js'
+export {
+  VerificationNodeOutputSchema,
+  createVerificationNodeExecutor,
+  type CreateVerificationNodeExecutorOptions,
+  type VerificationNodeErrorCode,
+  type VerificationNodeOutput,
+} from './executors/verification-node.js'
 export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
 export {
   ArtifactPublicationError,

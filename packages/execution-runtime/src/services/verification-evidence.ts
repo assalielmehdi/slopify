@@ -155,9 +155,7 @@ const normalizeCommand = (
   }
 }
 
-export const normalizeVerificationEvidence = (
-  input: NormalizeVerificationEvidenceInput,
-): VerificationOutput => {
+const normalize = (input: NormalizeVerificationEvidenceInput): VerificationOutput => {
   const recordedAt = z.iso.datetime({ offset: true }).safeParse(input.recordedAt)
   if (
     !recordedAt.success ||
@@ -206,4 +204,15 @@ export const normalizeVerificationEvidence = (
       failedCommandCount: commands.filter(({ status }) => status === 'failed').length,
     },
   })
+}
+
+export const normalizeVerificationEvidence = (
+  input: NormalizeVerificationEvidenceInput,
+): VerificationOutput => {
+  try {
+    return normalize(input)
+  } catch (cause) {
+    if (cause instanceof VerificationEvidenceError) throw cause
+    throw new VerificationEvidenceError('VERIFICATION_EVIDENCE_INVALID')
+  }
 }
