@@ -779,14 +779,14 @@ aggregate them deterministically, and publish/update/read-back the one
 run-scoped review summary before routing.
 
 **Acceptance criteria:**
-- [ ] Review sessions never overlap, cannot mutate worktrees, and use exact task/diff/verification inputs.
-- [ ] Aggregation produces `clean` or `changes-required` from validated findings and preserves prior review history.
-- [ ] Only aggregate-review publishes/updates `REVIEW_SUMMARY`; specialized outputs stay local.
+- [x] Review sessions never overlap, cannot mutate worktrees, and use exact task/diff/verification inputs.
+- [x] Aggregation produces `clean` or `changes-required` from validated findings and preserves prior review history.
+- [x] Only aggregate-review publishes/updates `REVIEW_SUMMARY`; specialized outputs stay local.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/execution-runtime test -- review-nodes aggregate-review`
-- [ ] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/agent-runtimes build`
-- [ ] Manual check: assert fake session timestamps do not overlap and mutation tools are unavailable.
+- [x] Tests pass: `pnpm --filter @loop/execution-runtime test -- review-nodes aggregate-review`
+- [x] Build succeeds: `pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/agent-runtimes build`
+- [x] Manual check: assert fake session timestamps do not overlap and mutation tools are unavailable.
 
 **Dependencies:** Tasks 17, 22, and 26
 
