@@ -909,14 +909,14 @@ visual foundation. Feature tasks add their own route entrypoints when the
 backing flow exists; production standalone settings belong to Task 40.
 
 **Acceptance criteria:**
-- [ ] The root route renders through the App Router; later route files are deferred to their owning vertical slices.
-- [ ] Browser code communicates only with the Hono API through a typed client and has no provider/Git/SQLite imports.
-- [ ] Client Components are absent until a route has a concrete interaction boundary.
+- [x] The root route renders through the App Router; later route files are deferred to their owning vertical slices.
+- [x] Browser code communicates only with the Hono API through a typed client and has no provider/Git/SQLite imports.
+- [x] Client Components are absent until a route has a concrete interaction boundary.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- routing api-client`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
-- [ ] Manual check: inspect the client bundle/import graph for server-only or provider dependencies.
+- [x] Tests pass: `pnpm --filter @loop/web test -- routing api-client`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
+- [x] Manual check: inspect the client bundle/import graph for server-only or provider dependencies.
 
 **Dependencies:** Tasks 1-3 and 13
 
@@ -928,6 +928,12 @@ backing flow exists; production standalone settings belong to Task 40.
 - `apps/web/lib/api-client.ts`
 
 **Estimated scope:** Medium: 3-5 primary files; route placeholders are mechanical
+
+**Task review (2026-08-19):**
+- Browsed the current official shadcn blocks and component catalogs. `shadcn info --json` reported an uninitialized manual project, the official search found no minimal application scaffold, and the closest result was `@shadcn/empty`.
+- Read the official Empty documentation and inspected `@shadcn/empty` with `view`. It models an actual empty-data state, so Task 31 retains only semantic root markup; the approved preset and shell components remain deferred to Task 32. No custom primitive or third-party registry was used.
+- Captured RED failures for the absent App Router files and API client, then passed 5 focused tests. The production manifest contains no application Client Component entries or provider/Git/SQLite dependencies.
+- Verified `/` in Chrome through `agent-browser`: HTTP 200, expected heading/content, no error overlay, and no captured console errors.
 
 ## Task 32: Initialize the approved shadcn preset and operator shell
 
