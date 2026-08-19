@@ -129,6 +129,10 @@ export {
   type AggregateReviewOutput,
   type CreateAggregateReviewNodeExecutorOptions,
 } from './executors/aggregate-review.js'
+export {
+  createFixNodeExecutor,
+  type CreateFixNodeExecutorOptions,
+} from './executors/fix-node.js'
 export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
 export {
   ArtifactPublicationError,
@@ -186,6 +190,16 @@ export {
   type ReviewKind,
   type ReviewRepositoryIdentity,
 } from './services/review-findings.js'
+export {
+  FindingResolutionOutputSchema,
+  createGitFindingResolutionInspector,
+  type CreateGitFindingResolutionInspectorOptions,
+  type FindingResolutionBaseline,
+  type FindingResolutionEvidence,
+  type FindingResolutionInspectionResult,
+  type FindingResolutionInspector,
+  type FindingResolutionOutput,
+} from './services/finding-resolution.js'
 export {
   ProjectProfileServiceError,
   createProjectProfileService,

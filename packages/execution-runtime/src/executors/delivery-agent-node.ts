@@ -43,10 +43,14 @@ export interface ExecuteSelectedAgentNodeOptions {
 
 export interface ExecuteSelectedAgentNodeInput {
   readonly context: NodeExecutionContext
-  readonly expectedNodeId: 'plan' | 'implement'
+  readonly expectedNodeId: 'plan' | 'implement' | 'fix-findings'
   readonly expectedPermission: 'read-only' | 'workspace-write'
   readonly expectedInputArtifacts: readonly ArtifactType[]
   readonly artifacts: readonly DurableArtifactReference[]
+  readonly executionEvidence?: readonly Readonly<{
+    kind: 'command' | 'test' | 'file' | 'url' | 'note'
+    value: string
+  }>[]
   readonly boundaries: readonly string[]
   readonly stopConditions: readonly string[]
 }
@@ -187,6 +191,7 @@ export const executeSelectedAgentNode = async (
       artifactType: artifact.artifactType,
       content: artifact.content,
     })),
+    executionEvidence: [...(input.executionEvidence ?? [])],
     stopConditions: [...input.stopConditions],
     completionContract: {
       outcomes: [...context.node.outcomes],
