@@ -51,3 +51,26 @@ export {
   type RenderedPromptWorkspace,
   type RenderedReviewRepository,
 } from './prompt-renderer.js'
+export {
+  createEnvironmentModelCredentialSource,
+  ModelRuntimeError,
+  type CreateEnvironmentModelCredentialSourceOptions,
+  type ModelApiKeyCredential,
+  type ModelCredentialSource,
+  type ModelRuntimeErrorCode,
+} from './model-runtime.js'
+export {
+  createPiSessionFactory,
+  PiSessionFactoryError,
+  type CreatePiSessionFactoryOptions,
+  type CreatePiSessionInput,
+  type PiSession,
+  type PiSessionFactory,
+  type PiSessionFactoryErrorCode,
+  type PiSessionUsage,
+} from './session-factory.js'
+export {
+  createPiSdkAgentExecutor,
+  type AgentExecutionContext,
+  type CreatePiSdkAgentExecutorOptions,
+} from './pi-sdk-executor.js'

@@ -1,0 +1,242 @@
+import { z } from 'zod'
+
+import {
+  AgentExecutionEventSchema,
+  AgentExecutionInputSchema,
+  type AgentCancelResult,
+  type AgentExecutionEvent,
+  type AgentExecutionId,
+  type AgentExecutionInput,
+  type AgentExecutor,
+} from './contract.js'
+import type { LoadedResourceBundle } from './resource-loader.js'
+import type { PiSession, PiSessionFactory } from './session-factory.js'
+
+export interface AgentExecutionContext {
+  readonly outputSchema: z.ZodType<unknown>
+  readonly resourceBundle: LoadedResourceBundle
+}
+
+export interface CreatePiSdkAgentExecutorOptions {
+  readonly sessionFactory: PiSessionFactory
+  readonly resolveContext: (input: AgentExecutionInput) => Promise<AgentExecutionContext>
+  readonly now?: () => number
+}
+
+interface ActiveExecution {
+  readonly session: PiSession
+  readonly cancellation: Promise<{ readonly kind: 'cancelled' }>
+  readonly resolveCancellation: () => void
+  unsubscribe: (() => void) | undefined
+  cancelRequested: boolean
+  released: boolean
+  stopPromise: Promise<boolean> | undefined
+}
+
+type PromptOutcome =
+  | { readonly kind: 'completed' }
+  | { readonly kind: 'failed' }
+  | { readonly kind: 'cancelled' }
+  | { readonly kind: 'timed-out' }
+
+const terminalMessages = {
+  AGENT_SESSION_FAILED: 'Agent session failed',
+  AGENT_STOP_UNCONFIRMED: 'Agent session stop could not be confirmed',
+  AGENT_TIMEOUT: 'Agent execution timed out',
+} as const
+
+const createActiveExecution = (session: PiSession): ActiveExecution => {
+  let resolveCancellation: () => void = () => undefined
+  const cancellation = new Promise<{ readonly kind: 'cancelled' }>((resolve) => {
+    resolveCancellation = () => resolve({ kind: 'cancelled' })
+  })
+  return {
+    session,
+    cancellation,
+    resolveCancellation,
+    unsubscribe: undefined,
+    cancelRequested: false,
+    released: false,
+    stopPromise: undefined,
+  }
+}
+
+const release = (active: ActiveExecution): void => {
+  if (active.released) return
+  active.released = true
+  active.unsubscribe?.()
+  active.unsubscribe = undefined
+  active.session.dispose()
+}
+
+const stop = (active: ActiveExecution): Promise<boolean> => {
+  if (active.stopPromise !== undefined) return active.stopPromise
+  active.stopPromise = (async () => {
+    let confirmed = true
+    try {
+      await active.session.abort()
+    } catch {
+      confirmed = false
+    }
+    try {
+      await active.session.waitForIdle()
+    } catch {
+      confirmed = false
+    }
+    try {
+      if (!active.session.isIdle()) confirmed = false
+    } catch {
+      confirmed = false
+    }
+    release(active)
+    return confirmed
+  })()
+  return active.stopPromise
+}
+
+export const createPiSdkAgentExecutor = (
+  options: CreatePiSdkAgentExecutorOptions,
+): AgentExecutor => {
+  const activeExecutions = new Map<AgentExecutionId, ActiveExecution>()
+  const now = options.now ?? Date.now
+
+  const event = (
+    input: AgentExecutionInput,
+    type: AgentExecutionEvent['type'],
+    data: unknown,
+  ): AgentExecutionEvent =>
+    AgentExecutionEventSchema.parse({
+      executionId: input.executionId,
+      runId: input.runId,
+      nodeId: input.nodeId,
+      timestamp: new Date(now()).toISOString(),
+      type,
+      data,
+    })
+
+  const executor: AgentExecutor = {
+    async *execute(unparsedInput) {
+      const input = AgentExecutionInputSchema.parse(unparsedInput)
+      const startedAt = now()
+      const durationMs = () => Math.max(0, now() - startedAt)
+      let active: ActiveExecution | undefined
+      let timeout: ReturnType<typeof setTimeout> | undefined
+
+      yield event(input, 'AGENT_STARTED', {})
+
+      try {
+        if (activeExecutions.has(input.executionId)) {
+          yield event(input, 'AGENT_FAILED', {
+            code: 'AGENT_SESSION_FAILED',
+            message: terminalMessages.AGENT_SESSION_FAILED,
+            durationMs: durationMs(),
+          })
+          return
+        }
+
+        const context = await options.resolveContext(input)
+        const session = await options.sessionFactory.create({
+          input,
+          outputSchema: context.outputSchema,
+          resourceBundle: context.resourceBundle,
+        })
+        active = createActiveExecution(session)
+        active.unsubscribe = session.subscribe(() => undefined)
+        activeExecutions.set(input.executionId, active)
+
+        yield event(input, 'AGENT_SESSION_IDENTIFIED', { sessionId: session.sessionId })
+
+        const timeoutOutcome = new Promise<PromptOutcome>((resolve) => {
+          timeout = setTimeout(() => resolve({ kind: 'timed-out' }), input.timeoutSeconds * 1_000)
+        })
+        const promptOutcome: Promise<PromptOutcome> = active.cancelRequested
+          ? Promise.resolve({ kind: 'cancelled' })
+          : session.prompt().then(
+              () => ({ kind: 'completed' }),
+              () => ({ kind: 'failed' }),
+            )
+        const outcome = await Promise.race([promptOutcome, timeoutOutcome, active.cancellation])
+
+        if (outcome.kind === 'cancelled') {
+          const confirmed = await stop(active)
+          yield confirmed
+            ? event(input, 'AGENT_CANCELLED', {
+                reason: 'Cancellation requested',
+                durationMs: durationMs(),
+              })
+            : event(input, 'AGENT_FAILED', {
+                code: 'AGENT_STOP_UNCONFIRMED',
+                message: terminalMessages.AGENT_STOP_UNCONFIRMED,
+                durationMs: durationMs(),
+              })
+          return
+        }
+
+        if (outcome.kind === 'timed-out') {
+          const confirmed = await stop(active)
+          yield event(input, 'AGENT_FAILED', {
+            code: confirmed ? 'AGENT_TIMEOUT' : 'AGENT_STOP_UNCONFIRMED',
+            message: confirmed
+              ? terminalMessages.AGENT_TIMEOUT
+              : terminalMessages.AGENT_STOP_UNCONFIRMED,
+            durationMs: durationMs(),
+          })
+          return
+        }
+
+        if (outcome.kind === 'failed') {
+          yield event(input, 'AGENT_FAILED', {
+            code: 'AGENT_SESSION_FAILED',
+            message: terminalMessages.AGENT_SESSION_FAILED,
+            durationMs: durationMs(),
+          })
+          return
+        }
+
+        yield event(input, 'AGENT_RESULT', {
+          result: session.finish(),
+          usage: session.getUsage(),
+          durationMs: durationMs(),
+        })
+      } catch {
+        if (active?.cancelRequested === true) {
+          const confirmed = await stop(active)
+          yield confirmed
+            ? event(input, 'AGENT_CANCELLED', {
+                reason: 'Cancellation requested',
+                durationMs: durationMs(),
+              })
+            : event(input, 'AGENT_FAILED', {
+                code: 'AGENT_STOP_UNCONFIRMED',
+                message: terminalMessages.AGENT_STOP_UNCONFIRMED,
+                durationMs: durationMs(),
+              })
+        } else {
+          yield event(input, 'AGENT_FAILED', {
+            code: 'AGENT_SESSION_FAILED',
+            message: terminalMessages.AGENT_SESSION_FAILED,
+            durationMs: durationMs(),
+          })
+        }
+      } finally {
+        if (timeout !== undefined) clearTimeout(timeout)
+        if (active !== undefined) {
+          release(active)
+          if (activeExecutions.get(input.executionId) === active) {
+            activeExecutions.delete(input.executionId)
+          }
+        }
+      }
+    },
+
+    async cancel(executionId): Promise<AgentCancelResult> {
+      const active = activeExecutions.get(executionId)
+      if (active === undefined) return { status: 'unconfirmed' }
+      active.cancelRequested = true
+      active.resolveCancellation()
+      return (await stop(active)) ? { status: 'cancelled' } : { status: 'unconfirmed' }
+    },
+  }
+
+  return executor
+}
