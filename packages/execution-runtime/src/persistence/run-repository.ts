@@ -107,6 +107,17 @@ export interface RecordArtifactInput {
   readonly timestamp: string
 }
 
+export interface UpdateArtifactInput {
+  readonly artifactId: string
+  readonly runId: RunId
+  readonly nodeExecutionId: string
+  readonly nodeId: string
+  readonly artifactType: 'REVIEW_SUMMARY'
+  readonly content: string
+  readonly metadata: JsonValue
+  readonly timestamp: string
+}
+
 export interface CompleteNodeInput {
   readonly runId: RunId
   readonly nodeExecutionId: string
@@ -288,6 +299,7 @@ export interface RunRepository {
   startNode(input: StartNodeInput): RunEvent
   recordOutput(input: RecordOutputInput): RunEvent
   recordArtifact(input: RecordArtifactInput): RunEvent
+  updateArtifact(input: UpdateArtifactInput): RunEvent
   completeNode(input: CompleteNodeInput): RunEvent
   completeNodeAndSelectEdge(input: CompleteNodeAndSelectEdgeInput): CompletedNodeRoute
   failNodeAndRun(input: FailNodeAndRunInput): RunRecord
@@ -898,6 +910,53 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
           .immediate()
       } catch (cause) {
         throw mapPersistenceError(cause, 'Could not persist artifact')
+      }
+    },
+
+    updateArtifact(input) {
+      const artifactId = ArtifactIdSchema.parse(input.artifactId)
+      const runId = RunIdSchema.parse(input.runId)
+      const nodeId = NodeIdSchema.parse(input.nodeId)
+      const artifactType = ArtifactTypeSchema.parse(input.artifactType)
+      const metadataJson = serializeJson(input.metadata, 'metadata')
+      if (artifactType !== 'REVIEW_SUMMARY') {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_VALIDATION_FAILED',
+          message: 'Only review summaries support in-place history updates',
+        })
+      }
+
+      try {
+        return connection
+          .transaction(() => {
+            const updated = connection
+              .prepare(
+                `UPDATE artifacts
+                 SET content = ?, metadata_json = ?
+                 WHERE artifact_id = ? AND run_id = ? AND artifact_type = 'REVIEW_SUMMARY'`,
+              )
+              .run(input.content, metadataJson, artifactId, runId)
+            if (updated.changes !== 1) {
+              throw new PersistenceError({
+                code: 'PERSISTENCE_WRITE_FAILED',
+                message: 'Could not update the exact review summary',
+              })
+            }
+            return appendEvent(
+              connection,
+              runId,
+              {
+                type: 'ARTIFACT_RECORDED',
+                nodeId,
+                timestamp: input.timestamp,
+                data: { artifactId, artifactType, operation: 'updated' },
+              },
+              input.nodeExecutionId,
+            )
+          })
+          .immediate()
+      } catch (cause) {
+        throw mapPersistenceError(cause, 'Could not update review summary')
       }
     },
 

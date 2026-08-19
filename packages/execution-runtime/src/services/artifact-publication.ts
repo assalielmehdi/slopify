@@ -27,7 +27,7 @@ export interface ConnectorArtifactEnvelope {
   readonly nodeId: NodeId
   readonly artifactType: ArtifactType
   readonly producer: string
-  readonly status: 'completed'
+  readonly status: ArtifactStatus
 }
 
 export interface ConnectorArtifact {
@@ -50,9 +50,20 @@ export interface ConnectorArtifactReference {
   readonly artifactType: ArtifactType
 }
 
+export type ArtifactStatus = 'changes-requested' | 'completed' | 'resolved'
+
+export interface ConnectorUpdateReviewSummaryInput {
+  readonly taskId: string
+  readonly runId: RunId
+  readonly commentId: string
+  readonly status: 'changes-requested' | 'resolved'
+  readonly appendContent: string
+}
+
 export interface ArtifactConnector {
   publishArtifact(input: ConnectorPublishArtifactInput): Promise<ConnectorArtifact>
   getArtifact(input: ConnectorArtifactReference): Promise<ConnectorArtifact>
+  updateReviewSummary?(input: ConnectorUpdateReviewSummaryInput): Promise<ConnectorArtifact>
 }
 
 export interface DurableArtifactReference {
@@ -61,6 +72,7 @@ export interface DurableArtifactReference {
   readonly artifactType: ArtifactType
   readonly content: string
   readonly commentId: string
+  readonly status: ArtifactStatus
 }
 
 export type ArtifactPublicationErrorCode =
@@ -96,6 +108,7 @@ export interface PublishAgentArtifactInput {
   readonly artifactType: ArtifactType
   readonly title: string
   readonly content: string
+  readonly status?: 'completed' | 'changes-requested'
 }
 
 export interface LoadExactArtifactInput {
@@ -105,16 +118,29 @@ export interface LoadExactArtifactInput {
   readonly revisionId: RevisionId
   readonly nodeId: NodeId
   readonly artifactType: ArtifactType
+  readonly acceptedStatuses?: readonly ArtifactStatus[]
+}
+
+export interface UpdateReviewSummaryInput {
+  readonly taskId: string
+  readonly runId: RunId
+  readonly workflowId: WorkflowId
+  readonly revisionId: RevisionId
+  readonly nodeId: NodeId
+  readonly nodeExecutionId: string
+  readonly status: 'changes-requested' | 'resolved'
+  readonly appendContent: string
 }
 
 export interface ArtifactPublicationService {
   publish(input: PublishAgentArtifactInput): Promise<DurableArtifactReference>
   loadExact(input: LoadExactArtifactInput): Promise<DurableArtifactReference>
+  updateReviewSummary(input: UpdateReviewSummaryInput): Promise<DurableArtifactReference>
 }
 
 export interface CreateArtifactPublicationServiceOptions {
   readonly connector: ArtifactConnector
-  readonly runs: Pick<RunRepository, 'listArtifacts' | 'recordArtifact'>
+  readonly runs: Pick<RunRepository, 'listArtifacts' | 'recordArtifact' | 'updateArtifact'>
   readonly producer: string
   readonly createArtifactId?: () => string
   readonly now?: () => string
@@ -131,13 +157,14 @@ const producerSchema = z
   .trim()
   .min(1)
   .max(128)
-  .regex(/^pi-sdk@(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)$/)
+  .regex(/^(?:pi-sdk@(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)|aggregate-review-findings)$/)
 const contentSchema = z
   .string()
   .min(1)
   .max(1_000_000)
   .refine((value) => value.trim().length > 0)
 const identitySchema = z.string().trim().min(1).max(512)
+const artifactStatusSchema = z.enum(['changes-requested', 'completed', 'resolved'])
 
 const metadataSchema = z.strictObject({
   source: z.literal('clickup-comment'),
@@ -147,6 +174,7 @@ const metadataSchema = z.strictObject({
   createdAt: z.iso.datetime({ offset: true }),
   title: z.string().trim().min(1).max(512),
   producer: producerSchema,
+  status: artifactStatusSchema.default('completed'),
 })
 
 const validateInput = (input: PublishAgentArtifactInput): void => {
@@ -161,9 +189,13 @@ const validateInput = (input: PublishAgentArtifactInput): void => {
       nodeExecutionId: identitySchema,
       title: z.string().trim().min(1).max(512),
       content: contentSchema,
+      status: z.enum(['completed', 'changes-requested']).optional(),
     })
     .safeParse(input)
   if (!parsed.success) throw new ArtifactPublicationError('ARTIFACT_INPUT_INVALID')
+  if (input.status === 'changes-requested' && input.artifactType !== 'REVIEW_SUMMARY') {
+    throw new ArtifactPublicationError('ARTIFACT_INPUT_INVALID')
+  }
 }
 
 const matchesEnvelope = (
@@ -176,6 +208,7 @@ const matchesEnvelope = (
     nodeId: NodeId
     artifactType: ArtifactType
     producer: string
+    acceptedStatuses: readonly ArtifactStatus[]
   }>,
 ): boolean =>
   artifact.taskId === expected.taskId &&
@@ -185,7 +218,7 @@ const matchesEnvelope = (
   artifact.envelope.nodeId === expected.nodeId &&
   artifact.envelope.artifactType === expected.artifactType &&
   artifact.envelope.producer === expected.producer &&
-  artifact.envelope.status === 'completed'
+  expected.acceptedStatuses.includes(artifact.envelope.status)
 
 export const createArtifactPublicationService = (
   options: CreateArtifactPublicationServiceOptions,
@@ -198,6 +231,7 @@ export const createArtifactPublicationService = (
   return {
     async publish(input) {
       validateInput(input)
+      const status = input.status ?? 'completed'
       let remote: ConnectorArtifact
       try {
         remote = await options.connector.publishArtifact({
@@ -208,14 +242,18 @@ export const createArtifactPublicationService = (
           nodeId: input.nodeId,
           artifactType: input.artifactType,
           producer: producer.data,
-          status: 'completed',
+          status,
           content: input.content,
         })
       } catch {
         throw new ArtifactPublicationError('ARTIFACT_PUBLICATION_FAILED')
       }
       if (
-        !matchesEnvelope(remote, { ...input, producer: producer.data }) ||
+        !matchesEnvelope(remote, {
+          ...input,
+          producer: producer.data,
+          acceptedStatuses: [status],
+        }) ||
         remote.content.trim() === '' ||
         remote.content.length > 1_000_000
       ) {
@@ -230,6 +268,7 @@ export const createArtifactPublicationService = (
         createdAt: remote.createdAt,
         title: input.title,
         producer: producer.data,
+        status: remote.envelope.status,
       })
       const record: RecordArtifactInput = {
         artifactId,
@@ -248,6 +287,7 @@ export const createArtifactPublicationService = (
         artifactType: input.artifactType,
         content: remote.content,
         commentId: remote.commentId,
+        status: remote.envelope.status,
       }
     },
 
@@ -275,8 +315,14 @@ export const createArtifactPublicationService = (
         throw new ArtifactPublicationError('ARTIFACT_PUBLICATION_FAILED')
       }
       if (
-        !matchesEnvelope(remote, { ...input, taskId: taskId.data, producer: producer.data }) ||
+        !matchesEnvelope(remote, {
+          ...input,
+          taskId: taskId.data,
+          producer: producer.data,
+          acceptedStatuses: input.acceptedStatuses ?? ['completed'],
+        }) ||
         remote.commentId !== metadata.data.commentId ||
+        remote.envelope.status !== metadata.data.status ||
         remote.content !== local.content
       ) {
         throw new ArtifactPublicationError('ARTIFACT_READBACK_MISMATCH')
@@ -287,6 +333,124 @@ export const createArtifactPublicationService = (
         artifactType: local.artifactType,
         content: local.content,
         commentId: metadata.data.commentId,
+        status: metadata.data.status,
+      }
+    },
+
+    async updateReviewSummary(input) {
+      const parsed = z
+        .strictObject({
+          taskId: taskIdSchema,
+          runId: RunIdSchema,
+          workflowId: WorkflowIdSchema,
+          revisionId: RevisionIdSchema,
+          nodeId: NodeIdSchema,
+          nodeExecutionId: identitySchema,
+          status: z.enum(['changes-requested', 'resolved']),
+          appendContent: contentSchema,
+        })
+        .safeParse(input)
+      if (!parsed.success || options.connector.updateReviewSummary === undefined) {
+        throw new ArtifactPublicationError('ARTIFACT_INPUT_INVALID')
+      }
+      const matches = options.runs
+        .listArtifacts(parsed.data.runId)
+        .filter(({ artifactType }) => artifactType === 'REVIEW_SUMMARY')
+      if (matches.length === 0) throw new ArtifactPublicationError('ARTIFACT_LOCAL_MISSING')
+      if (matches.length !== 1) throw new ArtifactPublicationError('ARTIFACT_LOCAL_AMBIGUOUS')
+      const local = matches[0] as PersistedArtifact
+      const metadata = metadataSchema.safeParse(local.metadata)
+      if (
+        !metadata.success ||
+        metadata.data.taskId !== parsed.data.taskId ||
+        metadata.data.producer !== producer.data ||
+        metadata.data.status === 'completed'
+      ) {
+        throw new ArtifactPublicationError('ARTIFACT_READBACK_MISMATCH')
+      }
+      let current: ConnectorArtifact
+      try {
+        current = await options.connector.getArtifact({
+          taskId: parsed.data.taskId,
+          runId: parsed.data.runId,
+          artifactType: 'REVIEW_SUMMARY',
+        })
+      } catch {
+        throw new ArtifactPublicationError('ARTIFACT_PUBLICATION_FAILED')
+      }
+      if (
+        !matchesEnvelope(current, {
+          taskId: parsed.data.taskId,
+          runId: parsed.data.runId,
+          workflowId: parsed.data.workflowId,
+          revisionId: parsed.data.revisionId,
+          nodeId: parsed.data.nodeId,
+          artifactType: 'REVIEW_SUMMARY',
+          producer: producer.data,
+          acceptedStatuses: ['changes-requested', 'resolved'],
+        }) ||
+        current.commentId !== metadata.data.commentId ||
+        current.envelope.status !== metadata.data.status ||
+        current.content !== local.content
+      ) {
+        throw new ArtifactPublicationError('ARTIFACT_READBACK_MISMATCH')
+      }
+      let remote: ConnectorArtifact
+      try {
+        remote = await options.connector.updateReviewSummary({
+          taskId: parsed.data.taskId,
+          runId: parsed.data.runId,
+          commentId: metadata.data.commentId,
+          status: parsed.data.status,
+          appendContent: parsed.data.appendContent,
+        })
+      } catch {
+        throw new ArtifactPublicationError('ARTIFACT_PUBLICATION_FAILED')
+      }
+      if (
+        !matchesEnvelope(remote, {
+          taskId: parsed.data.taskId,
+          runId: parsed.data.runId,
+          workflowId: parsed.data.workflowId,
+          revisionId: parsed.data.revisionId,
+          nodeId: parsed.data.nodeId,
+          artifactType: 'REVIEW_SUMMARY',
+          producer: producer.data,
+          acceptedStatuses: [parsed.data.status],
+        }) ||
+        remote.commentId !== metadata.data.commentId ||
+        !remote.content.startsWith(`${local.content}\n\n---\n\n`) ||
+        remote.content.length > 1_000_000
+      ) {
+        throw new ArtifactPublicationError('ARTIFACT_READBACK_MISMATCH')
+      }
+      const updatedMetadata = metadataSchema.parse({
+        ...metadata.data,
+        author: remote.author,
+        createdAt: remote.createdAt,
+        status: remote.envelope.status,
+      })
+      try {
+        options.runs.updateArtifact({
+          artifactId: local.artifactId,
+          runId: parsed.data.runId,
+          nodeExecutionId: parsed.data.nodeExecutionId,
+          nodeId: parsed.data.nodeId,
+          artifactType: 'REVIEW_SUMMARY',
+          content: remote.content,
+          metadata: updatedMetadata as JsonValue,
+          timestamp: now(),
+        })
+      } catch {
+        throw new ArtifactPublicationError('ARTIFACT_PUBLICATION_FAILED')
+      }
+      return {
+        artifactId: local.artifactId,
+        runId: parsed.data.runId,
+        artifactType: 'REVIEW_SUMMARY',
+        content: remote.content,
+        commentId: remote.commentId,
+        status: remote.envelope.status,
       }
     },
   }

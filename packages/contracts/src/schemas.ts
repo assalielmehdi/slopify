@@ -249,6 +249,7 @@ const ArtifactRecordedEventSchema = nodeEventBase.extend({
   data: z.strictObject({
     artifactId: ArtifactIdSchema,
     artifactType: ArtifactTypeSchema,
+    operation: z.enum(['created', 'updated']).optional(),
   }),
 })
 

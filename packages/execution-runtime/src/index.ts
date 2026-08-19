@@ -55,6 +55,7 @@ export {
   type SelectedRepositoryInput,
   type StartNodeInput,
   type UpsertDeliveryEvidenceInput,
+  type UpdateArtifactInput,
 } from './persistence/run-repository.js'
 export {
   createWorkflowRepository,
@@ -122,21 +123,30 @@ export {
   type ReviewInputInspector,
   type ReviewRepositoryInput,
 } from './executors/review-node.js'
+export {
+  AggregateReviewOutputSchema,
+  createAggregateReviewNodeExecutor,
+  type AggregateReviewOutput,
+  type CreateAggregateReviewNodeExecutorOptions,
+} from './executors/aggregate-review.js'
 export { createLoadClickUpTaskExecutor } from './executors/load-clickup-task.js'
 export {
   ArtifactPublicationError,
   createArtifactPublicationService,
   type ArtifactConnector,
+  type ArtifactStatus,
   type ArtifactPublicationErrorCode,
   type ArtifactPublicationService,
   type ConnectorArtifact,
   type ConnectorArtifactEnvelope,
   type ConnectorArtifactReference,
   type ConnectorPublishArtifactInput,
+  type ConnectorUpdateReviewSummaryInput,
   type CreateArtifactPublicationServiceOptions,
   type DurableArtifactReference,
   type LoadExactArtifactInput,
   type PublishAgentArtifactInput,
+  type UpdateReviewSummaryInput,
 } from './services/artifact-publication.js'
 export {
   createRegisteredCommandExecutors,
