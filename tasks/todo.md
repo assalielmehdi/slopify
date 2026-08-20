@@ -1088,14 +1088,14 @@ latest-valid/default revision, notes, read-only task resolution, candidate and
 target confirmation, start mutation, and one-active-run conflict display.
 
 **Acceptance criteria:**
-- [ ] Submission remains disabled until the task, selected revision, profile, candidates, and targets are resolved and confirmed.
-- [ ] The UI explains that the agent selects the affected subset after start and does not preselect repositories.
-- [ ] A 409 preserves and links to the active run; structured errors remain associated and server-confirmed.
+- [x] Submission remains disabled until the task, selected revision, profile, candidates, and targets are resolved and confirmed.
+- [x] The UI explains that the agent selects the affected subset after start and does not preselect repositories.
+- [x] A 409 preserves and links to the active run; structured errors remain associated and server-confirmed.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- start-run-form`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
-- [ ] Manual check: exercise ID/URL, malformed task, unready profile, successful start, and active-run conflict fixtures.
+- [x] Tests pass: `pnpm --filter @loop/web test -- start-run-form`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
+- [x] Manual check: exercise ID/URL, malformed task, unready profile, successful start, and active-run conflict fixtures.
 
 **Dependencies:** Tasks 13, 15, 23, 32, and 35
 
@@ -1108,11 +1108,18 @@ target confirmation, start mutation, and one-active-run conflict display.
 
 **Estimated scope:** Medium: 3-5 files
 
+**Task review (2026-08-20):**
+- Added bounded optional operator notes to the strict start-run request, forward-only SQLite migration, persisted run record/detail/list shape, and API admission flow. Notes are trimmed, limited to 2,000 characters, and remain inert workflow metadata.
+- Added a validated browser client for canonical ClickUp task snapshots and complete server-confirmed run responses. The client retains structured API error details so a `RUN_ACTIVE` response can link the exact active run.
+- Built `/runs/new` as a server route with a focused interactive form, isolated state/data hook, configuration fields, and read-only confirmation card. The latest revision and first profile default from server catalogs; changing task, revision, workflow, or profile invalidates confirmation, and only one final confirmation checkbox is rendered.
+- Captured RED/GREEN coverage for ID/URL resolution, readiness gating, candidate/target display, no repository preselection, confirmation invalidation, notes, associated resolver failures, success, and conflict preservation. The full suite passes 81 files / 576 tests.
+- Verified in Chrome at a 2928×1590 desktop viewport against production Next.js and controlled real HTTP API/proxy fixtures. Malformed input stayed field-associated; the unready profile blocked confirmation; ID and URL resolved the same task; `run-acceptance-1` persisted its note and ordered targets; a second submission retained the confirmed form and linked the active run. Chrome logged no console errors. Repository test/build/typecheck/lint/format gates pass under the existing Node 26 versus pinned Node 24 engine warning.
+
 ## Checkpoint F2: After Tasks 34-36
 
-- [ ] Agent edits create immutable revisions with accessible validation.
-- [ ] Profiles expose ordered candidates and truthful readiness without changing snapshots.
-- [ ] A confirmed task starts one run and handles the active-run conflict without optimistic divergence.
+- [x] Agent edits create immutable revisions with accessible validation.
+- [x] Profiles expose ordered candidates and truthful readiness without changing snapshots.
+- [x] A confirmed task starts one run and handles the active-run conflict without optimistic divergence.
 
 ## Task 37: Follow and cancel a live multi-repository run over SSE
 
