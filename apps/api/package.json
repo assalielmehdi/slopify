@@ -20,6 +20,7 @@
     "@loop/clickup-artifacts": "workspace:*",
     "@loop/contracts": "workspace:*",
     "@loop/execution-runtime": "workspace:*",
+    "@loop/workflow-model": "workspace:*",
     "hono": "4.13.3",
     "zod": "4.4.3"
   }

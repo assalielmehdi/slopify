@@ -8,6 +8,7 @@ services:
       API_HOST: '0.0.0.0'
       API_PORT: '3001'
       API_SHUTDOWN_GRACE_MS: '${API_SHUTDOWN_GRACE_MS:-10000}'
+      CLICKUP_API_BASE_URL: '${CLICKUP_API_BASE_URL:-}'
       CLICKUP_API_TOKEN: '${CLICKUP_API_TOKEN:-}'
       DATABASE_PATH: '${DATABASE_PATH:-/var/lib/workbench/workbench.sqlite}'
       GITLAB_HOST: '${GITLAB_HOST:-https://gitlab.com}'

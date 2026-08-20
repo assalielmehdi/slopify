@@ -19,7 +19,9 @@ import {
   createWorkflowService,
   openDatabase,
   type RunTaskResolver,
+  type WorkflowRepository,
 } from '@loop/execution-runtime'
+import { PREDEFINED_V1_WORKFLOW_ID, createPredefinedV1Revision } from '@loop/workflow-model'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 
@@ -53,6 +55,30 @@ export interface ApiServerConfiguration {
 }
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
+
+const PREDEFINED_V1_REVISION_ID = 'revision-01'
+
+export const ensurePredefinedWorkflow = (
+  workflows: Pick<WorkflowRepository, 'addRevision' | 'getRevision'>,
+): void => {
+  const reference = {
+    workflowId: PREDEFINED_V1_WORKFLOW_ID,
+    revisionId: PREDEFINED_V1_REVISION_ID,
+  }
+  if (workflows.getRevision(reference) !== undefined) return
+
+  workflows.addRevision(
+    createPredefinedV1Revision({
+      revisionId: PREDEFINED_V1_REVISION_ID,
+      createdAt: '2026-08-18T00:00:00.000Z',
+      agentDefaults: {
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-5',
+        thinkingLevel: 'high',
+      },
+    }),
+  )
+}
 
 const nonBlank = (
   value: string | undefined,
@@ -171,6 +197,7 @@ export const resolveConnectorStatus = (environment: ApiEnvironment): ConnectorSt
   })
 
 type ClickUpTaskClientFactory = (options: {
+  readonly baseUrl?: string
   readonly token: string
   readonly workspaceId: string
 }) => Readonly<{ getTask(taskReference: string): Promise<unknown> }>
@@ -181,12 +208,16 @@ export const createConfiguredTaskResolver = (
 ): RunTaskResolver => ({
   async resolve(taskReference, context) {
     if (context === undefined) throw new Error('ClickUp workspace context is required')
-    return z.json().parse(
-      await createClient({
-        token: environment.CLICKUP_API_TOKEN ?? '',
-        workspaceId: context.clickupWorkspaceId,
-      }).getTask(taskReference),
-    )
+    const baseUrl = environment.CLICKUP_API_BASE_URL
+    const clientOptions = {
+      token: environment.CLICKUP_API_TOKEN ?? '',
+      workspaceId: context.clickupWorkspaceId,
+    }
+    const client =
+      baseUrl === undefined || baseUrl.trim() === ''
+        ? createClient(clientOptions)
+        : createClient({ ...clientOptions, baseUrl })
+    return z.json().parse(await client.getTask(taskReference))
   },
 })
 
@@ -214,6 +245,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
 
   const profileRepository = createProfileRepository(database)
   const workflowRepository = createWorkflowRepository(database)
+  ensurePredefinedWorkflow(workflowRepository)
   const runRepository = createRunRepository(database)
   const eventStore = createEventStore(database)
   createRecoveryService({ runs: runRepository }).reconcile()

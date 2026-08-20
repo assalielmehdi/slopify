@@ -6,6 +6,7 @@ import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
   createConfiguredTaskResolver,
+  ensurePredefinedWorkflow,
   resolveConnectorStatus,
   resolveApiServerConfiguration,
   startApiServer,
@@ -22,6 +23,29 @@ const database = {
 }
 
 describe('API server configuration', () => {
+  it('seeds the source-controlled V1 workflow exactly once', () => {
+    const addRevision = vi.fn()
+    const workflows = {
+      addRevision,
+      getRevision: vi.fn(() => undefined),
+    }
+
+    ensurePredefinedWorkflow(workflows)
+
+    expect(addRevision).toHaveBeenCalledTimes(1)
+    expect(addRevision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workflowId: 'delivery-workflow',
+        revisionId: 'revision-01',
+        startNodeId: 'load-clickup-task',
+      }),
+    )
+
+    workflows.getRevision.mockReturnValue(addRevision.mock.calls[0]?.[0])
+    ensurePredefinedWorkflow(workflows)
+    expect(addRevision).toHaveBeenCalledTimes(1)
+  })
+
   it('binds all interfaces by default in container mode', () => {
     expect(resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true' })).toMatchObject({
       hostname: '0.0.0.0',
@@ -157,5 +181,41 @@ describe('API server configuration', () => {
     })
     expect(getTask).toHaveBeenCalledWith('CU-123')
     expect(JSON.stringify(snapshot)).not.toContain('clickup-secret')
+  })
+
+  it('forwards an explicit ClickUp base URL to an isolated provider boundary', async () => {
+    const getTask = vi.fn(async () => ({ taskId: '86abc123' }))
+    const createClient = vi.fn(() => ({ getTask }))
+    const resolver = createConfiguredTaskResolver(
+      {
+        CLICKUP_API_BASE_URL: 'http://127.0.0.1:4555/api/v2/',
+        CLICKUP_API_TOKEN: 'fake-clickup-secret',
+      },
+      createClient,
+    )
+
+    await resolver.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })
+
+    expect(createClient).toHaveBeenCalledWith({
+      baseUrl: 'http://127.0.0.1:4555/api/v2/',
+      token: 'fake-clickup-secret',
+      workspaceId: 'workspace-01',
+    })
+  })
+
+  it('treats a blank optional ClickUp base URL as the provider default', async () => {
+    const getTask = vi.fn(async () => ({ taskId: '86abc123' }))
+    const createClient = vi.fn(() => ({ getTask }))
+    const resolver = createConfiguredTaskResolver(
+      { CLICKUP_API_BASE_URL: '  ', CLICKUP_API_TOKEN: 'clickup-secret' },
+      createClient,
+    )
+
+    await resolver.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })
+
+    expect(createClient).toHaveBeenCalledWith({
+      token: 'clickup-secret',
+      workspaceId: 'workspace-01',
+    })
   })
 })

@@ -50,6 +50,9 @@ importers:
       '@loop/execution-runtime':
         specifier: workspace:*
         version: link:../../packages/execution-runtime
+      '@loop/workflow-model':
+        specifier: workspace:*
+        version: link:../../packages/workflow-model
       hono:
         specifier: 4.13.3
         version: 4.13.3
