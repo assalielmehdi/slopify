@@ -1129,14 +1129,14 @@ per-repository evidence, artifact/MR links, reconnect reconciliation, and the
 server-confirmed cancel action.
 
 **Acceptance criteria:**
-- [ ] Persisted/live events update the exact pinned revision without gaps/duplicates after reconnect.
-- [ ] All run/node states, selected transition, rationale, candidates, worktrees, checks, reviews, artifacts, and delivery evidence are textually visible.
-- [ ] Cancel is shown only while legal and changes UI state only from the confirmed run snapshot/events.
+- [x] Persisted/live events update the exact pinned revision without gaps/duplicates after reconnect.
+- [x] All run/node states, selected transition, rationale, candidates, worktrees, checks, reviews, artifacts, and delivery evidence are textually visible.
+- [x] Cancel is shown only while legal and changes UI state only from the confirmed run snapshot/events.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- event-stream live-run cancel-run`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
-- [ ] Manual check: replay synthetic success, failure, cancellation, interruption, reconnect, and multi-repository sequences.
+- [x] Tests pass: `pnpm --filter @loop/web test -- event-stream live-run cancel-run`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
+- [x] Manual check: replay synthetic success, failure, cancellation, interruption, reconnect, and multi-repository sequences.
 
 **Dependencies:** Tasks 14, 23-30, and 33
 
@@ -1148,6 +1148,13 @@ server-confirmed cancel action.
 - `apps/web/tests/live-run.test.tsx`
 
 **Estimated scope:** Medium: 3-5 files
+
+**Task review (2026-08-20):**
+- Added strict browser schemas for the complete pinned run snapshot, node executions, repository selection, workspaces, delivery evidence, output chunks, and artifacts, plus validated detail/cancel methods. Native EventSource uses a cursor-free same-origin URL so automatic `Last-Event-ID` reconnects cannot conflict with the API cursor contract.
+- Built `/runs/[runId]` as an async App Router route with a client-only live boundary. The view derives only contiguous ordered events, reconciles sequence gaps and reconnects from a fresh snapshot, ignores stale route requests, closes at terminal state, and renders logs/artifacts as text without HTML injection.
+- Added textual overall/node status, elapsed and exact node timing/outcome/error data, selected transition, all ordered candidates and rationales, worktree/branch/SHA data, raw verification/review evidence, safe ClickUp artifact links, and complete MR evidence. Cancellation is available only for a running active node and does not change lifecycle state until the API returns a confirmed run.
+- Captured RED/GREEN coverage for strict API payloads, replay deduplication, gap detection, malformed events, reconnect reconciliation, obsolete snapshot races, exhaustive status labels, unsafe log text, multi-repository evidence, and server-confirmed cancellation. The full suite passes 83 files / 586 tests.
+- Verified in Chrome at the current wide desktop viewport against production Next.js and a controlled same-origin HTTP/SSE fixture. Reconnect replay rendered one copy of the start and post-reconnect events; success showed two selected repositories, two MR links, and one ClickUp artifact; failure/interruption hid cancel and retained terminal evidence; cancellation changed Running to Cancelled only after the server response and closed the stream. Repository build/typecheck/lint/format/diff gates pass under the existing Node 26 versus pinned Node 24 engine warning; Playwright was not invoked.
 
 ## Task 38: Inspect paginated historical runs and exact evidence
 
