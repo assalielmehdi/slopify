@@ -1164,14 +1164,14 @@ events, artifacts, errors, repository evidence, and MR links from exact
 historical snapshots.
 
 **Acceptance criteria:**
-- [ ] Pagination is stable and shows required identity/status/timing plus available MR URLs.
-- [ ] Opening a run renders its exact graph revision and complete evidence even after current configuration changes.
-- [ ] UI wording distinguishes created MRs from pipeline, approval, merge, deployment, or release state.
+- [x] Pagination is stable and shows required identity/status/timing plus available MR URLs.
+- [x] Opening a run renders its exact graph revision and complete evidence even after current configuration changes.
+- [x] UI wording distinguishes created MRs from pipeline, approval, merge, deployment, or release state.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- run-history historical-run`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
-- [ ] Manual check: mutate current fake config after a terminal run and confirm historical display is unchanged.
+- [x] Tests pass: `pnpm --filter @loop/web test -- run-history historical-run`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
+- [x] Manual check: mutate current fake config after a terminal run and confirm historical display is unchanged.
 
 **Dependencies:** Tasks 13, 30, 33, and 37
 
@@ -1183,6 +1183,13 @@ historical snapshots.
 - `apps/web/tests/historical-run.test.tsx`
 
 **Estimated scope:** Medium: 3-5 files
+
+**Task review (2026-08-20):**
+- Added a strict paginated run-history browser contract that validates input before fetching, rejects malformed successful payloads, and preserves the API's stable newest-first order. `/runs` awaits and validates App Router search parameters, then passes only a serializable page number to the client boundary.
+- Built accessible URL-backed pagination with explicit loading, empty, and failure states. Each history item shows frozen task/profile/workflow/run identity, status, created/started/completed timing, duration, stopped node, and available created-MR links without reinterpreting server order.
+- Terminal run detail now identifies the exact profile snapshot, labels the view as an immutable terminal snapshot, shows the stopped node, retains the pinned graph, all ordered events, node failures, artifacts, repository/worktree/delivery evidence, and never opens a live event stream.
+- Changed history and detail wording to state that a created merge request does not confirm pipeline success, approval, merge, deployment, or release. Focused RED/GREEN coverage exercises the real strict browser parser; the full repository suite passes 85 files / 592 tests.
+- Verified production Next.js in Chrome against a controlled same-origin fixture at the current 2928 x 1590 desktop viewport. Page 1/2 navigation retained URL state; after the fake current profile/revision changed, reloading the terminal run retained only its historical profile snapshot and revision. Chrome reported no console errors, all repository build/typecheck/lint/format/diff gates pass under the existing Node 26 versus pinned Node 24 engine warning, and Playwright was not invoked.
 
 ## Task 39: Prove desktop accessibility and browser acceptance flows
 
