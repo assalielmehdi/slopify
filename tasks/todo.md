@@ -1280,14 +1280,14 @@ baseline Git/glab/OpenSSH/CA/Bash/Node/Corepack/pnpm tools while keeping build
 compilers and global Pi executables out of the final stage.
 
 **Acceptance criteria:**
-- [ ] The API runs as non-root on `0.0.0.0:3001`, writes only below `/var/lib/workbench`, and accesses repositories/worktrees only below `/workspace` in Compose mode.
-- [ ] Required baseline tools and native SQLite load at their pinned compatible versions; no global Pi executable exists.
-- [ ] Signals reach the API through an init boundary and allow the runtime's bounded graceful shutdown.
+- [x] The API runs as non-root on `0.0.0.0:3001`, writes only below `/var/lib/workbench`, and accesses repositories/worktrees only below `/workspace` in Compose mode.
+- [x] Required baseline tools and native SQLite load at their pinned compatible versions; no global Pi executable exists.
+- [x] Signals reach the API through an init boundary and allow the runtime's bounded graceful shutdown.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/api test && pnpm --filter @loop/agent-runtimes test:integration`
-- [ ] Build succeeds: `docker build -f apps/api/Dockerfile .`
-- [ ] Manual check: inspect image user, tool versions, filesystem writes, layers, Pi executable absence, and SIGTERM behavior.
+- [x] Tests pass: `pnpm --filter @loop/api test && pnpm --filter @loop/agent-runtimes test:integration`
+- [x] Build succeeds: `docker build -f apps/api/Dockerfile .`
+- [x] Manual check: inspect image user, tool versions, filesystem writes, layers, Pi executable absence, and SIGTERM behavior.
 
 **Dependencies:** Tasks 14, 22, 24, and 30; agreed shared build-context exclusions with Task 40
 
@@ -1299,11 +1299,19 @@ compilers and global Pi executables out of the final stage.
 
 **Estimated scope:** Medium: 3-5 files
 
+**Task review (2026-08-20):**
+- Added container-mode configuration contracts for the `/var/lib/workbench` data root and `/workspace` repository root. Defaults resolve to `/var/lib/workbench/workbench.sqlite` and `/workspace`; normalized escapes and paths outside either root fail with stable configuration errors before the server starts.
+- Built a 176.8 MB multi-stage image from digest-pinned Node `24.18.0-bookworm-slim`. The frozen production deployment includes the compiled API and workspace packages, `better-sqlite3` `13.0.3`, and embedded Pi SDK `0.84.2`; the clean build also exposed and fixed the API's missing ClickUp build dependency.
+- Pinned glab `1.114.0` with architecture-specific release checksums and pinned the Debian Git, OpenSSH client, CA, Bash, `libstdc++`, and `tini` packages. Corepack `0.35.0` comes from the immutable Node base and activates pnpm `11.22.0`; pnpm and glab runtime state is redirected below `/var/lib/workbench`.
+- Runtime inspection proved UID/GID 1000, `tini` as PID 1, `0.0.0.0:3001`, a healthy local probe, writable data/workspace roots, native SQLite WAL/schema-v3 operation, and the expected baseline tool versions. Python, Make, GCC/G++, curl, and a global `pi` command are absent from the final stage; the embedded dependency's package-local shim is not on runtime `PATH`.
+- The deployed application contains only `dist`, production `node_modules`, and `package.json`; no project Git metadata, source workspace, environment file, credential, repository, worktree, or database is present in the image. Runtime diffs were limited to `/var/lib/workbench` plus OrbStack-injected CA trust files. SIGTERM traversed `tini` and completed graceful shutdown in 0.22 seconds with exit code 0.
+- The specified API and embedded-Pi gates pass, as do the clean image build/check, 89-file / 610-test repository suite, typecheck, lint, format, and diff checks. Host pnpm commands retain the existing Node 26 versus pinned Node 24 engine warning; the image itself runs Node 24.18.0.
+
 ## Checkpoint G1: After Tasks 40-41
 
-- [ ] Both digest-pinned images build from the frozen lockfile and run as non-root.
-- [ ] Web same-origin proxy and API graceful shutdown work in isolated containers.
-- [ ] Image histories/layers contain no credentials, repositories, worktrees, database, or global Pi CLI.
+- [x] Both digest-pinned images build from the frozen lockfile and run as non-root.
+- [x] Web same-origin proxy and API graceful shutdown work in isolated containers.
+- [x] Image histories/layers contain no credentials, repositories, worktrees, database, or global Pi CLI.
 
 ## Task 42: Define the persistent two-service Compose stack and onboarding
 
