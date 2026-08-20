@@ -1243,14 +1243,14 @@ and create a digest-pinned multi-stage image with only production assets and a
 non-root runtime user.
 
 **Acceptance criteria:**
-- [ ] The image serves standalone Next.js on `0.0.0.0:3000` as non-root with a bounded local health check.
-- [ ] Browser `/api` and SSE traffic reaches the internal API without exposing its Compose hostname or requiring CORS.
-- [ ] Runtime layers exclude credentials, source-only dependencies, local evidence, and build-only tooling.
+- [x] The image serves standalone Next.js on `0.0.0.0:3000` as non-root with a bounded local health check.
+- [x] Browser `/api` and SSE traffic reaches the internal API without exposing its Compose hostname or requiring CORS.
+- [x] Runtime layers exclude credentials, source-only dependencies, local evidence, and build-only tooling.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- health proxy`
-- [ ] Build succeeds: `docker build -f apps/web/Dockerfile .`
-- [ ] Manual check: inspect image history, effective user, copied paths, published response URLs, and SSE streaming.
+- [x] Tests pass: `pnpm --filter @loop/web test -- health proxy`
+- [x] Build succeeds: `docker build -f apps/web/Dockerfile .`
+- [x] Manual check: inspect image history, effective user, copied paths, published response URLs, and SSE streaming.
 
 **Dependencies:** Tasks 31, 37, and 39
 
@@ -1258,10 +1258,19 @@ non-root runtime user.
 - `apps/web/Dockerfile`
 - `apps/web/next.config.ts`
 - `apps/web/app/healthz/route.ts`
+- `apps/web/app/api/[...path]/route.ts`
 - `apps/web/tests/proxy.test.ts`
+- `apps/web/tests/health.test.ts`
 - `.dockerignore`
 
-**Estimated scope:** Medium: 3-5 files
+**Estimated scope:** Medium: 7 files
+
+**Task review (2026-08-20):**
+- Added a runtime-only App Router proxy for the current GET, POST, and PUT API contract. It preserves request bodies, headers, query strings, upstream JSON statuses, and the original SSE `Response` stream; maps public `/api/healthz` to Hono `/healthz`; validates an origin-only `API_INTERNAL_URL`; and returns the shared structured error envelope without connection details. The separate web `/healthz` response is non-cached and claims only Next.js process availability.
+- Enabled standalone output with monorepo tracing and a narrow `@swc/helpers` include. A runtime smoke test first reproduced the missing pnpm symlink target, then the RED/GREEN contract and rebuilt image proved the generated server starts. The Docker build installs only the web dependency closure, avoiding API SQLite and compiler requirements.
+- Built a 93.6 MB multi-stage image from Node `24.18.0-bookworm-slim` pinned to digest `sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d`. The container listens on `0.0.0.0:3000` as UID/GID 1000, becomes healthy through a two-second local probe, and contains standalone/static/public output without tests, source package directories, Git/local evidence, environment files, credentials, SQLite data, pnpm, TypeScript, Python, Make, or GCC.
+- Verified same-origin JSON and SSE against an isolated host fixture. Transport evidence received the first SSE chunk after 35 ms and the second after 636 ms. Chrome loaded the container at `http://127.0.0.1:3100`, rendered the live run, opened EventSource with that same-origin referrer, exposed neither `api:3001` nor `API_INTERNAL_URL`, and reported no console entries.
+- Docker build checks, the focused 22-file / 76-test web suite, production image build, and full repository 89-file / 605-test suite, typecheck, lint, format, and diff checks pass. Host-only pnpm commands retain the existing Node 26 versus pinned Node 24 engine warning; the container itself runs the pinned Node 24.18.0 runtime.
 
 ## Task 41: Build the non-root Hono and embedded-Pi runtime image
 
