@@ -1,5 +1,9 @@
 import type { NodeExecutionStatus } from '@loop/contracts'
-import type { WorkflowEdge, WorkflowNode } from '@loop/workflow-model'
+import type {
+  AgentNodeConfigurationChanges,
+  WorkflowEdge,
+  WorkflowNode,
+} from '@loop/workflow-model'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -11,6 +15,8 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
+
+import { AgentNodeForm } from './agent-node-form'
 
 const PI_SDK_VERSION = '0.84.2'
 
@@ -59,6 +65,7 @@ export interface NodeInspectorProps {
     status: NodeExecutionStatus
     durationMs?: number
   }>
+  readonly onSaveAgentConfiguration?: (changes: AgentNodeConfigurationChanges) => Promise<void>
 }
 
 export function NodeInspector({
@@ -67,6 +74,7 @@ export function NodeInspector({
   isStart,
   outgoingEdges,
   recentRun,
+  onSaveAgentConfiguration,
 }: NodeInspectorProps) {
   const outcomes = getOutcomes(node)
 
@@ -140,24 +148,33 @@ export function NodeInspector({
             Execution contract
           </h3>
           {node.type === 'agent' ? (
-            <dl className="grid gap-3">
-              <Definition term="Harness">
-                Pi SDK <code className="font-mono text-xs/4">{PI_SDK_VERSION}</code>
-              </Definition>
-              <Definition term="Provider / model">
-                {node.provider} / {node.model}
-              </Definition>
-              <Definition term="Thinking level">{node.thinkingLevel}</Definition>
-              <Definition term="Workspace policy">{node.workspacePolicy}</Definition>
-              <Definition term="Permission profile">{node.permissionProfile}</Definition>
-              <Definition term="Resource bundle">
-                <code className="font-mono text-xs/4">{node.resourceBundleId}</code>
-              </Definition>
-              <Definition term="Output schema">
-                <code className="font-mono text-xs/4">{node.outputSchemaRef}</code>
-              </Definition>
-              <Definition term="Prompt template">{node.promptTemplate}</Definition>
-            </dl>
+            <div className="flex flex-col gap-4">
+              <dl className="grid gap-3">
+                <Definition term="Harness">
+                  Pi SDK <code className="font-mono text-xs/4">{PI_SDK_VERSION}</code>
+                </Definition>
+                <Definition term="Provider / model">
+                  {node.provider} / {node.model}
+                </Definition>
+                <Definition term="Thinking level">{node.thinkingLevel}</Definition>
+                <Definition term="Workspace policy">{node.workspacePolicy}</Definition>
+                <Definition term="Permission profile">{node.permissionProfile}</Definition>
+                <Definition term="Resource bundle">
+                  <code className="font-mono text-xs/4">{node.resourceBundleId}</code>
+                </Definition>
+                <Definition term="Output schema">
+                  <code className="font-mono text-xs/4">{node.outputSchemaRef}</code>
+                </Definition>
+                <Definition term="Prompt template">{node.promptTemplate}</Definition>
+              </dl>
+              {onSaveAgentConfiguration === undefined ? null : (
+                <AgentNodeForm
+                  key={`${revisionId}:${node.id}`}
+                  node={node}
+                  onSave={onSaveAgentConfiguration}
+                />
+              )}
+            </div>
           ) : null}
           {node.type === 'command' ? (
             <dl className="grid gap-3">

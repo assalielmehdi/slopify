@@ -67,6 +67,7 @@ describe('WorkflowWorkbench', () => {
     const client = {
       listWorkflows: vi.fn(async () => catalog),
       getWorkflowRevision: vi.fn(async () => latestRevision),
+      createWorkflowRevision: vi.fn(),
     }
 
     render(<WorkflowWorkbench client={client} />)
@@ -86,6 +87,7 @@ describe('WorkflowWorkbench', () => {
       getWorkflowRevision: vi.fn(async (_workflowId: string, revisionId: string) =>
         revisionId === 'revision-01' ? firstRevision : latestRevision,
       ),
+      createWorkflowRevision: vi.fn(),
     }
 
     render(<WorkflowWorkbench client={client} />)
@@ -106,6 +108,7 @@ describe('WorkflowWorkbench', () => {
     const client = {
       listWorkflows: vi.fn(async () => []),
       getWorkflowRevision: vi.fn(),
+      createWorkflowRevision: vi.fn(),
     }
 
     render(<WorkflowWorkbench client={client} />)

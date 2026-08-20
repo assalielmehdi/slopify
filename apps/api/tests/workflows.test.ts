@@ -1,7 +1,10 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createWorkflowService } from '@loop/execution-runtime'
-import { createPersistenceFixture } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import {
+  createPersistenceFixture,
+  createRun,
+} from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -52,6 +55,7 @@ describe('workflow API', () => {
 
   it('creates a validated derived revision without changing its parent', async () => {
     const { fixture, app } = createFixture()
+    const existingRun = createRun(fixture)
 
     const response = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
       method: 'POST',
@@ -67,6 +71,7 @@ describe('workflow API', () => {
       workflowId: fixture.revision.workflowId,
       revisionId: fixture.revision.revisionId,
     })
+    const unchangedRun = fixture.runs.get(existingRun.runId)
 
     expect(response.status).toBe(201)
     expect(created).toMatchObject({
@@ -80,6 +85,7 @@ describe('workflow API', () => {
       model: 'test-model-v2',
     })
     expect(parent).toEqual(fixture.revision)
+    expect(unchangedRun).toEqual(existingRun)
   })
 
   it('maps malformed and semantically invalid revision requests to stable errors', async () => {

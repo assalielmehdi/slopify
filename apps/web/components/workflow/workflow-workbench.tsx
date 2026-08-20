@@ -1,6 +1,6 @@
 'use client'
 
-import type { WorkflowRevision } from '@loop/workflow-model'
+import type { AgentNodeConfigurationChanges, WorkflowRevision } from '@loop/workflow-model'
 import { useEffect, useState } from 'react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -19,18 +19,26 @@ import { createApiClient, type ApiClient, type WorkflowCatalogEntry } from '@/li
 import { NodeInspector } from './node-inspector'
 import { WorkflowCanvas } from './workflow-canvas'
 
-type WorkflowInspectionClient = Pick<ApiClient, 'getWorkflowRevision' | 'listWorkflows'>
+type WorkflowInspectionClient = Pick<
+  ApiClient,
+  'createWorkflowRevision' | 'getWorkflowRevision' | 'listWorkflows'
+>
 
 export interface WorkflowWorkbenchProps {
   readonly client?: WorkflowInspectionClient
+  readonly createRevisionId?: () => string
 }
 
 const defaultClient = createApiClient()
+const defaultRevisionId = () => `revision-${crypto.randomUUID()}`
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'The workflow could not be loaded'
 
-export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchProps) {
+export function WorkflowWorkbench({
+  client = defaultClient,
+  createRevisionId = defaultRevisionId,
+}: WorkflowWorkbenchProps) {
   const [catalog, setCatalog] = useState<readonly WorkflowCatalogEntry[]>([])
   const [revision, setRevision] = useState<WorkflowRevision>()
   const [selectedNodeId, setSelectedNodeId] = useState<string>()
@@ -85,6 +93,44 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
     }
   }
 
+  const saveAgentConfiguration = async (nodeId: string, changes: AgentNodeConfigurationChanges) => {
+    const workflow = catalog[0]
+    if (workflow === undefined || revision === undefined) {
+      throw new Error('No workflow revision available')
+    }
+
+    setLoading(true)
+    try {
+      const created = await client.createWorkflowRevision(workflow.workflowId, {
+        parentRevisionId: revision.revisionId,
+        revisionId: createRevisionId(),
+        updates: [{ nodeId, changes }],
+      })
+      setCatalog((current) =>
+        current.map((entry) =>
+          entry.workflowId === created.workflowId
+            ? {
+                ...entry,
+                latestRevisionId: created.revisionId,
+                revisions: [
+                  {
+                    revisionId: created.revisionId,
+                    parentRevisionId: created.parentRevisionId ?? null,
+                    createdAt: created.createdAt,
+                  },
+                  ...entry.revisions.filter(({ revisionId }) => revisionId !== created.revisionId),
+                ],
+              }
+            : entry,
+        ),
+      )
+      setRevision(created)
+      setSelectedNodeId(nodeId)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   if (revision === undefined) {
     return (
       <section className="flex max-w-3xl flex-col gap-4" aria-busy={loading}>
@@ -128,6 +174,12 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
             Workflow revision
           </label>
           <Select
+            items={
+              workflow?.revisions.map(({ revisionId }) => ({
+                label: revisionId,
+                value: revisionId,
+              })) ?? []
+            }
             value={revision.revisionId}
             onValueChange={(value) => {
               if (value !== null) void selectRevision(value)
@@ -177,6 +229,9 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
               outgoingEdges={revision.edges.filter(
                 ({ sourceNodeId }) => sourceNodeId === selectedNode.id,
               )}
+              onSaveAgentConfiguration={(changes) =>
+                saveAgentConfiguration(selectedNode.id, changes)
+              }
             />
           </aside>
         )}

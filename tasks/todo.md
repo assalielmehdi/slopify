@@ -1019,14 +1019,14 @@ read-only Pi harness/version metadata, structured API errors, and revision
 creation/selection that preserves the source revision and historical runs.
 
 **Acceptance criteria:**
-- [ ] Only provider, model, thinking, prompt, workspace policy, permissions, resources, schema reference, and timeout can be edited.
-- [ ] Save creates and selects a distinct server-validated revision; the original and all run references remain unchanged.
-- [ ] Invalid edits are associated with controls and never become optimistic persisted state.
+- [x] Only provider, model, thinking, prompt, workspace policy, permissions, resources, schema reference, and timeout can be edited.
+- [x] Save creates and selects a distinct server-validated revision; the original and all run references remain unchanged.
+- [x] Invalid edits are associated with controls and never become optimistic persisted state.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- node-configuration workflow-revision`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
-- [ ] Manual check: edit each field, compare old/new revisions, and reload both from the API.
+- [x] Tests pass: `pnpm --filter @loop/web test -- node-configuration workflow-revision`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web lint`
+- [x] Manual check: edit each field, compare old/new revisions, and reload both from the API.
 
 **Dependencies:** Tasks 6, 13, and 33
 
@@ -1038,6 +1038,13 @@ creation/selection that preserves the source revision and historical runs.
 - `apps/web/tests/workflow-revision.test.tsx`
 
 **Estimated scope:** Medium: 3-5 files
+
+**Task review (2026-08-20):**
+- Inspected the current official shadcn Field, Input, Textarea, Native Select, Select, and Button documentation plus the official registry source/dry run. Retained the existing Separator unchanged and added only the official form primitives required by the inspector; no third-party registry or custom primitive was introduced.
+- Captured RED for the missing immutable-revision POST client, agent form, field-associated errors, and non-optimistic workbench save. GREEN coverage proves all nine and only nine editable fields, exact request serialization, local validation, structured server-path errors, pending state, confirmed selection, and source-revision reload.
+- The client reuses the existing Hono contract and validates the `201` response as a complete workflow revision. Save sends only changed fields, disables concurrent revision selection while pending, and updates the catalog/inspector only from the server-confirmed response.
+- Verified at 1280×800 through Chrome against a real local API and production Next.js build. Edited every control; an invariant-breaking workspace policy returned a field-associated error while `revision-02` remained selected, then a corrected save created and selected `revision-afe9e476-c0ad-41c9-8489-56047b5abfa1` with parent `revision-02`. Switching between both revisions reloaded their distinct values from the API, and Chrome reported no console warnings or errors.
+- Added persistence evidence that creating a derived revision leaves an existing run's pinned revision reference unchanged. Final gates pass: 77 test files / 554 tests, repository build, typecheck, lint, and format check.
 
 ## Task 35: Configure ordered project profiles and inspect readiness
 

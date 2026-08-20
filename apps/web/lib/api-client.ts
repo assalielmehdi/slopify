@@ -5,7 +5,11 @@ import {
   WorkflowIdSchema,
   type HealthResponse,
 } from '@loop/contracts'
-import { WorkflowRevisionSchema, type WorkflowRevision } from '@loop/workflow-model'
+import {
+  WorkflowRevisionSchema,
+  type AgentNodeConfigurationChanges,
+  type WorkflowRevision,
+} from '@loop/workflow-model'
 import { z } from 'zod'
 
 const WorkflowRevisionSummarySchema = z.strictObject({
@@ -27,10 +31,23 @@ const WorkflowCatalogResponseSchema = z.strictObject({
 
 export type WorkflowCatalogEntry = z.infer<typeof WorkflowCatalogEntrySchema>
 
+export interface CreateWorkflowRevisionInput {
+  readonly parentRevisionId: string
+  readonly revisionId: string
+  readonly updates: readonly {
+    readonly nodeId: string
+    readonly changes: AgentNodeConfigurationChanges
+  }[]
+}
+
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   getWorkflowRevision(workflowId: string, revisionId: string): Promise<WorkflowRevision>
+  createWorkflowRevision(
+    workflowId: string,
+    input: CreateWorkflowRevisionInput,
+  ): Promise<WorkflowRevision>
 }
 
 export class ApiClientError extends Error {
@@ -57,14 +74,12 @@ export const createApiClient = (
 ): ApiClient => {
   const fetchImplementation = options.fetch ?? globalThis.fetch
 
-  const get = async <Schema extends z.ZodType>(
+  const request = async <Schema extends z.ZodType>(
     path: string,
+    init: RequestInit,
     schema: Schema,
   ): Promise<z.output<Schema>> => {
-    const response = await fetchImplementation(path, {
-      headers: { accept: 'application/json' },
-      method: 'GET',
-    })
+    const response = await fetchImplementation(path, init)
     const body: unknown = await response.json()
 
     if (!response.ok) {
@@ -80,6 +95,9 @@ export const createApiClient = (
     return schema.parse(body)
   }
 
+  const get = <Schema extends z.ZodType>(path: string, schema: Schema) =>
+    request(path, { headers: { accept: 'application/json' }, method: 'GET' }, schema)
+
   return {
     async getHealth() {
       return get('/api/healthz', HealthResponseSchema)
@@ -92,6 +110,18 @@ export const createApiClient = (
     async getWorkflowRevision(workflowId, revisionId) {
       return get(
         `/api/workflows/${encodeURIComponent(workflowId)}/revisions/${encodeURIComponent(revisionId)}`,
+        WorkflowRevisionSchema,
+      )
+    },
+
+    async createWorkflowRevision(workflowId, input) {
+      return request(
+        `/api/workflows/${encodeURIComponent(workflowId)}/revisions`,
+        {
+          body: JSON.stringify(input),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'POST',
+        },
         WorkflowRevisionSchema,
       )
     },
