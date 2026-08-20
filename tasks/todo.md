@@ -1054,14 +1054,14 @@ arrays, connector states, and repository-addressable readiness while keeping
 credentials connected/not-connected only.
 
 **Acceptance criteria:**
-- [ ] Operators can create/edit/reorder valid candidates and see the active runtime root/Compose path boundary.
-- [ ] Filesystem, Git, tool, ClickUp, GitLab, and model findings are distinct per repository and never expose secrets.
-- [ ] Saving settings does not mutate profile snapshots attached to active or historical runs.
+- [x] Operators can create/edit/reorder valid candidates and see the active runtime root/Compose path boundary.
+- [x] Filesystem, Git, tool, ClickUp, GitLab, and model findings are distinct per repository and never expose secrets.
+- [x] Saving settings does not mutate profile snapshots attached to active or historical runs.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- project-profile readiness-settings`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
-- [ ] Manual check: exercise native and Compose path errors, reordering, missing credentials, and a historical snapshot.
+- [x] Tests pass: `pnpm --filter @loop/web test -- project-profile readiness-settings`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
+- [x] Manual check: exercise native and Compose path errors, reordering, missing credentials, and a historical snapshot.
 
 **Dependencies:** Tasks 12 and 32
 
@@ -1073,6 +1073,13 @@ credentials connected/not-connected only.
 - `apps/web/tests/readiness-panel.test.tsx`
 
 **Estimated scope:** Medium: 3-5 files
+
+**Task review (2026-08-20):**
+- Added a strict profile-catalog response with active runtime mode/root metadata and a typed browser client for catalog, create/update, connector-status, and readiness endpoints. The API remains additive and returns only connector booleans; no credential value enters the settings payload.
+- Captured RED/GREEN coverage for create/edit, canonical reordering, structured executable/check arrays, Compose versus native path validation, optional native form constraints, category-specific readiness, server-confirmed reconciliation, settled load failures, and immutable pre-existing snapshots. The focused invocation passes 13 files / 39 tests; the full suite passes 80 files / 567 tests.
+- Verified through Chrome at the supported 1280×900 desktop viewport against production Next.js and real native/Compose API processes. Compose exposed `/workspace`, rejected an unmounted `/Users/...` path, then saved the reordered `Web → API` catalog. Native exposed `/`, accepted the real absolute workspace path, and reported separate filesystem, Git, required-tool, ClickUp, GitLab, and model-provider findings with all connectors visibly not connected.
+- Chrome exposed two regressions that component submission had masked: optional list/argument fields incorrectly blocked native submit, and corrected/reordered candidates retained a stale indexed path error. Both now have focused regression coverage; a failed catalog load also settles instead of leaving an endless loader.
+- Snapshot persistence coverage compares the stored historical snapshot before and after an HTTP settings update and proves it is byte-for-byte unchanged. Final gates pass: focused web tests, repository test/build/typecheck/lint/format, and a clean worktree under the existing Node 26 versus pinned Node 24 engine warning.
 
 ## Task 36: Resolve a task and start a confirmed run
 
