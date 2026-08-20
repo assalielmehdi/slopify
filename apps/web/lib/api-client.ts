@@ -1,14 +1,23 @@
 import {
   ApiErrorSchema,
+  ArtifactIdSchema,
+  ArtifactTypeSchema,
+  CancelRunRequestSchema,
   ConnectorStatusSchema,
   CreateRunRequestSchema,
+  GitShaSchema,
   HealthResponseSchema,
   NodeIdSchema,
+  NodeExecutionStatusSchema,
+  OutcomeNameSchema,
+  ProfileRepositoryConfigurationSchema,
   ProjectProfileCatalogResponseSchema,
   ProjectProfileConfigurationSchema,
   ProjectProfileReadinessSchema,
+  RepositoryIdSchema,
   ResolveClickUpTaskRequestSchema,
   RevisionIdSchema,
+  RunEventSchema,
   RunIdSchema,
   RunStatusSchema,
   WorkflowIdSchema,
@@ -96,9 +105,127 @@ const StartRunResponseSchema = z.strictObject({
   completedAt: z.iso.datetime({ offset: true }).nullable(),
 })
 
+const ProfileSnapshotRepositorySchema = ProfileRepositoryConfigurationSchema.extend({
+  profilePosition: z.number().int().nonnegative().safe(),
+})
+
+const RunDetailResponseSchema = z.strictObject({
+  run: StartRunResponseSchema,
+  workflowRevision: WorkflowRevisionSchema,
+  profileSnapshot: z.strictObject({
+    snapshotId: z.string().trim().min(1).max(256),
+    profileId: ProjectProfileConfigurationSchema.shape.profileId,
+    displayName: ProjectProfileConfigurationSchema.shape.displayName,
+    clickupWorkspaceId: ProjectProfileConfigurationSchema.shape.clickupWorkspaceId,
+    clickupListId: ProjectProfileConfigurationSchema.shape.clickupListId,
+    clickupInReviewStatusId: ProjectProfileConfigurationSchema.shape.clickupInReviewStatusId,
+    createdAt: z.iso.datetime({ offset: true }),
+    repositories: z.array(ProfileSnapshotRepositorySchema).min(1).max(32).readonly(),
+  }),
+  events: z.array(RunEventSchema).readonly(),
+  nodeExecutions: z
+    .array(
+      z.strictObject({
+        nodeExecutionId: z.string().trim().min(1).max(256),
+        nodeId: NodeIdSchema,
+        executionIndex: z.number().int().nonnegative().safe(),
+        status: NodeExecutionStatusSchema,
+        inputReferences: z.json(),
+        output: z.json().nullable(),
+        outcome: OutcomeNameSchema.nullable(),
+        errorCode: z.string().trim().min(1).max(128).nullable(),
+        errorMessage: z.string().trim().min(1).max(4_096).nullable(),
+        selectedTargetNodeId: NodeIdSchema.nullable(),
+        startedAt: z.iso.datetime({ offset: true }).nullable(),
+        completedAt: z.iso.datetime({ offset: true }).nullable(),
+        durationMs: z.number().int().nonnegative().finite().nullable(),
+      }),
+    )
+    .readonly(),
+  repositorySelection: z
+    .strictObject({
+      selected: z
+        .array(
+          z.strictObject({
+            repositoryId: RepositoryIdSchema,
+            rationale: z.string().trim().min(1),
+            responsibility: z.string().trim().min(1),
+          }),
+        )
+        .readonly(),
+      excluded: z
+        .array(
+          z.strictObject({
+            repositoryId: RepositoryIdSchema,
+            rationale: z.string().trim().min(1),
+          }),
+        )
+        .readonly(),
+    })
+    .nullable(),
+  workspaces: z
+    .array(
+      z.strictObject({
+        repositoryId: RepositoryIdSchema,
+        profilePosition: z.number().int().nonnegative().safe(),
+        repositoryPath: z.string().trim().min(1).max(4_096),
+        worktreePath: z.string().trim().min(1).max(4_096),
+        remote: z.string().trim().min(1).max(256),
+        targetBranch: z.string().trim().min(1).max(512),
+        sourceBranch: z.string().trim().min(1).max(512),
+        baseSha: GitShaSchema,
+        createdAt: z.iso.datetime({ offset: true }),
+      }),
+    )
+    .readonly(),
+  deliveryEvidence: z
+    .array(
+      z.strictObject({
+        repositoryId: RepositoryIdSchema,
+        profilePosition: z.number().int().nonnegative().safe(),
+        status: z.enum(['PENDING', 'BRANCH_PUSHED', 'MERGE_REQUEST_CREATED', 'VERIFIED', 'FAILED']),
+        gitlabProject: z.string().trim().min(1).max(512).nullable(),
+        mergeRequestIid: z.number().int().positive().safe().nullable(),
+        mergeRequestUrl: z.url().max(4_096).nullable(),
+        sourceBranch: z.string().trim().min(1).max(512).nullable(),
+        targetBranch: z.string().trim().min(1).max(512).nullable(),
+        headSha: GitShaSchema.nullable(),
+        evidence: z.json(),
+        updatedAt: z.iso.datetime({ offset: true }),
+      }),
+    )
+    .readonly(),
+  outputChunks: z
+    .array(
+      z.strictObject({
+        sequence: z.number().int().positive().safe(),
+        eventSequence: z.number().int().positive().safe(),
+        nodeExecutionId: z.string().trim().min(1).max(256),
+        channel: z.enum(['stdout', 'stderr', 'agent']),
+        repositoryId: RepositoryIdSchema.nullable(),
+        content: z.string().max(65_536),
+        createdAt: z.iso.datetime({ offset: true }),
+      }),
+    )
+    .readonly(),
+  artifacts: z
+    .array(
+      z.strictObject({
+        artifactId: ArtifactIdSchema,
+        nodeExecutionId: z.string().trim().min(1).max(256),
+        artifactType: ArtifactTypeSchema,
+        content: z.string(),
+        metadata: z.json(),
+        createdAt: z.iso.datetime({ offset: true }),
+      }),
+    )
+    .readonly(),
+})
+
 export type WorkflowCatalogEntry = z.infer<typeof WorkflowCatalogEntrySchema>
 export type ClickUpTaskSnapshot = z.infer<typeof ClickUpTaskSnapshotSchema>
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>
+export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
 
 export interface CreateWorkflowRevisionInput {
   readonly parentRevisionId: string
@@ -135,6 +262,8 @@ export interface ApiClient {
   ): Promise<WorkflowRevision>
   resolveClickUpTask(input: ResolveClickUpTaskInput): Promise<ClickUpTaskSnapshot>
   startRun(input: StartRunInput): Promise<StartRunResponse>
+  getRun(runId: string): Promise<RunDetailResponse>
+  cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
 }
 
 export class ApiClientError extends Error {
@@ -269,6 +398,25 @@ export const createApiClient = (
         '/api/runs',
         {
           body: JSON.stringify(CreateRunRequestSchema.parse(input)),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'POST',
+        },
+        StartRunResponseSchema,
+      )
+    },
+
+    async getRun(runId) {
+      return get(
+        `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}`,
+        RunDetailResponseSchema,
+      )
+    },
+
+    async cancelRun(runId, input = {}) {
+      return request(
+        `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/cancel`,
+        {
+          body: JSON.stringify(CancelRunRequestSchema.parse(input)),
           headers: { accept: 'application/json', 'content-type': 'application/json' },
           method: 'POST',
         },
