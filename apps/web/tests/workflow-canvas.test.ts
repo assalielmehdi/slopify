@@ -42,5 +42,6 @@ describe('workflow graph layout', () => {
     expect(graph.edges.map(({ source, target }) => [source, target])).toEqual(
       revision.edges.map(({ sourceNodeId, targetNodeId }) => [sourceNodeId, targetNodeId]),
     )
+    expect(graph.nodes.find(({ id }) => id === 'failed')?.ariaLabel).toBe('Failed, terminal node')
   })
 })

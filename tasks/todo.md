@@ -978,14 +978,14 @@ pan/zoom, revision selection, and an accessible node inspector that does not
 navigate away.
 
 **Acceptance criteria:**
-- [ ] Every node/outcome/edge in a revision renders with stable layout and topology remains read-only.
-- [ ] Selection exposes common metadata plus agent harness/config or deterministic source/arguments as specified.
-- [ ] Keyboard and non-color cues identify focus, selection, kind, start/terminal state, and recent run status.
+- [x] Every node/outcome/edge in a revision renders with stable layout and topology remains read-only.
+- [x] Selection exposes common metadata plus agent harness/config or deterministic source/arguments as specified.
+- [x] Keyboard and non-color cues identify focus, selection, kind, start/terminal state, and recent run status.
 
 **Verification:**
-- [ ] Tests pass: `pnpm --filter @loop/web test -- workflow-canvas workflow-node node-inspector`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
-- [ ] Manual check: inspect the predefined cyclic graph at the supported desktop viewport using mouse and keyboard.
+- [x] Tests pass: `pnpm --filter @loop/web test -- workflow-canvas workflow-node node-inspector`
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web typecheck`
+- [x] Manual check: inspect the predefined cyclic graph at the supported desktop viewport using mouse and keyboard.
 
 **Dependencies:** Tasks 6, 13, and 32; approved graph renderer/layout
 
@@ -998,11 +998,19 @@ navigate away.
 
 **Estimated scope:** Medium: 3-5 files
 
+**Task review (2026-08-20):**
+- Approved and pinned `@xyflow/react` 12.11.3 with `@dagrejs/dagre` 3.1.1 after reviewing current cyclic-layout and accessibility guidance. Official shadcn registry searches found no workflow-graph or node-inspector block, so the implementation composes the approved preset's Badge, Card, Select, Alert, and Skeleton primitives without a third-party registry or custom primitive.
+- Captured RED/GREEN coverage for deterministic topology, every node kind, edge labels, inspector contracts, revision loading, exact terminal accessible names, stable renderer inputs, controlled keyboard selection, and focus styling. The focused web suite passes 8 files / 24 tests; the full repository suite passes 75 files / 549 tests.
+- The graph presents all 14 predefined nodes and 21 labeled edges read-only. Initial framing keeps the first four delivery steps readable, while the explicit Fit View control exposes the complete cyclic topology. Selecting a node updates only the inspector and preserves the current URL.
+- Verified at 1280x800 through Chrome with deterministic API fixtures: mouse selection, Tab plus Space selection, a solid 2 px non-color focus outline with 4 px offset, zoom and full Fit View, revision-02 to revision-01 keyboard selection, 14 node / 21 edge / 21 edge-label counts, and no application console errors. Chrome also exposed and drove the regression fix for unstable React Flow inputs and controlled keyboard changes.
+- The inspector shows common metadata plus the pinned Pi SDK `0.84.2` harness/config for agents. Command nodes expose their deterministic entrypoint and server-bounded argument/source policy without inventing a filesystem path. No backend route, payload, or API contract changed; the client consumes the existing workflow catalog and immutable-revision endpoints.
+- Final gates pass: focused web tests, web build/typecheck/lint, and repository `pnpm test`, `pnpm build`, `pnpm typecheck`, `pnpm lint`, and `pnpm format:check`.
+
 ## Checkpoint F1: After Tasks 31-33
 
-- [ ] All routes, typed API boundary, preset source, and application shell build cleanly.
-- [ ] The full immutable graph and every node kind are inspectable without topology mutation.
-- [ ] Official shadcn evaluation and graph-dependency approval evidence are recorded.
+- [x] All routes, typed API boundary, preset source, and application shell build cleanly.
+- [x] The full immutable graph and every node kind are inspectable without topology mutation.
+- [x] Official shadcn evaluation and graph-dependency approval evidence are recorded.
 
 ## Task 34: Save agent configuration as a new revision
 

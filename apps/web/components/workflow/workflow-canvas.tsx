@@ -10,9 +10,11 @@ import {
   MarkerType,
   ReactFlow,
   type Edge,
+  type NodeMouseHandler,
   type NodeTypes,
+  type OnNodesChange,
 } from '@xyflow/react'
-import { useMemo } from 'react'
+import { useCallback, useMemo } from 'react'
 
 import '@xyflow/react/dist/style.css'
 
@@ -22,8 +24,8 @@ const NODE_WIDTH = 224
 const NODE_HEIGHT = 128
 
 export interface WorkflowGraphLayout {
-  readonly nodes: readonly WorkflowCanvasNode[]
-  readonly edges: readonly Edge[]
+  readonly nodes: WorkflowCanvasNode[]
+  readonly edges: Edge[]
 }
 
 export interface WorkflowCanvasProps {
@@ -84,7 +86,7 @@ export function layoutWorkflowGraph(
       connectable: false,
       deletable: false,
       focusable: true,
-      ariaLabel: `${domainNode.name}, ${domainNode.type} node${data.isStart ? ', start node' : ''}${data.isTerminal ? ', terminal node' : ''}`,
+      ariaLabel: `${domainNode.name}, ${domainNode.type} node${data.isStart ? ', start node' : ''}`,
       ariaRole: 'button',
     }
   })
@@ -118,12 +120,31 @@ export function WorkflowCanvas({
       }),
     [recentRunStatuses, revision, selectedNodeId],
   )
+  const handleNodeClick = useCallback<NodeMouseHandler<WorkflowCanvasNode>>(
+    (_event, node) => onNodeSelect(node.id),
+    [onNodeSelect],
+  )
+  const handleNodesChange = useCallback<OnNodesChange<WorkflowCanvasNode>>(
+    (changes) => {
+      for (const change of changes) {
+        if (change.type === 'select' && change.selected) {
+          onNodeSelect(change.id)
+          return
+        }
+      }
+    },
+    [onNodeSelect],
+  )
 
   return (
-    <div className="h-160 min-w-0 border bg-muted/30" role="region" aria-label="Workflow graph">
+    <div
+      className="workflow-graph h-160 min-w-0 border bg-muted/30"
+      role="region"
+      aria-label="Workflow graph"
+    >
       <ReactFlow
-        nodes={[...graph.nodes]}
-        edges={[...graph.edges]}
+        nodes={graph.nodes}
+        edges={graph.edges}
         nodeTypes={nodeTypes}
         nodesDraggable={false}
         nodesConnectable={false}
@@ -135,12 +156,9 @@ export function WorkflowCanvas({
         minZoom={0.25}
         maxZoom={1.5}
         fitView
-        fitViewOptions={{ padding: 0.16 }}
-        onNodeClick={(_event, node) => onNodeSelect(node.id)}
-        onSelectionChange={({ nodes }) => {
-          const node = nodes[0]
-          if (node !== undefined) onNodeSelect(node.id)
-        }}
+        fitViewOptions={{ nodes: graph.nodes.slice(0, 4), padding: 0.16, maxZoom: 0.75 }}
+        onNodeClick={handleNodeClick}
+        onNodesChange={handleNodesChange}
         ariaLabelConfig={{
           'node.a11yDescription.default':
             'Press Enter or Space to inspect this read-only workflow node.',
@@ -148,7 +166,11 @@ export function WorkflowCanvas({
         }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-        <Controls showInteractive={false} aria-label="Workflow viewport controls" />
+        <Controls
+          showInteractive={false}
+          fitViewOptions={{ padding: 0.16 }}
+          aria-label="Workflow viewport controls"
+        />
       </ReactFlow>
     </div>
   )
