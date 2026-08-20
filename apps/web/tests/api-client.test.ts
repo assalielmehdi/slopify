@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createPredefinedV1Revision } from '@loop/workflow-model'
+
 import { ApiClientError, createApiClient } from '../lib/api-client'
 
 describe('API client', () => {
@@ -43,5 +45,61 @@ describe('API client', () => {
         status: 503,
       }),
     )
+  })
+
+  it('loads and validates the workflow catalog and exact revision', async () => {
+    const revision = createPredefinedV1Revision({
+      revisionId: 'revision-01',
+      createdAt: '2026-08-18T12:00:00Z',
+      agentDefaults: {
+        provider: 'test-provider',
+        model: 'test-model',
+        thinkingLevel: 'high',
+      },
+    })
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json({
+          workflows: [
+            {
+              workflowId: revision.workflowId,
+              name: revision.name,
+              latestRevisionId: revision.revisionId,
+              revisions: [
+                {
+                  revisionId: revision.revisionId,
+                  parentRevisionId: null,
+                  createdAt: revision.createdAt,
+                },
+              ],
+            },
+          ],
+        }),
+      )
+      .mockResolvedValueOnce(Response.json(revision))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listWorkflows()).resolves.toHaveLength(1)
+    await expect(
+      client.getWorkflowRevision(revision.workflowId, revision.revisionId),
+    ).resolves.toEqual(revision)
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/workflows', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      '/api/workflows/delivery-workflow/revisions/revision-01',
+      { headers: { accept: 'application/json' }, method: 'GET' },
+    )
+  })
+
+  it('rejects malformed workflow catalog data at the browser boundary', async () => {
+    const client = createApiClient({
+      fetch: async () => Response.json({ workflows: [{ workflowId: 'missing-fields' }] }),
+    })
+
+    await expect(client.listWorkflows()).rejects.toMatchObject({ name: 'ZodError' })
   })
 })
