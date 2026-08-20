@@ -12,6 +12,12 @@ describe('standalone web configuration', () => {
       resolve(dirname(fileURLToPath(import.meta.url)), '../../..'),
     )
   })
+
+  it('includes the pnpm runtime helper required by the standalone Next server', () => {
+    expect(nextConfig.outputFileTracingIncludes).toEqual({
+      '/*': ['../../node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**/*'],
+    })
+  })
 })
 
 describe('same-origin API proxy', () => {
