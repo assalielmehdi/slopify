@@ -7,7 +7,7 @@ import { RunEventSchema } from '@loop/contracts'
 import { createPredefinedV1Revision } from '@loop/workflow-model'
 
 import { LiveRun } from '../components/runs/live-run'
-import type { RunDetailResponse } from '../lib/api-client'
+import { createApiClient, type RunDetailResponse } from '../lib/api-client'
 import type { RunEventConnector } from '../lib/event-stream'
 
 vi.mock('../components/workflow/workflow-canvas', () => ({
@@ -193,7 +193,7 @@ const detail = {
     {
       artifactId: 'artifact-historical',
       nodeExecutionId: 'node-execution-historical',
-      artifactType: 'VERIFICATION_REPORT',
+      artifactType: 'REVIEW_SUMMARY',
       content: 'Historical verification artifact',
       metadata: {},
       createdAt: '2026-08-19T10:00:05Z',
@@ -206,7 +206,8 @@ afterEach(cleanup)
 describe('historical run detail', () => {
   it('renders only the immutable terminal snapshot and does not open a live stream', async () => {
     const currentConfiguration = { profile: 'Current delivery', revision: 'revision-current' }
-    const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(Response.json(detail))
+    const client = createApiClient({ fetch: fetchImplementation })
     const connect = vi.fn<RunEventConnector>()
 
     render(<LiveRun runId="run-historical" client={client} connect={connect} />)
@@ -243,6 +244,10 @@ describe('historical run detail', () => {
       ),
     ).toBeTruthy()
     expect(connect).not.toHaveBeenCalled()
-    expect(client.getRun).toHaveBeenCalledTimes(1)
+    expect(fetchImplementation).toHaveBeenCalledTimes(1)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/runs/run-historical', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
   })
 })
