@@ -218,9 +218,9 @@ export function ProjectProfileSettings({ client = defaultClient }: ProjectProfil
         {status}
       </p>
 
-      {loading || catalog === undefined ? (
+      {loading ? (
         <p className="text-xs text-muted-foreground">Loading project profiles…</p>
-      ) : editingProfile === undefined ? (
+      ) : catalog === undefined ? null : editingProfile === undefined ? (
         <p className="text-xs text-muted-foreground">No profile is selected.</p>
       ) : (
         <div className="grid items-start gap-6 xl:grid-cols-[minmax(0,2fr)_minmax(18rem,1fr)]">

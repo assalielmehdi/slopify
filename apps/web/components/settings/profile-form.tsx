@@ -85,6 +85,7 @@ interface TextControlProps {
   readonly error?: string | undefined
   readonly disabled?: boolean
   readonly multiline?: boolean
+  readonly required?: boolean
   readonly onChange: (value: string) => void
 }
 
@@ -95,6 +96,7 @@ function TextControl({
   error,
   disabled,
   multiline = false,
+  required = true,
   onChange,
 }: TextControlProps) {
   const controlProps = {
@@ -104,7 +106,7 @@ function TextControl({
     id,
     onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) =>
       onChange(event.currentTarget.value),
-    required: true,
+    required,
     value,
   }
 
@@ -137,11 +139,18 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
     setFormError(undefined)
   }, [profile])
 
+  const clearValidation = () => {
+    setErrors({})
+    setFormError(undefined)
+  }
+
   const updateProfile = (changes: Partial<ProfileDraft>) => {
+    clearValidation()
     setDraft((current) => ({ ...current, ...changes }))
   }
 
   const updateRepository = (index: number, update: (repo: RepositoryDraft) => RepositoryDraft) => {
+    clearValidation()
     setDraft((current) => ({
       ...current,
       repositories: current.repositories.map((repository, repositoryIndex) =>
@@ -151,6 +160,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
   }
 
   const moveRepository = (index: number, offset: -1 | 1) => {
+    clearValidation()
     setDraft((current) => {
       const repositories = [...current.repositories]
       const destination = index + offset
@@ -163,6 +173,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
   }
 
   const addRepository = () => {
+    clearValidation()
     setDraft((current) => {
       const existing = new Set(current.repositories.map(({ repositoryId }) => repositoryId))
       let suffix = current.repositories.length + 1
@@ -172,6 +183,14 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
         repositories: [...current.repositories, emptyRepository(`repository-${suffix}`)],
       }
     })
+  }
+
+  const removeRepository = (index: number) => {
+    clearValidation()
+    setDraft((current) => ({
+      ...current,
+      repositories: current.repositories.filter((_, candidateIndex) => candidateIndex !== index),
+    }))
   }
 
   const validatePaths = (
@@ -370,14 +389,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
                     <Button
                       aria-label={`Remove ${label}`}
                       disabled={draft.repositories.length === 1}
-                      onClick={() =>
-                        setDraft((current) => ({
-                          ...current,
-                          repositories: current.repositories.filter(
-                            (_, candidateIndex) => candidateIndex !== index,
-                          ),
-                        }))
-                      }
+                      onClick={() => removeRepository(index)}
                       size="icon-sm"
                       type="button"
                       variant="destructive"
@@ -457,6 +469,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
                       id={`${formId}-${index}-mergeRequestLabels`}
                       label={`${label} merge request labels`}
                       onChange={(value) => update({ mergeRequestLabels: splitLabels(value) })}
+                      required={false}
                       value={repository.mergeRequestLabels.join(', ')}
                     />
                   </FieldGroup>
@@ -512,6 +525,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
                               ),
                             })
                           }
+                          required={false}
                           value={check.arguments.join('\n')}
                         />
                         <div className="flex items-end gap-2">
@@ -534,6 +548,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
                                   ),
                                 })
                               }
+                              required={false}
                               value={check.expectedOutputIncludes ?? ''}
                             />
                           </div>
@@ -615,6 +630,7 @@ export function ProfileForm({ mode, profile, runtime, onSave }: ProfileFormProps
                               ),
                             })
                           }
+                          required={false}
                           value={command.arguments.join('\n')}
                         />
                         <Button

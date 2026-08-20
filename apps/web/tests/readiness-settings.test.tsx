@@ -74,6 +74,18 @@ const createClient = () => {
 afterEach(cleanup)
 
 describe('ProjectProfileSettings', () => {
+  it('settles a catalog failure into an error state instead of an endless loader', async () => {
+    const { client } = createClient()
+    client.listProjectProfiles = vi.fn(async () => {
+      throw new Error('Profile catalog is unavailable')
+    })
+
+    render(<ProjectProfileSettings client={client} />)
+
+    expect(await screen.findByText('Profile catalog is unavailable')).toBeTruthy()
+    expect(screen.queryByText('Loading project profiles…')).toBeNull()
+  })
+
   it('loads the selected profile and refreshes readiness after a confirmed update', async () => {
     const { client, getProjectProfileReadiness, updateProjectProfile } = createClient()
     render(<ProjectProfileSettings client={client} />)

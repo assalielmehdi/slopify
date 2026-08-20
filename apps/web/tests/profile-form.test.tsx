@@ -51,6 +51,21 @@ const profile = ProjectProfileConfigurationSchema.parse({
 afterEach(cleanup)
 
 describe('ProfileForm', () => {
+  it('leaves schema-optional list and command fields optional to native form validation', () => {
+    render(
+      <ProfileForm
+        mode="edit"
+        profile={profile}
+        runtime={{ mode: 'container', root: '/workspace' }}
+        onSave={async () => undefined}
+      />,
+    )
+
+    expect(screen.getByLabelText('API merge request labels').hasAttribute('required')).toBe(false)
+    expect(screen.getByLabelText('Tool 1 arguments').hasAttribute('required')).toBe(false)
+    expect(screen.getByLabelText('Tool 1 expected output').hasAttribute('required')).toBe(false)
+  })
+
   it('shows the active boundary and saves candidates in the operator-defined order', async () => {
     const onSave = vi.fn<(saved: ProjectProfileConfiguration) => Promise<void>>(
       async () => undefined,
@@ -103,6 +118,11 @@ describe('ProfileForm', () => {
     expect(await screen.findByText('Path must be inside /workspace.')).toBeTruthy()
     expect(screen.getByLabelText('API repository path').getAttribute('aria-invalid')).toBe('true')
     expect(composeSave).not.toHaveBeenCalled()
+
+    fireEvent.change(screen.getByLabelText('API repository path'), {
+      target: { value: '/workspace/api' },
+    })
+    expect(screen.queryByText('Path must be inside /workspace.')).toBeNull()
 
     const apiRepository = profile.repositories[0]
     const webRepository = profile.repositories[1]
