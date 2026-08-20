@@ -23,7 +23,7 @@ export function RunHistoryItem({ run }: Readonly<{ run: RunHistoryEntry }>) {
             <p className="font-mono text-[11px] text-muted-foreground">{run.taskReference}</p>
             <h2 className="mt-1 text-sm font-semibold">
               <Link
-                aria-label={`Open run ${run.taskReference}: ${taskTitle(run)}`}
+                aria-label={`Open run ${run.runId} for ${run.taskReference}: ${taskTitle(run)}`}
                 className="underline-offset-4 hover:underline focus-visible:underline"
                 href={`/runs/${encodeURIComponent(run.runId)}`}
                 prefetch={false}
@@ -78,7 +78,7 @@ export function RunHistoryItem({ run }: Readonly<{ run: RunHistoryEntry }>) {
                 {run.mergeRequestUrls.map((url, index) => (
                   <li key={url}>
                     <a
-                      aria-label={`Created merge request ${index + 1} for ${run.taskReference}`}
+                      aria-label={`Created merge request ${index + 1} for ${run.taskReference} in run ${run.runId}`}
                       className="inline-flex items-center gap-1 underline underline-offset-4"
                       href={url}
                       rel="noreferrer"

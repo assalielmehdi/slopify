@@ -98,12 +98,18 @@ describe('run history page', () => {
       'Inspect historical runs',
       'Follow a live run',
     ])
+    expect(runLinks.map((link) => link.getAttribute('aria-label'))).toEqual([
+      'Open run run-newest for LOOP-38: Inspect historical runs',
+      'Open run run-older for LOOP-37: Follow a live run',
+    ])
     expect(screen.getAllByText('Local delivery · local-profile')).toHaveLength(2)
     expect(screen.getAllByText('revision-frozen')).toHaveLength(2)
     expect(screen.getByText('2m 0s')).toBeTruthy()
     expect(screen.getByText('Stopped at verify')).toBeTruthy()
 
-    const mergeRequest = screen.getByRole('link', { name: 'Created merge request 1 for LOOP-38' })
+    const mergeRequest = screen.getByRole('link', {
+      name: 'Created merge request 1 for LOOP-38 in run run-newest',
+    })
     expect(mergeRequest.getAttribute('href')).toBe(
       'https://gitlab.example.com/group/project/-/merge_requests/38',
     )
