@@ -195,6 +195,10 @@ function RepositoryEvidence({ detail }: Readonly<{ detail: RunDetailResponse }>)
         <CardDescription>
           Ordered candidates, server-recorded selection rationale, isolated worktrees, checks,
           reviews, branches, and delivery evidence.
+          <span className="mt-1 block">
+            A created merge request does not confirm pipeline success, approval, merge, deployment,
+            or release.
+          </span>
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 lg:grid-cols-2">
@@ -275,7 +279,7 @@ function RepositoryEvidence({ detail }: Readonly<{ detail: RunDetailResponse }>)
               )}
               {mergeRequestUrl === undefined ? null : (
                 <Link href={mergeRequestUrl} target="_blank" rel="noreferrer">
-                  Merge request !{delivery?.mergeRequestIid}
+                  Created merge request !{delivery?.mergeRequestIid}
                 </Link>
               )}
             </article>
@@ -481,6 +485,15 @@ export function LiveRun({
   const status = runStatusFrom(detail.run.status, events)
   const currentNodeId = currentNodeFrom(detail, status, events)
   const currentNode = detail.workflowRevision.nodes.find(({ id }) => id === currentNodeId)
+  const stoppedExecution = [...detail.nodeExecutions]
+    .reverse()
+    .find(
+      ({ status: executionStatus }) =>
+        executionStatus === 'FAILED' || executionStatus === 'CANCELLED',
+    )
+  const stoppedNode = detail.workflowRevision.nodes.find(
+    ({ id }) => id === stoppedExecution?.nodeId,
+  )
   const statuses = nodeStatusesFrom(detail, events)
   const selectedTransition = [...events]
     .reverse()
@@ -538,7 +551,9 @@ export function LiveRun({
           </div>
           <p>{taskTitle}</p>
           <p className="text-muted-foreground">
-            Pinned revision {detail.run.revisionId} · {detail.profileSnapshot.displayName} · Task{' '}
+            Pinned revision {detail.run.revisionId} · {detail.profileSnapshot.displayName} (
+            {detail.profileSnapshot.profileId}) · snapshot {detail.profileSnapshot.snapshotId} ·
+            Task{' '}
             {taskUrl === undefined ? (
               detail.run.taskReference
             ) : (
@@ -571,9 +586,13 @@ export function LiveRun({
       <Card>
         <CardHeader>
           <CardTitle>Run status</CardTitle>
-          <CardDescription>Server-confirmed lifecycle and active transition.</CardDescription>
+          <CardDescription>
+            {terminalStatuses.has(status)
+              ? 'Exact terminal snapshot; current configuration is not consulted.'
+              : 'Server-confirmed lifecycle and active transition.'}
+          </CardDescription>
         </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <div>
             <p className="text-muted-foreground">Elapsed</p>
             <p className="font-medium">
@@ -600,6 +619,13 @@ export function LiveRun({
           <div>
             <p className="text-muted-foreground">Started</p>
             <p className="font-medium">{formatTimestamp(detail.run.startedAt)}</p>
+          </div>
+          <div>
+            <p className="text-muted-foreground">Stopped node</p>
+            <p className="font-medium">
+              Stopped node:{' '}
+              {stoppedNode === undefined ? 'None' : `${stoppedNode.name} (${stoppedNode.id})`}
+            </p>
           </div>
         </CardContent>
       </Card>

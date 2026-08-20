@@ -293,7 +293,7 @@ describe('LiveRun', () => {
     expect(screen.getByText('The operator view owns this capability.')).toBeTruthy()
     expect(screen.getByText('/workspace/.worktrees/run-01-web')).toBeTruthy()
     expect(screen.getByText('The existing API contract is sufficient.')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Merge request !42' })).toHaveProperty(
+    expect(screen.getByRole('link', { name: 'Created merge request !42' })).toHaveProperty(
       'href',
       'https://gitlab.example.com/group/web/-/merge_requests/42',
     )
