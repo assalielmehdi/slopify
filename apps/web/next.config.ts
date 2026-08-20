@@ -1,5 +1,10 @@
 import type { NextConfig } from 'next'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
-const nextConfig: NextConfig = {}
+const nextConfig: NextConfig = {
+  output: 'standalone',
+  outputFileTracingRoot: resolve(dirname(fileURLToPath(import.meta.url)), '../..'),
+}
 
 export default nextConfig
