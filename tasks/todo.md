@@ -1193,37 +1193,47 @@ historical snapshots.
 
 ## Task 39: Prove desktop accessibility and browser acceptance flows
 
-**Description:** Add Playwright acceptance for graph inspection, revision edit,
-task resolution/start, live conditional execution, stopped failure,
-cancellation, multi-repository success/history, and the supported desktop
-accessibility requirements against an isolated fake-provider stack.
+**Description:** Add durable component acceptance and prove graph inspection,
+revision edit, task resolution/start, live conditional execution, stopped
+failure, cancellation, multi-repository success/history, and the supported
+desktop accessibility requirements in Chrome against an isolated fake-provider
+stack.
 
 **Acceptance criteria:**
-- [ ] All six specified operator journeys plus multi-repository/cancellation behavior pass at 1280 px or wider.
-- [ ] Keyboard order, visible focus, accessible names/errors, non-color status, contrast, and no unsafe HTML are verified.
-- [ ] Browser tests use isolated fakes and assert no direct provider/SQLite/API-container origin is exposed.
+- [x] All six specified operator journeys plus multi-repository/cancellation behavior pass at 1280 px or wider.
+- [x] Keyboard order, visible focus, accessible names/errors, non-color status, contrast, and no unsafe HTML are verified.
+- [x] Chrome acceptance uses isolated fakes and asserts no direct provider/SQLite/API-container origin is exposed.
 
 **Verification:**
-- [ ] Tests pass: `pnpm test:e2e`
-- [ ] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web test`
-- [ ] Manual check: review screenshots/traces for dense scannability, brief functional motion, and untruncated durable evidence.
+- [x] Tests pass: `pnpm --filter @loop/web test`; browser acceptance was executed in Chrome.
+- [x] Build succeeds: `pnpm --filter @loop/web build && pnpm --filter @loop/web test`
+- [x] Manual check: review Chrome screenshots and interaction evidence for dense scannability, brief functional motion, and untruncated durable evidence.
 
 **Dependencies:** Tasks 34-38
 
 **Files likely touched:**
-- `tests/e2e/workflow-inspection.spec.ts`
-- `tests/e2e/run-lifecycle.spec.ts`
-- `tests/e2e/accessibility.spec.ts`
-- `tests/e2e/fixtures/fake-stack.ts`
-- `playwright.config.ts`
+- `apps/web/app/layout.tsx`
+- `apps/web/app/globals.css`
+- `apps/web/app/**/page.tsx`
+- `apps/web/components/runs/run-history-item.tsx`
+- `apps/web/tests/route-metadata.test.ts`
+- `apps/web/tests/theme-contrast.test.ts`
+- `apps/web/tests/run-history.test.tsx`
 
-**Estimated scope:** Medium: 3-5 files
+**Estimated scope:** Medium: 7 files
+
+**Task review (2026-08-20):**
+- Followed RED/GREEN TDD for three browser-discovered accessibility gaps. Core App Router pages now expose unique descriptive document titles, light-theme focus tokens exceed the 3:1 non-text contrast threshold in both the workbench and sidebar, and repeated ClickUp tasks retain distinct run and merge-request link names by including the immutable run ID.
+- Ran the six specified operator journeys in Chrome at 1280 x 900: inspected all 14 graph-node contracts, edited an agent node into a server-confirmed child revision, resolved and confirmed a ClickUp task, started a run, followed ordered synthetic events through two nodes and conditional edges, inspected an exact stopped failure, and opened a successful historical run with two selected repositories, two created-MR links, and durable artifact/event evidence. The live run was then cancelled and retained 13 ordered events plus the stopped node.
+- Verified predictable keyboard order, a visible 2 px graph outline and 2 px sidebar ring, programmatic task-error association, textual status cues, unique route announcements, and 150 ms functional control motion. Agent-controlled `<strong>` markup remained escaped text inside `pre`; no HTML element was created from it.
+- The isolated fixture observed 34 browser API requests, all on the web origin `http://127.0.0.1:3000`; no provider, SQLite, private API-container hostname, or CORS boundary reached the browser. Chrome screenshots confirmed no horizontal overflow at the supported width and untruncated multi-repository evidence. There were no console errors; Fast Refresh produced transient React Flow size warnings only while edited modules remounted.
+- The explicit Chrome-only instruction superseded the older Playwright wording, so `pnpm test:e2e` was intentionally not invoked. Production web build and the 20-file / 68-test web suite pass; the full repository passes 87 files / 597 tests plus typecheck, lint, format, and diff checks under the existing Node 26 versus pinned Node 24 engine warning.
 
 ## Checkpoint F3: After Tasks 37-39
 
-- [ ] Component and Playwright suites pass at the supported desktop viewport.
-- [ ] Live reconnect/cancel and historical snapshot behavior stay server-confirmed.
-- [ ] Accessibility evidence covers controls, forms, graph, statuses, logs, and errors.
+- [x] Component coverage and Chrome acceptance pass at the supported desktop viewport.
+- [x] Live reconnect/cancel and historical snapshot behavior stay server-confirmed.
+- [x] Accessibility evidence covers controls, forms, graph, statuses, logs, and errors.
 
 ## Task 40: Build the standalone non-root Next.js image
 
