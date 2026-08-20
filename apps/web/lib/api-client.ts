@@ -1,9 +1,17 @@
 import {
   ApiErrorSchema,
+  ConnectorStatusSchema,
   HealthResponseSchema,
+  ProjectProfileCatalogResponseSchema,
+  ProjectProfileConfigurationSchema,
+  ProjectProfileReadinessSchema,
   RevisionIdSchema,
   WorkflowIdSchema,
+  type ConnectorStatus,
   type HealthResponse,
+  type ProjectProfileCatalogResponse,
+  type ProjectProfileConfiguration,
+  type ProjectProfileReadiness,
 } from '@loop/contracts'
 import {
   WorkflowRevisionSchema,
@@ -42,6 +50,11 @@ export interface CreateWorkflowRevisionInput {
 
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>
+  listProjectProfiles(): Promise<ProjectProfileCatalogResponse>
+  createProjectProfile(profile: ProjectProfileConfiguration): Promise<ProjectProfileConfiguration>
+  updateProjectProfile(profile: ProjectProfileConfiguration): Promise<ProjectProfileConfiguration>
+  getProjectProfileReadiness(profileId: string): Promise<ProjectProfileReadiness>
+  getConnectorStatus(): Promise<ConnectorStatus>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   getWorkflowRevision(workflowId: string, revisionId: string): Promise<WorkflowRevision>
   createWorkflowRevision(
@@ -101,6 +114,45 @@ export const createApiClient = (
   return {
     async getHealth() {
       return get('/api/healthz', HealthResponseSchema)
+    },
+
+    async listProjectProfiles() {
+      return get('/api/project-profiles', ProjectProfileCatalogResponseSchema)
+    },
+
+    async createProjectProfile(profile) {
+      return request(
+        '/api/project-profiles',
+        {
+          body: JSON.stringify(profile),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'POST',
+        },
+        ProjectProfileConfigurationSchema,
+      )
+    },
+
+    async updateProjectProfile(profile) {
+      return request(
+        `/api/project-profiles/${encodeURIComponent(profile.profileId)}`,
+        {
+          body: JSON.stringify(profile),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'PUT',
+        },
+        ProjectProfileConfigurationSchema,
+      )
+    },
+
+    async getProjectProfileReadiness(profileId) {
+      return get(
+        `/api/project-profiles/${encodeURIComponent(profileId)}/readiness`,
+        ProjectProfileReadinessSchema,
+      )
+    },
+
+    async getConnectorStatus() {
+      return get('/api/connectors/status', ConnectorStatusSchema)
     },
 
     async listWorkflows() {

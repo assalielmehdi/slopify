@@ -2,7 +2,9 @@ import { isAbsolute, relative, resolve } from 'node:path'
 import {
   ProjectProfileConfigurationSchema,
   ProjectProfileIdSchema,
+  ProjectProfileRuntimeBoundarySchema,
   type ProjectProfileConfiguration as ValidatedProjectProfileConfiguration,
+  type ProjectProfileRuntimeBoundary,
 } from '@loop/contracts'
 
 import type {
@@ -31,6 +33,7 @@ export interface ProjectProfileService {
   save(input: unknown): ValidatedProjectProfileConfiguration
   get(profileId: string): ValidatedProjectProfileConfiguration | undefined
   list(): readonly ValidatedProjectProfileConfiguration[]
+  runtimeBoundary(): ProjectProfileRuntimeBoundary
   createSnapshot(profileId: string, snapshotId: string): ProjectProfileSnapshot
 }
 
@@ -51,6 +54,10 @@ export const createProjectProfileService = (
 ): ProjectProfileService => {
   const now = options.now ?? (() => new Date().toISOString())
   const workspaceRoot = resolve(options.workspaceRoot ?? '/workspace')
+  const runtimeBoundary = ProjectProfileRuntimeBoundarySchema.parse({
+    mode: options.runtimeMode,
+    root: options.runtimeMode === 'container' ? workspaceRoot : '/',
+  })
 
   const validate = (input: unknown): ValidatedProjectProfileConfiguration => {
     const result = ProjectProfileConfigurationSchema.safeParse(input)
@@ -101,6 +108,9 @@ export const createProjectProfileService = (
       return options.profiles
         .list()
         .map((profile) => ProjectProfileConfigurationSchema.parse(profile))
+    },
+    runtimeBoundary() {
+      return runtimeBoundary
     },
     createSnapshot(profileIdInput, snapshotId) {
       const profileId = ProjectProfileIdSchema.parse(profileIdInput)

@@ -189,6 +189,16 @@ export const ProjectProfileConfigurationSchema = z.strictObject({
   repositories: z.array(ProfileRepositoryConfigurationSchema).min(1).max(32).readonly(),
 })
 
+export const ProjectProfileRuntimeBoundarySchema = z.strictObject({
+  mode: z.enum(['native', 'container']),
+  root: z.string().trim().min(1).max(4_096),
+})
+
+export const ProjectProfileCatalogResponseSchema = z.strictObject({
+  profiles: z.array(ProjectProfileConfigurationSchema).readonly(),
+  runtime: ProjectProfileRuntimeBoundarySchema,
+})
+
 export const ConnectorStatusSchema = z.strictObject({
   clickup: z.boolean(),
   gitlab: z.boolean(),
@@ -366,6 +376,8 @@ export type VerificationCommandConfiguration = z.infer<
 >
 export type ProfileRepositoryConfiguration = z.infer<typeof ProfileRepositoryConfigurationSchema>
 export type ProjectProfileConfiguration = z.infer<typeof ProjectProfileConfigurationSchema>
+export type ProjectProfileRuntimeBoundary = z.infer<typeof ProjectProfileRuntimeBoundarySchema>
+export type ProjectProfileCatalogResponse = z.infer<typeof ProjectProfileCatalogResponseSchema>
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
 export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>

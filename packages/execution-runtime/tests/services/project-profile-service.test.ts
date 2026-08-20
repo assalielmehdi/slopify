@@ -35,6 +35,12 @@ const createService = () => {
 }
 
 describe('project profile service', () => {
+  it('reports the active Compose path boundary', () => {
+    const { service } = createService()
+
+    expect(service.runtimeBoundary()).toEqual({ mode: 'container', root: '/workspace' })
+  })
+
   it('persists a validated ordered catalog and lists it in stable order', () => {
     const { service } = createService()
 
@@ -111,6 +117,9 @@ describe('project profile service', () => {
     service.save({ ...composeProfile(), displayName: 'Edited after snapshot' })
 
     expect(snapshot.displayName).toBe('Local profile')
+    expect(service.createSnapshot('profile-01', 'snapshot-service-02').displayName).toBe(
+      'Edited after snapshot',
+    )
     expect(snapshot.repositories.map(({ repositoryId }) => repositoryId)).toEqual([
       'api',
       'web',

@@ -3,6 +3,7 @@ import {
   type ProjectProfileService,
   type ReadinessService,
 } from '@loop/execution-runtime'
+import { ProjectProfileCatalogResponseSchema } from '@loop/contracts'
 import type { Context, Hono } from 'hono'
 
 const parseProfileBody = async (context: Context): Promise<unknown> => {
@@ -23,7 +24,13 @@ export const registerProjectProfileRoutes = (
   },
 ): void => {
   app.get('/api/project-profiles', (context) =>
-    context.json({ profiles: services.profiles.list() }, 200),
+    context.json(
+      ProjectProfileCatalogResponseSchema.parse({
+        profiles: services.profiles.list(),
+        runtime: services.profiles.runtimeBoundary(),
+      }),
+      200,
+    ),
   )
 
   app.post('/api/project-profiles', async (context) => {

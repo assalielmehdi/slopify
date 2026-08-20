@@ -8,6 +8,7 @@ import {
   HealthResponseSchema,
   NodeIdSchema,
   OutcomeNameSchema,
+  ProjectProfileCatalogResponseSchema,
   RepositoryReferenceSchema,
   RunEventSchema,
   RunIdSchema,
@@ -106,6 +107,22 @@ describe('public API records', () => {
     expect(ArtifactTypeSchema.parse('EXECUTION_PLAN')).toBe('EXECUTION_PLAN')
     expect(RunStatusSchema.parse('INTERRUPTED')).toBe('INTERRUPTED')
     expect(ArtifactTypeSchema.safeParse('RAW_LOG').success).toBe(false)
+  })
+
+  it('describes the active profile path boundary without runtime secrets', () => {
+    expect(
+      ProjectProfileCatalogResponseSchema.parse({
+        profiles: [],
+        runtime: { mode: 'container', root: '/workspace' },
+      }),
+    ).toEqual({ profiles: [], runtime: { mode: 'container', root: '/workspace' } })
+
+    expect(
+      ProjectProfileCatalogResponseSchema.safeParse({
+        profiles: [],
+        runtime: { mode: 'container', root: '/workspace', hostPath: '/Users/operator' },
+      }).success,
+    ).toBe(false)
   })
 
   it.each([

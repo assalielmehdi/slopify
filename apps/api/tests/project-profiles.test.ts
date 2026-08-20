@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ProjectProfileReadiness } from '@loop/contracts'
+import type { ProjectProfileCatalogResponse, ProjectProfileReadiness } from '@loop/contracts'
 import {
   ProjectProfileServiceError,
   createProjectProfileService,
@@ -55,9 +55,10 @@ describe('project profile API', () => {
     const { app } = createFixture()
 
     const response = await app.request('/api/project-profiles')
-    const body = (await response.json()) as { profiles: (typeof TEST_PROFILE)[] }
+    const body = (await response.json()) as ProjectProfileCatalogResponse
 
     expect(response.status).toBe(200)
+    expect(body).toMatchObject({ runtime: { mode: 'native', root: '/' } })
     expect(body.profiles).toHaveLength(1)
     expect(body.profiles[0]?.repositories.map(({ repositoryId }) => repositoryId)).toEqual([
       'api',
@@ -88,6 +89,31 @@ describe('project profile API', () => {
       profileId: 'profile-02',
       displayName: 'Updated profile',
     })
+  })
+
+  it('keeps an existing snapshot unchanged when settings are saved', async () => {
+    const fixture = createPersistenceFixture()
+    fixtures.push(fixture)
+    const profiles = createProjectProfileService({
+      profiles: fixture.profiles,
+      runtimeMode: 'native',
+      now: () => '2026-08-18T22:00:00Z',
+    })
+    const snapshotBefore = fixture.profiles.getSnapshot('snapshot-01')
+    const readiness: ReadinessService = {
+      connectorStatus: () => ({ clickup: true, gitlab: true, modelProvider: true }),
+      check: async () => ({ profileId: 'profile-01', ready: true, repositories: [] }),
+    }
+    const app = createApiApp({ database: fixture.database, profiles, readiness })
+
+    const response = await app.request('/api/project-profiles/profile-01', {
+      method: 'PUT',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...TEST_PROFILE, displayName: 'Edited settings' }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(fixture.profiles.getSnapshot('snapshot-01')).toEqual(snapshotBefore)
   })
 
   it('rejects a mismatched path identity and invalid command object', async () => {
