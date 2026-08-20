@@ -26,6 +26,8 @@ describe('API server configuration', () => {
     expect(resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true' })).toMatchObject({
       hostname: '0.0.0.0',
       port: 3001,
+      databasePath: '/var/lib/workbench/workbench.sqlite',
+      workspaceRoot: '/workspace',
       shutdownGracePeriodMs: 10_000,
     })
   })
@@ -37,14 +39,47 @@ describe('API server configuration', () => {
         API_PORT: '4310',
         API_SHUTDOWN_GRACE_MS: '2500',
         DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
+        WORKSPACE_ROOT: '/custom/workspace',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
       port: 4310,
       shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
+      workspaceRoot: '/custom/workspace',
     })
     expect(resolveApiServerConfiguration({})).toMatchObject({ hostname: '127.0.0.1' })
+  })
+
+  it.each(['/tmp/workbench.sqlite', '/var/lib/workbench/../escape.sqlite'])(
+    'rejects container database path %j outside the writable data root',
+    (DATABASE_PATH) => {
+      expect(() =>
+        resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true', DATABASE_PATH }),
+      ).toThrowError(expect.objectContaining({ code: 'DATABASE_PATH_INVALID' }))
+    },
+  )
+
+  it.each(['/tmp/workspace', '/workspace/../escape'])(
+    'rejects container workspace root %j outside the mounted workspace root',
+    (WORKSPACE_ROOT) => {
+      expect(() =>
+        resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true', WORKSPACE_ROOT }),
+      ).toThrowError(expect.objectContaining({ code: 'WORKSPACE_ROOT_INVALID' }))
+    },
+  )
+
+  it('accepts container paths below the approved data and workspace roots', () => {
+    expect(
+      resolveApiServerConfiguration({
+        API_CONTAINER_MODE: 'true',
+        DATABASE_PATH: '/var/lib/workbench/team/workbench.sqlite',
+        WORKSPACE_ROOT: '/workspace/team',
+      }),
+    ).toMatchObject({
+      databasePath: '/var/lib/workbench/team/workbench.sqlite',
+      workspaceRoot: '/workspace/team',
+    })
   })
 
   it.each(['0', '65536', '3.14', 'invalid'])(
@@ -73,6 +108,7 @@ describe('API server configuration', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
+        workspaceRoot: '/workspace',
         shutdownGracePeriodMs: 10_000,
       },
     })

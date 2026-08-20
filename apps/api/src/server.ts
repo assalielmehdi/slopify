@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url'
 import type { Server } from 'node:http'
+import { isAbsolute, relative, resolve, sep } from 'node:path'
 import { serve } from '@hono/node-server'
 import { createClickUpClient } from '@loop/clickup-artifacts'
 import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
@@ -31,6 +32,7 @@ export type ServerConfigurationErrorCode =
   | 'API_PORT_INVALID'
   | 'API_SHUTDOWN_GRACE_INVALID'
   | 'DATABASE_PATH_INVALID'
+  | 'WORKSPACE_ROOT_INVALID'
 
 export class ServerConfigurationError extends Error {
   readonly code: ServerConfigurationErrorCode
@@ -46,6 +48,7 @@ export interface ApiServerConfiguration {
   readonly hostname: string
   readonly port: number
   readonly databasePath: string
+  readonly workspaceRoot: string
   readonly shutdownGracePeriodMs: number
 }
 
@@ -54,12 +57,38 @@ type ApiEnvironment = Readonly<Record<string, string | undefined>>
 const nonBlank = (
   value: string | undefined,
   fallback: string,
-  code: 'API_HOST_INVALID' | 'DATABASE_PATH_INVALID',
+  code: 'API_HOST_INVALID' | 'DATABASE_PATH_INVALID' | 'WORKSPACE_ROOT_INVALID',
 ): string => {
   if (value === undefined) return fallback
   if (value.trim() === '')
     throw new ServerConfigurationError(code, 'Configuration must not be blank')
   return value
+}
+
+const containerPath = (input: {
+  readonly value: string | undefined
+  readonly fallback: string
+  readonly root: string
+  readonly code: 'DATABASE_PATH_INVALID' | 'WORKSPACE_ROOT_INVALID'
+  readonly allowRoot: boolean
+}): string => {
+  const candidate = nonBlank(input.value, input.fallback, input.code)
+  const normalized = resolve(candidate)
+  const relativePath = relative(input.root, normalized)
+  const isWithinRoot =
+    isAbsolute(candidate) &&
+    !isAbsolute(relativePath) &&
+    relativePath !== '..' &&
+    !relativePath.startsWith(`..${sep}`) &&
+    (input.allowRoot || relativePath !== '')
+
+  if (!isWithinRoot) {
+    throw new ServerConfigurationError(
+      input.code,
+      `Configuration must resolve within ${input.root}`,
+    )
+  }
+  return normalized
 }
 
 const containerMode = (value: string | undefined): boolean => {
@@ -99,6 +128,25 @@ export const resolveApiServerConfiguration = (
   environment: ApiEnvironment = process.env,
 ): ApiServerConfiguration => {
   const isContainer = containerMode(environment.API_CONTAINER_MODE)
+  const databasePath = isContainer
+    ? containerPath({
+        value: environment.DATABASE_PATH,
+        fallback: '/var/lib/workbench/workbench.sqlite',
+        root: '/var/lib/workbench',
+        code: 'DATABASE_PATH_INVALID',
+        allowRoot: false,
+      })
+    : nonBlank(environment.DATABASE_PATH, './data/workbench.sqlite', 'DATABASE_PATH_INVALID')
+  const workspaceRoot = isContainer
+    ? containerPath({
+        value: environment.WORKSPACE_ROOT,
+        fallback: '/workspace',
+        root: '/workspace',
+        code: 'WORKSPACE_ROOT_INVALID',
+        allowRoot: true,
+      })
+    : nonBlank(environment.WORKSPACE_ROOT, '/workspace', 'WORKSPACE_ROOT_INVALID')
+
   return {
     hostname: nonBlank(
       environment.API_HOST,
@@ -106,11 +154,8 @@ export const resolveApiServerConfiguration = (
       'API_HOST_INVALID',
     ),
     port: port(environment.API_PORT),
-    databasePath: nonBlank(
-      environment.DATABASE_PATH,
-      './data/workbench.sqlite',
-      'DATABASE_PATH_INVALID',
-    ),
+    databasePath,
+    workspaceRoot,
     shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
   }
 }
@@ -175,7 +220,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const profileService = createProjectProfileService({
     profiles: profileRepository,
     runtimeMode: containerMode(environment.API_CONTAINER_MODE) ? 'container' : 'native',
-    workspaceRoot: environment.WORKSPACE_ROOT ?? '/workspace',
+    workspaceRoot: configuration.workspaceRoot,
   })
   const redactedValues = [
     environment.CLICKUP_API_TOKEN,
