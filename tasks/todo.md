@@ -1321,14 +1321,14 @@ bind mount, localhost-only web publication, non-secret environment template,
 ignored workspace root, and safe operational README.
 
 **Acceptance criteria:**
-- [ ] `web` waits for healthy `api`; only `${APP_HOST:-127.0.0.1}:${APP_PORT:-3000}:3000` is published by default.
-- [ ] `/var/lib/workbench` persists in a named volume and `${WORKSPACE_HOST_PATH:-./workspace}` maps only to `/workspace` without privileged/socket/root mounts.
-- [ ] Missing external credentials still starts the inspectable app while readiness blocks runs; normal docs never delete volumes.
+- [x] `web` waits for healthy `api`; only `${APP_HOST:-127.0.0.1}:${APP_PORT:-3000}:3000` is published by default.
+- [x] `/var/lib/workbench` persists in a named volume and `${WORKSPACE_HOST_PATH:-./workspace}` maps only to `/workspace` without privileged/socket/root mounts.
+- [x] Missing external credentials still starts the inspectable app while readiness blocks runs; normal docs never delete volumes.
 
 **Verification:**
-- [ ] Tests pass: `docker compose config --quiet`
-- [ ] Build succeeds: `docker compose build`
-- [ ] Manual check: review the resolved Compose model, `.env.example`, ignored paths, quick start, logs, shutdown, and destructive-volume warning.
+- [x] Tests pass: `docker compose config --quiet`
+- [x] Build succeeds: `docker compose build`
+- [x] Manual check: review the resolved Compose model, `.env.example`, ignored paths, quick start, logs, shutdown, and destructive-volume warning.
 
 **Dependencies:** Tasks 12, 40, and 41
 
@@ -1340,6 +1340,13 @@ ignored workspace root, and safe operational README.
 - `workspace/.gitignore`
 
 **Estimated scope:** Medium: 3-5 files
+
+**Task review (2026-08-20):**
+- Added exactly `api` and `web` on one project-scoped bridge network. The API is exposed only as `3001/tcp`; the web service publishes the single configurable loopback mapping and waits for the API's bounded health check before starting. Both services run as the image-defined `node` user, and neither service is privileged or mounts a host root, home directory, authentication directory, or Docker socket.
+- Added the named `/var/lib/workbench` data volume and the non-creating `${WORKSPACE_HOST_PATH:-./workspace}` bind at `/workspace`. The committed workspace scaffold ignores all operator repositories while retaining its placeholders. Runtime inspection found only the exact data/workspace mounts, and a normal Compose shutdown preserved the SQLite WAL volume before the isolated test volume was explicitly removed.
+- Added a non-secret `.env.example` and root onboarding README covering the localhost URL, Compose 2.21.0 minimum, configuration validation, one-command/two-command startup, logs, normal shutdown, workspace-visible paths, project toolchain boundary, blank-credential behavior, runtime-only secrets, and an explicitly local read-only credential-file override. The destructive `down --volumes` command appears only as a warning, never in the normal quick start or shutdown path.
+- The blank-credential stack reached healthy state with `docker compose up --build --wait --wait-timeout 120`. Same-origin health returned `{"status":"ok"}` and connector status returned ClickUp, GitLab, and model provider as false. Chrome rendered the `/workspace` Compose boundary and all three connectors as `Not connected` at `http://127.0.0.1:3100/settings` with no console warnings or errors.
+- Both Compose images build from the frozen lockfile. The resolved model contract, root build/typecheck/lint, 89-file / 610-test suite, format, and diff checks pass. Per the explicit Chrome-only instruction, standalone Playwright E2E was not invoked; Task 43 retains ownership of the reusable automated container/browser/persistence harness. Host pnpm commands retain the existing Node 26 versus pinned Node 24 engine warning, while both images build and run on pinned Node 24.18.0.
 
 ## Task 43: Automate clean-clone container and persistence acceptance
 
