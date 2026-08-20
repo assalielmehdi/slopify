@@ -19,6 +19,7 @@ import {
   RevisionIdSchema,
   RunEventSchema,
   RunIdSchema,
+  RunPaginationQuerySchema,
   RunStatusSchema,
   WorkflowIdSchema,
   type ConnectorStatus,
@@ -103,6 +104,36 @@ const StartRunResponseSchema = z.strictObject({
   createdAt: z.iso.datetime({ offset: true }),
   startedAt: z.iso.datetime({ offset: true }).nullable(),
   completedAt: z.iso.datetime({ offset: true }).nullable(),
+})
+
+const RunHistoryEntrySchema = z.strictObject({
+  runId: RunIdSchema,
+  workflowId: WorkflowIdSchema,
+  revisionId: RevisionIdSchema,
+  profileSnapshotId: z.string().trim().min(1).max(256),
+  profileId: ProjectProfileConfigurationSchema.shape.profileId,
+  profileDisplayName: ProjectProfileConfigurationSchema.shape.displayName,
+  taskReference: z.string().trim().min(1).max(512),
+  notes: z.string().trim().min(1).max(2_000).nullable(),
+  taskSnapshot: z.json(),
+  status: RunStatusSchema,
+  currentNodeId: NodeIdSchema.nullable(),
+  createdAt: z.iso.datetime({ offset: true }),
+  startedAt: z.iso.datetime({ offset: true }).nullable(),
+  completedAt: z.iso.datetime({ offset: true }).nullable(),
+  durationMs: z.number().int().nonnegative().safe().nullable(),
+  failedNodeId: NodeIdSchema.nullable(),
+  mergeRequestUrls: z.array(z.url().max(4_096)).readonly(),
+})
+
+const RunHistoryPageSchema = z.strictObject({
+  data: z.array(RunHistoryEntrySchema).readonly(),
+  pagination: z.strictObject({
+    page: z.number().int().positive().safe(),
+    pageSize: z.number().int().min(1).max(100).safe(),
+    totalItems: z.number().int().nonnegative().safe(),
+    totalPages: z.number().int().nonnegative().safe(),
+  }),
 })
 
 const ProfileSnapshotRepositorySchema = ProfileRepositoryConfigurationSchema.extend({
@@ -225,6 +256,8 @@ const RunDetailResponseSchema = z.strictObject({
 export type WorkflowCatalogEntry = z.infer<typeof WorkflowCatalogEntrySchema>
 export type ClickUpTaskSnapshot = z.infer<typeof ClickUpTaskSnapshotSchema>
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>
+export type RunHistoryEntry = z.infer<typeof RunHistoryEntrySchema>
+export type RunHistoryPage = z.infer<typeof RunHistoryPageSchema>
 export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
 
 export interface CreateWorkflowRevisionInput {
@@ -262,6 +295,7 @@ export interface ApiClient {
   ): Promise<WorkflowRevision>
   resolveClickUpTask(input: ResolveClickUpTaskInput): Promise<ClickUpTaskSnapshot>
   startRun(input: StartRunInput): Promise<StartRunResponse>
+  listRuns(input: { readonly page: number; readonly pageSize: number }): Promise<RunHistoryPage>
   getRun(runId: string): Promise<RunDetailResponse>
   cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
 }
@@ -403,6 +437,15 @@ export const createApiClient = (
         },
         StartRunResponseSchema,
       )
+    },
+
+    async listRuns(input) {
+      const query = RunPaginationQuerySchema.parse(input)
+      const search = new URLSearchParams({
+        page: String(query.page),
+        pageSize: String(query.pageSize),
+      })
+      return get(`/api/runs?${search.toString()}`, RunHistoryPageSchema)
     },
 
     async getRun(runId) {

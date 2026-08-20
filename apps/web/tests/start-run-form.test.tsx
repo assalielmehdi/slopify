@@ -144,6 +144,7 @@ const createClient = (ready = true) => {
     createWorkflowRevision: vi.fn(),
     resolveClickUpTask,
     startRun,
+    listRuns: vi.fn(),
     getRun: vi.fn(),
     cancelRun: vi.fn(),
   }
