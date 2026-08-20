@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   ApiErrorSchema,
   ArtifactTypeSchema,
+  CreateRunRequestSchema,
   EvidenceSchema,
   FinalizeClickUpInputSchema,
   HealthResponseSchema,
@@ -121,6 +122,28 @@ describe('public API records', () => {
       ProjectProfileCatalogResponseSchema.safeParse({
         profiles: [],
         runtime: { mode: 'container', root: '/workspace', hostPath: '/Users/operator' },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('accepts bounded optional run notes without changing the run identity contract', () => {
+    expect(
+      CreateRunRequestSchema.parse({
+        taskReference: 'CU-123',
+        workflowId: 'delivery-workflow',
+        revisionId: 'revision-01',
+        profileId: 'local-profile',
+        notes: '  Coordinate the API and web changes.  ',
+      }),
+    ).toMatchObject({ notes: 'Coordinate the API and web changes.' })
+
+    expect(
+      CreateRunRequestSchema.safeParse({
+        taskReference: 'CU-123',
+        workflowId: 'delivery-workflow',
+        revisionId: 'revision-01',
+        profileId: 'local-profile',
+        notes: '   ',
       }).success,
     ).toBe(false)
   })

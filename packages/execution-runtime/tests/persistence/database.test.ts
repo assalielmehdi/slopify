@@ -60,7 +60,7 @@ describe('database connection', () => {
     expect(database.status()).toEqual({
       foreignKeysEnabled: true,
       journalMode: 'wal',
-      schemaVersion: 2,
+      schemaVersion: 3,
       writable: true,
     })
   })

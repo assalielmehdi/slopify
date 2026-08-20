@@ -49,6 +49,7 @@ describe('forward-only migrations', () => {
     ).toEqual([
       { version: 1, name: 'create_execution_schema' },
       { version: 2, name: 'persist_complete_repository_selection' },
+      { version: 3, name: 'persist_optional_run_notes' },
     ])
   })
 

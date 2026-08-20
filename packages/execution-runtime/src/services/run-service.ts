@@ -78,6 +78,7 @@ export interface CreateRunServiceInput {
   readonly workflowId: string
   readonly revisionId: string
   readonly profileId: string
+  readonly notes?: string | undefined
 }
 
 export interface RunDetail {
@@ -101,6 +102,7 @@ export interface RunSummary {
   readonly profileId: string
   readonly profileDisplayName: string
   readonly taskReference: string
+  readonly notes: string | null
   readonly taskSnapshot: JsonValue
   readonly status: RunRecord['status']
   readonly currentNodeId: string | null
@@ -186,6 +188,10 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
       if (taskReference === '' || taskReference.length > 512) {
         throw new RunServiceError('TASK_RESOLUTION_FAILED', 'Task reference is invalid')
       }
+      const notes = input.notes?.trim()
+      if (notes !== undefined && (notes === '' || notes.length > 2_000)) {
+        throw new RunServiceError('RUN_REQUEST_INVALID', 'Run notes are invalid')
+      }
       requireNoActiveRun()
       const workflow = options.workflows.getRevision({ workflowId, revisionId })
       if (workflow === undefined) {
@@ -224,6 +230,7 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         revisionId,
         profileSnapshotId: profileSnapshot.snapshotId,
         taskReference,
+        ...(notes === undefined ? {} : { notes }),
         taskSnapshot,
         effectiveConfiguration: cloneJson(workflow),
         createdAt: now(),
@@ -283,6 +290,7 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
             profileId: profile.profileId,
             profileDisplayName: profile.displayName,
             taskReference: run.taskReference,
+            notes: run.notes,
             taskSnapshot: run.taskSnapshot,
             status: run.status,
             currentNodeId: run.currentNodeId,

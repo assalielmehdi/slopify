@@ -29,6 +29,7 @@ export interface RunRecord {
   readonly revisionId: string
   readonly profileSnapshotId: string
   readonly taskReference: string
+  readonly notes: string | null
   readonly taskSnapshot: JsonValue
   readonly effectiveConfiguration: JsonValue
   readonly status: RunStatus
@@ -45,6 +46,7 @@ export interface CreateRunInput {
   readonly revisionId: string
   readonly profileSnapshotId: string
   readonly taskReference: string
+  readonly notes?: string
   readonly taskSnapshot: JsonValue
   readonly effectiveConfiguration: JsonValue
   readonly createdAt: string
@@ -322,6 +324,7 @@ interface RunRow {
   readonly revision_id: string
   readonly profile_snapshot_id: string
   readonly task_reference: string
+  readonly notes: string | null
   readonly task_snapshot_json: string
   readonly effective_configuration_json: string
   readonly status: string
@@ -443,6 +446,7 @@ const mapRun = (row: RunRow): RunRecord => ({
   revisionId: RevisionIdSchema.parse(row.revision_id),
   profileSnapshotId: row.profile_snapshot_id,
   taskReference: row.task_reference,
+  notes: row.notes,
   taskSnapshot: parseJson(row.task_snapshot_json),
   effectiveConfiguration: parseJson(row.effective_configuration_json),
   status: RunStatusSchema.parse(row.status),
@@ -463,7 +467,7 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
     const row = connection
       .prepare(
         `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
-                task_reference, task_snapshot_json, effective_configuration_json,
+                task_reference, notes, task_snapshot_json, effective_configuration_json,
                 status, current_node_id, transition_count, created_at,
                 started_at, completed_at
          FROM runs
@@ -477,7 +481,7 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
     const row = connection
       .prepare(
         `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
-                task_reference, task_snapshot_json, effective_configuration_json,
+                task_reference, notes, task_snapshot_json, effective_configuration_json,
                 status, current_node_id, transition_count, created_at,
                 started_at, completed_at
          FROM runs
@@ -567,9 +571,9 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
               .prepare(
                 `INSERT INTO runs (
                    run_id, workflow_id, revision_id, profile_snapshot_id,
-                   task_reference, task_snapshot_json, effective_configuration_json,
+                   task_reference, notes, task_snapshot_json, effective_configuration_json,
                    status, created_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`,
+                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`,
               )
               .run(
                 runId,
@@ -577,6 +581,7 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
                 revisionId,
                 input.profileSnapshotId,
                 input.taskReference,
+                input.notes ?? null,
                 taskSnapshotJson,
                 effectiveConfigurationJson,
                 input.createdAt,
@@ -635,7 +640,7 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       const rows = connection
         .prepare(
           `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
-                  task_reference, task_snapshot_json, effective_configuration_json,
+                  task_reference, notes, task_snapshot_json, effective_configuration_json,
                   status, current_node_id, transition_count, created_at,
                   started_at, completed_at
            FROM runs

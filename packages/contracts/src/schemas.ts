@@ -228,6 +228,7 @@ export const CreateRunRequestSchema = z.strictObject({
   workflowId: WorkflowIdSchema,
   revisionId: RevisionIdSchema,
   profileId: ProjectProfileIdSchema,
+  notes: z.string().trim().min(1).max(2_000).optional(),
 })
 
 export const ResolveClickUpTaskRequestSchema = z.strictObject({

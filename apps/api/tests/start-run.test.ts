@@ -73,7 +73,10 @@ describe('start run admission', () => {
     const response = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({
+        ...requestBody,
+        notes: '  Coordinate API and web delivery.  ',
+      }),
     })
     snapshot.title = 'Later provider mutation'
 
@@ -84,6 +87,7 @@ describe('start run admission', () => {
     expect(runs.get('run-start-01')).toMatchObject({
       run: {
         status: 'PENDING',
+        notes: 'Coordinate API and web delivery.',
         taskSnapshot: {
           taskId: '86abc123',
           title: 'Select the exact repository partition',

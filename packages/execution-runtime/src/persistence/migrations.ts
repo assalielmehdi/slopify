@@ -328,6 +328,17 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       `)
     },
   }),
+  Object.freeze({
+    version: 3,
+    name: 'persist_optional_run_notes',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        ALTER TABLE runs
+          ADD COLUMN notes TEXT
+          CHECK (notes IS NULL OR length(trim(notes)) BETWEEN 1 AND 2000);
+      `)
+    },
+  }),
 ])
 
 interface AppliedMigration {
