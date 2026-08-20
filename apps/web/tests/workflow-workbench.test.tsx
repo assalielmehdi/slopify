@@ -37,7 +37,7 @@ const firstRevision = createPredefinedV1Revision({
 const latestRevision = derivePredefinedV1Revision(firstRevision, {
   revisionId: 'revision-02',
   createdAt: '2026-08-19T12:00:00Z',
-  updates: [{ nodeId: 'plan', changes: { model: 'test-model-v2' } }],
+  updates: [{ nodeId: 'plan', changes: { modelId: 'test-model-v2' } }],
 })
 
 const catalog = [

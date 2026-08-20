@@ -1,4 +1,9 @@
-import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
+import {
+  InMemoryCredentialStore,
+  type Credential,
+  type CredentialInfo,
+  type CredentialStore,
+} from '@earendil-works/pi-ai'
 import { ModelRuntime } from '@earendil-works/pi-coding-agent'
 
 export type ModelRuntimeErrorCode =
@@ -53,8 +58,34 @@ export const createEnvironmentModelCredentialSource = (
 export interface CreateScopedModelRuntimeOptions {
   readonly provider: string
   readonly model: string
-  readonly credentialSource: ModelCredentialSource
+  readonly credentialSource?: ModelCredentialSource
+  readonly credentialStore?: CredentialStore
 }
+
+const createProviderScopedCredentialStore = (
+  provider: string,
+  credentials: CredentialStore,
+): CredentialStore => ({
+  read(providerId, options) {
+    return providerId === provider
+      ? credentials.read(provider, options)
+      : Promise.resolve(undefined)
+  },
+  async list(options) {
+    const credential = await credentials.read(provider, options)
+    return credential === undefined
+      ? []
+      : ([{ providerId: provider, type: credential.type }] satisfies CredentialInfo[])
+  },
+  modify(providerId, modify, options) {
+    if (providerId !== provider) throw new ModelRuntimeError('MODEL_CONFIGURATION_INVALID')
+    return credentials.modify(provider, modify, options)
+  },
+  delete(providerId, options) {
+    if (providerId !== provider) throw new ModelRuntimeError('MODEL_CONFIGURATION_INVALID')
+    return credentials.delete(provider, options)
+  },
+})
 
 export const createScopedModelRuntime = async (options: CreateScopedModelRuntimeOptions) => {
   if (
@@ -66,21 +97,32 @@ export const createScopedModelRuntime = async (options: CreateScopedModelRuntime
     throw new ModelRuntimeError('MODEL_CONFIGURATION_INVALID')
   }
 
-  let credential: ModelApiKeyCredential | undefined
-  try {
-    credential = await options.credentialSource.read(options.provider)
-  } catch {
-    throw new ModelRuntimeError('MODEL_CREDENTIAL_SOURCE_FAILED')
-  }
-  if (credential === undefined || credential.key.trim().length === 0) {
-    throw new ModelRuntimeError('MODEL_CREDENTIAL_MISSING')
-  }
+  if ((options.credentialSource === undefined) === (options.credentialStore === undefined))
+    throw new ModelRuntimeError('MODEL_CONFIGURATION_INVALID')
 
-  const credentials = new InMemoryCredentialStore()
-  await credentials.modify(options.provider, async () => ({
-    type: 'api_key',
-    key: credential.key,
-  }))
+  let credentials: CredentialStore
+  if (options.credentialStore !== undefined) {
+    credentials = createProviderScopedCredentialStore(options.provider, options.credentialStore)
+    let credential: Credential | undefined
+    try {
+      credential = await credentials.read(options.provider)
+    } catch {
+      throw new ModelRuntimeError('MODEL_CREDENTIAL_SOURCE_FAILED')
+    }
+    if (credential === undefined) throw new ModelRuntimeError('MODEL_CREDENTIAL_MISSING')
+  } else {
+    let credential: ModelApiKeyCredential | undefined
+    try {
+      credential = await options.credentialSource?.read(options.provider)
+    } catch {
+      throw new ModelRuntimeError('MODEL_CREDENTIAL_SOURCE_FAILED')
+    }
+    if (credential === undefined || credential.key.trim().length === 0)
+      throw new ModelRuntimeError('MODEL_CREDENTIAL_MISSING')
+    const inMemory = new InMemoryCredentialStore()
+    await inMemory.modify(options.provider, async () => ({ type: 'api_key', key: credential.key }))
+    credentials = inMemory
+  }
 
   let runtime: ModelRuntime
   try {

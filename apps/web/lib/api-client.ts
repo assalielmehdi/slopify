@@ -52,6 +52,55 @@ const WorkflowCatalogResponseSchema = z.strictObject({
   workflows: z.array(WorkflowCatalogEntrySchema).readonly(),
 })
 
+const SkillFileSchema = z.strictObject({
+  path: z.string().min(1),
+  content: z.string(),
+  size: z.number().int().nonnegative(),
+})
+const SkillRecordSchema = z.strictObject({
+  skillId: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  digest: z.string().length(64),
+  modifiedAt: z.iso.datetime({ offset: true }),
+  valid: z.boolean(),
+  issues: z.array(z.string()).readonly(),
+  files: z.array(SkillFileSchema).readonly(),
+})
+const SkillsResponseSchema = z.strictObject({ skills: z.array(SkillRecordSchema).readonly() })
+
+const ConnectionRecordSchema = z.strictObject({
+  connectionId: z.string().min(1),
+  type: z.enum(['gitlab', 'clickup', 'openrouter', 'chatgpt-subscription']),
+  category: z.enum(['connector', 'inference']),
+  label: z.string().min(1),
+  authority: z.string().min(1),
+  configuration: z.unknown(),
+  metadata: z.unknown(),
+  status: z.enum(['CONNECTED', 'INVALID']),
+  validatedAt: z.iso.datetime({ offset: true }),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
+})
+const ConnectionsResponseSchema = z.strictObject({
+  connections: z.array(ConnectionRecordSchema).readonly(),
+})
+const ChatGptOAuthTransactionSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    id: z.string(),
+    status: z.literal('PENDING'),
+    authorizationUrl: z.url().optional(),
+    instructions: z.string().optional(),
+  }),
+  z.strictObject({
+    id: z.string(),
+    status: z.literal('CONNECTED'),
+    connectionId: z.string(),
+  }),
+  z.strictObject({ id: z.string(), status: z.literal('FAILED'), message: z.string() }),
+  z.strictObject({ id: z.string(), status: z.literal('CANCELLED') }),
+])
+
 const ClickUpTaskSnapshotSchema = z.strictObject({
   taskId: z.string().trim().min(1).max(128),
   customTaskId: z.string().trim().min(1).max(128).nullable(),
@@ -158,6 +207,7 @@ const RunDetailResponseSchema = z.strictObject({
     .array(
       z.strictObject({
         nodeExecutionId: z.string().trim().min(1).max(256),
+        attemptId: z.string().trim().min(1).max(256).nullable().default(null),
         nodeId: NodeIdSchema,
         executionIndex: z.number().int().nonnegative().safe(),
         status: NodeExecutionStatusSchema,
@@ -259,13 +309,28 @@ export type StartRunResponse = z.infer<typeof StartRunResponseSchema>
 export type RunHistoryEntry = z.infer<typeof RunHistoryEntrySchema>
 export type RunHistoryPage = z.infer<typeof RunHistoryPageSchema>
 export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
+export type SkillRecord = z.infer<typeof SkillRecordSchema>
+export type ConnectionRecord = z.infer<typeof ConnectionRecordSchema>
+export type ChatGptOAuthTransaction = z.infer<typeof ChatGptOAuthTransactionSchema>
+
+export interface WorkflowAgentConfigurationChanges {
+  readonly name?: string
+  readonly prompt?: string
+  readonly skillIds?: readonly string[]
+  readonly connectionId?: string
+  readonly modelId?: string
+  readonly thinkingLevel?: AgentNodeConfigurationChanges['thinkingLevel']
+  readonly connectorIds?: readonly string[]
+  readonly outputSchemaRef?: string
+  readonly timeoutSeconds?: number
+}
 
 export interface CreateWorkflowRevisionInput {
   readonly parentRevisionId: string
   readonly revisionId: string
   readonly updates: readonly {
     readonly nodeId: string
-    readonly changes: AgentNodeConfigurationChanges
+    readonly changes: WorkflowAgentConfigurationChanges
   }[]
 }
 
@@ -298,6 +363,36 @@ export interface ApiClient {
   listRuns(input: { readonly page: number; readonly pageSize: number }): Promise<RunHistoryPage>
   getRun(runId: string): Promise<RunDetailResponse>
   cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
+  listSkills?(): Promise<readonly SkillRecord[]>
+  getSkill?(skillId: string): Promise<SkillRecord>
+  createSkill?(
+    input: Readonly<{
+      skillId: string
+      name: string
+      description: string
+      instructions: string
+    }>,
+  ): Promise<SkillRecord>
+  updateSkill?(
+    skillId: string,
+    input: Readonly<{ expectedDigest: string; files: Readonly<Record<string, string>> }>,
+  ): Promise<SkillRecord>
+  deleteSkill?(skillId: string, expectedDigest: string): Promise<void>
+  listConnections?(): Promise<readonly ConnectionRecord[]>
+  connect?(
+    input: Readonly<{
+      type: 'gitlab' | 'clickup' | 'openrouter'
+      label: string
+      configuration: unknown
+      credential: Readonly<{ type: 'api_key'; key: string }>
+    }>,
+  ): Promise<ConnectionRecord>
+  revalidateConnection?(connectionId: string): Promise<ConnectionRecord>
+  replaceConnectionCredential?(connectionId: string, key: string): Promise<ConnectionRecord>
+  deleteConnection?(connectionId: string): Promise<void>
+  startChatGptOAuth?(label: string): Promise<ChatGptOAuthTransaction>
+  getChatGptOAuth?(transactionId: string): Promise<ChatGptOAuthTransaction>
+  cancelChatGptOAuth?(transactionId: string): Promise<void>
 }
 
 export class ApiClientError extends Error {
@@ -347,6 +442,18 @@ export const createApiClient = (
 
   const get = <Schema extends z.ZodType>(path: string, schema: Schema) =>
     request(path, { headers: { accept: 'application/json' }, method: 'GET' }, schema)
+
+  const noContent = async (path: string, init: RequestInit): Promise<void> => {
+    const response = await fetchImplementation(path, init)
+    if (response.ok) return
+    const apiError = ApiErrorSchema.parse(await response.json()).error
+    throw new ApiClientError({
+      code: apiError.code,
+      message: apiError.message,
+      status: response.status,
+      ...(apiError.details === undefined ? {} : { details: apiError.details }),
+    })
+  }
 
   return {
     async getHealth() {
@@ -465,6 +572,101 @@ export const createApiClient = (
         },
         StartRunResponseSchema,
       )
+    },
+
+    async listSkills() {
+      return (await get('/api/skills', SkillsResponseSchema)).skills
+    },
+    async getSkill(skillId) {
+      return get(`/api/skills/${encodeURIComponent(skillId)}`, SkillRecordSchema)
+    },
+    async createSkill(input) {
+      return request(
+        '/api/skills',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+        SkillRecordSchema,
+      )
+    },
+    async updateSkill(skillId, input) {
+      return request(
+        `/api/skills/${encodeURIComponent(skillId)}`,
+        {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+        SkillRecordSchema,
+      )
+    },
+    async deleteSkill(skillId, expectedDigest) {
+      return noContent(`/api/skills/${encodeURIComponent(skillId)}`, {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedDigest }),
+      })
+    },
+    async listConnections() {
+      return (await get('/api/connections', ConnectionsResponseSchema)).connections
+    },
+    async connect(input) {
+      return request(
+        '/api/connections',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+        ConnectionRecordSchema,
+      )
+    },
+    async revalidateConnection(connectionId) {
+      return request(
+        `/api/connections/${encodeURIComponent(connectionId)}/revalidate`,
+        { method: 'POST', headers: { accept: 'application/json' } },
+        ConnectionRecordSchema,
+      )
+    },
+    async replaceConnectionCredential(connectionId, key) {
+      return request(
+        `/api/connections/${encodeURIComponent(connectionId)}/credential`,
+        {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify({ credential: { type: 'api_key', key } }),
+        },
+        ConnectionRecordSchema,
+      )
+    },
+    async deleteConnection(connectionId) {
+      return noContent(`/api/connections/${encodeURIComponent(connectionId)}`, {
+        method: 'DELETE',
+      })
+    },
+    async startChatGptOAuth(label) {
+      return request(
+        '/api/connections/chatgpt/oauth',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify({ label }),
+        },
+        ChatGptOAuthTransactionSchema,
+      )
+    },
+    async getChatGptOAuth(transactionId) {
+      return get(
+        `/api/connections/chatgpt/oauth/${encodeURIComponent(transactionId)}`,
+        ChatGptOAuthTransactionSchema,
+      )
+    },
+    async cancelChatGptOAuth(transactionId) {
+      return noContent(`/api/connections/chatgpt/oauth/${encodeURIComponent(transactionId)}`, {
+        method: 'DELETE',
+      })
     },
   }
 }

@@ -38,9 +38,9 @@ describe('NodeInspector', () => {
     expect(screen.getByText('revision-01')).toBeTruthy()
     expect(screen.getByText('Pi SDK')).toBeTruthy()
     expect(screen.getByText('0.84.2')).toBeTruthy()
-    expect(screen.getByText('test-provider / test-model')).toBeTruthy()
-    expect(screen.getByText('workspace-write')).toBeTruthy()
-    expect(screen.getByText('EXECUTION_PLAN')).toBeTruthy()
+    expect(screen.getByText('test-provider-default / test-model')).toBeTruthy()
+    expect(screen.getByText('All run worktrees, read/write')).toBeTruthy()
+    expect(screen.getByText('No skills selected')).toBeTruthy()
     expect(screen.getByText('workflow-output/implementation-summary-v1')).toBeTruthy()
     expect(screen.getByText('12.3 s')).toBeTruthy()
 

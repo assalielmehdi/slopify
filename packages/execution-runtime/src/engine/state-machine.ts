@@ -4,7 +4,7 @@ import {
   type NodeExecutionStatus,
   type RunStatus,
 } from '@loop/contracts'
-import type { WorkflowEdge, WorkflowRevision } from '@loop/workflow-model'
+import { getDeclaredOutcomes, type WorkflowEdge, type WorkflowRevision } from '@loop/workflow-model'
 import { z } from 'zod'
 
 export type EngineErrorCode =
@@ -84,7 +84,9 @@ export const resolveNextEdge = (
   outcomeInput: string,
 ): WorkflowEdge => {
   const outcome = OutcomeNameSchema.parse(outcomeInput)
-  if (!node.outcomes.includes(outcome)) {
+  const declaredOutcomes =
+    node.type === 'agent' ? getDeclaredOutcomes(workflow, node.id) : node.outcomes
+  if (!declaredOutcomes.includes(outcome)) {
     throw new EngineError({
       code: 'OUTCOME_UNDECLARED',
       message: 'Executor returned an outcome that the node does not declare',

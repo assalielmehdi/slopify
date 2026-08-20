@@ -1,28 +1,33 @@
 import { PREDEFINED_V1_COMMAND_IDS, PREDEFINED_V1_WORKFLOW_ID } from './predefined-v1.js'
 import { WorkflowRevisionSchema } from './schemas.js'
-import type { AgentNode, PermissionProfile, WorkflowRevision, WorkspacePolicy } from './types.js'
+import type {
+  AgentJobDefinition,
+  AgentNode,
+  SkillSnapshotReference,
+  WorkflowRevision,
+} from './types.js'
 import { validateWorkflow } from './validate-workflow.js'
 
 export const CONFIGURABLE_AGENT_NODE_FIELDS = Object.freeze([
-  'provider',
-  'model',
+  'name',
+  'prompt',
+  'skillSnapshotRefs',
+  'connectionId',
+  'modelId',
   'thinkingLevel',
-  'promptTemplate',
-  'workspacePolicy',
-  'permissionProfile',
-  'resourceBundleId',
+  'connectorIds',
   'outputSchemaRef',
   'timeoutSeconds',
 ] as const)
 
 export interface AgentNodeConfigurationChanges {
-  readonly provider?: string
-  readonly model?: string
-  readonly thinkingLevel?: string
-  readonly promptTemplate?: string
-  readonly workspacePolicy?: WorkspacePolicy
-  readonly permissionProfile?: PermissionProfile
-  readonly resourceBundleId?: string
+  readonly name?: string
+  readonly prompt?: string
+  readonly skillSnapshotRefs?: readonly SkillSnapshotReference[]
+  readonly connectionId?: string
+  readonly modelId?: string
+  readonly thinkingLevel?: AgentJobDefinition['inference']['thinkingLevel']
+  readonly connectorIds?: readonly string[]
   readonly outputSchemaRef?: string
   readonly timeoutSeconds?: number
 }
@@ -45,7 +50,6 @@ export type WorkflowRevisionDerivationErrorCode =
   | 'NODE_NOT_AGENT'
   | 'NO_CONFIGURATION_CHANGE'
   | 'INVALID_CONFIGURATION'
-  | 'POLICY_INVARIANT_VIOLATION'
 
 export class WorkflowRevisionDerivationError extends Error {
   override readonly name = 'WorkflowRevisionDerivationError'
@@ -61,48 +65,42 @@ export class WorkflowRevisionDerivationError extends Error {
 
 const allowedConfigurationFields = new Set<string>(CONFIGURABLE_AGENT_NODE_FIELDS)
 const allowedDerivationInputFields = new Set(['revisionId', 'createdAt', 'updates'])
-const readOnlyAgentIds = new Set([
-  'select-repositories',
-  'requirements-review',
-  'security-review',
-  'simplification-review',
-])
-const writeAgentIds = new Set(['implement', 'fix-findings'])
 
-function assertPolicyInvariants(revision: WorkflowRevision): void {
-  revision.nodes.forEach((node, nodeIndex) => {
-    if (node.type !== 'agent') {
-      return
-    }
+const applyChanges = (node: AgentNode, changes: AgentNodeConfigurationChanges): object => ({
+  ...node,
+  ...(changes.name === undefined ? {} : { name: changes.name }),
+  ...(changes.timeoutSeconds === undefined ? {} : { timeoutSeconds: changes.timeoutSeconds }),
+  result: {
+    ...node.result,
+    ...(changes.outputSchemaRef === undefined ? {} : { schemaRef: changes.outputSchemaRef }),
+  },
+  job: {
+    ...node.job,
+    ...(changes.prompt === undefined ? {} : { prompt: changes.prompt }),
+    ...(changes.skillSnapshotRefs === undefined
+      ? {}
+      : { skillSnapshotRefs: changes.skillSnapshotRefs }),
+    ...(changes.connectorIds === undefined ? {} : { connectorIds: changes.connectorIds }),
+    inference: {
+      ...node.job.inference,
+      ...(changes.connectionId === undefined ? {} : { connectionId: changes.connectionId }),
+      ...(changes.modelId === undefined ? {} : { modelId: changes.modelId }),
+      ...(changes.thinkingLevel === undefined ? {} : { thinkingLevel: changes.thinkingLevel }),
+    },
+  },
+})
 
-    const expectedWorkspacePolicy =
-      node.id === 'select-repositories' ? 'candidate-repositories' : 'selected-worktrees'
-    if (node.workspacePolicy !== expectedWorkspacePolicy) {
-      throw new WorkflowRevisionDerivationError(
-        'POLICY_INVARIANT_VIOLATION',
-        ['nodes', nodeIndex, 'workspacePolicy'],
-        `Node "${node.id}" must use the ${expectedWorkspacePolicy} workspace policy.`,
-      )
-    }
-
-    const expectedPermission = readOnlyAgentIds.has(node.id)
-      ? 'read-only'
-      : writeAgentIds.has(node.id)
-        ? 'workspace-write'
-        : undefined
-    if (expectedPermission !== undefined && node.permissionProfile !== expectedPermission) {
-      throw new WorkflowRevisionDerivationError(
-        'POLICY_INVARIANT_VIOLATION',
-        ['nodes', nodeIndex, 'permissionProfile'],
-        `Node "${node.id}" must use the ${expectedPermission} permission profile.`,
-      )
-    }
-  })
-}
-
-function applyChanges(node: AgentNode, changes: AgentNodeConfigurationChanges): object {
-  return { ...node, ...changes }
-}
+const comparableConfiguration = (node: AgentNode): Required<AgentNodeConfigurationChanges> => ({
+  name: node.name,
+  prompt: node.job.prompt,
+  skillSnapshotRefs: node.job.skillSnapshotRefs,
+  connectionId: node.job.inference.connectionId,
+  modelId: node.job.inference.modelId,
+  thinkingLevel: node.job.inference.thinkingLevel,
+  connectorIds: node.job.connectorIds,
+  outputSchemaRef: node.result.schemaRef,
+  timeoutSeconds: node.timeoutSeconds,
+})
 
 export function derivePredefinedV1Revision(
   parent: WorkflowRevision,
@@ -161,31 +159,25 @@ export function derivePredefinedV1Revision(
   let hasConfigurationChange = false
   const nodes = parent.nodes.map((node) => {
     const update = updatesByNodeId.get(node.id)
-    if (update === undefined) {
-      return node
-    }
+    if (update === undefined) return node
     updatesByNodeId.delete(node.id)
-    if (node.type !== 'agent') {
+    if (node.type !== 'agent' || node.job.kind !== 'agent') {
       throw new WorkflowRevisionDerivationError(
         'NODE_NOT_AGENT',
         ['updates', update.updateIndex, 'nodeId'],
-        `Node "${node.id}" is not an agent node.`,
+        `Node "${node.id}" is not an agent job node.`,
       )
     }
-
+    const current = comparableConfiguration(node)
     const changed = Object.entries(update.changes).some(
-      ([field, value]) => node[field as keyof AgentNode] !== value,
+      ([field, value]) =>
+        JSON.stringify(current[field as keyof typeof current]) !== JSON.stringify(value),
     )
     hasConfigurationChange ||= changed
     return applyChanges(node, update.changes)
   })
 
-  const missingUpdate = updatesByNodeId.entries().next().value as
-    | readonly [
-        string,
-        { readonly changes: AgentNodeConfigurationChanges; readonly updateIndex: number },
-      ]
-    | undefined
+  const missingUpdate = updatesByNodeId.entries().next().value
   if (missingUpdate !== undefined) {
     throw new WorkflowRevisionDerivationError(
       'NODE_NOT_FOUND',
@@ -219,7 +211,6 @@ export function derivePredefinedV1Revision(
     )
   }
 
-  assertPolicyInvariants(parsed.data)
   const validation = validateWorkflow(parsed.data, {
     registeredCommandIds: new Set(PREDEFINED_V1_COMMAND_IDS),
   })

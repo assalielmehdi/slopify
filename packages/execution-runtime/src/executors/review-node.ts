@@ -5,6 +5,7 @@ import {
   type LoadedResourceBundle,
 } from '@loop/agent-runtimes'
 import { GitShaSchema, NodeIdSchema, RevisionIdSchema, WorkflowIdSchema } from '@loop/contracts'
+import { getAgentNodeRuntimeConfiguration } from '@loop/workflow-model'
 import { z } from 'zod'
 
 import type { ProcessRunResult, ProcessRunner } from '../processes/process-runner.js'
@@ -185,16 +186,20 @@ export const createReviewNodeExecutor = (
 ): NodeExecutor => ({
   async execute(context) {
     const expectedNodeId = nodeIdByReviewKind[options.reviewKind]
+    const configuration =
+      context.node.type === 'agent'
+        ? getAgentNodeRuntimeConfiguration(context.workflow, context.node)
+        : undefined
     if (
-      context.node.type !== 'agent' ||
+      configuration === undefined ||
       context.node.id !== expectedNodeId ||
-      context.node.workspacePolicy !== 'selected-worktrees' ||
-      context.node.permissionProfile !== 'read-only' ||
-      context.node.resourceBundleId !== options.resourceBundle.bundleId ||
-      context.node.outputSchemaRef !== 'workflow-output/review-findings-v1' ||
-      !sameValues(context.node.inputArtifacts, ['EXECUTION_PLAN', 'IMPLEMENTATION_SUMMARY']) ||
-      !context.node.outcomes.some((outcome) => outcome === 'reviewed') ||
-      !context.node.outcomes.some((outcome) => outcome === 'blocked')
+      configuration.workspacePolicy !== 'selected-worktrees' ||
+      configuration.permissionProfile !== 'read-only' ||
+      configuration.resourceBundleId !== options.resourceBundle.bundleId ||
+      configuration.outputSchemaRef !== 'workflow-output/review-findings-v1' ||
+      !sameValues(configuration.inputArtifacts, ['EXECUTION_PLAN', 'IMPLEMENTATION_SUMMARY']) ||
+      !configuration.outcomes.includes('reviewed') ||
+      !configuration.outcomes.includes('blocked')
     ) {
       return failed('REVIEW_NODE_CONTEXT_INVALID', 'Review node context is invalid')
     }
@@ -273,7 +278,7 @@ export const createReviewNodeExecutor = (
       const rendered = renderAgentPrompt({
         kind: 'review',
         templateRevision: context.run.revisionId,
-        promptTemplate: context.node.promptTemplate,
+        promptTemplate: configuration.promptTemplate,
         task: {
           reference: context.run.taskReference,
           snapshot: JSON.parse(JSON.stringify(context.run.taskSnapshot)),
@@ -295,8 +300,8 @@ export const createReviewNodeExecutor = (
           'Stop after one complete specialized review of every selected repository.',
         ],
         completionContract: {
-          outcomes: [...context.node.outcomes],
-          outputSchemaRef: context.node.outputSchemaRef,
+          outcomes: [...configuration.outcomes],
+          outputSchemaRef: configuration.outputSchemaRef,
         },
         resourceBundle: {
           bundleId: options.resourceBundle.bundleId,
@@ -345,14 +350,14 @@ export const createReviewNodeExecutor = (
             access: 'read-only',
           })),
         },
-        provider: context.node.provider,
-        model: context.node.model,
-        thinkingLevel: context.node.thinkingLevel,
+        provider: configuration.provider,
+        model: configuration.model,
+        thinkingLevel: configuration.thinkingLevel,
         permissionProfile: 'read-only',
         renderedPrompt: rendered.renderedPrompt,
-        declaredOutcomes: context.node.outcomes,
-        resourceBundleId: context.node.resourceBundleId,
-        timeoutSeconds: context.node.timeoutSeconds,
+        declaredOutcomes: configuration.outcomes,
+        resourceBundleId: configuration.resourceBundleId,
+        timeoutSeconds: configuration.timeoutSeconds,
       })
       const execution = await createAgentExecutorAdapter({
         agent: options.agent,

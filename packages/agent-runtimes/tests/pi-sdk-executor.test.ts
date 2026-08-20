@@ -158,6 +158,42 @@ describe('Pi SDK executor', () => {
     expect(session.dispose).toHaveBeenCalledTimes(1)
   })
 
+  it('passes a sandbox to Pi and destroys it before cancellation is confirmed', async () => {
+    const created = createSession({ prompt: vi.fn(() => pending) })
+    const cleanup = vi.fn(async () => undefined)
+    const sandbox = {
+      workspaceRoot: '/workspace',
+      tools: [],
+      skills: [],
+    }
+    const sessionFactory: PiSessionFactory = { create: vi.fn(async () => created.session) }
+    const executor = createPiSdkAgentExecutor({
+      sessionFactory,
+      resolveContext: async () => ({
+        outputSchema: z.object({ sections: z.number().int().positive() }),
+        resourceBundle,
+        sandbox,
+        cleanup,
+      }),
+      sensitiveValues: [],
+    })
+    const iterator = executor.execute(input)[Symbol.asyncIterator]()
+    await iterator.next()
+    await iterator.next()
+
+    await expect(executor.cancel(input.executionId)).resolves.toEqual({ status: 'cancelled' })
+    expect(sessionFactory.create).toHaveBeenCalledWith({
+      input,
+      outputSchema: expect.anything(),
+      resourceBundle,
+      sandbox,
+    })
+    expect(cleanup).toHaveBeenCalledOnce()
+    await iterator.next()
+    await iterator.next()
+    expect(cleanup).toHaveBeenCalledOnce()
+  })
+
   it('emits normalized subscribed events before one redacted result', async () => {
     const secret = 'sk-provider-secret'
     const created = createSession({

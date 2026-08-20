@@ -339,6 +339,107 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       `)
     },
   }),
+  Object.freeze({
+    version: 4,
+    name: 'persist_connection_metadata',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        CREATE TABLE connections (
+          connection_id TEXT PRIMARY KEY,
+          type TEXT NOT NULL CHECK (
+            type IN ('gitlab', 'clickup', 'openrouter', 'chatgpt-subscription')
+          ),
+          category TEXT NOT NULL CHECK (category IN ('connector', 'inference')),
+          label TEXT NOT NULL,
+          authority TEXT NOT NULL,
+          configuration_json TEXT NOT NULL CHECK (json_valid(configuration_json)),
+          metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json)),
+          status TEXT NOT NULL CHECK (status IN ('CONNECTED', 'INVALID')),
+          validated_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX connections_by_category_type
+          ON connections (category, type, label);
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 5,
+    name: 'create_durable_execution_queue',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        DROP INDEX runs_one_active;
+
+        CREATE TABLE execution_messages (
+          id TEXT PRIMARY KEY,
+          destination TEXT NOT NULL CHECK (destination IN ('WORKER', 'COORDINATOR')),
+          type TEXT NOT NULL CHECK (
+            type IN (
+              'EXECUTE_JOB', 'JOB_STARTED', 'JOB_PROGRESS',
+              'JOB_SUCCEEDED', 'JOB_FAILED', 'JOB_CANCELLED'
+            )
+          ),
+          run_id TEXT NOT NULL,
+          node_execution_id TEXT NOT NULL,
+          attempt_id TEXT NOT NULL,
+          payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+          status TEXT NOT NULL CHECK (status IN ('PENDING', 'CLAIMED', 'PROCESSED')),
+          available_at TEXT NOT NULL,
+          claimed_by TEXT,
+          lease_expires_at TEXT,
+          attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+          created_at TEXT NOT NULL,
+          processed_at TEXT,
+          CHECK (
+            (status = 'PENDING' AND claimed_by IS NULL AND lease_expires_at IS NULL)
+            OR (status = 'CLAIMED' AND claimed_by IS NOT NULL AND lease_expires_at IS NOT NULL)
+            OR (status = 'PROCESSED')
+          ),
+          CHECK (
+            (destination = 'WORKER' AND type = 'EXECUTE_JOB')
+            OR (destination = 'COORDINATOR' AND type <> 'EXECUTE_JOB')
+          ),
+          FOREIGN KEY (run_id) REFERENCES runs (run_id)
+        ) STRICT;
+
+        CREATE INDEX execution_messages_by_destination_status_availability
+          ON execution_messages (
+            destination, status, available_at, lease_expires_at, id
+          );
+
+        CREATE INDEX execution_messages_by_run
+          ON execution_messages (run_id, created_at, id);
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 6,
+    name: 'persist_workflow_coordinator_state',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        CREATE TABLE workflow_coordinator_states (
+          run_id TEXT PRIMARY KEY,
+          state_json TEXT NOT NULL CHECK (json_valid(state_json)),
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (run_id) REFERENCES runs (run_id)
+        ) STRICT;
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 7,
+    name: 'persist_node_attempt_identity',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        ALTER TABLE node_executions ADD COLUMN attempt_id TEXT;
+        CREATE UNIQUE INDEX node_executions_by_attempt
+          ON node_executions (run_id, attempt_id)
+          WHERE attempt_id IS NOT NULL;
+      `)
+    },
+  }),
 ])
 
 interface AppliedMigration {

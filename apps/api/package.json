@@ -13,10 +13,11 @@
     "typecheck": "pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/execution-runtime build && tsc --project tsconfig.json --noEmit",
     "lint": "eslint src tests --max-warnings 0",
     "test": "vitest run --root ../.. apps/api/tests",
-    "start": "node dist/server.js"
+    "start": "bun dist/server.js"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",
+    "@loop/agent-runtimes": "workspace:*",
     "@loop/clickup-artifacts": "workspace:*",
     "@loop/contracts": "workspace:*",
     "@loop/execution-runtime": "workspace:*",

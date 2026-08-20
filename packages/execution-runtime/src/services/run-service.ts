@@ -165,15 +165,6 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
     }
   }
 
-  const requireNoActiveRun = (): void => {
-    const active = options.runs.findActive()
-    if (active !== undefined) {
-      throw new RunServiceError('RUN_ACTIVE', 'Another run is already active', {
-        activeRunId: active.runId,
-      })
-    }
-  }
-
   return {
     stopAdmissions() {
       acceptingRuns = false
@@ -192,7 +183,6 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
       if (notes !== undefined && (notes === '' || notes.length > 2_000)) {
         throw new RunServiceError('RUN_REQUEST_INVALID', 'Run notes are invalid')
       }
-      requireNoActiveRun()
       const workflow = options.workflows.getRevision({ workflowId, revisionId })
       if (workflow === undefined) {
         throw new RunServiceError('WORKFLOW_NOT_FOUND', 'Workflow revision was not found')
@@ -217,7 +207,6 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
       }
 
       requireAdmissionsOpen()
-      requireNoActiveRun()
       const runId = RunIdSchema.parse(createRunId())
       const profileSnapshot = options.profiles.createSnapshot({
         snapshotId: createProfileSnapshotId(),

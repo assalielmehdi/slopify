@@ -265,6 +265,7 @@ export interface PersistedArtifact {
 
 export interface NodeExecutionRecord {
   readonly nodeExecutionId: string
+  readonly attemptId: string | null
   readonly nodeId: string
   readonly executionIndex: number
   readonly status: 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED' | 'SKIPPED'
@@ -405,6 +406,7 @@ interface ArtifactRow {
 
 interface NodeExecutionRow {
   readonly node_execution_id: string
+  readonly attempt_id: string | null
   readonly node_id: string
   readonly execution_index: number
   readonly status: NodeExecutionRecord['status']
@@ -1512,7 +1514,7 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       const runId = RunIdSchema.parse(runIdInput)
       const rows = connection
         .prepare(
-          `SELECT node_execution_id, node_id, execution_index, status,
+          `SELECT node_execution_id, attempt_id, node_id, execution_index, status,
                   input_references_json, output_json, outcome, error_code,
                   error_message, selected_target_node_id, started_at,
                   completed_at, duration_ms
@@ -1523,6 +1525,7 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
         .all(runId) as NodeExecutionRow[]
       return rows.map((row) => ({
         nodeExecutionId: row.node_execution_id,
+        attemptId: row.attempt_id,
         nodeId: NodeIdSchema.parse(row.node_id),
         executionIndex: row.execution_index,
         status: row.status,

@@ -38,13 +38,13 @@ const firstRevision = createPredefinedV1Revision({
 const latestRevision = derivePredefinedV1Revision(firstRevision, {
   revisionId: 'revision-02',
   createdAt: '2026-08-19T12:00:00Z',
-  updates: [{ nodeId: 'plan', changes: { model: 'test-model-v2' } }],
+  updates: [{ nodeId: 'plan', changes: { modelId: 'test-model-v2' } }],
 })
 
 const savedRevision = derivePredefinedV1Revision(latestRevision, {
   revisionId: 'revision-03',
   createdAt: '2026-08-20T12:00:00Z',
-  updates: [{ nodeId: 'implement', changes: { model: 'implementation-model-v2' } }],
+  updates: [{ nodeId: 'implement', changes: { modelId: 'implementation-model-v2' } }],
 })
 
 const catalog = [
@@ -76,7 +76,7 @@ describe('workflow revision saving', () => {
     const input = {
       parentRevisionId: 'revision-02',
       revisionId: 'revision-03',
-      updates: [{ nodeId: 'implement', changes: { model: 'implementation-model-v2' } }],
+      updates: [{ nodeId: 'implement', changes: { modelId: 'implementation-model-v2' } }],
     } as const
 
     await expect(client.createWorkflowRevision('delivery-workflow', input)).resolves.toEqual(
@@ -116,12 +116,12 @@ describe('workflow revision saving', () => {
     expect(client.createWorkflowRevision).toHaveBeenCalledWith('delivery-workflow', {
       parentRevisionId: 'revision-02',
       revisionId: 'revision-03',
-      updates: [{ nodeId: 'implement', changes: { model: 'implementation-model-v2' } }],
+      updates: [{ nodeId: 'implement', changes: { modelId: 'implementation-model-v2' } }],
     })
     expect(screen.getByText('Graph revision-02')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Saving revision' }).hasAttribute('disabled')).toBe(
-      true,
-    )
+    expect(
+      screen.getByRole('button', { name: 'Publishing revision' }).hasAttribute('disabled'),
+    ).toBe(true)
 
     confirmSave?.(savedRevision)
     expect(await screen.findByText('Graph revision-03')).toBeTruthy()

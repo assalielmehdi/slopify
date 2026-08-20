@@ -35,7 +35,8 @@ export const createExecutorRegistry = (options: ExecutorRegistryOptions): Execut
     registeredCommandIds,
     resolve(node) {
       if (node.type === 'command') return commands.get(node.commandId)
-      if (node.type === 'agent') return agents.get(node.id) ?? options.agent
+      if (node.type === 'agent' && node.job.kind === 'agent')
+        return agents.get(node.id) ?? options.agent
       if (node.type === 'router') return options.router
       return undefined
     },

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { InMemoryCredentialStore } from '@earendil-works/pi-ai'
 
 import {
   createEnvironmentModelCredentialSource,
@@ -81,5 +82,27 @@ describe('model runtime', () => {
         credentialSource,
       }),
     ).rejects.toMatchObject<ModelRuntimeError>({ code: 'MODEL_NOT_FOUND' })
+  })
+
+  it('supports a provider-scoped OAuth store for ChatGPT subscription inference', async () => {
+    const credentials = new InMemoryCredentialStore()
+    await credentials.modify('openai-codex', async () => ({
+      type: 'oauth',
+      access: 'access-token',
+      refresh: 'refresh-token',
+      expires: Date.now() + 60_000,
+    }))
+    await credentials.modify('anthropic', async () => ({ type: 'api_key', key: 'not-selected' }))
+
+    const selection = await createScopedModelRuntime({
+      provider: 'openai-codex',
+      model: 'gpt-5.4',
+      credentialStore: credentials,
+    })
+
+    expect(selection.model.provider).toBe('openai-codex')
+    await expect(selection.runtime.listCredentials()).resolves.toEqual([
+      { providerId: 'openai-codex', type: 'oauth' },
+    ])
   })
 })

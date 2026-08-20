@@ -50,6 +50,10 @@ describe('forward-only migrations', () => {
       { version: 1, name: 'create_execution_schema' },
       { version: 2, name: 'persist_complete_repository_selection' },
       { version: 3, name: 'persist_optional_run_notes' },
+      { version: 4, name: 'persist_connection_metadata' },
+      { version: 5, name: 'create_durable_execution_queue' },
+      { version: 6, name: 'persist_workflow_coordinator_state' },
+      { version: 7, name: 'persist_node_attempt_identity' },
     ])
   })
 

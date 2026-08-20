@@ -9,17 +9,20 @@ const agentNode = {
   id: 'start',
   name: 'Start',
   description: 'Start the workflow.',
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
-  thinkingLevel: 'high',
-  promptTemplate: 'Begin the task.',
-  workspacePolicy: 'selected-worktrees',
-  permissionProfile: 'read-only',
-  resourceBundleId: 'delivery-start',
-  inputArtifacts: [],
-  outputSchemaRef: 'workflow-output/start-v1',
-  outcomes: ['ready'],
   timeoutSeconds: 900,
+  result: { schemaRef: 'workflow-output/start-v1' },
+  sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
+  job: {
+    kind: 'agent',
+    prompt: 'Begin the task.',
+    skillSnapshotRefs: [],
+    inference: {
+      connectionId: 'openrouter-primary',
+      modelId: 'anthropic/claude-sonnet-4.5',
+      thinkingLevel: 'high',
+    },
+    connectorIds: [],
+  },
 }
 
 const commandNode = {
@@ -70,7 +73,11 @@ describe('validateWorkflow', () => {
   it.each([
     ['missing node ID', { ...agentNode, id: undefined }, ['nodes', 0, 'id']],
     ['malformed node ID', { ...agentNode, id: 'Start Node' }, ['nodes', 0, 'id']],
-    ['missing agent provider', { ...agentNode, provider: undefined }, ['nodes', 0, 'provider']],
+    [
+      'missing agent prompt',
+      { ...agentNode, job: { ...agentNode.job, prompt: undefined } },
+      ['nodes', 0, 'job', 'prompt'],
+    ],
   ])('returns a field-addressable schema finding for %s', (_case, node, path) => {
     const result = validateWorkflow(
       { ...validWorkflow, nodes: [node, commandNode, terminalNode] },
@@ -241,7 +248,7 @@ describe('validateWorkflow', () => {
     )
   })
 
-  it('reports a declared outcome with multiple edges', () => {
+  it('accepts multiple edges for one outcome as an explicit fan-out', () => {
     const result = validateWorkflow(
       {
         ...validWorkflow,
@@ -253,13 +260,7 @@ describe('validateWorkflow', () => {
       { registeredCommandIds },
     )
 
-    expect(result.valid).toBe(false)
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({
-        code: 'OUTCOME_EDGE_AMBIGUOUS',
-        path: ['nodes', 1, 'outcomes', 0],
-      }),
-    )
+    expect(result.valid).toBe(true)
   })
 
   it('reports a node unreachable from the explicit start', () => {

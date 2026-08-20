@@ -8,6 +8,7 @@ import {
   type LoadedResourceBundle,
 } from '@loop/agent-runtimes'
 import type { ArtifactType } from '@loop/contracts'
+import { getAgentNodeRuntimeConfiguration } from '@loop/workflow-model'
 
 import type { RunRepository, RunWorkspace } from '../persistence/run-repository.js'
 import {
@@ -163,13 +164,17 @@ export const executeSelectedAgentNode = async (
   input: ExecuteSelectedAgentNodeInput,
 ): Promise<SelectedAgentNodeExecution> => {
   const { context } = input
+  const configuration =
+    context.node.type === 'agent'
+      ? getAgentNodeRuntimeConfiguration(context.workflow, context.node)
+      : undefined
   if (
-    context.node.type !== 'agent' ||
+    configuration === undefined ||
     context.node.id !== input.expectedNodeId ||
-    context.node.workspacePolicy !== 'selected-worktrees' ||
-    context.node.permissionProfile !== input.expectedPermission ||
-    context.node.resourceBundleId !== options.resourceBundle.bundleId ||
-    !sameValues(context.node.inputArtifacts, input.expectedInputArtifacts)
+    configuration.workspacePolicy !== 'selected-worktrees' ||
+    configuration.permissionProfile !== input.expectedPermission ||
+    configuration.resourceBundleId !== options.resourceBundle.bundleId ||
+    !sameValues(configuration.inputArtifacts, input.expectedInputArtifacts)
   ) {
     throw new SelectedAgentNodeError('SELECTED_NODE_CONTEXT_INVALID')
   }
@@ -178,7 +183,7 @@ export const executeSelectedAgentNode = async (
   const rendered = renderAgentPrompt({
     kind: 'execution',
     templateRevision: context.run.revisionId,
-    promptTemplate: context.node.promptTemplate,
+    promptTemplate: configuration.promptTemplate,
     task: {
       reference: context.run.taskReference,
       snapshot: JSON.parse(JSON.stringify(context.run.taskSnapshot)),
@@ -194,8 +199,8 @@ export const executeSelectedAgentNode = async (
     executionEvidence: [...(input.executionEvidence ?? [])],
     stopConditions: [...input.stopConditions],
     completionContract: {
-      outcomes: [...context.node.outcomes],
-      outputSchemaRef: context.node.outputSchemaRef,
+      outcomes: [...configuration.outcomes],
+      outputSchemaRef: configuration.outputSchemaRef,
     },
     resourceBundle: {
       bundleId: options.resourceBundle.bundleId,
@@ -232,14 +237,14 @@ export const executeSelectedAgentNode = async (
         access: input.expectedPermission,
       })),
     },
-    provider: context.node.provider,
-    model: context.node.model,
-    thinkingLevel: context.node.thinkingLevel,
+    provider: configuration.provider,
+    model: configuration.model,
+    thinkingLevel: configuration.thinkingLevel,
     permissionProfile: input.expectedPermission,
     renderedPrompt: rendered.renderedPrompt,
-    declaredOutcomes: context.node.outcomes,
-    resourceBundleId: context.node.resourceBundleId,
-    timeoutSeconds: context.node.timeoutSeconds,
+    declaredOutcomes: configuration.outcomes,
+    resourceBundleId: configuration.resourceBundleId,
+    timeoutSeconds: configuration.timeoutSeconds,
   })
   const adapter = createAgentExecutorAdapter({ agent: options.agent, runs: options.runs })
   return {

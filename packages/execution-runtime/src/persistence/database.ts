@@ -1,8 +1,116 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import BetterSqlite3 from 'better-sqlite3'
+import type BetterSqlite3 from 'better-sqlite3'
 
 import { applyMigrations } from './migrations.js'
+
+interface BunStatement {
+  get(...parameters: unknown[]): Record<string, unknown> | null
+  all(...parameters: unknown[]): Record<string, unknown>[]
+  run(...parameters: unknown[]): Readonly<{ changes: number; lastInsertRowid: number | bigint }>
+}
+
+interface BunTransaction {
+  (...parameters: unknown[]): unknown
+  deferred(...parameters: unknown[]): unknown
+  immediate(...parameters: unknown[]): unknown
+  exclusive(...parameters: unknown[]): unknown
+}
+
+interface BunDatabase {
+  prepare(sql: string): BunStatement
+  query(sql: string): BunStatement
+  exec(sql: string): unknown
+  transaction(action: (...parameters: unknown[]) => unknown): BunTransaction
+  close(throwOnError?: boolean): void
+}
+
+interface BunSqliteModule {
+  readonly Database: new (path: string) => BunDatabase
+}
+
+class BunStatementCompatibility {
+  readonly #statement: BunStatement
+  #pluck = false
+
+  constructor(statement: BunStatement) {
+    this.#statement = statement
+  }
+
+  pluck(enabled = true): this {
+    this.#pluck = enabled
+    return this
+  }
+
+  get(...parameters: unknown[]): unknown {
+    const row = this.#statement.get(...parameters)
+    if (!this.#pluck || row === null) return row ?? undefined
+    return Object.values(row)[0]
+  }
+
+  all(...parameters: unknown[]): unknown[] {
+    const rows = this.#statement.all(...parameters)
+    return this.#pluck ? rows.map((row) => Object.values(row)[0]) : rows
+  }
+
+  run(...parameters: unknown[]): Readonly<{ changes: number; lastInsertRowid: number | bigint }> {
+    return this.#statement.run(...parameters)
+  }
+}
+
+class BunDatabaseCompatibility {
+  readonly #database: BunDatabase
+  #open = true
+
+  constructor(Database: BunSqliteModule['Database'], path: string) {
+    this.#database = new Database(path)
+  }
+
+  get open(): boolean {
+    return this.#open
+  }
+
+  prepare(sql: string): BunStatementCompatibility {
+    return new BunStatementCompatibility(this.#database.prepare(sql))
+  }
+
+  exec(sql: string): this {
+    this.#database.exec(sql)
+    return this
+  }
+
+  pragma(source: string, options?: Readonly<{ simple?: boolean }>): unknown {
+    const rows = this.#database.query(`PRAGMA ${source}`).all()
+    if (options?.simple !== true) return rows
+    const first = rows[0]
+    return first === undefined ? undefined : Object.values(first)[0]
+  }
+
+  transaction(action: (...parameters: unknown[]) => unknown): BunTransaction {
+    return this.#database.transaction(action)
+  }
+
+  close(): void {
+    if (!this.#open) return
+    this.#database.close()
+    this.#open = false
+  }
+}
+
+type DatabaseFactory = (path: string) => BetterSqlite3.Database
+
+const loadDatabaseFactory = async (): Promise<DatabaseFactory> => {
+  if ('Bun' in globalThis) {
+    const bunSqliteSpecifier = 'bun:sqlite'
+    const sqlite = (await import(bunSqliteSpecifier)) as BunSqliteModule
+    return (path) =>
+      new BunDatabaseCompatibility(sqlite.Database, path) as unknown as BetterSqlite3.Database
+  }
+  const sqlite = await import('better-sqlite3')
+  return (path) => new sqlite.default(path)
+}
+
+const createDatabase = await loadDatabaseFactory()
 
 export type DatabaseInitializationErrorCode =
   | 'DATABASE_PATH_INVALID'
@@ -127,7 +235,7 @@ export const openDatabase = (options: OpenDatabaseOptions): WorkbenchDatabase =>
 
   try {
     mkdirSync(dirname(databasePath), { recursive: true })
-    database = new BetterSqlite3(databasePath)
+    database = createDatabase(databasePath)
   } catch (cause) {
     closeAfterFailure(database)
     throw new DatabaseInitializationError({

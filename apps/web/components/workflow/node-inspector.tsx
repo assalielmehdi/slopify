@@ -1,9 +1,10 @@
 import type { NodeExecutionStatus } from '@loop/contracts'
+import type { WorkflowEdge, WorkflowNode } from '@loop/workflow-model'
 import type {
-  AgentNodeConfigurationChanges,
-  WorkflowEdge,
-  WorkflowNode,
-} from '@loop/workflow-model'
+  ConnectionRecord,
+  SkillRecord,
+  WorkflowAgentConfigurationChanges,
+} from '@/lib/api-client'
 
 import { Badge } from '@/components/ui/badge'
 import {
@@ -44,9 +45,6 @@ const getPurpose = (node: WorkflowNode) =>
     ? `End the workflow with ${node.terminalStatus.toLowerCase()} status.`
     : node.description
 
-const getOutcomes = (node: WorkflowNode): readonly string[] =>
-  node.type === 'terminal' ? [] : node.outcomes
-
 function Definition({ term, children }: Readonly<{ term: string; children: React.ReactNode }>) {
   return (
     <div className="grid gap-1">
@@ -65,7 +63,9 @@ export interface NodeInspectorProps {
     status: NodeExecutionStatus
     durationMs?: number
   }>
-  readonly onSaveAgentConfiguration?: (changes: AgentNodeConfigurationChanges) => Promise<void>
+  readonly skills?: readonly SkillRecord[]
+  readonly connections?: readonly ConnectionRecord[]
+  readonly onSaveAgentConfiguration?: (changes: WorkflowAgentConfigurationChanges) => Promise<void>
 }
 
 export function NodeInspector({
@@ -74,9 +74,11 @@ export function NodeInspector({
   isStart,
   outgoingEdges,
   recentRun,
+  skills,
+  connections,
   onSaveAgentConfiguration,
 }: NodeInspectorProps) {
-  const outcomes = getOutcomes(node)
+  const outcomes = [...new Set(outgoingEdges.map(({ outcome }) => outcome))]
 
   return (
     <Card className="h-fit" size="sm" aria-label="Node inspector">
@@ -97,13 +99,13 @@ export function NodeInspector({
             <code className="font-mono text-xs/4">{revisionId}</code>
           </Definition>
           <Definition term="Accepted inputs">
-            {node.type === 'agent' && node.inputArtifacts.length > 0
-              ? node.inputArtifacts.map((artifact) => (
-                  <Badge key={artifact} variant="secondary">
-                    {artifact}
+            {node.type === 'agent' && node.job.skillSnapshotRefs.length > 0
+              ? node.job.skillSnapshotRefs.map((skill) => (
+                  <Badge key={skill.snapshotId} variant="secondary">
+                    {skill.name}
                   </Badge>
                 ))
-              : 'No artifact inputs declared'}
+              : 'No skills selected'}
           </Definition>
           <Definition term="Declared outcomes">
             <span className="flex flex-wrap gap-1">
@@ -154,23 +156,29 @@ export function NodeInspector({
                   Pi SDK <code className="font-mono text-xs/4">{PI_SDK_VERSION}</code>
                 </Definition>
                 <Definition term="Provider / model">
-                  {node.provider} / {node.model}
+                  {node.job.inference.connectionId} / {node.job.inference.modelId}
                 </Definition>
-                <Definition term="Thinking level">{node.thinkingLevel}</Definition>
-                <Definition term="Workspace policy">{node.workspacePolicy}</Definition>
-                <Definition term="Permission profile">{node.permissionProfile}</Definition>
-                <Definition term="Resource bundle">
-                  <code className="font-mono text-xs/4">{node.resourceBundleId}</code>
+                <Definition term="Thinking level">{node.job.inference.thinkingLevel}</Definition>
+                <Definition term="Workspace">All run worktrees, read/write</Definition>
+                <Definition term="Connector grants">
+                  {node.job.connectorIds.length === 0 ? 'None' : node.job.connectorIds.join(', ')}
+                </Definition>
+                <Definition term="Sandbox">
+                  <code className="font-mono text-xs/4">
+                    {node.sandbox.profileId} / {node.sandbox.imageId}
+                  </code>
                 </Definition>
                 <Definition term="Output schema">
-                  <code className="font-mono text-xs/4">{node.outputSchemaRef}</code>
+                  <code className="font-mono text-xs/4">{node.result.schemaRef}</code>
                 </Definition>
-                <Definition term="Prompt template">{node.promptTemplate}</Definition>
+                <Definition term="Prompt">{node.job.prompt}</Definition>
               </dl>
               {onSaveAgentConfiguration === undefined ? null : (
                 <AgentNodeForm
                   key={`${revisionId}:${node.id}`}
                   node={node}
+                  {...(skills === undefined ? {} : { skills })}
+                  {...(connections === undefined ? {} : { connections })}
                   onSave={onSaveAgentConfiguration}
                 />
               )}

@@ -46,17 +46,7 @@ describe('API server configuration', () => {
     expect(addRevision).toHaveBeenCalledTimes(1)
   })
 
-  it('binds all interfaces by default in container mode', () => {
-    expect(resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true' })).toMatchObject({
-      hostname: '0.0.0.0',
-      port: 3001,
-      databasePath: '/var/lib/workbench/workbench.sqlite',
-      workspaceRoot: '/workspace',
-      shutdownGracePeriodMs: 10_000,
-    })
-  })
-
-  it('uses loopback natively and accepts explicit host and port overrides', () => {
+  it('uses native owner-local state and accepts explicit host and port overrides', () => {
     expect(
       resolveApiServerConfiguration({
         API_HOST: '127.0.0.2',
@@ -71,38 +61,18 @@ describe('API server configuration', () => {
       shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
       workspaceRoot: '/custom/workspace',
+      skillsRoot: expect.any(String),
+      skillSnapshotsRoot: expect.any(String),
+      credentialPath: expect.any(String),
     })
-    expect(resolveApiServerConfiguration({})).toMatchObject({ hostname: '127.0.0.1' })
-  })
-
-  it.each(['/tmp/workbench.sqlite', '/var/lib/workbench/../escape.sqlite'])(
-    'rejects container database path %j outside the writable data root',
-    (DATABASE_PATH) => {
-      expect(() =>
-        resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true', DATABASE_PATH }),
-      ).toThrowError(expect.objectContaining({ code: 'DATABASE_PATH_INVALID' }))
-    },
-  )
-
-  it.each(['/tmp/workspace', '/workspace/../escape'])(
-    'rejects container workspace root %j outside the mounted workspace root',
-    (WORKSPACE_ROOT) => {
-      expect(() =>
-        resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true', WORKSPACE_ROOT }),
-      ).toThrowError(expect.objectContaining({ code: 'WORKSPACE_ROOT_INVALID' }))
-    },
-  )
-
-  it('accepts container paths below the approved data and workspace roots', () => {
-    expect(
-      resolveApiServerConfiguration({
-        API_CONTAINER_MODE: 'true',
-        DATABASE_PATH: '/var/lib/workbench/team/workbench.sqlite',
-        WORKSPACE_ROOT: '/workspace/team',
-      }),
-    ).toMatchObject({
-      databasePath: '/var/lib/workbench/team/workbench.sqlite',
-      workspaceRoot: '/workspace/team',
+    expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
+      hostname: '127.0.0.1',
+      port: 3001,
+      databasePath: '/tmp/slopify-test/slopify.db',
+      workspaceRoot: '/tmp/slopify-test/workspaces',
+      skillsRoot: '/tmp/slopify-test/skills',
+      skillSnapshotsRoot: '/tmp/slopify-test/skill-snapshots',
+      credentialPath: '/tmp/slopify-test/credentials.json',
     })
   })
 
@@ -133,6 +103,9 @@ describe('API server configuration', () => {
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
         workspaceRoot: '/workspace',
+        skillsRoot: '/skills',
+        skillSnapshotsRoot: '/skill-snapshots',
+        credentialPath: '/credentials.json',
         shutdownGracePeriodMs: 10_000,
       },
     })
@@ -149,14 +122,16 @@ describe('API server configuration', () => {
 
   it('reduces connector credentials to non-secret readiness booleans', () => {
     const status = resolveConnectorStatus({
-      CLICKUP_API_TOKEN: 'clickup-secret',
-      GITLAB_TOKEN: '',
-      MODEL_PROVIDER_API_KEY: 'provider-secret',
+      list: () =>
+        [
+          { type: 'clickup', status: 'CONNECTED' },
+          { type: 'gitlab', status: 'INVALID' },
+          { type: 'openrouter', status: 'CONNECTED' },
+        ] as never,
     })
 
     expect(status).toEqual({ clickup: true, gitlab: false, modelProvider: true })
-    expect(JSON.stringify(status)).not.toContain('clickup-secret')
-    expect(JSON.stringify(status)).not.toContain('provider-secret')
+    expect(JSON.stringify(status)).not.toContain('credential')
   })
 
   it('creates ClickUp task clients with profile-scoped workspace context', async () => {

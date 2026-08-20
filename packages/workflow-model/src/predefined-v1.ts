@@ -1,5 +1,5 @@
 import { WorkflowRevisionSchema } from './schemas.js'
-import type { PermissionProfile, WorkflowRevision, WorkspacePolicy } from './types.js'
+import type { WorkflowRevision } from './types.js'
 import { validateWorkflow } from './validate-workflow.js'
 
 export const PREDEFINED_V1_WORKFLOW_ID = 'delivery-workflow'
@@ -29,8 +29,8 @@ interface AgentNodeDefinition {
   readonly name: string
   readonly description: string
   readonly promptTemplate: string
-  readonly workspacePolicy: WorkspacePolicy
-  readonly permissionProfile: PermissionProfile
+  readonly workspacePolicy: string
+  readonly permissionProfile: string
   readonly resourceBundleId: string
   readonly inputArtifacts: readonly string[]
   readonly outputSchemaRef: string
@@ -43,9 +43,24 @@ function createAgentNode(
   defaults: PredefinedV1AgentDefaults,
 ): object {
   return {
-    ...defaults,
-    ...definition,
     type: 'agent',
+    id: definition.id,
+    name: definition.name,
+    description: definition.description,
+    timeoutSeconds: definition.timeoutSeconds,
+    result: { schemaRef: definition.outputSchemaRef },
+    sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
+    job: {
+      kind: 'agent',
+      prompt: definition.promptTemplate,
+      skillSnapshotRefs: [],
+      inference: {
+        connectionId: `${defaults.provider}-default`,
+        modelId: defaults.model,
+        thinkingLevel: defaults.thinkingLevel,
+      },
+      connectorIds: [],
+    },
   }
 }
 

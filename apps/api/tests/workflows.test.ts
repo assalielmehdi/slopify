@@ -63,7 +63,7 @@ describe('workflow API', () => {
       body: JSON.stringify({
         parentRevisionId: fixture.revision.revisionId,
         revisionId: 'revision-02',
-        updates: [{ nodeId: 'plan', changes: { model: 'test-model-v2' } }],
+        updates: [{ nodeId: 'plan', changes: { modelId: 'test-model-v2' } }],
       }),
     })
     const created = (await response.json()) as typeof fixture.revision
@@ -82,7 +82,7 @@ describe('workflow API', () => {
     })
     expect(created.nodes.find(({ id }) => id === 'plan')).toMatchObject({
       type: 'agent',
-      model: 'test-model-v2',
+      job: { inference: { modelId: 'test-model-v2' } },
     })
     expect(parent).toEqual(fixture.revision)
     expect(unchangedRun).toEqual(existingRun)
@@ -102,7 +102,7 @@ describe('workflow API', () => {
       body: JSON.stringify({
         parentRevisionId: fixture.revision.revisionId,
         revisionId: 'revision-02',
-        updates: [{ nodeId: 'verify', changes: { model: 'not-allowed' } }],
+        updates: [{ nodeId: 'verify', changes: { modelId: 'not-allowed' } }],
       }),
     })
 

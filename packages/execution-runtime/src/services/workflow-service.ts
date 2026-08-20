@@ -1,8 +1,7 @@
 import { NodeIdSchema, RevisionIdSchema, WorkflowIdSchema } from '@loop/contracts'
 import {
-  PermissionProfileSchema,
-  ResourceBundleIdSchema,
-  WorkspacePolicySchema,
+  AgentInferenceConfigurationSchema,
+  SkillSnapshotReferenceSchema,
   WorkflowRevisionDerivationError,
   derivePredefinedV1Revision,
   type AgentNodeConfigurationChanges,
@@ -12,15 +11,21 @@ import { z } from 'zod'
 
 import { PersistenceError } from '../persistence/errors.js'
 import type { WorkflowRepository } from '../persistence/workflow-repository.js'
+import type { SkillCatalog, SkillSnapshotStore } from '../skills/skill-catalog.js'
 
 const configurationChanges = z.strictObject({
-  provider: z.string().trim().min(1).optional(),
-  model: z.string().trim().min(1).optional(),
-  thinkingLevel: z.string().trim().min(1).optional(),
-  promptTemplate: z.string().min(1).optional(),
-  workspacePolicy: WorkspacePolicySchema.optional(),
-  permissionProfile: PermissionProfileSchema.optional(),
-  resourceBundleId: ResourceBundleIdSchema.optional(),
+  name: z.string().trim().min(1).max(256).optional(),
+  prompt: z.string().min(1).optional(),
+  skillIds: z
+    .array(z.string().trim().min(1).max(128))
+    .max(32)
+    .refine((values) => new Set(values).size === values.length, 'Skill IDs must be unique')
+    .readonly()
+    .optional(),
+  connectionId: z.string().trim().min(1).max(128).optional(),
+  modelId: z.string().trim().min(1).max(256).optional(),
+  thinkingLevel: AgentInferenceConfigurationSchema.unwrap().shape.thinkingLevel.optional(),
+  connectorIds: z.array(z.string().trim().min(1).max(128)).max(32).readonly().optional(),
   outputSchemaRef: z.string().trim().min(1).optional(),
   timeoutSeconds: z.number().int().positive().safe().optional(),
 })
@@ -40,10 +45,32 @@ const createRevisionRequest = z.strictObject({
     .readonly(),
 })
 
-const definedChanges = (
+const definedChanges = async (
   changes: z.infer<typeof configurationChanges>,
-): AgentNodeConfigurationChanges =>
-  Object.fromEntries(Object.entries(changes).filter((entry) => entry[1] !== undefined))
+  options: Readonly<{ skills?: SkillCatalog; skillSnapshots?: SkillSnapshotStore }>,
+): Promise<AgentNodeConfigurationChanges> => {
+  const result = Object.fromEntries(
+    Object.entries(changes).filter(([key, value]) => key !== 'skillIds' && value !== undefined),
+  ) as AgentNodeConfigurationChanges
+  if (changes.skillIds === undefined) return result
+  const skills = options.skills
+  const skillSnapshots = options.skillSnapshots
+  if (skills === undefined || skillSnapshots === undefined)
+    throw new WorkflowServiceError('REVISION_INVALID', 'Skill snapshots are unavailable')
+  const snapshots = await Promise.all(
+    changes.skillIds.map(async (skillId) => {
+      const snapshot = await skillSnapshots.capture(await skills.get(skillId))
+      return SkillSnapshotReferenceSchema.parse({
+        snapshotId: snapshot.snapshotId,
+        skillId: snapshot.skillId,
+        name: snapshot.name,
+        description: snapshot.description,
+        digest: snapshot.digest,
+      })
+    }),
+  )
+  return { ...result, skillSnapshotRefs: snapshots }
+}
 
 export type WorkflowServiceErrorCode =
   'REVISION_CONFLICT' | 'REVISION_INVALID' | 'WORKFLOW_NOT_FOUND' | 'WORKFLOW_REQUEST_INVALID'
@@ -75,11 +102,13 @@ export interface WorkflowCatalogEntry {
 export interface WorkflowService {
   list(): readonly WorkflowCatalogEntry[]
   get(workflowId: string, revisionId: string): WorkflowRevision
-  create(workflowId: string, input: unknown): WorkflowRevision
+  create(workflowId: string, input: unknown): Promise<WorkflowRevision>
 }
 
 export const createWorkflowService = (options: {
   readonly workflows: WorkflowRepository
+  readonly skills?: SkillCatalog
+  readonly skillSnapshots?: SkillSnapshotStore
   readonly now?: () => string
 }): WorkflowService => {
   const now = options.now ?? (() => new Date().toISOString())
@@ -122,7 +151,7 @@ export const createWorkflowService = (options: {
 
     get,
 
-    create(workflowIdInput, input) {
+    async create(workflowIdInput, input) {
       const parsed = createRevisionRequest.safeParse(input)
       if (!parsed.success) {
         throw new WorkflowServiceError(
@@ -137,10 +166,12 @@ export const createWorkflowService = (options: {
         const revision = derivePredefinedV1Revision(parent, {
           revisionId: parsed.data.revisionId,
           createdAt: now(),
-          updates: parsed.data.updates.map((update) => ({
-            nodeId: update.nodeId,
-            changes: definedChanges(update.changes),
-          })),
+          updates: await Promise.all(
+            parsed.data.updates.map(async (update) => ({
+              nodeId: update.nodeId,
+              changes: await definedChanges(update.changes, options),
+            })),
+          ),
         })
         options.workflows.addRevision(revision)
         return revision

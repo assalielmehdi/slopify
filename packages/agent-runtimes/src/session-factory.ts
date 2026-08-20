@@ -6,8 +6,10 @@ import {
   SessionManager,
   SettingsManager,
   type ResourceLoader,
+  type Skill,
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
+import type { CredentialStore } from '@earendil-works/pi-ai'
 import { z } from 'zod'
 
 import { createCompletionToolController } from './completion-tool.js'
@@ -62,6 +64,11 @@ export interface CreatePiSessionInput {
   readonly input: AgentExecutionInput
   readonly outputSchema: z.ZodType<unknown>
   readonly resourceBundle: LoadedResourceBundle
+  readonly sandbox?: Readonly<{
+    workspaceRoot: string
+    tools: readonly ToolDefinition[]
+    skills: readonly Skill[]
+  }>
 }
 
 export interface PiSessionFactory {
@@ -69,7 +76,8 @@ export interface PiSessionFactory {
 }
 
 export interface CreatePiSessionFactoryOptions {
-  readonly credentialSource: ModelCredentialSource
+  readonly credentialSource?: ModelCredentialSource
+  readonly credentialStore?: CredentialStore
 }
 
 const isChildPath = (parent: string, child: string): boolean => {
@@ -100,12 +108,18 @@ const validateResources = (
   }
 }
 
-const createResourceLoader = (resourceBundle: LoadedResourceBundle): ResourceLoader => {
+const createResourceLoader = (
+  resourceBundle: LoadedResourceBundle,
+  sandbox?: CreatePiSessionInput['sandbox'],
+): ResourceLoader => {
   const extensions = { extensions: [], errors: [], runtime: createExtensionRuntime() }
-  const agentsFiles = resourceBundle.contextFiles.map(({ path, content }) => ({ path, content }))
+  const agentsFiles =
+    sandbox === undefined
+      ? resourceBundle.contextFiles.map(({ path, content }) => ({ path, content }))
+      : []
   return {
     getExtensions: () => extensions,
-    getSkills: () => ({ skills: [], diagnostics: [] }),
+    getSkills: () => ({ skills: [...(sandbox?.skills ?? [])], diagnostics: [] }),
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles }),
@@ -131,11 +145,28 @@ export const createPiSessionFactory = (
       throw new PiSessionFactoryError('PI_SESSION_CONFIGURATION_INVALID')
     }
     validateResources(parsedInput.data, createOptions.resourceBundle)
+    const sandbox = createOptions.sandbox
+    if (sandbox !== undefined) {
+      const toolNames = sandbox.tools.map(({ name }) => name)
+      if (
+        sandbox.workspaceRoot !== '/workspace' ||
+        toolNames.length !== 4 ||
+        !['read', 'bash', 'edit', 'write'].every((name) => toolNames.includes(name)) ||
+        sandbox.skills.some(
+          ({ filePath, baseDir }) =>
+            !filePath.startsWith('/skills/') || !baseDir.startsWith('/skills/'),
+        )
+      ) {
+        throw new PiSessionFactoryError('PI_SESSION_CONFIGURATION_INVALID')
+      }
+    }
 
     const { runtime, model } = await createScopedModelRuntime({
       provider: parsedInput.data.provider,
       model: parsedInput.data.model,
-      credentialSource: options.credentialSource,
+      ...(options.credentialSource === undefined
+        ? { credentialStore: options.credentialStore as CredentialStore }
+        : { credentialSource: options.credentialSource }),
     })
     const settingsManager = SettingsManager.inMemory({
       compaction: { enabled: false },
@@ -148,8 +179,9 @@ export const createPiSessionFactory = (
       enableAnalytics: false,
       enableInstallTelemetry: false,
     })
-    const sessionManager = SessionManager.inMemory(parsedInput.data.workspace.rootPath)
-    const resourceLoader = createResourceLoader(createOptions.resourceBundle)
+    const workspaceRoot = sandbox?.workspaceRoot ?? parsedInput.data.workspace.rootPath
+    const sessionManager = SessionManager.inMemory(workspaceRoot)
+    const resourceLoader = createResourceLoader(createOptions.resourceBundle, sandbox)
 
     const completion = createCompletionToolController({
       declaredOutcomes: parsedInput.data.declaredOutcomes,
@@ -169,19 +201,22 @@ export const createPiSessionFactory = (
         }
       },
     }
-    const tools = [...getAgentToolProfile(parsedInput.data.permissionProfile)]
+    const tools =
+      sandbox === undefined
+        ? [...getAgentToolProfile(parsedInput.data.permissionProfile)]
+        : [...sandbox.tools.map(({ name }) => name), 'complete_node']
 
     let sdkSession
     try {
       const created = await createAgentSession({
-        cwd: parsedInput.data.workspace.rootPath,
-        agentDir: parsedInput.data.workspace.rootPath,
+        cwd: workspaceRoot,
+        agentDir: workspaceRoot,
         modelRuntime: runtime,
         model,
         thinkingLevel: parsedInput.data.thinkingLevel as
           'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max',
         tools,
-        customTools: [completionTool],
+        customTools: [...(sandbox?.tools ?? []), completionTool],
         resourceLoader,
         sessionManager,
         settingsManager,

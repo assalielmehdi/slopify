@@ -1,6 +1,6 @@
 'use client'
 
-import type { AgentNodeConfigurationChanges, WorkflowRevision } from '@loop/workflow-model'
+import type { WorkflowRevision } from '@loop/workflow-model'
 import { useEffect, useState } from 'react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -14,7 +14,14 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { createApiClient, type ApiClient, type WorkflowCatalogEntry } from '@/lib/api-client'
+import {
+  createApiClient,
+  type ApiClient,
+  type ConnectionRecord,
+  type SkillRecord,
+  type WorkflowAgentConfigurationChanges,
+  type WorkflowCatalogEntry,
+} from '@/lib/api-client'
 
 import { NodeInspector } from './node-inspector'
 import { WorkflowCanvas } from './workflow-canvas'
@@ -22,7 +29,8 @@ import { WorkflowCanvas } from './workflow-canvas'
 type WorkflowInspectionClient = Pick<
   ApiClient,
   'createWorkflowRevision' | 'getWorkflowRevision' | 'listWorkflows'
->
+> &
+  Partial<Pick<ApiClient, 'listSkills' | 'listConnections'>>
 
 export interface WorkflowWorkbenchProps {
   readonly client?: WorkflowInspectionClient
@@ -44,13 +52,19 @@ export function WorkflowWorkbench({
   const [selectedNodeId, setSelectedNodeId] = useState<string>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
+  const [skills, setSkills] = useState<readonly SkillRecord[]>([])
+  const [connections, setConnections] = useState<readonly ConnectionRecord[]>([])
 
   useEffect(() => {
     let active = true
 
     const load = async () => {
       try {
-        const workflows = await client.listWorkflows()
+        const [workflows, nextSkills, nextConnections] = await Promise.all([
+          client.listWorkflows(),
+          client.listSkills?.() ?? Promise.resolve([]),
+          client.listConnections?.() ?? Promise.resolve([]),
+        ])
         const workflow = workflows[0]
         if (workflow === undefined) throw new Error('No workflow revisions available')
 
@@ -61,6 +75,8 @@ export function WorkflowWorkbench({
         if (!active) return
 
         setCatalog(workflows)
+        setSkills(nextSkills)
+        setConnections(nextConnections)
         setRevision(latest)
         setSelectedNodeId(latest.startNodeId)
       } catch (cause) {
@@ -93,7 +109,10 @@ export function WorkflowWorkbench({
     }
   }
 
-  const saveAgentConfiguration = async (nodeId: string, changes: AgentNodeConfigurationChanges) => {
+  const saveAgentConfiguration = async (
+    nodeId: string,
+    changes: WorkflowAgentConfigurationChanges,
+  ) => {
     const workflow = catalog[0]
     if (workflow === undefined || revision === undefined) {
       throw new Error('No workflow revision available')
@@ -232,6 +251,8 @@ export function WorkflowWorkbench({
               onSaveAgentConfiguration={(changes) =>
                 saveAgentConfiguration(selectedNode.id, changes)
               }
+              skills={skills}
+              connections={connections}
             />
           </aside>
         )}

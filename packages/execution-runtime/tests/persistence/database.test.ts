@@ -1,6 +1,8 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
@@ -12,6 +14,8 @@ import { getDatabaseHandle } from '../../src/persistence/database.js'
 
 const EXPECTED_TABLES = [
   'artifacts',
+  'connections',
+  'execution_messages',
   'node_executions',
   'output_chunks',
   'profile_snapshot_repositories',
@@ -25,6 +29,7 @@ const EXPECTED_TABLES = [
   'run_workspaces',
   'runs',
   'schema_migrations',
+  'workflow_coordinator_states',
   'workflow_revisions',
   'workflows',
 ] as const
@@ -49,6 +54,28 @@ afterEach(() => {
 })
 
 describe('database connection', () => {
+  it('opens, migrates, and queries SQLite under the Bun runtime', () => {
+    const databasePath = createDatabasePath('bun.sqlite')
+    const moduleUrl = pathToFileURL(
+      join(process.cwd(), 'packages/execution-runtime/src/persistence/database.ts'),
+    ).href
+    const source = [
+      `import { openDatabase, getDatabaseHandle } from ${JSON.stringify(moduleUrl)}`,
+      `const database = openDatabase({ path: ${JSON.stringify(databasePath)} })`,
+      "const row = getDatabaseHandle(database).prepare('SELECT 1 AS ok').get()",
+      'console.log(JSON.stringify(row))',
+      'database.close()',
+    ].join(';')
+
+    const output = execFileSync('bun', ['-e', source], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+
+    expect(output.trim()).toBe('{"ok":1}')
+  })
+
   it('creates the configured file and enables the required SQLite settings', () => {
     const databasePath = createDatabasePath()
     const database = openDatabase({ path: databasePath })
@@ -60,7 +87,7 @@ describe('database connection', () => {
     expect(database.status()).toEqual({
       foreignKeysEnabled: true,
       journalMode: 'wal',
-      schemaVersion: 3,
+      schemaVersion: 7,
       writable: true,
     })
   })

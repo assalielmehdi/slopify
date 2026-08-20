@@ -16,11 +16,13 @@ import {
 } from './event-normalizer.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import type { LoadedResourceBundle } from './resource-loader.js'
-import type { PiSession, PiSessionFactory } from './session-factory.js'
+import type { CreatePiSessionInput, PiSession, PiSessionFactory } from './session-factory.js'
 
 export interface AgentExecutionContext {
   readonly outputSchema: z.ZodType<unknown>
   readonly resourceBundle: LoadedResourceBundle
+  readonly sandbox?: CreatePiSessionInput['sandbox']
+  readonly cleanup?: () => Promise<void>
 }
 
 export interface CreatePiSdkAgentExecutorOptions {
@@ -37,6 +39,7 @@ interface ActiveExecution {
   unsubscribe: (() => void) | undefined
   cancelRequested: boolean
   released: boolean
+  readonly cleanup?: () => Promise<void>
   stopPromise: Promise<boolean> | undefined
 }
 
@@ -87,7 +90,10 @@ const terminalMessages = {
   AGENT_TIMEOUT: 'Agent execution timed out',
 } as const
 
-const createActiveExecution = (session: PiSession): ActiveExecution => {
+const createActiveExecution = (
+  session: PiSession,
+  cleanup?: () => Promise<void>,
+): ActiveExecution => {
   let resolveCancellation: () => void = () => undefined
   const cancellation = new Promise<{ readonly kind: 'cancelled' }>((resolve) => {
     resolveCancellation = () => resolve({ kind: 'cancelled' })
@@ -99,16 +105,18 @@ const createActiveExecution = (session: PiSession): ActiveExecution => {
     unsubscribe: undefined,
     cancelRequested: false,
     released: false,
+    ...(cleanup === undefined ? {} : { cleanup }),
     stopPromise: undefined,
   }
 }
 
-const release = (active: ActiveExecution): void => {
+const release = async (active: ActiveExecution): Promise<void> => {
   if (active.released) return
   active.released = true
   active.unsubscribe?.()
   active.unsubscribe = undefined
   active.session.dispose()
+  await active.cleanup?.()
 }
 
 const stop = (active: ActiveExecution): Promise<boolean> => {
@@ -130,7 +138,7 @@ const stop = (active: ActiveExecution): Promise<boolean> => {
     } catch {
       confirmed = false
     }
-    release(active)
+    await release(active)
     return confirmed
   })()
   return active.stopPromise
@@ -163,6 +171,7 @@ export const createPiSdkAgentExecutor = (
       const startedAt = now()
       const durationMs = () => Math.max(0, now() - startedAt)
       let active: ActiveExecution | undefined
+      let contextCleanup: (() => Promise<void>) | undefined
       let normalizer: PiEventNormalizer | undefined
       let timeout: ReturnType<typeof setTimeout> | undefined
 
@@ -179,12 +188,14 @@ export const createPiSdkAgentExecutor = (
         }
 
         const context = await options.resolveContext(input)
+        contextCleanup = context.cleanup
         const session = await options.sessionFactory.create({
           input,
           outputSchema: context.outputSchema,
           resourceBundle: context.resourceBundle,
+          ...(context.sandbox === undefined ? {} : { sandbox: context.sandbox }),
         })
-        active = createActiveExecution(session)
+        active = createActiveExecution(session, context.cleanup)
         normalizer = createPiEventNormalizer({ redactor })
         const observations = new ObservationQueue()
         active.unsubscribe = session.subscribe((sdkEvent) => {
@@ -293,10 +304,12 @@ export const createPiSdkAgentExecutor = (
         normalizer?.finish()
         if (timeout !== undefined) clearTimeout(timeout)
         if (active !== undefined) {
-          release(active)
+          await release(active)
           if (activeExecutions.get(input.executionId) === active) {
             activeExecutions.delete(input.executionId)
           }
+        } else {
+          await contextCleanup?.()
         }
       }
     },

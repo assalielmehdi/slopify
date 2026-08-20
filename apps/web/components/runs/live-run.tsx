@@ -161,6 +161,8 @@ function NodeProgress({
               </div>
               <p className="font-mono text-muted-foreground">{node.id}</p>
               <dl className="grid grid-cols-[auto_1fr] gap-x-2">
+                <dt>Attempt</dt>
+                <dd className="font-mono">{execution?.attemptId ?? 'Not scheduled'}</dd>
                 <dt>Started</dt>
                 <dd>{formatTimestamp(execution?.startedAt ?? null)}</dd>
                 <dt>Ended</dt>

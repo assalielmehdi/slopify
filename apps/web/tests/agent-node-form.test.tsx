@@ -25,51 +25,106 @@ if (agentNode === undefined || agentNode.type !== 'agent') {
 
 afterEach(cleanup)
 
+const skills = [
+  {
+    skillId: 'planning',
+    name: 'planning',
+    description: 'Plan delivery work.',
+    digest: 'a'.repeat(64),
+    modifiedAt: '2026-08-20T00:00:00.000Z',
+    valid: true,
+    issues: [],
+    files: [{ path: 'SKILL.md', content: 'instructions', size: 12 }],
+  },
+] as const
+const connections = [
+  {
+    connectionId: 'openrouter-v2',
+    type: 'openrouter',
+    category: 'inference',
+    label: 'OpenRouter',
+    authority: 'Inference',
+    configuration: {},
+    metadata: {},
+    status: 'CONNECTED',
+    validatedAt: '2026-08-20T00:00:00.000Z',
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+  },
+  {
+    connectionId: 'gitlab-primary',
+    type: 'gitlab',
+    category: 'connector',
+    label: 'GitLab',
+    authority: 'GitLab access',
+    configuration: {},
+    metadata: {},
+    status: 'CONNECTED',
+    validatedAt: '2026-08-20T00:00:00.000Z',
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+  },
+  {
+    connectionId: 'clickup-primary',
+    type: 'clickup',
+    category: 'connector',
+    label: 'ClickUp',
+    authority: 'ClickUp access',
+    configuration: {},
+    metadata: {},
+    status: 'CONNECTED',
+    validatedAt: '2026-08-20T00:00:00.000Z',
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+  },
+] as const
+
 describe('AgentNodeForm', () => {
-  it('submits only the nine editable agent configuration fields', async () => {
+  it('submits only agent-job and execution-policy fields', async () => {
     const onSave = vi.fn(async () => undefined)
 
-    render(<AgentNodeForm node={agentNode} onSave={onSave} />)
+    render(
+      <AgentNodeForm node={agentNode} skills={skills} connections={connections} onSave={onSave} />,
+    )
 
     const form = screen.getByRole('form', { name: 'Agent configuration' })
     expect(
       [
-        ...form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
-          '[name]',
+        ...new Set(
+          [
+            ...form.querySelectorAll<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(
+              '[name]',
+            ),
+          ].map(({ name }) => name),
         ),
-      ]
-        .map(({ name }) => name)
-        .sort(),
+      ].sort(),
     ).toEqual(
       [
-        'model',
+        'connectionId',
+        'connectorIds',
+        'modelId',
+        'name',
         'outputSchemaRef',
-        'permissionProfile',
-        'promptTemplate',
-        'provider',
-        'resourceBundleId',
+        'prompt',
+        'skillIds',
         'thinkingLevel',
         'timeoutSeconds',
-        'workspacePolicy',
       ].sort(),
     )
 
-    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: 'provider-v2' } })
+    fireEvent.change(screen.getByLabelText('Inference connection'), {
+      target: { value: 'openrouter-v2' },
+    })
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'model-v2' } })
     fireEvent.change(screen.getByLabelText('Thinking level'), { target: { value: 'medium' } })
-    fireEvent.change(screen.getByLabelText('Prompt template'), {
+    fireEvent.change(screen.getByLabelText('Prompt'), {
       target: { value: 'Create a revised execution plan.' },
     })
-    fireEvent.change(screen.getByLabelText('Workspace policy'), {
-      target: { value: 'candidate-repositories' },
-    })
-    fireEvent.change(screen.getByLabelText('Permission profile'), {
-      target: { value: 'workspace-write' },
-    })
-    fireEvent.change(screen.getByLabelText('Resource bundle'), {
-      target: { value: 'planning.v2' },
-    })
-    fireEvent.change(screen.getByLabelText('Output schema'), {
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Revised plan' } })
+    fireEvent.click(screen.getByLabelText(/planning/))
+    fireEvent.click(screen.getByLabelText(/GitLab/))
+    fireEvent.click(screen.getByLabelText(/ClickUp/))
+    fireEvent.change(screen.getByLabelText('Result schema'), {
       target: { value: 'workflow-output/plan-v2' },
     })
     fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: '900' } })
@@ -77,13 +132,13 @@ describe('AgentNodeForm', () => {
 
     await waitFor(() => {
       expect(onSave).toHaveBeenCalledWith({
-        provider: 'provider-v2',
-        model: 'model-v2',
+        name: 'Revised plan',
+        connectionId: 'openrouter-v2',
+        modelId: 'model-v2',
         thinkingLevel: 'medium',
-        promptTemplate: 'Create a revised execution plan.',
-        workspacePolicy: 'candidate-repositories',
-        permissionProfile: 'workspace-write',
-        resourceBundleId: 'planning.v2',
+        prompt: 'Create a revised execution plan.',
+        connectorIds: ['gitlab-primary', 'clickup-primary'],
+        skillIds: ['planning'],
         outputSchemaRef: 'workflow-output/plan-v2',
         timeoutSeconds: 900,
       })
@@ -95,12 +150,14 @@ describe('AgentNodeForm', () => {
 
     render(<AgentNodeForm node={agentNode} onSave={onSave} />)
 
-    fireEvent.change(screen.getByLabelText('Provider'), { target: { value: '   ' } })
+    fireEvent.change(screen.getByLabelText('Inference connection'), { target: { value: '   ' } })
     fireEvent.change(screen.getByLabelText('Timeout (seconds)'), { target: { value: '0' } })
     fireEvent.submit(screen.getByRole('form', { name: 'Agent configuration' }))
 
     await waitFor(() => {
-      expect(screen.getByLabelText('Provider').getAttribute('aria-invalid')).toBe('true')
+      expect(screen.getByLabelText('Inference connection').getAttribute('aria-invalid')).toBe(
+        'true',
+      )
       expect(screen.getByLabelText('Timeout (seconds)').getAttribute('aria-invalid')).toBe('true')
     })
     expect(onSave).not.toHaveBeenCalled()
@@ -112,7 +169,7 @@ describe('AgentNodeForm', () => {
         code: 'REVISION_INVALID',
         message: 'Workflow revision is invalid',
         status: 422,
-        details: { path: ['nodes', 2, 'permissionProfile'] },
+        details: { path: ['nodes', 2, 'job', 'connectorIds'] },
       })
     })
 
@@ -121,10 +178,10 @@ describe('AgentNodeForm', () => {
     fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'model-v2' } })
     fireEvent.submit(screen.getByRole('form', { name: 'Agent configuration' }))
 
-    const permissions = await screen.findByLabelText('Permission profile')
-    await waitFor(() => expect(permissions.getAttribute('aria-invalid')).toBe('true'))
-    const field = permissions.closest<HTMLElement>('[data-slot="field"]')
-    if (field === null) throw new Error('Expected permission field')
+    const connectors = await screen.findByRole('group', { name: 'Connector grants' })
+    await waitFor(() => expect(connectors.getAttribute('aria-invalid')).toBe('true'))
+    const field = connectors.closest<HTMLElement>('[data-slot="field"]')
+    if (field === null) throw new Error('Expected connector field')
     expect(within(field).getByRole('alert').textContent).toBe('Workflow revision is invalid')
   })
 })

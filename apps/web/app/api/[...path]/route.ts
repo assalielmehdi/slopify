@@ -44,4 +44,4 @@ const proxyRequest = async (request: Request): Promise<Response> => {
   }
 }
 
-export { proxyRequest as GET, proxyRequest as POST, proxyRequest as PUT }
+export { proxyRequest as DELETE, proxyRequest as GET, proxyRequest as POST, proxyRequest as PUT }

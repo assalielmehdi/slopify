@@ -26,7 +26,7 @@ export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowService): v
 
   app.post('/api/workflows/:workflowId/revisions', async (context) =>
     context.json(
-      workflows.create(context.req.param('workflowId'), await parseRevisionBody(context)),
+      await workflows.create(context.req.param('workflowId'), await parseRevisionBody(context)),
       201,
     ),
   )

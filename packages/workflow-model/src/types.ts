@@ -1,11 +1,16 @@
 import type { z } from 'zod'
 
 import type {
+  AgentInferenceConfigurationSchema,
+  AgentJobDefinitionSchema,
   AgentNodeSchema,
   CommandNodeSchema,
   PermissionProfileSchema,
   ResourceBundleIdSchema,
+  ResultContractSchema,
   RouterNodeSchema,
+  SandboxReferenceSchema,
+  SkillSnapshotReferenceSchema,
   TerminalNodeSchema,
   TerminalStatusSchema,
   WorkflowEdgeSchema,
@@ -15,6 +20,11 @@ import type {
 } from './schemas.js'
 
 export type ResourceBundleId = z.infer<typeof ResourceBundleIdSchema>
+export type SkillSnapshotReference = z.infer<typeof SkillSnapshotReferenceSchema>
+export type AgentInferenceConfiguration = z.infer<typeof AgentInferenceConfigurationSchema>
+export type AgentJobDefinition = z.infer<typeof AgentJobDefinitionSchema>
+export type ResultContract = z.infer<typeof ResultContractSchema>
+export type SandboxReference = z.infer<typeof SandboxReferenceSchema>
 export type WorkspacePolicy = z.infer<typeof WorkspacePolicySchema>
 export type PermissionProfile = z.infer<typeof PermissionProfileSchema>
 export type TerminalStatus = z.infer<typeof TerminalStatusSchema>

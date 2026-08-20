@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { HistoryIcon, PlayIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
+import { BookOpenIcon, HistoryIcon, PlayIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
 
 import { Separator } from '@/components/ui/separator'
 import {
@@ -26,6 +26,7 @@ const navigationItems = [
   { href: '/', label: 'Workflow', icon: WorkflowIcon },
   { href: '/runs/new', label: 'New run', icon: PlayIcon },
   { href: '/runs', label: 'Run history', icon: HistoryIcon },
+  { href: '/skills', label: 'Skills', icon: BookOpenIcon },
   { href: '/settings', label: 'Settings', icon: SettingsIcon },
 ] as const
 
@@ -43,6 +44,7 @@ function getRouteTitle(pathname: string) {
   if (pathname === '/runs') return 'Run history'
   if (pathname.startsWith('/runs/')) return 'Run detail'
   if (pathname === '/settings') return 'Settings'
+  if (pathname === '/skills') return 'Skills'
   return 'Workflow'
 }
 

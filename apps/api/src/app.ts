@@ -1,16 +1,21 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
+import type { ChatGptOAuthService } from '@loop/agent-runtimes'
 import {
   CancellationServiceError,
+  ConnectionServiceError,
   ProjectProfileServiceError,
   RunEventFeedError,
   RunServiceError,
+  SkillCatalogError,
   WorkflowServiceError,
   type CancellationService,
+  type ConnectionService,
   type ProjectProfileService,
   type ReadinessService,
   type RunService,
   type RunEventFeed,
   type RunTaskResolver,
+  type SkillCatalog,
   type WorkbenchDatabase,
   type WorkflowService,
 } from '@loop/execution-runtime'
@@ -18,20 +23,25 @@ import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
+import { registerConnectionRoutes } from './routes/connections.js'
 import { registerClickUpTaskRoutes } from './routes/clickup-tasks.js'
 import { registerProjectProfileRoutes } from './routes/project-profiles.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
+import { registerSkillRoutes } from './routes/skills.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
 export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
+  readonly connections?: ConnectionService
+  readonly chatGptOAuth?: ChatGptOAuthService
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly profiles?: ProjectProfileService
   readonly readiness?: ReadinessService
   readonly runs?: RunService
+  readonly skills?: SkillCatalog
   readonly tasks?: RunTaskResolver
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
@@ -86,12 +96,37 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
   if (options.runs !== undefined) registerRunRoutes(app, options.runs, options.cancellation)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
+  if (options.skills !== undefined) registerSkillRoutes(app, options.skills)
+  if (options.connections !== undefined)
+    registerConnectionRoutes(app, options.connections, options.chatGptOAuth)
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof SkillCatalogError) {
+      const status =
+        error.code === 'SKILL_NOT_FOUND'
+          ? 404
+          : error.code === 'SKILL_CONFLICT'
+            ? 409
+            : error.code === 'SKILL_LIMIT_EXCEEDED'
+              ? 413
+              : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
+    if (error instanceof ConnectionServiceError) {
+      const status =
+        error.code === 'CONNECTION_NOT_FOUND'
+          ? 404
+          : error.code === 'CONNECTION_VALIDATION_FAILED'
+            ? 422
+            : error.code === 'CREDENTIAL_NOT_FOUND'
+              ? 409
+              : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
     if (error instanceof CancellationServiceError) {
       return context.json(
         errorBody({ code: error.code, message: error.message }),

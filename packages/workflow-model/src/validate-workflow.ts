@@ -16,7 +16,6 @@ export const WORKFLOW_VALIDATION_CODES = [
   'TERMINAL_NODE_HAS_OUTGOING_EDGE',
   'EDGE_OUTCOME_UNDECLARED',
   'OUTCOME_EDGE_MISSING',
-  'OUTCOME_EDGE_AMBIGUOUS',
   'NODE_UNREACHABLE',
   'COMMAND_UNREGISTERED',
 ] as const
@@ -195,7 +194,7 @@ function validateEdges(
       )
       return
     }
-    if (!sourceNode.outcomes.includes(edge.outcome)) {
+    if (sourceNode.type !== 'agent' && !sourceNode.outcomes.includes(edge.outcome)) {
       findings.push(
         createFinding(
           'EDGE_OUTCOME_UNDECLARED',
@@ -213,6 +212,20 @@ function validateOutcomes(workflow: WorkflowRevision, findings: WorkflowValidati
       return
     }
 
+    if (node.type === 'agent') {
+      const outgoing = workflow.edges.filter((edge) => edge.sourceNodeId === node.id)
+      if (outgoing.length === 0) {
+        findings.push(
+          createFinding(
+            'OUTCOME_EDGE_MISSING',
+            ['nodes', nodeIndex, 'id'],
+            `Job node "${node.id}" has no outcome edge.`,
+          ),
+        )
+      }
+      return
+    }
+
     node.outcomes.forEach((outcome, outcomeIndex) => {
       const edgeCount = workflow.edges.filter(
         (edge) => edge.sourceNodeId === node.id && edge.outcome === outcome,
@@ -223,14 +236,6 @@ function validateOutcomes(workflow: WorkflowRevision, findings: WorkflowValidati
             'OUTCOME_EDGE_MISSING',
             ['nodes', nodeIndex, 'outcomes', outcomeIndex],
             `Outcome "${outcome}" on node "${node.id}" has no edge.`,
-          ),
-        )
-      } else if (edgeCount > 1) {
-        findings.push(
-          createFinding(
-            'OUTCOME_EDGE_AMBIGUOUS',
-            ['nodes', nodeIndex, 'outcomes', outcomeIndex],
-            `Outcome "${outcome}" on node "${node.id}" has multiple edges.`,
           ),
         )
       }

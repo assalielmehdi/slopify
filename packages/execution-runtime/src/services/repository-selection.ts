@@ -8,6 +8,7 @@ import {
   type LoadedResourceBundle,
 } from '@loop/agent-runtimes'
 import { RepositoryIdSchema } from '@loop/contracts'
+import { getAgentNodeRuntimeConfiguration } from '@loop/workflow-model'
 import { z } from 'zod'
 
 import { createAgentExecutorAdapter } from '../executors/agent-executor-adapter.js'
@@ -80,10 +81,11 @@ export const createRepositorySelectionExecutor = (
       if (context.node.type !== 'agent') {
         return failed('REPOSITORY_SELECTION_NODE_INVALID', 'Repository selection node is invalid')
       }
+      const configuration = getAgentNodeRuntimeConfiguration(context.workflow, context.node)
       if (
-        context.node.workspacePolicy !== 'candidate-repositories' ||
-        context.node.permissionProfile !== 'read-only' ||
-        context.node.resourceBundleId !== options.resourceBundle.bundleId
+        configuration.workspacePolicy !== 'candidate-repositories' ||
+        configuration.permissionProfile !== 'read-only' ||
+        configuration.resourceBundleId !== options.resourceBundle.bundleId
       ) {
         return failed('REPOSITORY_SELECTION_NODE_INVALID', 'Repository selection node is invalid')
       }
@@ -116,7 +118,7 @@ export const createRepositorySelectionExecutor = (
       const rendered = renderAgentPrompt({
         kind: 'repository-selection',
         templateRevision: context.run.revisionId,
-        promptTemplate: context.node.promptTemplate,
+        promptTemplate: configuration.promptTemplate,
         task: {
           reference: context.run.taskReference,
           snapshot: JSON.parse(JSON.stringify(context.run.taskSnapshot)),
@@ -133,8 +135,8 @@ export const createRepositorySelectionExecutor = (
           'Return blocked when the affected repository set cannot be determined safely.',
         ],
         completionContract: {
-          outcomes: [...context.node.outcomes],
-          outputSchemaRef: context.node.outputSchemaRef,
+          outcomes: [...configuration.outcomes],
+          outputSchemaRef: configuration.outputSchemaRef,
         },
         resourceBundle: {
           bundleId: options.resourceBundle.bundleId,
@@ -160,13 +162,13 @@ export const createRepositorySelectionExecutor = (
             access: 'read-only',
           })),
         },
-        provider: context.node.provider,
-        model: context.node.model,
-        thinkingLevel: context.node.thinkingLevel,
+        provider: configuration.provider,
+        model: configuration.model,
+        thinkingLevel: configuration.thinkingLevel,
         permissionProfile: 'read-only',
         renderedPrompt: rendered.renderedPrompt,
-        declaredOutcomes: context.node.outcomes,
-        resourceBundleId: context.node.resourceBundleId,
+        declaredOutcomes: configuration.outcomes,
+        resourceBundleId: configuration.resourceBundleId,
         timeoutSeconds: context.node.timeoutSeconds,
       })
       const execution = await adapter.execute(context, input)

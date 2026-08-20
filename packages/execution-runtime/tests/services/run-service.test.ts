@@ -110,22 +110,20 @@ describe('run service admission', () => {
     ])
   })
 
-  it('rejects a second admission without changing the active run', async () => {
+  it('admits independent runs concurrently', async () => {
     const { service } = createServiceFixture()
-    const active = await service.create(createInput)
-
-    await expect(service.create({ ...createInput, taskReference: 'TASK-2' })).rejects.toMatchObject(
-      {
-        code: 'RUN_ACTIVE',
-        activeRunId: active.runId,
-      } satisfies Partial<RunServiceError>,
-    )
+    const first = await service.create(createInput)
+    const second = await service.create({ ...createInput, taskReference: 'TASK-2' })
 
     expect(service.list({ page: 1, pageSize: 20 })).toMatchObject({
-      data: [expect.objectContaining({ runId: active.runId, status: active.status })],
-      pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+      data: [
+        expect.objectContaining({ runId: second.runId, status: second.status }),
+        expect.objectContaining({ runId: first.runId, status: first.status }),
+      ],
+      pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
     })
-    expect(service.get(active.runId)?.run).toEqual(active)
+    expect(service.get(first.runId)?.run).toEqual(first)
+    expect(service.get(second.runId)?.run).toEqual(second)
   })
 
   it('rejects an unready profile before creating a run', async () => {

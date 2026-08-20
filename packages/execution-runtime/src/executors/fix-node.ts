@@ -1,4 +1,5 @@
 import { NodeIdSchema, RevisionIdSchema, WorkflowIdSchema } from '@loop/contracts'
+import { getAgentNodeRuntimeConfiguration } from '@loop/workflow-model'
 
 import type { ArtifactPublicationService } from '../services/artifact-publication.js'
 import {
@@ -65,16 +66,20 @@ const verificationEvidence = (
 
 export const createFixNodeExecutor = (options: CreateFixNodeExecutorOptions): NodeExecutor => ({
   async execute(context) {
+    const configuration =
+      context.node.type === 'agent'
+        ? getAgentNodeRuntimeConfiguration(context.workflow, context.node)
+        : undefined
     if (
-      context.node.type !== 'agent' ||
+      configuration === undefined ||
       context.node.id !== 'fix-findings' ||
-      context.node.workspacePolicy !== 'selected-worktrees' ||
-      context.node.permissionProfile !== 'workspace-write' ||
-      context.node.resourceBundleId !== options.resourceBundle.bundleId ||
-      context.node.outputSchemaRef !== 'workflow-output/finding-resolution-v1' ||
-      !sameValues(context.node.inputArtifacts, ['REVIEW_SUMMARY']) ||
-      !context.node.outcomes.some((outcome) => outcome === 'fixed') ||
-      !context.node.outcomes.some((outcome) => outcome === 'blocked')
+      configuration.workspacePolicy !== 'selected-worktrees' ||
+      configuration.permissionProfile !== 'workspace-write' ||
+      configuration.resourceBundleId !== options.resourceBundle.bundleId ||
+      configuration.outputSchemaRef !== 'workflow-output/finding-resolution-v1' ||
+      !sameValues(configuration.inputArtifacts, ['REVIEW_SUMMARY']) ||
+      !configuration.outcomes.includes('fixed') ||
+      !configuration.outcomes.includes('blocked')
     ) {
       return failed('FIX_NODE_CONTEXT_INVALID', 'Fix node context is invalid')
     }

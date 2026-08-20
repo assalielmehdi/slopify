@@ -60,23 +60,19 @@ describe('predefined V1 workflow', () => {
     ])
   })
 
-  it('enforces the approved agent workspace and permission policies', () => {
+  it('pins nested agent job, sandbox, and model configuration without fake skill snapshots', () => {
     expect(
       revision.nodes
         .filter((node) => node.type === 'agent')
-        .map(({ id, workspacePolicy, permissionProfile }) => [
-          id,
-          workspacePolicy,
-          permissionProfile,
-        ]),
+        .map(({ id, sandbox, job }) => [id, sandbox.profileId, job.skillSnapshotRefs]),
     ).toEqual([
-      ['select-repositories', 'candidate-repositories', 'read-only'],
-      ['plan', 'selected-worktrees', 'read-only'],
-      ['implement', 'selected-worktrees', 'workspace-write'],
-      ['requirements-review', 'selected-worktrees', 'read-only'],
-      ['security-review', 'selected-worktrees', 'read-only'],
-      ['simplification-review', 'selected-worktrees', 'read-only'],
-      ['fix-findings', 'selected-worktrees', 'workspace-write'],
+      ['select-repositories', 'agent-default-v1', []],
+      ['plan', 'agent-default-v1', []],
+      ['implement', 'agent-default-v1', []],
+      ['requirements-review', 'agent-default-v1', []],
+      ['security-review', 'agent-default-v1', []],
+      ['simplification-review', 'agent-default-v1', []],
+      ['fix-findings', 'agent-default-v1', []],
     ])
 
     expect(
@@ -84,9 +80,9 @@ describe('predefined V1 workflow', () => {
         .filter((node) => node.type === 'agent')
         .every(
           (node) =>
-            node.provider === 'anthropic' &&
-            node.model === 'claude-sonnet-4-5' &&
-            node.thinkingLevel === 'high' &&
+            node.job.inference.connectionId === 'anthropic-default' &&
+            node.job.inference.modelId === 'claude-sonnet-4-5' &&
+            node.job.inference.thinkingLevel === 'high' &&
             !('harness' in node),
         ),
     ).toBe(true)

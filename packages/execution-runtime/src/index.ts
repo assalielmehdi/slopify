@@ -1,3 +1,53 @@
+export { createNodeExecutorJobRunner } from './orchestration/node-executor-job-runner.js'
+export { createOrchestratedRunService } from './orchestration/orchestrated-run-service.js'
+export {
+  createAgentJobRunner,
+  createAgentResultSchemaRegistry,
+  type AgentInferenceResolution,
+  type AgentResultSchemaRegistry,
+} from './orchestration/agent-job-runner.js'
+export {
+  CredentialSchema,
+  createFileCredentialStore,
+  createInMemoryCredentialStore,
+  type Credential,
+  type CredentialStore,
+} from './connections/credential-store.js'
+export {
+  ConnectionServiceError,
+  createConnectionService,
+  createInMemoryConnectionRepository,
+  type ConnectInput,
+  type ConnectionCategory,
+  type ConnectionDriver,
+  type ConnectionRecord,
+  type ConnectionRepository,
+  type ConnectionService,
+  type ConnectionServiceErrorCode,
+  type ConnectionType,
+  type ConnectionValidationInput,
+} from './connections/connection-service.js'
+export {
+  createClickUpConnectionDriver,
+  createChatGptSubscriptionConnectionDriver,
+  createGitLabConnectionDriver,
+  createOpenRouterConnectionDriver,
+} from './connections/http-drivers.js'
+export {
+  SkillCatalogError,
+  type CreateSkillInput,
+  type SkillCatalog,
+  type SkillCatalogErrorCode,
+  type SkillFile,
+  type SkillRecord,
+  type SkillSnapshot,
+  type SkillSnapshotStore,
+  type UpdateSkillInput,
+} from './skills/skill-catalog.js'
+export {
+  createFilesystemSkillCatalog,
+  createFilesystemSkillSnapshotStore,
+} from './skills/filesystem-skill-catalog.js'
 export {
   DatabaseInitializationError,
   openDatabase,
@@ -6,6 +56,47 @@ export {
   type OpenDatabaseOptions,
   type WorkbenchDatabase,
 } from './persistence/database.js'
+export { createConnectionRepository } from './persistence/connection-repository.js'
+export { createSqliteExecutionMessageQueue } from './persistence/execution-message-queue.js'
+export { createSqliteCoordinatorStateStore } from './persistence/coordinator-state-store.js'
+export {
+  ExecuteJobPayloadSchema,
+  ExecutionMessagePayloadSchema,
+  JobCancelledPayloadSchema,
+  JobFailedPayloadSchema,
+  JobProgressPayloadSchema,
+  JobStartedPayloadSchema,
+  JobSucceededPayloadSchema,
+  createInMemoryExecutionMessageQueue,
+  decodeExecutionMessagePayload,
+  type ExecutionMessage,
+  type ExecutionMessageDestination,
+  type ExecutionMessageQueue,
+  type ExecutionMessageStatus,
+  type ExecutionMessageType,
+  type NewExecutionMessage,
+} from './orchestration/execution-messages.js'
+export {
+  createExecutionWorker,
+  createJobRunnerRegistry,
+  type ExecutionWorker,
+  type JobExecutionInput,
+  type JobProgress,
+  type JobRunResult,
+  type JobRunner,
+  type JobRunnerRegistry,
+} from './orchestration/execution-worker.js'
+export {
+  createInMemoryCoordinatorStateStore,
+  createWorkflowCoordinator,
+  CoordinatorRunStateSchema,
+  type CoordinatorExecutionStatus,
+  type CoordinatorNodeExecution,
+  type CoordinatorRunState,
+  type CoordinatorRunStatus,
+  type CoordinatorStateStore,
+  type WorkflowCoordinator,
+} from './orchestration/workflow-coordinator.js'
 export {
   createEventStore,
   type EventPage,
@@ -222,6 +313,7 @@ export {
 } from './services/recovery-service.js'
 export {
   CancellationServiceError,
+  createCoordinatorCancellationService,
   createCancellationService,
   type ActiveRunCancellationResult,
   type ActiveRunExecution,

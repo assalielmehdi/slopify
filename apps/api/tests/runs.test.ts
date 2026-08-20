@@ -112,7 +112,7 @@ describe('run JSON API', () => {
     })
   })
 
-  it('returns 409 with the active identity and preserves the first run', async () => {
+  it('admits independent runs concurrently', async () => {
     const { app } = createFixture()
     const first = await app.request('/api/runs', {
       method: 'POST',
@@ -126,16 +126,10 @@ describe('run JSON API', () => {
     })
 
     expect(first.status).toBe(201)
-    expect(second.status).toBe(409)
-    expect(await second.json()).toEqual({
-      error: {
-        code: 'RUN_ACTIVE',
-        message: 'Another run is already active',
-        details: { activeRunId: 'run-api-1' },
-      },
-    })
+    expect(second.status).toBe(201)
+    expect(await second.json()).toMatchObject({ runId: 'run-api-2', status: 'PENDING' })
     expect(await (await app.request('/api/runs')).json()).toMatchObject({
-      pagination: { totalItems: 1 },
+      pagination: { totalItems: 2 },
     })
   })
 

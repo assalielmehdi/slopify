@@ -10,20 +10,19 @@ const parent = createPredefinedV1Revision({
   revisionId: 'revision-01',
   createdAt: '2026-08-18T20:00:00Z',
   agentDefaults: {
-    provider: 'anthropic',
-    model: 'claude-sonnet-4-5',
+    provider: 'openrouter',
+    model: 'anthropic/claude-sonnet-4.5',
     thinkingLevel: 'high',
   },
 })
 
 describe('derivePredefinedV1Revision', () => {
   it.each([
-    ['provider', { provider: 'openai' }],
-    ['model', { model: 'gpt-5.6' }],
+    ['inference connection', { connectionId: 'openrouter-secondary' }],
+    ['model', { modelId: 'openai/gpt-5.4' }],
     ['thinking level', { thinkingLevel: 'medium' }],
-    ['prompt template', { promptTemplate: 'Produce a revised execution plan.' }],
-    ['permission profile', { permissionProfile: 'workspace-write' }],
-    ['resource bundle', { resourceBundleId: 'delivery-planning-v2' }],
+    ['prompt', { prompt: 'Produce a revised execution plan.' }],
+    ['connectors', { connectorIds: ['gitlab-primary'] }],
     ['output schema', { outputSchemaRef: 'workflow-output/execution-plan-v2' }],
     ['timeout', { timeoutSeconds: 1_500 }],
   ] satisfies readonly (readonly [string, AgentNodeConfigurationChanges])[])(
@@ -41,10 +40,9 @@ describe('derivePredefinedV1Revision', () => {
       expect(derived.parentRevisionId).toBe(parent.revisionId)
       expect(Object.isFrozen(derived)).toBe(true)
       expect(JSON.stringify(parent)).toBe(parentBefore)
-
-      const parentPlan = parent.nodes.find((node) => node.id === 'plan')
-      const derivedPlan = derived.nodes.find((node) => node.id === 'plan')
-      expect(derivedPlan).not.toEqual(parentPlan)
+      expect(derived.nodes.find(({ id }) => id === 'plan')).not.toEqual(
+        parent.nodes.find(({ id }) => id === 'plan'),
+      )
     },
   )
 
@@ -52,27 +50,13 @@ describe('derivePredefinedV1Revision', () => {
     const derived = derivePredefinedV1Revision(parent, {
       revisionId: 'revision-02',
       createdAt: '2026-08-18T21:00:00Z',
-      updates: [{ nodeId: 'plan', changes: { model: 'gpt-5.6' } }],
+      updates: [{ nodeId: 'plan', changes: { modelId: 'openai/gpt-5.4' } }],
     })
-
     expect(derived.startNodeId).toBe(parent.startNodeId)
     expect(derived.edges).toEqual(parent.edges)
     expect(derived.nodes.map(({ id, type }) => [id, type])).toEqual(
       parent.nodes.map(({ id, type }) => [id, type]),
     )
-  })
-
-  it('addresses a non-agent update at the update input path', () => {
-    try {
-      derivePredefinedV1Revision(parent, {
-        revisionId: 'revision-02',
-        createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'verify', changes: { model: 'gpt-5.6' } }],
-      })
-      expect.unreachable('Expected revision derivation to fail')
-    } catch (error) {
-      expect(error).toMatchObject({ code: 'NODE_NOT_AGENT', path: ['updates', 0, 'nodeId'] })
-    }
   })
 
   it.each([
@@ -81,7 +65,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-01',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes: { model: 'gpt-5.6' } }],
+        updates: [{ nodeId: 'plan', changes: { modelId: 'openai/gpt-5.4' } }],
       },
     ],
     [
@@ -89,7 +73,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes: { model: 'claude-sonnet-4-5' } }],
+        updates: [{ nodeId: 'plan', changes: { modelId: 'anthropic/claude-sonnet-4.5' } }],
       },
     ],
     [
@@ -97,7 +81,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'verify', changes: { model: 'gpt-5.6' } }],
+        updates: [{ nodeId: 'verify', changes: { modelId: 'openai/gpt-5.4' } }],
       },
     ],
     [
@@ -105,27 +89,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'missing', changes: { model: 'gpt-5.6' } }],
-      },
-    ],
-    [
-      'POLICY_INVARIANT_VIOLATION',
-      {
-        revisionId: 'revision-02',
-        createdAt: '2026-08-18T21:00:00Z',
-        updates: [
-          { nodeId: 'requirements-review', changes: { permissionProfile: 'workspace-write' } },
-        ],
-      },
-    ],
-    [
-      'POLICY_INVARIANT_VIOLATION',
-      {
-        revisionId: 'revision-02',
-        createdAt: '2026-08-18T21:00:00Z',
-        updates: [
-          { nodeId: 'select-repositories', changes: { workspacePolicy: 'selected-worktrees' } },
-        ],
+        updates: [{ nodeId: 'missing', changes: { modelId: 'openai/gpt-5.4' } }],
       },
     ],
     [
@@ -133,16 +97,13 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes: { model: 'gpt-5.6' } }],
+        updates: [{ nodeId: 'plan', changes: { modelId: 'openai/gpt-5.4' } }],
         maxTransitions: 23,
       },
     ],
   ])('rejects invalid revision derivation with %s', (code, input) => {
-    try {
-      derivePredefinedV1Revision(parent, input)
-      expect.unreachable('Expected revision derivation to fail')
-    } catch (error) {
-      expect(error).toMatchObject({ code })
-    }
+    expect(() => derivePredefinedV1Revision(parent, input)).toThrow(
+      expect.objectContaining({ code }),
+    )
   })
 })
