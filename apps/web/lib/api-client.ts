@@ -200,7 +200,7 @@ const RunDetailResponseSchema = z.strictObject({
     clickupListId: ProjectProfileConfigurationSchema.shape.clickupListId,
     clickupInReviewStatusId: ProjectProfileConfigurationSchema.shape.clickupInReviewStatusId,
     createdAt: z.iso.datetime({ offset: true }),
-    repositories: z.array(ProfileSnapshotRepositorySchema).min(1).max(32).readonly(),
+    repositories: z.array(ProfileSnapshotRepositorySchema).max(32).readonly(),
   }),
   events: z.array(RunEventSchema).readonly(),
   nodeExecutions: z

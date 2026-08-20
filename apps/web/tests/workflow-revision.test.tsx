@@ -3,7 +3,10 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Revision, derivePredefinedV1Revision } from '@loop/workflow-model'
+import {
+  createDeliveryWorkflowTestRevision,
+  deriveDeliveryWorkflowTestRevision,
+} from '../../../packages/execution-runtime/tests/fixtures/delivery-workflow'
 
 import { WorkflowWorkbench } from '../components/workflow/workflow-workbench'
 import { createApiClient } from '../lib/api-client'
@@ -25,7 +28,7 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   ),
 }))
 
-const firstRevision = createPredefinedV1Revision({
+const firstRevision = createDeliveryWorkflowTestRevision({
   revisionId: 'revision-01',
   createdAt: '2026-08-18T12:00:00Z',
   agentDefaults: {
@@ -35,13 +38,13 @@ const firstRevision = createPredefinedV1Revision({
   },
 })
 
-const latestRevision = derivePredefinedV1Revision(firstRevision, {
+const latestRevision = deriveDeliveryWorkflowTestRevision(firstRevision, {
   revisionId: 'revision-02',
   createdAt: '2026-08-19T12:00:00Z',
   updates: [{ nodeId: 'plan', changes: { modelId: 'test-model-v2' } }],
 })
 
-const savedRevision = derivePredefinedV1Revision(latestRevision, {
+const savedRevision = deriveDeliveryWorkflowTestRevision(latestRevision, {
   revisionId: 'revision-03',
   createdAt: '2026-08-20T12:00:00Z',
   updates: [{ nodeId: 'implement', changes: { modelId: 'implementation-model-v2' } }],

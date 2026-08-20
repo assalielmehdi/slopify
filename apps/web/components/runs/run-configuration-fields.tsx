@@ -24,6 +24,7 @@ export interface RunConfigurationFieldsProps {
   readonly revisionId: string
   readonly selectedWorkflow?: WorkflowCatalogEntry | undefined
   readonly taskError?: string | undefined
+  readonly taskLocked: boolean
   readonly taskReference: string
   readonly workflowId: string
   readonly workflows: readonly WorkflowCatalogEntry[]
@@ -46,6 +47,7 @@ export function RunConfigurationFields({
   revisionId,
   selectedWorkflow,
   taskError,
+  taskLocked,
   taskReference,
   workflowId,
   workflows,
@@ -103,24 +105,32 @@ export function RunConfigurationFields({
         {readinessPending ? <FieldDescription>Checking readiness…</FieldDescription> : null}
         <FieldError id="profile-error">{profileError}</FieldError>
       </Field>
-      <Field data-invalid={taskError !== undefined}>
-        <FieldLabel htmlFor="task-reference">ClickUp task ID or URL</FieldLabel>
-        <div className="flex gap-2">
-          <Input
-            aria-describedby={taskError === undefined ? undefined : 'task-reference-error'}
-            aria-invalid={taskError !== undefined}
-            id="task-reference"
-            maxLength={512}
-            onChange={(event) => onTaskReferenceChange(event.currentTarget.value)}
-            placeholder="86abc123 or https://app.clickup.com/t/86abc123"
-            value={taskReference}
-          />
-          <Button disabled={resolving || profileId === ''} onClick={onResolveTask} type="button">
-            {resolving ? 'Resolving…' : 'Resolve task'}
-          </Button>
-        </div>
-        <FieldError id="task-reference-error">{taskError}</FieldError>
-      </Field>
+      {taskLocked ? (
+        <Field>
+          <FieldLabel>Run input</FieldLabel>
+          <p className="border px-3 py-2 text-xs">Basic agent run</p>
+          <FieldDescription>No external task is required for this workflow.</FieldDescription>
+        </Field>
+      ) : (
+        <Field data-invalid={taskError !== undefined}>
+          <FieldLabel htmlFor="task-reference">ClickUp task ID or URL</FieldLabel>
+          <div className="flex gap-2">
+            <Input
+              aria-describedby={taskError === undefined ? undefined : 'task-reference-error'}
+              aria-invalid={taskError !== undefined}
+              id="task-reference"
+              maxLength={512}
+              onChange={(event) => onTaskReferenceChange(event.currentTarget.value)}
+              placeholder="86abc123 or https://app.clickup.com/t/86abc123"
+              value={taskReference}
+            />
+            <Button disabled={resolving || profileId === ''} onClick={onResolveTask} type="button">
+              {resolving ? 'Resolving…' : 'Resolve task'}
+            </Button>
+          </div>
+          <FieldError id="task-reference-error">{taskError}</FieldError>
+        </Field>
+      )}
       <Field className="md:col-span-2">
         <FieldLabel htmlFor="run-notes">Run notes</FieldLabel>
         <Textarea

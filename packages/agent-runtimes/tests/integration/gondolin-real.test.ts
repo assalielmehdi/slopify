@@ -13,6 +13,35 @@ afterEach(async () => {
 
 describe('Gondolin real VM integration', () => {
   it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1')(
+    'provides an empty private workspace without host mounts',
+    async () => {
+      const sandbox = await createGondolinAgentSandboxFactory().create({
+        executionId: 'integration-empty-workspace',
+        worktrees: [],
+        skills: [],
+        connectors: [],
+      })
+      try {
+        const bash = sandbox.tools.find(({ name }) => name === 'bash')
+        const result = await bash?.execute(
+          'empty-workspace-proof',
+          { command: 'pwd; test -d /workspace' },
+          new AbortController().signal,
+          () => undefined,
+          {},
+        )
+
+        expect(result).toMatchObject({
+          content: [{ type: 'text', text: expect.stringContaining('/workspace') }],
+        })
+      } finally {
+        await sandbox.close()
+      }
+    },
+    120_000,
+  )
+
+  it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1')(
     'isolates tool execution in a VM with writable worktrees and read-only skills',
     async () => {
       const root = await mkdtemp(join(tmpdir(), 'slopify-gondolin-integration-'))

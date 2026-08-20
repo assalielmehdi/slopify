@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { ProjectProfileCatalogResponse, ProjectProfileReadiness } from '@loop/contracts'
+import {
+  DEFAULT_PROFILE_ID,
+  DEFAULT_TASK_REFERENCE,
+  type ProjectProfileCatalogResponse,
+  type ProjectProfileReadiness,
+} from '@loop/contracts'
+import { PREDEFINED_V1_WORKFLOW_ID } from '@loop/workflow-model'
 
 import {
   ApiClientError,
@@ -79,8 +85,25 @@ export function useStartRun(client: ApiClient) {
           setProfileId(profile.profileId)
           setReadinessPending(true)
           const request = ++readinessRequest.current
-          const nextReadiness = await client.getProjectProfileReadiness(profile.profileId)
-          if (active && request === readinessRequest.current) setReadiness(nextReadiness)
+          const usesDefaultTask =
+            profile.profileId === DEFAULT_PROFILE_ID &&
+            workflow?.workflowId === PREDEFINED_V1_WORKFLOW_ID
+          const [nextReadiness, nextTask] = await Promise.all([
+            client.getProjectProfileReadiness(profile.profileId),
+            usesDefaultTask
+              ? client.resolveClickUpTask({
+                  taskReference: DEFAULT_TASK_REFERENCE,
+                  profileId: DEFAULT_PROFILE_ID,
+                })
+              : Promise.resolve(undefined),
+          ])
+          if (active && request === readinessRequest.current) {
+            setReadiness(nextReadiness)
+            if (nextTask !== undefined) {
+              setTaskReference(DEFAULT_TASK_REFERENCE)
+              setTask(nextTask)
+            }
+          }
         }
       } catch (cause) {
         if (active) {
@@ -105,6 +128,8 @@ export function useStartRun(client: ApiClient) {
 
   const selectedWorkflow = workflows.find((workflow) => workflow.workflowId === workflowId)
   const selectedProfile = catalog?.profiles.find((profile) => profile.profileId === profileId)
+  const usesDefaultTask =
+    profileId === DEFAULT_PROFILE_ID && taskReference === DEFAULT_TASK_REFERENCE
   const profileError =
     error?.scope === 'profile'
       ? error.message
@@ -238,6 +263,7 @@ export function useStartRun(client: ApiClient) {
     starting,
     task,
     taskReference,
+    usesDefaultTask,
     workflowId,
     workflows,
   }

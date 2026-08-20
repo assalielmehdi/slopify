@@ -4,7 +4,7 @@ import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RunEventSchema } from '@loop/contracts'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createDeliveryWorkflowTestRevision } from '../../../packages/execution-runtime/tests/fixtures/delivery-workflow'
 
 import { LiveRun } from '../components/runs/live-run'
 import { createApiClient, type RunDetailResponse } from '../lib/api-client'
@@ -18,7 +18,7 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   ),
 }))
 
-const revision = createPredefinedV1Revision({
+const revision = createDeliveryWorkflowTestRevision({
   revisionId: 'revision-historical',
   createdAt: '2026-08-19T10:00:00Z',
   agentDefaults: {

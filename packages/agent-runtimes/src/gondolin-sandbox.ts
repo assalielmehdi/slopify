@@ -2,6 +2,7 @@ import { dirname, isAbsolute } from 'node:path'
 
 import {
   BASE64URL_ALPHABET,
+  MemoryProvider,
   ReadonlyProvider,
   RealFSProvider,
   VM,
@@ -29,7 +30,6 @@ const SandboxInputSchema = z.strictObject({
   executionId: z.string().trim().min(1).max(256),
   worktrees: z
     .array(z.strictObject({ repositoryId: identifier, hostPath: z.string().refine(isAbsolute) }))
-    .min(1)
     .max(32),
   skills: z
     .array(
@@ -168,6 +168,7 @@ export const createGondolinAgentSandboxFactory = (
     }
 
     const mounts = Object.fromEntries([
+      ...(parsed.worktrees.length === 0 ? ([['/workspace', new MemoryProvider()]] as const) : []),
       ...parsed.worktrees.map(({ repositoryId, hostPath }) => [
         `/workspace/${repositoryId}`,
         new RealFSProvider(hostPath),

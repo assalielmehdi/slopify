@@ -174,6 +174,7 @@ export const createChatGptSubscriptionConnectionDriver = (
         access: z.string().min(1),
         refresh: z.string().min(1),
         expires: z.number().int().positive().safe(),
+        accountId: z.string().min(1).optional(),
       })
       .parse(input.credential)
     if (value.expires <= (options.now ?? Date.now)())

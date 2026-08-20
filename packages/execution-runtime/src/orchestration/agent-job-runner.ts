@@ -81,15 +81,14 @@ export const createAgentJobRunner = (
     if (inference === undefined)
       return failed('INFERENCE_CONNECTION_UNAVAILABLE', 'Inference connection is unavailable')
     const workspaces = options.runs.listWorkspaces(run.runId)
-    const rootPath = commonParent(workspaces.map(({ worktreePath }) => worktreePath))
-    if (rootPath === undefined)
-      return failed('WORKSPACE_NOT_READY', 'Run worktrees are unavailable')
+    const rootPath =
+      commonParent(workspaces.map(({ worktreePath }) => worktreePath)) ?? resolve('/')
     const declaredOutcomes = getDeclaredOutcomes(workflow.data, node.id)
     if (declaredOutcomes.length === 0)
       return failed('WORKFLOW_INVALID', 'Agent job has no routable outcome')
     let renderedPrompt: string
     try {
-      renderedPrompt = `${node.job.prompt}\n\nRun input:\n${JSON.stringify(run.taskSnapshot, null, 2)}`
+      renderedPrompt = `${node.job.prompt}\n\nRun input:\n${JSON.stringify(run.taskSnapshot, null, 2)}\n\nExecution contract:\nYou must finish by calling complete_node exactly once.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and arrays for artifacts and evidence.`
       z.string().min(1).max(1_000_000).parse(renderedPrompt)
     } catch {
       return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')

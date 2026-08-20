@@ -46,6 +46,21 @@ const vmFixture = () => {
 }
 
 describe('Gondolin agent sandbox', () => {
+  it('creates an isolated VM without host mounts for a repository-free agent', async () => {
+    const fixture = vmFixture()
+    const createVm = vi.fn(async () => fixture.vm)
+
+    const sandbox = await createGondolinAgentSandboxFactory({ createVm }).create({
+      executionId: 'execution-01',
+      worktrees: [],
+      skills: [],
+      connectors: [],
+    })
+
+    expect(Object.keys(createVm.mock.calls[0]?.[0].vfs?.mounts ?? {})).toEqual(['/workspace'])
+    await sandbox.close()
+  })
+
   it('mounts only this execution worktrees and skills with connector-scoped policy', async () => {
     const host = await createHostTree()
     const fixture = vmFixture()

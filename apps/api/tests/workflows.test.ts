@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createWorkflowService } from '@loop/execution-runtime'
+import { createPredefinedV1Revision } from '@loop/workflow-model'
 import {
   createPersistenceFixture,
   createRun,
@@ -14,7 +15,17 @@ afterEach(() => {
 })
 
 const createFixture = () => {
-  const fixture = createPersistenceFixture()
+  const fixture = createPersistenceFixture(
+    createPredefinedV1Revision({
+      revisionId: 'revision-01',
+      createdAt: '2026-08-18T20:00:00Z',
+      agentDefaults: {
+        provider: 'test-provider',
+        model: 'test-model',
+        thinkingLevel: 'medium',
+      },
+    }),
+  )
   fixtures.push(fixture)
   const workflows = createWorkflowService({
     workflows: fixture.workflows,
@@ -63,7 +74,7 @@ describe('workflow API', () => {
       body: JSON.stringify({
         parentRevisionId: fixture.revision.revisionId,
         revisionId: 'revision-02',
-        updates: [{ nodeId: 'plan', changes: { modelId: 'test-model-v2' } }],
+        updates: [{ nodeId: 'identify-agent', changes: { modelId: 'test-model-v2' } }],
       }),
     })
     const created = (await response.json()) as typeof fixture.revision
@@ -80,7 +91,7 @@ describe('workflow API', () => {
       parentRevisionId: fixture.revision.revisionId,
       createdAt: '2026-08-18T23:00:00Z',
     })
-    expect(created.nodes.find(({ id }) => id === 'plan')).toMatchObject({
+    expect(created.nodes.find(({ id }) => id === 'identify-agent')).toMatchObject({
       type: 'agent',
       job: { inference: { modelId: 'test-model-v2' } },
     })
@@ -102,7 +113,7 @@ describe('workflow API', () => {
       body: JSON.stringify({
         parentRevisionId: fixture.revision.revisionId,
         revisionId: 'revision-02',
-        updates: [{ nodeId: 'verify', changes: { modelId: 'not-allowed' } }],
+        updates: [{ nodeId: 'succeeded', changes: { modelId: 'not-allowed' } }],
       }),
     })
 

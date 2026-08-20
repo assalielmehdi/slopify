@@ -64,6 +64,15 @@ describe('agent execution input contract', () => {
     expect(parsed).toEqual(executionInput)
   })
 
+  it('allows a repository-free private workspace', () => {
+    expect(
+      AgentExecutionInputSchema.parse({
+        ...executionInput,
+        workspace: { rootPath: '/', repositories: [] },
+      }).workspace,
+    ).toEqual({ rootPath: '/', repositories: [] })
+  })
+
   it.each([
     ['execution ID', { ...executionInput, executionId: undefined }],
     ['run ID', { ...executionInput, runId: undefined }],

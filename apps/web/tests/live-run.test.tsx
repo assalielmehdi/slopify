@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RunEventSchema, type RunEvent, type RunStatus } from '@loop/contracts'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createDeliveryWorkflowTestRevision } from '../../../packages/execution-runtime/tests/fixtures/delivery-workflow'
 
 import { LiveRun } from '../components/runs/live-run'
 import { RunStatusBadge } from '../components/runs/run-status'
@@ -28,7 +28,7 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   ),
 }))
 
-const revision = createPredefinedV1Revision({
+const revision = createDeliveryWorkflowTestRevision({
   revisionId: 'revision-01',
   createdAt: '2026-08-20T10:00:00Z',
   agentDefaults: {

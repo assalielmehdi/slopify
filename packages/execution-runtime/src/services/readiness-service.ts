@@ -207,7 +207,7 @@ export const createReadinessService = (
 
       return ProjectProfileReadinessSchema.parse({
         profileId,
-        ready: repositories.every(({ ready }) => ready),
+        ready: connectors.modelProvider && repositories.every(({ ready }) => ready),
         repositories,
       })
     },

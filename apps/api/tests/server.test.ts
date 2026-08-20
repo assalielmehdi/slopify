@@ -5,7 +5,10 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
+  connectDefaultChatGpt,
+  createDefaultAwareTaskResolver,
   createConfiguredTaskResolver,
+  ensureDefaultProfile,
   ensurePredefinedWorkflow,
   resolveConnectorStatus,
   resolveApiServerConfiguration,
@@ -36,14 +39,84 @@ describe('API server configuration', () => {
     expect(addRevision).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        startNodeId: 'load-clickup-task',
+        revisionId: 'revision-basic-agent-02',
+        startNodeId: 'identify-agent',
       }),
     )
+    expect(addRevision.mock.calls[0]?.[0].nodes[0]).toMatchObject({
+      type: 'agent',
+      job: {
+        prompt: "Who are you? What's your name?",
+        inference: {
+          connectionId: 'chatgpt-subscription-default',
+          modelId: 'gpt-5.4',
+        },
+      },
+    })
 
     workflows.getRevision.mockReturnValue(addRevision.mock.calls[0]?.[0])
     ensurePredefinedWorkflow(workflows)
     expect(addRevision).toHaveBeenCalledTimes(1)
+  })
+
+  it('seeds one repository-free default profile', () => {
+    const save = vi.fn((profile) => profile)
+    const profiles = { get: vi.fn(() => undefined), save }
+
+    ensureDefaultProfile(profiles)
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith({
+      profileId: 'default-profile',
+      displayName: 'Default profile',
+      clickupWorkspaceId: 'not-required',
+      clickupListId: 'not-required',
+      clickupInReviewStatusId: 'not-required',
+      repositories: [],
+    })
+
+    profiles.get.mockReturnValue(save.mock.calls[0]?.[0])
+    ensureDefaultProfile(profiles)
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('resolves the basic run locally and delegates other tasks to ClickUp', async () => {
+    const resolve = vi.fn(async (taskReference) => ({ taskId: taskReference }))
+    const tasks = createDefaultAwareTaskResolver({ resolve })
+
+    await expect(tasks.resolve('basic-agent-run')).resolves.toMatchObject({
+      taskId: 'basic-agent-run',
+      title: 'Basic agent run',
+      status: { name: 'ready' },
+    })
+    expect(resolve).not.toHaveBeenCalled()
+
+    await expect(tasks.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })).resolves.toEqual({
+      taskId: 'CU-123',
+    })
+    expect(resolve).toHaveBeenCalledWith('CU-123', { clickupWorkspaceId: 'workspace-01' })
+  })
+
+  it('stores ChatGPT OAuth as the inference connection used by the default workflow', async () => {
+    const connect = vi.fn(async (input) => ({ connectionId: input.connectionId }))
+
+    await expect(
+      connectDefaultChatGpt(connect, {
+        label: 'ChatGPT subscription',
+        credential: {
+          type: 'oauth',
+          access: 'access-token',
+          refresh: 'refresh-token',
+          expires: Date.now() + 60_000,
+        },
+      }),
+    ).resolves.toEqual({ connectionId: 'chatgpt-subscription-default' })
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectionId: 'chatgpt-subscription-default',
+        type: 'chatgpt-subscription',
+      }),
+    )
   })
 
   it('uses native owner-local state and accepts explicit host and port overrides', () => {

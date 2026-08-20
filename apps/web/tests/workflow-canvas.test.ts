@@ -19,8 +19,8 @@ describe('workflow graph layout', () => {
     const first = layoutWorkflowGraph(revision)
     const second = layoutWorkflowGraph(revision)
 
-    expect(first.nodes).toHaveLength(14)
-    expect(first.edges).toHaveLength(21)
+    expect(first.nodes).toHaveLength(2)
+    expect(first.edges).toHaveLength(1)
     expect(first.nodes.map(({ id }) => id)).toEqual(revision.nodes.map(({ id }) => id))
     expect(first.edges.map(({ label }) => label)).toEqual(
       revision.edges.map(({ outcome, label }) => `${outcome}: ${label}`),
@@ -36,12 +36,13 @@ describe('workflow graph layout', () => {
 
     expect(graph.nodes.find(({ id }) => id === revision.startNodeId)?.data.isStart).toBe(true)
     expect(graph.nodes.filter(({ data }) => data.isTerminal).map(({ id }) => id)).toEqual([
-      'failed',
       'succeeded',
     ])
     expect(graph.edges.map(({ source, target }) => [source, target])).toEqual(
       revision.edges.map(({ sourceNodeId, targetNodeId }) => [sourceNodeId, targetNodeId]),
     )
-    expect(graph.nodes.find(({ id }) => id === 'failed')?.ariaLabel).toBe('Failed, terminal node')
+    expect(graph.nodes.find(({ id }) => id === 'succeeded')?.ariaLabel).toBe(
+      'Succeeded, terminal node',
+    )
   })
 })

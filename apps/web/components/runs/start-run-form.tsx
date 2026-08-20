@@ -72,17 +72,10 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
             selectedWorkflow={state.selectedWorkflow}
             taskError={state.error?.scope === 'task' ? state.error.message : undefined}
             taskReference={state.taskReference}
+            taskLocked={state.usesDefaultTask}
             workflowId={state.workflowId}
             workflows={state.workflows}
           />
-
-          <Alert>
-            <AlertTitle>Repository selection happens after start</AlertTitle>
-            <AlertDescription>
-              The repository-selection agent chooses the affected subset after the run starts. No
-              repository is preselected on this screen.
-            </AlertDescription>
-          </Alert>
 
           {state.task === undefined ||
           state.selectedProfile === undefined ||

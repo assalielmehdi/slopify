@@ -165,6 +165,82 @@ const resolveAndConfirm = async () => {
 afterEach(cleanup)
 
 describe('StartRunForm', () => {
+  it('loads the basic workflow and local run input from the default profile', async () => {
+    const defaultProfile = ProjectProfileConfigurationSchema.parse({
+      profileId: 'default-profile',
+      displayName: 'Default profile',
+      clickupWorkspaceId: 'not-required',
+      clickupListId: 'not-required',
+      clickupInReviewStatusId: 'not-required',
+      repositories: [],
+    })
+    const defaultTask: ClickUpTaskSnapshot = {
+      taskId: 'basic-agent-run',
+      customTaskId: null,
+      url: 'http://localhost:3000/runs/new',
+      title: 'Basic agent run',
+      description: 'Ask the agent who it is and what its name is.',
+      status: { id: null, name: 'ready', type: 'local' },
+      priority: null,
+      comments: [],
+      resourceLinks: [],
+    }
+    const { client, resolveClickUpTask, startRun } = createClient()
+    client.listProjectProfiles = vi.fn(async () =>
+      ProjectProfileCatalogResponseSchema.parse({
+        profiles: [defaultProfile],
+        runtime: { mode: 'native', root: '/workspace' },
+      }),
+    )
+    client.listWorkflows = vi.fn(async () => [
+      {
+        workflowId: WorkflowIdSchema.parse('delivery-workflow'),
+        name: 'Who are you?',
+        latestRevisionId: RevisionIdSchema.parse('revision-basic-agent-02'),
+        revisions: [
+          {
+            revisionId: RevisionIdSchema.parse('revision-basic-agent-02'),
+            parentRevisionId: null,
+            createdAt: '2026-08-20T23:00:00Z',
+          },
+        ],
+      },
+    ])
+    client.getProjectProfileReadiness = vi.fn(async () =>
+      ProjectProfileReadinessSchema.parse({
+        profileId: defaultProfile.profileId,
+        ready: true,
+        repositories: [],
+      }),
+    )
+    resolveClickUpTask.mockResolvedValue(defaultTask)
+    render(<StartRunForm client={client} />)
+
+    expect(await screen.findByRole('heading', { name: 'Basic agent run' })).toBeTruthy()
+    expect((screen.getByLabelText('Project profile') as HTMLSelectElement).value).toBe(
+      'default-profile',
+    )
+    expect((screen.getByLabelText('Workflow revision') as HTMLSelectElement).value).toBe(
+      'revision-basic-agent-02',
+    )
+    expect(resolveClickUpTask).toHaveBeenCalledWith({
+      taskReference: 'basic-agent-run',
+      profileId: 'default-profile',
+    })
+    expect(screen.queryByLabelText('ClickUp task ID or URL')).toBeNull()
+
+    fireEvent.click(screen.getByLabelText(/confirm this task/i))
+    fireEvent.submit(screen.getByRole('form', { name: 'Start a run' }))
+
+    await waitFor(() => expect(startRun).toHaveBeenCalledTimes(1))
+    expect(startRun).toHaveBeenCalledWith({
+      taskReference: 'basic-agent-run',
+      workflowId: 'delivery-workflow',
+      revisionId: 'revision-basic-agent-02',
+      profileId: 'default-profile',
+    })
+  })
+
   it('defaults to the latest revision and gates start on a read-only confirmation', async () => {
     const { client, resolveClickUpTask } = createClient()
     render(<StartRunForm client={client} />)
@@ -178,11 +254,7 @@ describe('StartRunForm', () => {
     expect(
       screen.getByRole('button', { name: 'Start confirmed run' }).hasAttribute('disabled'),
     ).toBe(true)
-    expect(
-      screen.getByText(
-        /repository-selection agent chooses the affected subset after the run starts/i,
-      ),
-    ).toBeTruthy()
+    expect(screen.queryByText(/repository-selection agent/i)).toBeNull()
 
     await resolveAndConfirm()
 

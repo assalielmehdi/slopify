@@ -57,10 +57,6 @@ describe('project profile service', () => {
 
   it.each([
     {
-      name: 'empty catalog',
-      profile: { ...composeProfile(), repositories: [] },
-    },
-    {
       name: 'duplicate repository ID',
       profile: {
         ...composeProfile(),

@@ -32,7 +32,7 @@ describe('derivePredefinedV1Revision', () => {
       const derived = derivePredefinedV1Revision(parent, {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes }],
+        updates: [{ nodeId: 'identify-agent', changes }],
       })
 
       expect(derived).not.toBe(parent)
@@ -40,8 +40,8 @@ describe('derivePredefinedV1Revision', () => {
       expect(derived.parentRevisionId).toBe(parent.revisionId)
       expect(Object.isFrozen(derived)).toBe(true)
       expect(JSON.stringify(parent)).toBe(parentBefore)
-      expect(derived.nodes.find(({ id }) => id === 'plan')).not.toEqual(
-        parent.nodes.find(({ id }) => id === 'plan'),
+      expect(derived.nodes.find(({ id }) => id === 'identify-agent')).not.toEqual(
+        parent.nodes.find(({ id }) => id === 'identify-agent'),
       )
     },
   )
@@ -50,7 +50,7 @@ describe('derivePredefinedV1Revision', () => {
     const derived = derivePredefinedV1Revision(parent, {
       revisionId: 'revision-02',
       createdAt: '2026-08-18T21:00:00Z',
-      updates: [{ nodeId: 'plan', changes: { modelId: 'openai/gpt-5.4' } }],
+      updates: [{ nodeId: 'identify-agent', changes: { modelId: 'openai/gpt-5.4' } }],
     })
     expect(derived.startNodeId).toBe(parent.startNodeId)
     expect(derived.edges).toEqual(parent.edges)
@@ -65,7 +65,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-01',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes: { modelId: 'openai/gpt-5.4' } }],
+        updates: [{ nodeId: 'identify-agent', changes: { modelId: 'openai/gpt-5.4' } }],
       },
     ],
     [
@@ -73,7 +73,9 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes: { modelId: 'anthropic/claude-sonnet-4.5' } }],
+        updates: [
+          { nodeId: 'identify-agent', changes: { modelId: 'anthropic/claude-sonnet-4.5' } },
+        ],
       },
     ],
     [
@@ -81,7 +83,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'verify', changes: { modelId: 'openai/gpt-5.4' } }],
+        updates: [{ nodeId: 'succeeded', changes: { modelId: 'openai/gpt-5.4' } }],
       },
     ],
     [
@@ -97,7 +99,7 @@ describe('derivePredefinedV1Revision', () => {
       {
         revisionId: 'revision-02',
         createdAt: '2026-08-18T21:00:00Z',
-        updates: [{ nodeId: 'plan', changes: { modelId: 'openai/gpt-5.4' } }],
+        updates: [{ nodeId: 'identify-agent', changes: { modelId: 'openai/gpt-5.4' } }],
         maxTransitions: 23,
       },
     ],

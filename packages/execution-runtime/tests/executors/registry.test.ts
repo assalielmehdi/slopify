@@ -1,7 +1,7 @@
-import { createPredefinedV1Revision } from '@loop/workflow-model'
 import { describe, expect, it } from 'vitest'
 
 import { createExecutorRegistry, type NodeExecutor } from '../../src/index.js'
+import { createDeliveryWorkflowTestRevision } from '../fixtures/delivery-workflow.js'
 
 const executor = (): NodeExecutor => ({ execute: async () => undefined })
 
@@ -10,7 +10,7 @@ describe('executor registry', () => {
     const selection = executor()
     const plan = executor()
     const implementation = executor()
-    const workflow = createPredefinedV1Revision({
+    const workflow = createDeliveryWorkflowTestRevision({
       revisionId: 'revision-0001',
       createdAt: '2026-08-19T11:00:00Z',
       agentDefaults: { provider: 'pi-sdk', model: 'test-model', thinkingLevel: 'high' },

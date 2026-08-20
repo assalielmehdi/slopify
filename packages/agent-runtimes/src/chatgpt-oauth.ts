@@ -1,5 +1,6 @@
 import {
   InMemoryCredentialStore,
+  type AuthPrompt,
   type Credential,
   type OAuthCredential,
 } from '@earendil-works/pi-ai'
@@ -34,6 +35,23 @@ export interface ChatGptOAuthLoginInteraction {
   ): void
 }
 
+const waitForCancellation = (signal: AbortSignal): Promise<string> =>
+  new Promise((_resolve, reject) => {
+    const cancel = () => reject(new Error('OAuth prompt cancelled'))
+    if (signal.aborted) cancel()
+    else signal.addEventListener('abort', cancel, { once: true })
+  })
+
+const promptForBrowserLogin = (
+  prompt: AuthPrompt,
+  transactionSignal: AbortSignal,
+): Promise<string> => {
+  if (prompt.type === 'select' && prompt.options.some(({ id }) => id === 'browser'))
+    return Promise.resolve('browser')
+  if (prompt.type === 'manual_code') return waitForCancellation(prompt.signal ?? transactionSignal)
+  return Promise.reject(new Error(`Unsupported ChatGPT OAuth prompt: ${prompt.type}`))
+}
+
 const defaultLogin = async (interaction: ChatGptOAuthLoginInteraction): Promise<Credential> => {
   const runtime = await ModelRuntime.create({
     credentials: new InMemoryCredentialStore(),
@@ -44,9 +62,7 @@ const defaultLogin = async (interaction: ChatGptOAuthLoginInteraction): Promise<
   return runtime.login('openai-codex', 'oauth', {
     signal: interaction.signal,
     notify: interaction.notify,
-    async prompt() {
-      throw new Error('Interactive authorization-code entry is unavailable')
-    },
+    prompt: (prompt) => promptForBrowserLogin(prompt, interaction.signal),
   })
 }
 
@@ -74,32 +90,49 @@ export const createChatGptOAuthService = (
       const controller = new AbortController()
       const transaction = { id, status: 'PENDING' as const }
       transactions.set(id, { value: transaction, controller })
-      void login({
-        signal: controller.signal,
-        notify(event) {
-          if (event.type !== 'auth_url' || event.url === undefined) return
-          const current = transactions.get(id)
-          if (current?.value.status !== 'PENDING') return
-          current.value = {
-            id,
-            status: 'PENDING',
-            authorizationUrl: event.url,
-            ...(event.instructions === undefined ? {} : { instructions: event.instructions }),
-          }
-        },
-      })
-        .then(async (credential) => {
-          if (credential.type !== 'oauth') throw new TypeError('ChatGPT login did not return OAuth')
-          const current = transactions.get(id)
-          if (current?.value.status !== 'PENDING') return
+      const fail = (message: string) => {
+        const current = transactions.get(id)
+        if (current?.value.status === 'PENDING') current.value = { id, status: 'FAILED', message }
+      }
+      void (async () => {
+        let credential: OAuthCredential
+        try {
+          const result = await login({
+            signal: controller.signal,
+            notify(event) {
+              if (event.type !== 'auth_url' || event.url === undefined) return
+              const current = transactions.get(id)
+              if (current?.value.status !== 'PENDING') return
+              current.value = {
+                id,
+                status: 'PENDING',
+                authorizationUrl: event.url,
+                ...(event.instructions === undefined ? {} : { instructions: event.instructions }),
+              }
+            },
+          })
+          if (result.type !== 'oauth') throw new TypeError('ChatGPT login did not return OAuth')
+          credential = result
+        } catch {
+          fail('ChatGPT authorization failed')
+          return
+        }
+
+        const current = transactions.get(id)
+        if (current?.value.status !== 'PENDING') return
+        try {
           const connectionId = await options.connect({ label, credential })
-          current.value = { id, status: 'CONNECTED', connectionId }
-        })
-        .catch(() => {
-          const current = transactions.get(id)
-          if (current?.value.status === 'PENDING')
-            current.value = { id, status: 'FAILED', message: 'ChatGPT connection failed' }
-        })
+          const latest = transactions.get(id)
+          if (latest?.value.status === 'PENDING')
+            latest.value = { id, status: 'CONNECTED', connectionId }
+        } catch {
+          fail('ChatGPT credential could not be stored')
+        }
+      })().catch(() => {
+        const current = transactions.get(id)
+        if (current?.value.status === 'PENDING')
+          current.value = { id, status: 'FAILED', message: 'ChatGPT connection failed' }
+      })
       return transaction
     },
     get(id) {

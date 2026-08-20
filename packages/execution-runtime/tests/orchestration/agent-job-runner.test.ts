@@ -5,6 +5,7 @@ import {
   type AgentExecutionInput,
   type AgentExecutor,
 } from '@loop/agent-runtimes'
+import { createPredefinedV1Revision } from '@loop/workflow-model'
 import { z } from 'zod'
 
 import { createAgentJobRunner, createAgentResultSchemaRegistry } from '../../src/index.js'
@@ -134,7 +135,7 @@ describe('agent job runner', () => {
     }
   })
 
-  it('fails before spawning when worktrees or inference access are unavailable', async () => {
+  it('fails before spawning when inference access is unavailable', async () => {
     const fixture = createPersistenceFixture()
     try {
       createRun(fixture, fixture.revision)
@@ -163,6 +164,80 @@ describe('agent job runner', () => {
         ),
       ).resolves.toMatchObject({ status: 'failed', code: 'INFERENCE_CONNECTION_UNAVAILABLE' })
       expect(agent.execute).not.toHaveBeenCalled()
+    } finally {
+      fixture.cleanup()
+    }
+  })
+
+  it('runs a repository-free agent in an empty private workspace', async () => {
+    const fixture = createPersistenceFixture()
+    try {
+      const revision = createPredefinedV1Revision({
+        revisionId: 'revision-basic-agent',
+        createdAt: '2026-08-20T12:00:00.000Z',
+        agentDefaults: {
+          provider: 'test-provider',
+          model: 'test-model',
+          thinkingLevel: 'medium',
+        },
+      })
+      fixture.workflows.addRevision(revision)
+      createRun(fixture, revision)
+      let received: AgentExecutionInput | undefined
+      const agent: AgentExecutor = {
+        execute(input) {
+          received = input
+          return (async function* () {
+            yield AgentExecutionEventSchema.parse({
+              executionId: input.executionId,
+              runId: input.runId,
+              nodeId: input.nodeId,
+              timestamp: '2026-08-20T12:00:02.000Z',
+              type: 'AGENT_RESULT',
+              data: {
+                result: {
+                  outcome: 'completed',
+                  summary: 'Identity explained',
+                  data: { identity: 'A test agent' },
+                  artifacts: [],
+                  evidence: [],
+                },
+                usage: {
+                  inputTokens: 10,
+                  outputTokens: 20,
+                  cacheReadTokens: 0,
+                  cacheWriteTokens: 0,
+                },
+                durationMs: 1_000,
+              },
+            })
+          })()
+        },
+        cancel: vi.fn(async () => ({ status: 'cancelled' })),
+      }
+      const runner = createAgentJobRunner({
+        agent,
+        runs: fixture.runs,
+        resultSchemas: createAgentResultSchemaRegistry({ 'json:any-v1': z.json() }),
+        resolveInference: () => ({ provider: 'test-provider' }),
+      })
+
+      await expect(
+        runner.run(
+          {
+            runId: TEST_RUN_ID,
+            nodeExecutionId: 'node-execution-identify-agent',
+            attemptId: 'attempt-identify-agent',
+            nodeId: 'identify-agent',
+          },
+          async () => undefined,
+        ),
+      ).resolves.toMatchObject({ status: 'succeeded', outcome: 'completed' })
+      expect(received?.workspace).toEqual({ rootPath: '/', repositories: [] })
+      expect(received?.renderedPrompt).toContain(
+        'You must finish by calling complete_node exactly once.',
+      )
+      expect(received?.renderedPrompt).toContain('Declared outcomes: completed')
     } finally {
       fixture.cleanup()
     }

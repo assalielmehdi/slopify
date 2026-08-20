@@ -55,6 +55,35 @@ const createFixture = (runImplementation: (input: ProcessRunInput) => ProcessRun
 }
 
 describe('project profile readiness', () => {
+  it('requires only model inference for a repository-free profile', async () => {
+    const { profiles, processRunner } = createFixture(() => exited())
+    profiles.save({
+      profileId: 'default-profile',
+      displayName: 'Default profile',
+      clickupWorkspaceId: 'not-required',
+      clickupListId: 'not-required',
+      clickupInReviewStatusId: 'not-required',
+      repositories: [],
+    })
+    let modelProvider = false
+    const readiness = createReadinessService({
+      profiles,
+      processRunner,
+      connectors: () => ({ clickup: false, gitlab: false, modelProvider }),
+    })
+
+    await expect(readiness.check('default-profile')).resolves.toMatchObject({
+      ready: false,
+      repositories: [],
+    })
+
+    modelProvider = true
+    await expect(readiness.check('default-profile')).resolves.toMatchObject({
+      ready: true,
+      repositories: [],
+    })
+  })
+
   it('passes non-mutating Git and configured tool checks in deterministic order', async () => {
     const { profiles, processRunner, run } = createFixture((input) => {
       if (input.arguments.includes('get-url')) return exited('git@gitlab.example:group/api.git\n')

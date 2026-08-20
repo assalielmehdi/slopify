@@ -36,7 +36,7 @@ const AgentWorkspaceRepositorySchema = z
 export const AgentWorkspaceSchema = z
   .strictObject({
     rootPath: z.string().min(1).max(4_096).refine(isAbsolute),
-    repositories: z.array(AgentWorkspaceRepositorySchema).min(1).max(32).readonly(),
+    repositories: z.array(AgentWorkspaceRepositorySchema).max(32).readonly(),
   })
   .superRefine((workspace, context) => {
     const repositoryIds = new Set<string>()

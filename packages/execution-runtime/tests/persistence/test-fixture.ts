@@ -7,7 +7,6 @@ import {
   RunIdSchema,
   WorkflowIdSchema,
 } from '@loop/contracts'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
 import type { WorkflowRevision } from '@loop/workflow-model'
 
 import {
@@ -17,6 +16,7 @@ import {
   createWorkflowRepository,
   openDatabase,
 } from '../../src/index.js'
+import { createDeliveryWorkflowTestRevision } from '../fixtures/delivery-workflow.js'
 
 export const TEST_TIMESTAMP = '2026-08-18T20:00:00Z'
 export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('delivery-workflow')
@@ -86,7 +86,7 @@ export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
   const events = createEventStore(database)
   const revision =
     revisionInput ??
-    createPredefinedV1Revision({
+    createDeliveryWorkflowTestRevision({
       revisionId: TEST_REVISION_ID,
       createdAt: TEST_TIMESTAMP,
       agentDefaults: {

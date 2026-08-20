@@ -9,7 +9,13 @@ import {
   getBunAgentWorkerScriptPath,
 } from '@loop/agent-runtimes'
 import { createClickUpClient } from '@loop/clickup-artifacts'
-import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
+import {
+  ConnectorStatusSchema,
+  DEFAULT_CHATGPT_CONNECTION_ID,
+  DEFAULT_PROFILE_ID,
+  DEFAULT_TASK_REFERENCE,
+  type ConnectorStatus,
+} from '@loop/contracts'
 import {
   createProcessRunner,
   createAgentJobRunner,
@@ -50,7 +56,9 @@ import {
   ReviewFindingsOutputSchema,
   type RunTaskResolver,
   type ConnectionService,
+  type Credential,
   type CredentialStore,
+  type ProjectProfileService,
   type WorkflowRepository,
 } from '@loop/execution-runtime'
 import {
@@ -95,7 +103,7 @@ export interface ApiServerConfiguration {
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
 
-const PREDEFINED_V1_REVISION_ID = 'revision-01'
+const PREDEFINED_V1_REVISION_ID = 'revision-basic-agent-02'
 
 export const ensurePredefinedWorkflow = (
   workflows: Pick<WorkflowRepository, 'addRevision' | 'getRevision'>,
@@ -109,15 +117,58 @@ export const ensurePredefinedWorkflow = (
   workflows.addRevision(
     createPredefinedV1Revision({
       revisionId: PREDEFINED_V1_REVISION_ID,
-      createdAt: '2026-08-18T00:00:00.000Z',
+      createdAt: '2026-08-20T23:30:00.000Z',
       agentDefaults: {
-        provider: 'openrouter',
-        model: 'openai/gpt-5.4',
+        provider: 'chatgpt-subscription',
+        model: 'gpt-5.4',
         thinkingLevel: 'medium',
       },
     }),
   )
 }
+
+export const ensureDefaultProfile = (
+  profiles: Pick<ProjectProfileService, 'get' | 'save'>,
+): void => {
+  if (profiles.get(DEFAULT_PROFILE_ID) !== undefined) return
+  profiles.save({
+    profileId: DEFAULT_PROFILE_ID,
+    displayName: 'Default profile',
+    clickupWorkspaceId: 'not-required',
+    clickupListId: 'not-required',
+    clickupInReviewStatusId: 'not-required',
+    repositories: [],
+  })
+}
+
+export const createDefaultAwareTaskResolver = (tasks: RunTaskResolver): RunTaskResolver => ({
+  resolve(taskReference, context) {
+    if (taskReference !== DEFAULT_TASK_REFERENCE) return tasks.resolve(taskReference, context)
+    return Promise.resolve({
+      taskId: DEFAULT_TASK_REFERENCE,
+      customTaskId: null,
+      url: 'http://localhost:3000/runs/new',
+      title: 'Basic agent run',
+      description: 'Ask the agent who it is and what its name is.',
+      status: { id: null, name: 'ready', type: 'local' },
+      priority: null,
+      comments: [],
+      resourceLinks: [],
+    })
+  },
+})
+
+export const connectDefaultChatGpt = (
+  connect: ConnectionService['connect'],
+  input: Readonly<{ label: string; credential: Extract<Credential, { type: 'oauth' }> }>,
+) =>
+  connect({
+    connectionId: DEFAULT_CHATGPT_CONNECTION_ID,
+    type: 'chatgpt-subscription',
+    label: input.label,
+    configuration: { provider: 'openai-codex' },
+    credential: input.credential,
+  })
 
 const nonBlank = (
   value: string | undefined,
@@ -302,12 +353,15 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     runtimeMode: 'native',
     workspaceRoot: configuration.workspaceRoot,
   })
+  ensureDefaultProfile(profileService)
   const readiness = createReadinessService({
     profiles: profileService,
     processRunner: createProcessRunner({ maxOutputBytes: 65_536, redactedValues: [] }),
     connectors: () => resolveConnectorStatus(connections),
   })
-  const tasks = createConnectedTaskResolver(connections, credentials)
+  const tasks = createDefaultAwareTaskResolver(
+    createConnectedTaskResolver(connections, credentials),
+  )
   const queue = createSqliteExecutionMessageQueue(database)
   const coordinator = createWorkflowCoordinator({
     coordinatorId: `coordinator-${process.pid}`,
@@ -455,10 +509,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       cancellation,
       chatGptOAuth: createChatGptOAuthService({
         async connect({ label, credential }) {
-          const connection = await connections.connect({
-            type: 'chatgpt-subscription',
+          const connection = await connectDefaultChatGpt(connections.connect, {
             label,
-            configuration: { provider: 'openai-codex' },
             credential,
           })
           return connection.connectionId

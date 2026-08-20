@@ -3,12 +3,12 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createDeliveryWorkflowTestRevision } from '../../../packages/execution-runtime/tests/fixtures/delivery-workflow'
 
 import { AgentNodeForm } from '../components/workflow/agent-node-form'
 import { ApiClientError } from '../lib/api-client'
 
-const revision = createPredefinedV1Revision({
+const revision = createDeliveryWorkflowTestRevision({
   revisionId: 'revision-01',
   createdAt: '2026-08-18T12:00:00Z',
   agentDefaults: {

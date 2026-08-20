@@ -12,6 +12,7 @@ export const CredentialSchema = z.discriminatedUnion('type', [
       access: z.string().min(1),
       refresh: z.string().min(1),
       expires: z.number().int().positive().safe(),
+      accountId: z.string().min(1).optional(),
     })
     .readonly(),
 ])

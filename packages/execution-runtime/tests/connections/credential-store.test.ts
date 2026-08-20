@@ -40,12 +40,19 @@ describe('file credential store', () => {
         access: 'access-secret',
         refresh: 'refresh-secret',
         expires: 2_000_000_000_000,
+        accountId: 'account-01',
       })),
     ])
 
     expect(await store.read('gitlab-primary')).toEqual({ type: 'api_key', key: 'glpat-secret' })
     expect(await store.read('clickup-primary')).toEqual({ type: 'api_key', key: 'pk-secret' })
-    expect(await store.read('chatgpt-primary')).toMatchObject({ type: 'oauth' })
+    expect(await store.read('chatgpt-primary')).toEqual({
+      type: 'oauth',
+      access: 'access-secret',
+      refresh: 'refresh-secret',
+      expires: 2_000_000_000_000,
+      accountId: 'account-01',
+    })
   })
 
   it('deletes disconnected credentials', async () => {

@@ -131,6 +131,16 @@ describe('live run API contract', () => {
     })
   })
 
+  it('loads a repository-free run detail for the default workflow', async () => {
+    const repositoryFreeDetail = {
+      ...detail,
+      profileSnapshot: { ...detail.profileSnapshot, repositories: [] },
+    }
+    const client = createApiClient({ fetch: async () => Response.json(repositoryFreeDetail) })
+
+    await expect(client.getRun('run-01')).resolves.toEqual(repositoryFreeDetail)
+  })
+
   it('cancels without an optimistic status and trusts only the confirmed run response', async () => {
     const cancelledRun = {
       ...run,

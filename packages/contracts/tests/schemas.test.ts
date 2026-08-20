@@ -10,6 +10,7 @@ import {
   NodeIdSchema,
   OutcomeNameSchema,
   ProjectProfileCatalogResponseSchema,
+  ProjectProfileConfigurationSchema,
   RepositoryReferenceSchema,
   RunEventSchema,
   RunIdSchema,
@@ -124,6 +125,19 @@ describe('public API records', () => {
         runtime: { mode: 'container', root: '/workspace', hostPath: '/Users/operator' },
       }).success,
     ).toBe(false)
+  })
+
+  it('accepts a repository-free profile for workflows that need no source checkout', () => {
+    expect(
+      ProjectProfileConfigurationSchema.parse({
+        profileId: 'default-profile',
+        displayName: 'Default profile',
+        clickupWorkspaceId: 'not-required',
+        clickupListId: 'not-required',
+        clickupInReviewStatusId: 'not-required',
+        repositories: [],
+      }),
+    ).toMatchObject({ profileId: 'default-profile', repositories: [] })
   })
 
   it('accepts bounded optional run notes without changing the run identity contract', () => {

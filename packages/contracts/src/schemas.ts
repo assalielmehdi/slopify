@@ -186,7 +186,7 @@ export const ProjectProfileConfigurationSchema = z.strictObject({
   clickupWorkspaceId: z.string().trim().min(1).max(256),
   clickupListId: z.string().trim().min(1).max(256),
   clickupInReviewStatusId: z.string().trim().min(1).max(256),
-  repositories: z.array(ProfileRepositoryConfigurationSchema).min(1).max(32).readonly(),
+  repositories: z.array(ProfileRepositoryConfigurationSchema).max(32).readonly(),
 })
 
 export const ProjectProfileRuntimeBoundarySchema = z.strictObject({

@@ -3,11 +3,11 @@
 import { cleanup, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createDeliveryWorkflowTestRevision } from '../../../packages/execution-runtime/tests/fixtures/delivery-workflow'
 
 import { NodeInspector } from '../components/workflow/node-inspector'
 
-const revision = createPredefinedV1Revision({
+const revision = createDeliveryWorkflowTestRevision({
   revisionId: 'revision-01',
   createdAt: '2026-08-18T12:00:00Z',
   agentDefaults: {

@@ -70,11 +70,11 @@ describe('workflow skill publication', () => {
     const revision = await service.create(parent.workflowId, {
       parentRevisionId: parent.revisionId,
       revisionId: 'revision-02',
-      updates: [{ nodeId: 'plan', changes: { skillIds: ['gitlab-delivery'] } }],
+      updates: [{ nodeId: 'identify-agent', changes: { skillIds: ['gitlab-delivery'] } }],
     })
 
     expect(skillSnapshots.capture).toHaveBeenCalledWith(SKILL)
-    expect(revision.nodes.find(({ id }) => id === 'plan')).toMatchObject({
+    expect(revision.nodes.find(({ id }) => id === 'identify-agent')).toMatchObject({
       job: {
         skillSnapshotRefs: [
           {
@@ -95,7 +95,7 @@ describe('workflow skill publication', () => {
     const revision = await service.create(parent.workflowId, {
       parentRevisionId: parent.revisionId,
       revisionId: 'revision-02',
-      updates: [{ nodeId: 'plan', changes: { skillIds: ['gitlab-delivery'] } }],
+      updates: [{ nodeId: 'identify-agent', changes: { skillIds: ['gitlab-delivery'] } }],
     })
     vi.mocked(skills.get).mockRejectedValue(new Error('deleted'))
 
