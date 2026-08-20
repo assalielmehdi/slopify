@@ -1,9 +1,7 @@
 export type ShutdownSignal = 'SIGINT' | 'SIGTERM'
 
 export interface ShutdownServer {
-  close(callback: (error?: Error) => void): unknown
-  closeIdleConnections(): void
-  closeAllConnections(): void
+  stop(closeActiveConnections?: boolean): Promise<void>
 }
 
 export interface ShutdownProcess {
@@ -48,14 +46,7 @@ export const createShutdownCoordinator = (
       if (inFlight !== undefined) return inFlight
 
       options.runs.stopAdmissions()
-      const serverClosed = new Promise<void>((resolve) => {
-        try {
-          options.server.close(() => resolve())
-        } catch {
-          resolve()
-        }
-      })
-      options.server.closeIdleConnections()
+      const serverStopped = options.server.stop().catch(() => undefined)
 
       const graceful = (async (): Promise<ShutdownResult> => {
         try {
@@ -63,7 +54,7 @@ export const createShutdownCoordinator = (
         } catch {
           // Shutdown still has to close persistence and exit within its deadline.
         }
-        await serverClosed
+        await serverStopped
         closeDatabase()
         return { signal, forced: false }
       })()
@@ -71,9 +62,16 @@ export const createShutdownCoordinator = (
       let deadline: ReturnType<typeof setTimeout>
       const forced = new Promise<ShutdownResult>((resolve) => {
         deadline = setTimeout(() => {
-          options.server.closeAllConnections()
-          closeDatabase()
-          resolve({ signal, forced: true })
+          void options.server.stop(true).then(
+            () => {
+              closeDatabase()
+              resolve({ signal, forced: true })
+            },
+            () => {
+              closeDatabase()
+              resolve({ signal, forced: true })
+            },
+          )
         }, options.gracePeriodMs)
       })
 

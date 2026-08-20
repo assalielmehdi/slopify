@@ -13,10 +13,12 @@ describe('standalone web configuration', () => {
     )
   })
 
-  it('includes the pnpm runtime helper required by the standalone Next server', () => {
-    expect(nextConfig.outputFileTracingIncludes).toEqual({
-      '/*': ['../../node_modules/.pnpm/@swc+helpers@*/node_modules/@swc/helpers/**/*'],
-    })
+  it('does not depend on package-manager-specific tracing paths', () => {
+    expect(JSON.stringify(nextConfig)).not.toContain('.pnpm')
+  })
+
+  it('delegates build-time type checking to the TypeScript 7 CLI', () => {
+    expect(nextConfig.typescript?.ignoreBuildErrors).toBe(true)
   })
 })
 

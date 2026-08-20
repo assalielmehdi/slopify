@@ -150,7 +150,7 @@ describe('two-service Compose acceptance', () => {
         '--detach',
         '--no-TTY',
         'api',
-        'node',
+        'bun',
         fakeProviders.runtimeProviderServerPath,
       ])
       await waitFor(async () => {
@@ -158,7 +158,7 @@ describe('two-service Compose acceptance', () => {
           'exec',
           '--no-TTY',
           'api',
-          'node',
+          'bun',
           '-e',
           "fetch('http://127.0.0.1:4555/healthz').then(r=>{if(!r.ok)process.exit(1)})",
         ])
@@ -273,7 +273,7 @@ describe('two-service Compose acceptance', () => {
         'exec',
         '--no-TTY',
         'api',
-        'node',
+        'bun',
         '-e',
         "Promise.all([fetch('http://127.0.0.1:4555/api/v4/version'),fetch('http://127.0.0.1:4555/v1/models')]).then(rs=>{if(rs.some(r=>!r.ok))process.exit(1)})",
       ])
@@ -308,7 +308,7 @@ describe('two-service Compose acceptance', () => {
           'exec',
           '--no-TTY',
           'api',
-          'node',
+          'bun',
           fakeProviders.runtimeControlledWorkflowPath,
           successfulRunId,
           'success',
@@ -340,7 +340,7 @@ describe('two-service Compose acceptance', () => {
             'exec',
             '--no-TTY',
             'api',
-            'node',
+            'bun',
             '-e',
             "import('node:fs').then(fs=>console.log(fs.statSync('/var/lib/workbench/workbench.sqlite').size))",
           ])
@@ -370,7 +370,7 @@ describe('two-service Compose acceptance', () => {
         '--detach',
         '--no-TTY',
         'api',
-        'node',
+        'bun',
         fakeProviders.runtimeControlledWorkflowPath,
         hangingRunId,
         'hang',
@@ -432,7 +432,7 @@ describe('two-service Compose acceptance', () => {
             'exec',
             '--no-TTY',
             'api',
-            'node',
+            'bun',
             '-e',
             "import('node:fs').then(fs=>console.log(fs.statSync('/var/lib/workbench/workbench.sqlite').size))",
           ])

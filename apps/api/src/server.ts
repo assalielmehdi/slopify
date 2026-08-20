@@ -1,7 +1,4 @@
-import { pathToFileURL } from 'node:url'
-import type { Server } from 'node:http'
 import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { serve } from '@hono/node-server'
 import { createClickUpClient } from '@loop/clickup-artifacts'
 import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
 import {
@@ -52,6 +49,27 @@ export interface ApiServerConfiguration {
   readonly databasePath: string
   readonly workspaceRoot: string
   readonly shutdownGracePeriodMs: number
+}
+
+export interface ApiServer {
+  readonly hostname: string
+  readonly port: number
+  stop(closeActiveConnections?: boolean): Promise<void>
+}
+
+type ApiServerFactory = (options: {
+  readonly fetch: Hono['fetch']
+  readonly hostname: string
+  readonly port: number
+}) => ApiServer
+
+const createBunApiServer: ApiServerFactory = (options) => {
+  const server = Bun.serve(options)
+  return {
+    hostname: server.hostname ?? options.hostname,
+    port: server.port ?? options.port,
+    stop: (closeActiveConnections) => server.stop(closeActiveConnections),
+  }
 }
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
@@ -224,14 +242,15 @@ export const createConfiguredTaskResolver = (
 export const startApiServer = (input: {
   readonly app: Hono
   readonly configuration: ApiServerConfiguration
-}): Server =>
-  serve({
+  readonly serve?: ApiServerFactory
+}): ApiServer =>
+  (input.serve ?? createBunApiServer)({
     fetch: input.app.fetch,
     hostname: input.configuration.hostname,
     port: input.configuration.port,
-  }) as Server
+  })
 
-export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): Server => {
+export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): ApiServer => {
   const configuration = resolveApiServerConfiguration(environment)
   let database
   try {
@@ -302,7 +321,4 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   return server
 }
 
-const executable = process.argv[1]
-if (executable !== undefined && pathToFileURL(executable).href === import.meta.url) {
-  startConfiguredApiServer()
-}
+if (import.meta.main) startConfiguredApiServer()

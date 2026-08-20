@@ -1,9 +1,9 @@
-import type BetterSqlite3 from 'better-sqlite3'
+import type { Database } from './sqlite.js'
 
 export interface Migration {
   readonly version: number
   readonly name: string
-  readonly up: (database: BetterSqlite3.Database) => void
+  readonly up: (database: Database) => void
 }
 
 const CREATE_EXECUTION_SCHEMA = `
@@ -295,14 +295,14 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
   Object.freeze({
     version: 1,
     name: 'create_execution_schema',
-    up(database: BetterSqlite3.Database) {
+    up(database: Database) {
       database.exec(CREATE_EXECUTION_SCHEMA)
     },
   }),
   Object.freeze({
     version: 2,
     name: 'persist_complete_repository_selection',
-    up(database: BetterSqlite3.Database) {
+    up(database: Database) {
       database.exec(`
         ALTER TABLE run_repository_selections
           ADD COLUMN rationale TEXT NOT NULL DEFAULT '';
@@ -331,7 +331,7 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
   Object.freeze({
     version: 3,
     name: 'persist_optional_run_notes',
-    up(database: BetterSqlite3.Database) {
+    up(database: Database) {
       database.exec(`
         ALTER TABLE runs
           ADD COLUMN notes TEXT
@@ -358,7 +358,7 @@ const validateMigrations = (migrations: readonly Migration[]): void => {
 }
 
 export const applyMigrations = (
-  database: BetterSqlite3.Database,
+  database: Database,
   migrations: readonly Migration[] = EXECUTION_RUNTIME_MIGRATIONS,
 ): void => {
   validateMigrations(migrations)

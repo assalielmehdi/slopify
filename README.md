@@ -15,7 +15,7 @@ Stop the application with `docker compose down`.
 ## Development
 
 ```sh
-corepack pnpm install --frozen-lockfile
-pnpm build
-pnpm test
+bun install --frozen-lockfile
+bun run build
+bun run test
 ```

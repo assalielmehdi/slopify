@@ -4,6 +4,6 @@
 **/dist/
 **/node_modules/
 **/playwright-report/
-pnpm-lock.yaml
+bun.lock
 tasks/
 **/test-results/

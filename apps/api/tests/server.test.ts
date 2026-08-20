@@ -1,5 +1,3 @@
-import { once } from 'node:events'
-import type { AddressInfo } from 'node:net'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createApiApp } from '../src/app.js'
@@ -125,7 +123,13 @@ describe('API server configuration', () => {
     },
   )
 
-  it('starts the Hono fetch handler on the requested address', async () => {
+  it('starts the Hono fetch handler on the requested Bun address', async () => {
+    const stop = vi.fn(async () => undefined)
+    const serve = vi.fn((options: { readonly hostname: string; readonly port: number }) => ({
+      hostname: options.hostname,
+      port: options.port,
+      stop,
+    }))
     const server = startApiServer({
       app: createApiApp({ database }),
       configuration: {
@@ -135,16 +139,16 @@ describe('API server configuration', () => {
         workspaceRoot: '/workspace',
         shutdownGracePeriodMs: 10_000,
       },
+      serve,
     })
-    if (!server.listening) await once(server, 'listening')
+    expect(server.hostname).toBe('127.0.0.1')
+    expect(server.port).toBe(0)
+    expect(serve).toHaveBeenCalledWith(
+      expect.objectContaining({ hostname: '127.0.0.1', port: 0, fetch: expect.any(Function) }),
+    )
 
-    const address = server.address() as AddressInfo
-    expect(address.address).toBe('127.0.0.1')
-    expect(address.port).toBeGreaterThan(0)
-
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => (error === undefined ? resolve() : reject(error)))
-    })
+    await server.stop()
+    expect(stop).toHaveBeenCalledOnce()
   })
 
   it('reduces connector credentials to non-secret readiness booleans', () => {

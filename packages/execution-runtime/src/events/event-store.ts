@@ -1,8 +1,7 @@
 import { RunEventSchema, RunIdSchema, type RunEvent, type RunId } from '@loop/contracts'
-import type BetterSqlite3 from 'better-sqlite3'
-
 import type { WorkbenchDatabase } from '../persistence/database.js'
 import { getDatabaseHandle } from '../persistence/database.js'
+import type { Database } from '../persistence/sqlite.js'
 import { PersistenceError } from '../persistence/errors.js'
 
 export type NewRunEvent = RunEvent extends infer Event
@@ -35,7 +34,7 @@ interface EventRow {
 }
 
 export const appendEvent = (
-  database: BetterSqlite3.Database,
+  database: Database,
   runIdInput: RunId,
   event: NewRunEvent,
   nodeExecutionId: string | null = null,

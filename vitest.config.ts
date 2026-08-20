@@ -13,6 +13,7 @@ export default defineConfig({
     },
   },
   ssr: {
+    noExternal: ['zod'],
     resolve: {
       conditions: ['source', 'import', 'default'],
     },

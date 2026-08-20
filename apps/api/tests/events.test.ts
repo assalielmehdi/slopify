@@ -1,5 +1,3 @@
-import { once } from 'node:events'
-import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createRunEventFeed } from '@loop/execution-runtime'
@@ -111,15 +109,15 @@ describe('run event SSE API', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
+        workspaceRoot: '/workspace',
+        shutdownGracePeriodMs: 10_000,
       },
     })
-    if (!server.listening) await once(server, 'listening')
-    const address = server.address() as AddressInfo
     const request = new AbortController()
 
     try {
       const response = await fetch(
-        `http://127.0.0.1:${address.port}/api/runs/${TEST_RUN_ID}/events`,
+        `http://${server.hostname}:${server.port}/api/runs/${TEST_RUN_ID}/events`,
         { signal: request.signal },
       )
       const reader = response.body?.getReader()
@@ -131,9 +129,7 @@ describe('run event SSE API', () => {
       await expect(aborted).resolves.toBeUndefined()
     } finally {
       request.abort()
-      await new Promise<void>((resolve, reject) => {
-        server.close((error) => (error === undefined ? resolve() : reject(error)))
-      })
+      await server.stop(true)
     }
   })
 })

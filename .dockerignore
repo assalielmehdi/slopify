@@ -8,7 +8,6 @@ tasks
 **/dist
 **/coverage
 **/.cache
-**/.pnpm-store
 **/*.tsbuildinfo
 
 .env

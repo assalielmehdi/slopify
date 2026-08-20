@@ -1,14 +1,14 @@
 import { mkdirSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { openDatabase, type WorkbenchDatabase } from '../../src/index.js'
 import { applyMigrations, type Migration } from '../../src/persistence/migrations.js'
+import { Database } from '../../src/persistence/sqlite.js'
 
 const openedDatabases: WorkbenchDatabase[] = []
-const rawDatabases: Database.Database[] = []
+const rawDatabases: Database[] = []
 const temporaryDirectories: string[] = []
 
 const createDatabasePath = (): string => {

@@ -16,10 +16,10 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/clickup-artifacts build && tsc --project tsconfig.json",
-    "typecheck": "pnpm --filter @loop/execution-runtime build && pnpm --filter @loop/clickup-artifacts build && tsc --project tsconfig.json --noEmit",
-    "lint": "eslint src tests --max-warnings 0",
-    "test": "vitest run --root ../.. packages/gitlab-delivery/tests"
+    "build": "bun run --filter @loop/execution-runtime build && bun run --filter @loop/clickup-artifacts build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "typecheck": "bun run --filter @loop/execution-runtime build && bun run --filter @loop/clickup-artifacts build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "lint": "bun --bun eslint src tests --max-warnings 0",
+    "test": "bun --bun vitest run --root ../.. packages/gitlab-delivery/tests"
   },
   "dependencies": {
     "@loop/clickup-artifacts": "workspace:*",

@@ -1,8 +1,8 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
-import BetterSqlite3 from 'better-sqlite3'
 
 import { applyMigrations } from './migrations.js'
+import { Database } from './sqlite.js'
 
 export type DatabaseInitializationErrorCode =
   | 'DATABASE_PATH_INVALID'
@@ -46,9 +46,9 @@ export interface OpenDatabaseOptions {
   readonly path: string
 }
 
-const databaseHandles = new WeakMap<WorkbenchDatabase, BetterSqlite3.Database>()
+const databaseHandles = new WeakMap<WorkbenchDatabase, Database>()
 
-const readSchemaVersion = (database: BetterSqlite3.Database): number => {
+const readSchemaVersion = (database: Database): number => {
   const version = database
     .prepare('SELECT COALESCE(MAX(version), 0) FROM schema_migrations')
     .pluck()
@@ -57,7 +57,7 @@ const readSchemaVersion = (database: BetterSqlite3.Database): number => {
   return typeof version === 'number' ? version : 0
 }
 
-const verifyWritable = (database: BetterSqlite3.Database): void => {
+const verifyWritable = (database: Database): void => {
   const schemaVersion = readSchemaVersion(database)
   const verify = database.transaction(() => {
     database
@@ -70,7 +70,7 @@ const verifyWritable = (database: BetterSqlite3.Database): void => {
 class SqliteWorkbenchDatabase implements WorkbenchDatabase {
   readonly path: string
 
-  constructor(path: string, database: BetterSqlite3.Database) {
+  constructor(path: string, database: Database) {
     this.path = path
     databaseHandles.set(this, database)
   }
@@ -103,13 +103,13 @@ class SqliteWorkbenchDatabase implements WorkbenchDatabase {
   }
 }
 
-export const getDatabaseHandle = (database: WorkbenchDatabase): BetterSqlite3.Database => {
+export const getDatabaseHandle = (database: WorkbenchDatabase): Database => {
   const handle = databaseHandles.get(database)
   if (handle === undefined) throw new TypeError('Unknown workbench database connection')
   return handle
 }
 
-const closeAfterFailure = (database: BetterSqlite3.Database | undefined): void => {
+const closeAfterFailure = (database: Database | undefined): void => {
   if (database?.open === true) database.close()
 }
 
@@ -123,11 +123,11 @@ export const openDatabase = (options: OpenDatabaseOptions): WorkbenchDatabase =>
   }
 
   const databasePath = resolve(options.path)
-  let database: BetterSqlite3.Database | undefined
+  let database: Database | undefined
 
   try {
     mkdirSync(dirname(databasePath), { recursive: true })
-    database = new BetterSqlite3(databasePath)
+    database = new Database(databasePath)
   } catch (cause) {
     closeAfterFailure(database)
     throw new DatabaseInitializationError({

@@ -9,14 +9,13 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/execution-runtime build && tsc --project tsconfig.json",
-    "typecheck": "pnpm --filter @loop/clickup-artifacts build && pnpm --filter @loop/execution-runtime build && tsc --project tsconfig.json --noEmit",
-    "lint": "eslint src tests --max-warnings 0",
-    "test": "vitest run --root ../.. apps/api/tests",
-    "start": "node dist/server.js"
+    "build": "bun run --filter @loop/clickup-artifacts build && bun run --filter @loop/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "typecheck": "bun run --filter @loop/clickup-artifacts build && bun run --filter @loop/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "lint": "bun --bun eslint src tests --max-warnings 0",
+    "test": "bun --bun vitest run --root ../.. apps/api/tests",
+    "start": "bun dist/server.js"
   },
   "dependencies": {
-    "@hono/node-server": "2.1.1",
     "@loop/clickup-artifacts": "workspace:*",
     "@loop/contracts": "workspace:*",
     "@loop/execution-runtime": "workspace:*",

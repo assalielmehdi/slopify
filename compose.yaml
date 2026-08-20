@@ -20,7 +20,7 @@ services:
     healthcheck:
       test:
         - CMD
-        - node
+        - bun
         - -e
         - "fetch('http://127.0.0.1:3001/healthz',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))"
       interval: 10s
@@ -52,7 +52,7 @@ services:
     healthcheck:
       test:
         - CMD
-        - node
+        - bun
         - -e
         - "fetch('http://127.0.0.1:3000/healthz',{signal:AbortSignal.timeout(2000)}).then(response=>{if(!response.ok)process.exit(1)}).catch(()=>process.exit(1))"
       interval: 10s

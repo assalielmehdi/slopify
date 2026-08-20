@@ -26,15 +26,11 @@ describe('API graceful shutdown', () => {
     const cancellation = deferred()
     let serverClosed!: () => void
     const server: ShutdownServer = {
-      close(callback) {
-        order.push('server.close')
-        serverClosed = () => callback()
-      },
-      closeIdleConnections() {
-        order.push('server.closeIdleConnections')
-      },
-      closeAllConnections() {
-        order.push('server.closeAllConnections')
+      stop(force) {
+        order.push(force === true ? 'server.stop(true)' : 'server.stop')
+        return new Promise<void>((resolve) => {
+          serverClosed = resolve
+        })
       },
     }
     let databaseOpen = true
@@ -61,12 +57,7 @@ describe('API graceful shutdown', () => {
 
     const shutdown = coordinator.shutdown('SIGTERM')
 
-    expect(order).toEqual([
-      'runs.stopAdmissions',
-      'server.close',
-      'server.closeIdleConnections',
-      'cancellation.cancelActive',
-    ])
+    expect(order).toEqual(['runs.stopAdmissions', 'server.stop', 'cancellation.cancelActive'])
     expect(databaseOpen).toBe(true)
 
     cancellation.resolve()
@@ -74,8 +65,7 @@ describe('API graceful shutdown', () => {
     await expect(shutdown).resolves.toEqual({ signal: 'SIGTERM', forced: false })
     expect(order).toEqual([
       'runs.stopAdmissions',
-      'server.close',
-      'server.closeIdleConnections',
+      'server.stop',
       'cancellation.cancelActive',
       'database.close',
     ])
@@ -90,9 +80,10 @@ describe('API graceful shutdown', () => {
     let databaseOpen = true
     const coordinator = createShutdownCoordinator({
       server: {
-        close: () => order.push('server.close'),
-        closeIdleConnections: () => order.push('server.closeIdleConnections'),
-        closeAllConnections: () => order.push('server.closeAllConnections'),
+        stop: async (force) => {
+          order.push(force === true ? 'server.stop(true)' : 'server.stop')
+          if (force !== true) await new Promise(() => undefined)
+        },
       },
       runs: { stopAdmissions: () => order.push('runs.stopAdmissions') },
       cancellation: {
@@ -119,10 +110,9 @@ describe('API graceful shutdown', () => {
     await expect(shutdown).resolves.toEqual({ signal: 'SIGINT', forced: true })
     expect(order).toEqual([
       'runs.stopAdmissions',
-      'server.close',
-      'server.closeIdleConnections',
+      'server.stop',
       'cancellation.cancelActive',
-      'server.closeAllConnections',
+      'server.stop(true)',
       'database.close',
     ])
   })
