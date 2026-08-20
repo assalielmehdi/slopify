@@ -5,7 +5,8 @@ import { describe, expect, it } from 'vitest'
 const stylesheet = readFileSync(new URL('../app/globals.css', import.meta.url), 'utf8')
 
 const token = (scope: ':root' | '.dark', name: string): string => {
-  const block = new RegExp(`\\${scope} \\{(?<tokens>[\\s\\S]*?)\\n\\}`).exec(stylesheet)?.groups?.tokens
+  const block = new RegExp(`\\${scope} \\{(?<tokens>[\\s\\S]*?)\\n\\}`).exec(stylesheet)?.groups
+    ?.tokens
   const value = new RegExp(`--${name}:\\s*(?<value>oklch\\([^;]+\\));`).exec(block ?? '')?.groups
     ?.value
   if (value === undefined) throw new Error(`Missing ${name} in ${scope}`)
@@ -13,9 +14,7 @@ const token = (scope: ':root' | '.dark', name: string): string => {
 }
 
 const relativeLuminance = (value: string): number => {
-  const match = /oklch\((?<lightness>[\d.]+)\s+(?<chroma>[\d.]+)\s+(?<hue>[\d.]+)\)/.exec(
-    value,
-  )
+  const match = /oklch\((?<lightness>[\d.]+)\s+(?<chroma>[\d.]+)\s+(?<hue>[\d.]+)\)/.exec(value)
   if (match?.groups === undefined) throw new Error(`Unsupported color ${value}`)
 
   const lightness = Number(match.groups.lightness)

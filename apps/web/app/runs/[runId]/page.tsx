@@ -9,9 +9,7 @@ export async function generateMetadata({ params }: RunPageProps): Promise<Metada
   return { title: `Run ${runId}` }
 }
 
-export default async function RunPage({
-  params,
-}: RunPageProps) {
+export default async function RunPage({ params }: RunPageProps) {
   const { runId } = await params
   return <LiveRun runId={runId} />
 }
