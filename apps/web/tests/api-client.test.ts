@@ -197,4 +197,100 @@ describe('API client', () => {
       method: 'PUT',
     })
   })
+
+  it('resolves a canonical ClickUp task and starts a validated run', async () => {
+    const task = {
+      taskId: '86abc123',
+      customTaskId: 'PROJ-42',
+      url: 'https://app.clickup.com/t/86abc123',
+      title: 'Implement confirmed run start',
+      description: 'Preserve the selected revision and profile.',
+      status: { id: 'status-1', name: 'in progress', type: 'custom' },
+      priority: { id: '2', name: 'high' },
+      comments: [],
+      resourceLinks: [],
+    }
+    const run = {
+      runId: 'run-01',
+      workflowId: 'delivery-workflow',
+      revisionId: 'revision-01',
+      profileSnapshotId: 'profile-snapshot-01',
+      taskReference: '86abc123',
+      notes: 'Coordinate API and web delivery.',
+      taskSnapshot: task,
+      effectiveConfiguration: {},
+      status: 'PENDING',
+      currentNodeId: null,
+      transitionCount: 0,
+      createdAt: '2026-08-20T10:00:00Z',
+      startedAt: null,
+      completedAt: null,
+    }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(task))
+      .mockResolvedValueOnce(Response.json(run, { status: 201 }))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(
+      client.resolveClickUpTask({ taskReference: '86abc123', profileId: 'local-profile' }),
+    ).resolves.toEqual(task)
+    await expect(
+      client.startRun({
+        taskReference: '86abc123',
+        workflowId: 'delivery-workflow',
+        revisionId: 'revision-01',
+        profileId: 'local-profile',
+        notes: 'Coordinate API and web delivery.',
+      }),
+    ).resolves.toEqual(run)
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/clickup/tasks/resolve', {
+      body: JSON.stringify({ taskReference: '86abc123', profileId: 'local-profile' }),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/runs', {
+      body: JSON.stringify({
+        taskReference: '86abc123',
+        workflowId: 'delivery-workflow',
+        revisionId: 'revision-01',
+        profileId: 'local-profile',
+        notes: 'Coordinate API and web delivery.',
+      }),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+  })
+
+  it('preserves the active run identity from a start conflict', async () => {
+    const client = createApiClient({
+      fetch: async () =>
+        Response.json(
+          {
+            error: {
+              code: 'RUN_ACTIVE',
+              message: 'Another run is already active',
+              details: { activeRunId: 'run-active-01' },
+            },
+          },
+          { status: 409 },
+        ),
+    })
+
+    await expect(
+      client.startRun({
+        taskReference: '86abc123',
+        workflowId: 'delivery-workflow',
+        revisionId: 'revision-01',
+        profileId: 'local-profile',
+      }),
+    ).rejects.toEqual(
+      new ApiClientError({
+        code: 'RUN_ACTIVE',
+        message: 'Another run is already active',
+        status: 409,
+        details: { activeRunId: 'run-active-01' },
+      }),
+    )
+  })
 })

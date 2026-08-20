@@ -53,6 +53,8 @@ const createClient = () => {
     listWorkflows: vi.fn(),
     getWorkflowRevision: vi.fn(),
     createWorkflowRevision: vi.fn(),
+    resolveClickUpTask: vi.fn(),
+    startRun: vi.fn(),
     listProjectProfiles: vi.fn<ApiClient['listProjectProfiles']>(async () =>
       ProjectProfileCatalogResponseSchema.parse({
         profiles: [profile],
