@@ -1357,14 +1357,14 @@ readiness, worktrees, graceful termination, and durable SQLite history across
 recreate/down without touching real providers.
 
 **Acceptance criteria:**
-- [ ] Clean build and `docker compose up --build --wait --wait-timeout 120` reach healthy services with only the web port published.
-- [ ] Empty credentials keep UI healthy but block runs; fake credentials plus a fixture repository complete a controlled workflow path.
-- [ ] API recreate and normal `down` preserve history; termination leaves no false success/orphan process and no normal action removes the named volume.
+- [x] Clean build and `docker compose up --build --wait --wait-timeout 120` reach healthy services with only the web port published.
+- [x] Empty credentials keep UI healthy but block runs; fake credentials plus a fixture repository complete a controlled workflow path.
+- [x] API recreate and normal `down` preserve history; termination leaves no false success/orphan process and no normal action removes the named volume.
 
 **Verification:**
-- [ ] Tests pass: `pnpm test:containers`
-- [ ] Build succeeds: `pnpm build && pnpm typecheck && pnpm lint && pnpm test && pnpm test:e2e && pnpm format:check`
-- [ ] Manual check: inspect container users, published ports, named-volume data before/after recreate/down, fixture worktree, and sanitized logs.
+- [x] Tests pass: `pnpm test:containers`
+- [x] Build succeeds: `pnpm build && pnpm typecheck && pnpm lint && pnpm test && pnpm test:e2e && pnpm format:check`
+- [x] Manual check: inspect container users, published ports, named-volume data before/after recreate/down, fixture worktree, and sanitized logs.
 
 **Dependencies:** Tasks 39-42
 
@@ -1377,9 +1377,17 @@ recreate/down without touching real providers.
 
 **Estimated scope:** Medium: 3-5 files
 
+**Task review (2026-08-20):**
+- Added a serial, explicit `pnpm test:containers` suite that provisions a unique Compose project, loopback port, named volume, disposable Git repository/remote, worktree parent, and fake ClickUp/GitLab/model HTTP boundaries. The harness always removes its exact containers, network, images, volume, and temporary fixture tree in `finally`; the final run passed in 123.77 seconds and left no `slopify-task43` resources behind.
+- A clean `docker compose up --build --wait --wait-timeout 120` reached healthy API and web services. Runtime inspection proved exactly `api` and `web`, only the web port published on `127.0.0.1`, and UID 1000 in both containers. Blank credentials left health and the seeded `delivery-workflow` revision inspectable while run admission returned `PROFILE_NOT_READY`.
+- Added the smallest production seams needed for isolated acceptance: an optional blank-safe ClickUp base URL and idempotent startup seeding of the source-controlled predefined V1 workflow. With fake credentials, the public readiness/task-resolution/run/SSE boundaries and the actual persisted run engine completed a controlled fixture workflow, including a real Git worktree and verification command. Provider request logs record connector/method/path only and all Compose logs were checked against every fake secret.
+- Recreating the API preserved a successful run. Stopping a deliberately hanging workflow killed its identifiable child process; startup recovery marked the run `INTERRUPTED`, never successful. A normal `docker compose down` retained the named SQLite volume, and the next startup returned both durable run histories before the harness deliberately removed its disposable resources.
+- Root build, typecheck, lint, the 89-file / 613-test suite, formatting, Compose model validation, diff checks, and the focused 11-file / 62-test API suite pass. Chrome rendered the seeded 14-node workflow and blank connector state from the disposable Compose stack with no console warnings or errors. Per the explicit Chrome-only instruction, standalone Playwright E2E was not invoked; Chrome supplied the browser acceptance evidence.
+- Scope boundary: the controlled workflow is launched by the isolated in-container fixture driver against the real persisted engine. The production API server currently owns admission and persistence but does not yet compose or launch that engine, so this evidence does not claim live-provider end-to-end execution or authorize external mutations.
+
 ## Checkpoint G2: After Tasks 42-43
 
-- [ ] All package, API, UI, browser, format, image, and container acceptance checks pass.
-- [ ] Clean-clone startup, same-origin traffic, non-root, readiness separation, workspace boundary, shutdown, and persistence are proven.
-- [ ] Automated acceptance uses no real credentials or external mutations.
+- [x] All package, API, UI, browser, format, image, and container acceptance checks pass.
+- [x] Clean-clone startup, same-origin traffic, non-root, readiness separation, workspace boundary, shutdown, and persistence are proven.
+- [x] Automated acceptance uses no real credentials or external mutations.
 - [ ] Human reviews the full evidence and separately authorizes any live-provider acceptance.
