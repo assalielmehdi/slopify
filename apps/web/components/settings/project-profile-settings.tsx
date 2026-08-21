@@ -163,9 +163,9 @@ export function ProjectProfileSettings({ client = defaultClient }: ProjectProfil
   )
 
   return (
-    <main className="flex w-full flex-col gap-6">
+    <section className="flex w-full flex-col gap-6">
       {catalog === undefined ? null : (
-        <div className="flex flex-wrap items-end justify-end gap-2 rounded-lg border bg-card p-4 shadow-xs">
+        <div className="flex flex-wrap items-end justify-end gap-2 rounded-lg border bg-card p-4">
           <Field className="min-w-52">
             <FieldLabel htmlFor="profile-selector">Profile</FieldLabel>
             <NativeSelect
@@ -232,6 +232,6 @@ export function ProjectProfileSettings({ client = defaultClient }: ProjectProfil
           </div>
         </div>
       )}
-    </main>
+    </section>
   )
 }

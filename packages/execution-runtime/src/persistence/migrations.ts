@@ -440,6 +440,134 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       `)
     },
   }),
+  Object.freeze({
+    version: 8,
+    name: 'persist_connection_catalog',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        CREATE TABLE connection_catalog (
+          type TEXT PRIMARY KEY CHECK (
+            type IN ('gitlab', 'clickup', 'openrouter', 'chatgpt-subscription')
+          ),
+          category TEXT NOT NULL CHECK (category IN ('connector', 'inference')),
+          name TEXT NOT NULL,
+          icon TEXT NOT NULL CHECK (icon IN ('gitlab', 'clickup', 'openrouter', 'chatgpt')),
+          eyebrow TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          description TEXT NOT NULL,
+          setup_json TEXT NOT NULL CHECK (json_valid(setup_json)),
+          access TEXT NOT NULL,
+          input_label TEXT,
+          input_description TEXT,
+          replacement_input_label TEXT,
+          resource_href TEXT,
+          resource_label TEXT,
+          sort_order INTEGER NOT NULL UNIQUE CHECK (sort_order >= 0)
+        ) STRICT;
+
+        CREATE INDEX connection_catalog_by_category_order
+          ON connection_catalog (category, sort_order);
+      `)
+
+      const insert = database.prepare(`
+        INSERT INTO connection_catalog (
+          type, category, name, icon, eyebrow, summary, description, setup_json,
+          access, input_label, input_description, replacement_input_label,
+          resource_href, resource_label, sort_order
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      const credentialDescription =
+        "Validated before it is stored in Slopify's owner-only local store."
+      const entries = [
+        [
+          'gitlab',
+          'connector',
+          'GitLab',
+          'gitlab',
+          'Source control',
+          'Read repositories and manage delivery through GitLab.',
+          'Connect GitLab so workflows can inspect projects, create branches, push changes, and manage merge requests available to your user.',
+          JSON.stringify([
+            'Open GitLab personal access token settings.',
+            'Create a token named Slopify with the api scope and an appropriate expiration.',
+            'Copy the token and paste it below. GitLab only shows it once.',
+          ]),
+          'This scope grants read and write API access, limited by the projects and permissions already available to your GitLab user.',
+          'Personal access token',
+          credentialDescription,
+          'New personal access token',
+          'https://gitlab.com/-/user_settings/personal_access_tokens?name=Slopify&description=Slopify+local+workflow+connector&scopes=api',
+          'Create a personal access token',
+          0,
+        ],
+        [
+          'clickup',
+          'connector',
+          'ClickUp',
+          'clickup',
+          'Task management',
+          'Resolve tasks and publish workflow evidence to ClickUp.',
+          'Connect your ClickUp account so workflows can read task context, add review artifacts, and update task status in your accessible Workspaces.',
+          JSON.stringify([
+            'Open ClickUp Settings, then Apps.',
+            'Generate or reveal your personal API token under API Token.',
+            'Copy the token and paste it below.',
+          ]),
+          'A personal token inherits your ClickUp access. Slopify validates it by loading your user and available Workspaces.',
+          'Personal API token',
+          credentialDescription,
+          'New personal API token',
+          'https://app.clickup.com/settings/apps',
+          'Open ClickUp API settings',
+          1,
+        ],
+        [
+          'openrouter',
+          'inference',
+          'OpenRouter',
+          'openrouter',
+          'Inference provider',
+          'Run agents across models available through OpenRouter.',
+          'Use one OpenRouter API key to make its model catalog available to Slopify agent profiles.',
+          JSON.stringify([
+            'Create a key in OpenRouter settings.',
+            'Optionally set a spending limit for the key.',
+            'Copy the key and paste it below. Slopify validates it before storing it locally.',
+          ]),
+          'The key is used only by the trusted worker for model inference. It is never exposed to workflow prompts or agent sandboxes.',
+          'OpenRouter API key',
+          credentialDescription,
+          'New OpenRouter API key',
+          'https://openrouter.ai/settings/keys',
+          'Create an API key',
+          2,
+        ],
+        [
+          'chatgpt-subscription',
+          'inference',
+          'ChatGPT',
+          'chatgpt',
+          'Subscription provider',
+          'Use a ChatGPT subscription through Pi’s OpenAI Codex provider.',
+          'Connect your ChatGPT account in the browser. Pi stores the resulting OAuth credential in Slopify’s owner-only local credential store.',
+          JSON.stringify([
+            'Start the connection from Slopify.',
+            'Continue in the browser and approve the ChatGPT sign-in flow.',
+            'Return to Slopify; connection status updates automatically.',
+          ]),
+          'This uses ChatGPT subscription authentication through Pi’s OpenAI Codex provider, not an OpenAI Platform API key.',
+          null,
+          null,
+          null,
+          'https://chatgpt.com/',
+          'Open ChatGPT',
+          3,
+        ],
+      ] as const
+
+      for (const entry of entries) insert.run(...entry)
+    },
+  }),
 ])
 
 interface AppliedMigration {

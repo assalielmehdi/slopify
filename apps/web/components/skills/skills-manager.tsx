@@ -114,7 +114,7 @@ export function SkillsManager({
   }
 
   return (
-    <main className="flex w-full flex-col gap-6">
+    <section className="flex w-full flex-col gap-6">
       <div className="flex justify-end gap-2">
         <Button variant="outline" onClick={() => void refresh()} disabled={pending}>
           <RefreshCwIcon aria-hidden="true" /> Refresh filesystem
@@ -161,7 +161,7 @@ export function SkillsManager({
           </CardContent>
         </Card>
       ) : null}
-      <div className="grid min-h-[34rem] overflow-hidden rounded-xl border bg-card shadow-xs lg:grid-cols-[17rem_minmax(0,1fr)]">
+      <div className="grid min-h-[34rem] overflow-hidden rounded-lg border bg-card lg:grid-cols-[17rem_minmax(0,1fr)]">
         <Card className="rounded-none border-0 border-r py-4">
           <CardHeader>
             <CardTitle>Available skills</CardTitle>
@@ -244,6 +244,6 @@ export function SkillsManager({
           </Card>
         )}
       </div>
-    </main>
+    </section>
   )
 }

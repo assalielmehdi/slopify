@@ -4,6 +4,7 @@ import {
   createConnectionService,
   createInMemoryConnectionRepository,
   createInMemoryCredentialStore,
+  type ConnectionCatalog,
   type ConnectionDriver,
 } from '@loop/execution-runtime'
 
@@ -21,6 +22,27 @@ const driver: ConnectionDriver = {
   },
 }
 
+const catalog: ConnectionCatalog = {
+  list: () => [
+    {
+      type: 'gitlab',
+      category: 'connector',
+      name: 'GitLab',
+      icon: 'gitlab',
+      eyebrow: 'Source control',
+      summary: 'Read repositories and manage delivery through GitLab.',
+      description: 'Connect GitLab to manage delivery.',
+      setup: ['Create a personal access token.'],
+      access: 'Uses the permissions available to your GitLab user.',
+      credentialLabel: 'Personal access token',
+      credentialDescription: 'Validated before storage.',
+      replacementLabel: 'New personal access token',
+      resourceHref: 'https://gitlab.com/-/user_settings/personal_access_tokens',
+      resourceLabel: 'Create a personal access token',
+    },
+  ],
+}
+
 const fixture = () => {
   const credentials = createInMemoryCredentialStore()
   const connections = createConnectionService({
@@ -30,10 +52,23 @@ const fixture = () => {
     ids: () => 'gitlab-primary',
     now: () => '2026-08-20T00:00:00.000Z',
   })
-  return { credentials, connections, app: createApiApp({ connections }) }
+  return {
+    credentials,
+    connections,
+    app: createApiApp({ connections, connectionCatalog: catalog }),
+  }
 }
 
 describe('connections API', () => {
+  it('returns the database-backed catalog with current connection state', async () => {
+    const { app } = fixture()
+
+    const response = await app.request('/api/connections')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ catalog: catalog.list(), connections: [] })
+  })
+
   it('connects only after validation and never returns the submitted credential', async () => {
     const { app, credentials } = fixture()
     const response = await app.request('/api/connections', {
@@ -116,7 +151,7 @@ describe('connections API', () => {
         }),
       connect: async () => 'chatgpt-primary',
     })
-    const app = createApiApp({ connections, chatGptOAuth: oauth })
+    const app = createApiApp({ connections, connectionCatalog: catalog, chatGptOAuth: oauth })
 
     const start = await app.request('/api/connections/chatgpt/oauth', {
       method: 'POST',

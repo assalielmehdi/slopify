@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
 const geistMono = Geist_Mono({ subsets: ['latin'], variable: '--font-mono' })
-const themeScript = `(function(){try{var key='slopify-theme';var saved=localStorage.getItem(key);var theme=saved==='light'||saved==='dark'?saved:(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light');document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.style.colorScheme=theme;}catch(_){}})();`
+const themeScript = `(function(){try{var key='slopify-theme';var saved=localStorage.getItem(key);var preference=saved==='dark'||saved==='system'?saved:'light';var theme=preference==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):preference;document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.style.colorScheme=theme;}catch(_){}})();`
 
 export const metadata: Metadata = {
   title: {

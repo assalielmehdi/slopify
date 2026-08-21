@@ -138,7 +138,7 @@ export function WorkflowCanvas({
 
   return (
     <div
-      className="workflow-graph h-[calc(100svh-13rem)] min-h-136 min-w-0 overflow-hidden rounded-xl border bg-[radial-gradient(circle_at_top,var(--card),var(--muted))] shadow-xs"
+      className="workflow-graph h-[calc(100svh-13rem)] min-h-136 min-w-0 overflow-hidden rounded-lg border bg-card"
       role="region"
       aria-label="Workflow graph"
     >

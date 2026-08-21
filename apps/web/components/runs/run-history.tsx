@@ -209,7 +209,7 @@ export function RunHistory({
       <div
         role="search"
         aria-label="Run filters"
-        className="flex flex-wrap gap-3 rounded-lg border bg-card p-4 shadow-xs"
+        className="flex flex-wrap gap-3 rounded-lg border bg-card p-4"
       >
         <Field className="w-48">
           <FieldLabel htmlFor="run-status-filter">Run status</FieldLabel>
@@ -266,7 +266,7 @@ export function RunHistory({
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-hidden rounded-lg border bg-card shadow-xs">
+        <div className="overflow-hidden rounded-lg border bg-card">
           <Table aria-label="Workflow runs">
             <TableHeader>
               <TableRow>

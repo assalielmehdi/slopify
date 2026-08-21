@@ -23,6 +23,7 @@ import {
   createCoordinatorCancellationService,
   createChatGptSubscriptionConnectionDriver,
   createClickUpConnectionDriver,
+  createConnectionCatalogRepository,
   createConnectionRepository,
   createConnectionService,
   createFileCredentialStore,
@@ -334,6 +335,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const runRepository = createRunRepository(database)
   const eventStore = createEventStore(database)
   const credentials = createFileCredentialStore({ path: configuration.credentialPath })
+  const connectionCatalog = createConnectionCatalogRepository(database)
   const connections = createConnectionService({
     connections: createConnectionRepository(database),
     credentials,
@@ -517,6 +519,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
         },
       }),
       connections,
+      connectionCatalog,
       database,
       eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
       profiles: profileService,

@@ -3,6 +3,7 @@ import {
   ArtifactIdSchema,
   ArtifactTypeSchema,
   CancelRunRequestSchema,
+  ConnectionCatalogEntrySchema,
   ConnectorStatusSchema,
   CreateRunRequestSchema,
   GitShaSchema,
@@ -23,6 +24,7 @@ import {
   RunStatusSchema,
   WorkflowIdSchema,
   type ConnectorStatus,
+  type ConnectionCatalogEntry,
   type HealthResponse,
   type ProjectProfileCatalogResponse,
   type ProjectProfileConfiguration,
@@ -83,6 +85,7 @@ const ConnectionRecordSchema = z.strictObject({
   updatedAt: z.iso.datetime({ offset: true }),
 })
 const ConnectionsResponseSchema = z.strictObject({
+  catalog: z.array(ConnectionCatalogEntrySchema).readonly(),
   connections: z.array(ConnectionRecordSchema).readonly(),
 })
 const ChatGptOAuthTransactionSchema = z.discriminatedUnion('status', [
@@ -311,6 +314,10 @@ export type RunHistoryPage = z.infer<typeof RunHistoryPageSchema>
 export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
 export type SkillRecord = z.infer<typeof SkillRecordSchema>
 export type ConnectionRecord = z.infer<typeof ConnectionRecordSchema>
+export type ConnectionCatalogResponse = Readonly<{
+  catalog: readonly ConnectionCatalogEntry[]
+  connections: readonly ConnectionRecord[]
+}>
 export type ChatGptOAuthTransaction = z.infer<typeof ChatGptOAuthTransactionSchema>
 
 export interface WorkflowAgentConfigurationChanges {
@@ -378,7 +385,7 @@ export interface ApiClient {
     input: Readonly<{ expectedDigest: string; files: Readonly<Record<string, string>> }>,
   ): Promise<SkillRecord>
   deleteSkill?(skillId: string, expectedDigest: string): Promise<void>
-  listConnections?(): Promise<readonly ConnectionRecord[]>
+  listConnections?(): Promise<ConnectionCatalogResponse>
   connect?(
     input: Readonly<{
       connectionId?: string
@@ -611,7 +618,7 @@ export const createApiClient = (
       })
     },
     async listConnections() {
-      return (await get('/api/connections', ConnectionsResponseSchema)).connections
+      return get('/api/connections', ConnectionsResponseSchema)
     },
     async connect(input) {
       return request(

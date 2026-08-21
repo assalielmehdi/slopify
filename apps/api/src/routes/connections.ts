@@ -1,4 +1,8 @@
-import { CredentialSchema, type ConnectionService } from '@loop/execution-runtime'
+import {
+  CredentialSchema,
+  type ConnectionCatalog,
+  type ConnectionService,
+} from '@loop/execution-runtime'
 import type { ChatGptOAuthService } from '@loop/agent-runtimes'
 import type { Hono } from 'hono'
 import { z } from 'zod'
@@ -17,9 +21,12 @@ const ReplaceCredentialSchema = z.strictObject({ credential: CredentialSchema })
 export const registerConnectionRoutes = (
   app: Hono,
   connections: ConnectionService,
+  catalog: ConnectionCatalog,
   chatGptOAuth?: ChatGptOAuthService,
 ): void => {
-  app.get('/api/connections', (context) => context.json({ connections: connections.list() }, 200))
+  app.get('/api/connections', (context) =>
+    context.json({ catalog: catalog.list(), connections: connections.list() }, 200),
+  )
   app.post('/api/connections', async (context) => {
     const input = ConnectSchema.parse(await parseJsonBody(context))
     return context.json(

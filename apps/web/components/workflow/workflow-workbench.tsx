@@ -63,10 +63,10 @@ export function WorkflowWorkbench({
 
     const load = async () => {
       try {
-        const [workflows, nextSkills, nextConnections] = await Promise.all([
+        const [workflows, nextSkills, connectionResponse] = await Promise.all([
           client.listWorkflows(),
           client.listSkills?.() ?? Promise.resolve([]),
-          client.listConnections?.() ?? Promise.resolve([]),
+          client.listConnections?.() ?? Promise.resolve({ catalog: [], connections: [] }),
         ])
         const workflow = workflows[0]
         if (workflow === undefined) throw new Error('No workflow revisions available')
@@ -79,7 +79,7 @@ export function WorkflowWorkbench({
 
         setCatalog(workflows)
         setSkills(nextSkills)
-        setConnections(nextConnections)
+        setConnections(connectionResponse.connections)
         setRevision(latest)
         setSelectedNodeId(latest.startNodeId)
       } catch (cause) {
@@ -175,7 +175,7 @@ export function WorkflowWorkbench({
 
   return (
     <section className="flex min-w-0 flex-col gap-4" aria-busy={loading} aria-label="Editor">
-      <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border bg-card p-3 shadow-xs">
+      <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border bg-card p-3">
         <div className="flex flex-wrap items-end gap-3">
           <Badge variant="outline" className="mb-2">
             Read-only topology

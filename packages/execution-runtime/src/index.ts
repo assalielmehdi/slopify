@@ -28,6 +28,10 @@ export {
   type ConnectionValidationInput,
 } from './connections/connection-service.js'
 export {
+  type ConnectionCatalog,
+  type ConnectionCatalogEntry,
+} from './connections/connection-catalog.js'
+export {
   createClickUpConnectionDriver,
   createChatGptSubscriptionConnectionDriver,
   createGitLabConnectionDriver,
@@ -57,6 +61,7 @@ export {
   type WorkbenchDatabase,
 } from './persistence/database.js'
 export { createConnectionRepository } from './persistence/connection-repository.js'
+export { createConnectionCatalogRepository } from './persistence/connection-catalog-repository.js'
 export { createSqliteExecutionMessageQueue } from './persistence/execution-message-queue.js'
 export { createSqliteCoordinatorStateStore } from './persistence/coordinator-state-store.js'
 export {

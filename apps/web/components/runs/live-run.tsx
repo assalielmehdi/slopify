@@ -556,8 +556,8 @@ export function LiveRun({
   }
 
   return (
-    <main className="flex w-full flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-4 rounded-lg border bg-card p-4 shadow-xs">
+    <section className="flex w-full flex-col gap-5">
+      <header className="flex flex-wrap items-start justify-between gap-4 rounded-lg border bg-card p-4">
         <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="font-mono text-sm font-semibold">Run {detail.run.runId}</h2>
@@ -644,7 +644,7 @@ export function LiveRun({
         </CardContent>
       </Card>
 
-      <Card className="shadow-xs">
+      <Card>
         <CardHeader>
           <CardTitle>{detail.workflowRevision.name}</CardTitle>
           <CardDescription>Pinned revision {detail.workflowRevision.revisionId}</CardDescription>
@@ -696,6 +696,6 @@ export function LiveRun({
       <RepositoryEvidence detail={detail} />
       <Artifacts detail={detail} />
       <RunEventStream events={events} />
-    </main>
+    </section>
   )
 }

@@ -30,7 +30,9 @@ worktrees. V1 implements agent jobs; code jobs are intentionally deferred.
   them in SQLite or workflow JSON, expose them to browsers, prompts, events, logs, or
   worktrees, or mount them into VMs. Connector access uses execution-scoped mediated
   capabilities; inference credentials remain in the trusted worker.
-- SQLite owns workflow, run, connection metadata, queue, and audit state. The live
+- SQLite owns workflow, run, connection metadata, the supported connection catalog,
+  queue, and audit state. The API is the browser's only source for provider and
+  connector catalog data; the frontend must not hardcode a parallel catalog. The live
   Skills catalog is filesystem-backed; published revisions use immutable,
   content-addressed skill snapshots.
 
@@ -51,6 +53,9 @@ worktrees. V1 implements agent jobs; code jobs are intentionally deferred.
 - Use Next.js, React, Tailwind CSS, and the existing ShadCN component system.
 - ShadCN is configured in `apps/web/components.json` with the `base-lyra` style, zinc
   base color, CSS variables, and Lucide icons.
+- Root `DESIGN.md` is the canonical visual identity and design-system contract. Read it
+  before changing application UI, and keep implementations consistent in light and dark
+  modes.
 - Always reuse components from `apps/web/components/ui` before adding anything new.
   Do not create bespoke replacements or introduce another component preset/library.
 - Keep server/client boundaries explicit and preserve accessible labels, keyboard
@@ -66,5 +71,6 @@ worktrees. V1 implements agent jobs; code jobs are intentionally deferred.
   with in-memory adapters.
 - Run tests, typecheck, lint, formatting, and the production build before handoff.
 - Use Chrome for browser verification; do not use Playwright.
-- The only documentation files allowed in the repository are root `README.md` and root
-  `AGENTS.md`. Do not add specs, plans, notes, or package-level Markdown/text files.
+- The only documentation files allowed in the repository are root `README.md`, root
+  `AGENTS.md`, and root `DESIGN.md`. Do not add specs, plans, notes, or package-level
+  Markdown/text files.

@@ -205,6 +205,32 @@ export const ConnectorStatusSchema = z.strictObject({
   modelProvider: z.boolean(),
 })
 
+export const ConnectionTypeSchema = z.enum([
+  'gitlab',
+  'clickup',
+  'openrouter',
+  'chatgpt-subscription',
+])
+
+export const ConnectionCategorySchema = z.enum(['connector', 'inference'])
+
+export const ConnectionCatalogEntrySchema = z.strictObject({
+  type: ConnectionTypeSchema,
+  category: ConnectionCategorySchema,
+  name: z.string().trim().min(1).max(128),
+  icon: z.enum(['gitlab', 'clickup', 'openrouter', 'chatgpt']),
+  eyebrow: z.string().trim().min(1).max(128),
+  summary: z.string().trim().min(1).max(512),
+  description: z.string().trim().min(1).max(2_048),
+  setup: z.array(z.string().trim().min(1).max(1_024)).min(1).max(8).readonly(),
+  access: z.string().trim().min(1).max(2_048),
+  credentialLabel: z.string().trim().min(1).max(128).optional(),
+  credentialDescription: z.string().trim().min(1).max(512).optional(),
+  replacementLabel: z.string().trim().min(1).max(128).optional(),
+  resourceHref: z.url().max(4_096).optional(),
+  resourceLabel: z.string().trim().min(1).max(128).optional(),
+})
+
 const ReadinessFindingSchema = z.strictObject({
   category: z.enum(['filesystem', 'git', 'tool', 'clickup', 'gitlab', 'model-provider']),
   code: errorCode,
@@ -380,6 +406,9 @@ export type ProjectProfileConfiguration = z.infer<typeof ProjectProfileConfigura
 export type ProjectProfileRuntimeBoundary = z.infer<typeof ProjectProfileRuntimeBoundarySchema>
 export type ProjectProfileCatalogResponse = z.infer<typeof ProjectProfileCatalogResponseSchema>
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
+export type ConnectionType = z.infer<typeof ConnectionTypeSchema>
+export type ConnectionCategory = z.infer<typeof ConnectionCategorySchema>
+export type ConnectionCatalogEntry = z.infer<typeof ConnectionCatalogEntrySchema>
 export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
 export type ResolveClickUpTaskRequest = z.infer<typeof ResolveClickUpTaskRequestSchema>

@@ -72,6 +72,38 @@ describe('API client', () => {
     )
   })
 
+  it('loads the API-owned connection catalog with current connection state', async () => {
+    const catalogEntry = {
+      type: 'gitlab',
+      category: 'connector',
+      name: 'GitLab',
+      icon: 'gitlab',
+      eyebrow: 'Source control',
+      summary: 'Read repositories and manage delivery through GitLab.',
+      description: 'Connect GitLab to manage delivery.',
+      setup: ['Create a personal access token.'],
+      access: 'Uses the permissions available to your GitLab user.',
+      credentialLabel: 'Personal access token',
+      credentialDescription: 'Validated before storage.',
+      replacementLabel: 'New personal access token',
+      resourceHref: 'https://gitlab.com/-/user_settings/personal_access_tokens',
+      resourceLabel: 'Create a personal access token',
+    }
+    const fetchImplementation = vi.fn(async () =>
+      Response.json({ catalog: [catalogEntry], connections: [] }),
+    )
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listConnections?.()).resolves.toEqual({
+      catalog: [catalogEntry],
+      connections: [],
+    })
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/connections', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
+  })
+
   it('loads and validates the workflow catalog and exact revision', async () => {
     const revision = createPredefinedV1Revision({
       revisionId: 'revision-01',

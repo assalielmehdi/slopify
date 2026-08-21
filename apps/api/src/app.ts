@@ -9,6 +9,7 @@ import {
   SkillCatalogError,
   WorkflowServiceError,
   type CancellationService,
+  type ConnectionCatalog,
   type ConnectionService,
   type ProjectProfileService,
   type ReadinessService,
@@ -35,6 +36,7 @@ export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
 export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
+  readonly connectionCatalog?: ConnectionCatalog
   readonly connections?: ConnectionService
   readonly chatGptOAuth?: ChatGptOAuthService
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
@@ -97,8 +99,13 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.runs !== undefined) registerRunRoutes(app, options.runs, options.cancellation)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
   if (options.skills !== undefined) registerSkillRoutes(app, options.skills)
-  if (options.connections !== undefined)
-    registerConnectionRoutes(app, options.connections, options.chatGptOAuth)
+  if (options.connections !== undefined && options.connectionCatalog !== undefined)
+    registerConnectionRoutes(
+      app,
+      options.connections,
+      options.connectionCatalog,
+      options.chatGptOAuth,
+    )
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),

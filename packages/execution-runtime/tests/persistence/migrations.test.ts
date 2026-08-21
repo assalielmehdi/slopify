@@ -54,6 +54,7 @@ describe('forward-only migrations', () => {
       { version: 5, name: 'create_durable_execution_queue' },
       { version: 6, name: 'persist_workflow_coordinator_state' },
       { version: 7, name: 'persist_node_attempt_identity' },
+      { version: 8, name: 'persist_connection_catalog' },
     ])
   })
 

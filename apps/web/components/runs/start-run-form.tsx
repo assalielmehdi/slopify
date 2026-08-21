@@ -24,7 +24,7 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
   }
 
   return (
-    <main className="flex w-full flex-col gap-6">
+    <section className="flex w-full flex-col gap-6">
       {state.error?.scope === 'load' ? (
         <Alert variant="destructive">
           <AlertTitle>Run configuration unavailable</AlertTitle>
@@ -136,6 +136,6 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
           </aside>
         </form>
       )}
-    </main>
+    </section>
   )
 }

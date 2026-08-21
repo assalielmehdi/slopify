@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from '../components/app-shell'
@@ -24,10 +24,8 @@ beforeEach(() => {
       setItem: (key: string, value: string) => storedPreferences.set(key, value),
     },
   })
-  window.localStorage.clear()
   document.documentElement.classList.remove('dark')
   document.documentElement.style.colorScheme = ''
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -44,53 +42,65 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('AppShell', () => {
-  it('groups workflow and configuration destinations with a current-page cue', () => {
+  it('renders the approved navigation hierarchy and clickable breadcrumbs', () => {
     render(
       <AppShell>
         <p>Workflow graph</p>
       </AppShell>,
     )
 
-    expect(screen.getByRole('navigation', { name: 'Workflow' })).toBeTruthy()
-    expect(screen.getByRole('navigation', { name: 'Configuration' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Slopify' }).getAttribute('href')).toBe('/')
-    expect(screen.getByRole('link', { name: 'Editor' }).getAttribute('aria-current')).toBe('page')
-    expect(screen.getByRole('link', { name: 'Runs' }).getAttribute('href')).toBe('/runs')
-    expect(screen.getByRole('link', { name: 'Providers' }).getAttribute('href')).toBe('/providers')
-    expect(screen.getByRole('link', { name: 'Connectors' }).getAttribute('href')).toBe(
-      '/connectors',
+    const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+
+    expect(primaryNavigation.getAttribute('data-state')).toBe('expanded')
+    expect(within(primaryNavigation).getByText('Workflow')).toBeTruthy()
+    expect(within(primaryNavigation).getByText('Configuration')).toBeTruthy()
+    expect(
+      within(primaryNavigation).getByRole('link', { name: 'Editor' }).getAttribute('aria-current'),
+    ).toBe('page')
+    expect(
+      within(primaryNavigation).getByRole('link', { name: 'Providers' }).getAttribute('href'),
+    ).toBe('/providers')
+    expect(screen.getByRole('link', { name: 'Preferences' }).getAttribute('href')).toBe(
+      '/preferences',
     )
-    expect(screen.getByRole('link', { name: 'Skills' }).getAttribute('href')).toBe('/skills')
-    expect(screen.getByRole('link', { name: 'Agent profiles' }).getAttribute('href')).toBe(
-      '/agent-profiles',
+    expect(within(breadcrumb).getByRole('link', { name: 'Workflows' }).getAttribute('href')).toBe(
+      '/',
     )
-    expect(screen.getByRole('link', { name: 'Project profiles' }).getAttribute('href')).toBe(
-      '/project-profiles',
-    )
-    expect(screen.getByRole('heading', { level: 1, name: 'Editor' })).toBeTruthy()
+    expect(
+      within(breadcrumb).getByRole('link', { name: 'Delivery workflow' }).getAttribute('href'),
+    ).toBe('/')
     expect(screen.getByText('Workflow graph')).toBeTruthy()
+    expect(screen.queryByText('Local operator')).toBeNull()
   })
 
-  it('supports the visible toggle and documented keyboard shortcut', () => {
+  it('places the collapse control in the title row and toggles with B outside inputs', () => {
     render(
       <AppShell>
-        <p>Workbench</p>
+        <input aria-label="Workflow name" />
       </AppShell>,
     )
 
-    const sidebar = document.querySelector('[data-slot="sidebar"]')
-    expect(sidebar?.getAttribute('data-state')).toBe('expanded')
-    const keyboardToggles = screen
-      .getAllByRole('button', { name: 'Toggle Sidebar' })
-      .filter((button) => button.tabIndex === 0)
-    expect(keyboardToggles).toHaveLength(1)
+    const navigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const collapseButton = screen.getByRole('button', { name: 'Collapse navigation' })
 
-    fireEvent.keyDown(window, { ctrlKey: true, key: 'b' })
+    expect(collapseButton.closest('aside')).not.toBeNull()
+    expect(collapseButton.getAttribute('aria-keyshortcuts')).toBe('B')
 
-    expect(sidebar?.getAttribute('data-state')).toBe('collapsed')
+    fireEvent.keyDown(window, { key: 'b' })
+    expect(navigation.getAttribute('data-state')).toBe('collapsed')
+
+    const expandButton = screen.getByRole('button', { name: 'Expand navigation' })
+    expect(expandButton.closest('aside')).toBeNull()
+    expect(expandButton.getAttribute('aria-keyshortcuts')).toBe('B')
+
+    const input = screen.getByRole('textbox', { name: 'Workflow name' })
+    input.focus()
+    fireEvent.keyDown(input, { key: 'b' })
+    expect(navigation.getAttribute('data-state')).toBe('collapsed')
   })
 
-  it('persists an accessible light and dark appearance preference', async () => {
+  it('uses D for a persisted direct light and dark toggle', () => {
     window.localStorage.setItem('slopify-theme', 'dark')
 
     render(
@@ -99,28 +109,26 @@ describe('AppShell', () => {
       </AppShell>,
     )
 
-    const toggle = await screen.findByRole('button', { name: 'Switch to light mode' })
     expect(document.documentElement.classList.contains('dark')).toBe(true)
     expect(document.documentElement.style.colorScheme).toBe('dark')
 
-    fireEvent.click(toggle)
+    fireEvent.keyDown(window, { key: 'd' })
 
-    expect(screen.getByRole('button', { name: 'Switch to dark mode' })).toBeTruthy()
     expect(document.documentElement.classList.contains('dark')).toBe(false)
     expect(window.localStorage.getItem('slopify-theme')).toBe('light')
   })
 
   it.each([
-    ['/', 'Editor', 'Editor'],
-    ['/runs/new', 'Editor', 'New run'],
-    ['/runs', 'Runs', 'Runs'],
-    ['/runs/run-123', 'Runs', 'Run detail'],
-    ['/providers', 'Providers', 'Providers'],
-    ['/connectors', 'Connectors', 'Connectors'],
-    ['/skills', 'Skills', 'Skills'],
-    ['/agent-profiles', 'Agent profiles', 'Agent profiles'],
-    ['/project-profiles', 'Project profiles', 'Project profiles'],
-  ])('maps %s to one current destination and the %s shell title', (pathname, linkName, title) => {
+    ['/runs', 'Runs', ['Runs']],
+    ['/runs/new', 'Runs', ['Runs', 'New run']],
+    ['/runs/run-123', 'Runs', ['Runs', 'Run detail']],
+    ['/providers', 'Providers', ['Providers']],
+    ['/connectors', 'Connectors', ['Connectors']],
+    ['/skills', 'Skills', ['Skills']],
+    ['/agent-profiles', 'Agent profiles', ['Agent profiles']],
+    ['/project-profiles', 'Project profiles', ['Project profiles']],
+    ['/preferences', 'Preferences', ['Preferences']],
+  ])('maps %s to the %s destination and breadcrumb', (pathname, linkName, crumbs) => {
     navigation.pathname = pathname
 
     render(
@@ -129,11 +137,25 @@ describe('AppShell', () => {
       </AppShell>,
     )
 
-    const currentLinks = screen
+    const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    const currentNavigationLinks = within(primaryNavigation)
       .getAllByRole('link')
       .filter((link) => link.getAttribute('aria-current') === 'page')
-    expect(currentLinks).toHaveLength(1)
-    expect(currentLinks[0]?.textContent).toContain(linkName)
-    expect(screen.getByRole('heading', { level: 1, name: title })).toBeTruthy()
+
+    expect(currentNavigationLinks).toHaveLength(linkName === 'Preferences' ? 0 : 1)
+    if (linkName !== 'Preferences') {
+      expect(currentNavigationLinks[0]?.textContent).toContain(linkName)
+    } else {
+      const preferencesLinks = screen.getAllByRole('link', { name: 'Preferences' })
+      expect(preferencesLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(
+        true,
+      )
+    }
+    expect(
+      within(breadcrumb)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(crumbs)
   })
 })

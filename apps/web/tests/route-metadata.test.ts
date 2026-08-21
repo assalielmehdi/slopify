@@ -11,11 +11,18 @@ import { metadata as providersMetadata } from '../app/providers/page'
 import { generateMetadata as generateRunMetadata } from '../app/runs/[runId]/page'
 import { metadata as newRunMetadata } from '../app/runs/new/page'
 import { metadata as runHistoryMetadata } from '../app/runs/page'
+import { metadata as preferencesMetadata } from '../app/preferences/page'
 import { metadata as settingsMetadata } from '../app/settings/page'
 
 describe('accessible route metadata', () => {
   it('provides every configuration destination as a route', () => {
-    for (const route of ['providers', 'connectors', 'agent-profiles', 'project-profiles']) {
+    for (const route of [
+      'providers',
+      'connectors',
+      'agent-profiles',
+      'project-profiles',
+      'preferences',
+    ]) {
       expect(existsSync(resolve(import.meta.dirname, '..', 'app', route, 'page.tsx'))).toBe(true)
     }
   })
@@ -28,7 +35,8 @@ describe('accessible route metadata', () => {
     expect(workflowMetadata.title).toBe('Editor')
     expect(newRunMetadata.title).toBe('Start a run')
     expect(runHistoryMetadata.title).toBe('Runs')
-    expect(settingsMetadata.title).toBe('Project profiles')
+    expect(settingsMetadata.title).toBe('Preferences')
+    expect(preferencesMetadata.title).toBe('Preferences')
     expect(providersMetadata.title).toBe('Providers')
     expect(connectorsMetadata.title).toBe('Connectors')
     expect(agentProfilesMetadata.title).toBe('Agent profiles')

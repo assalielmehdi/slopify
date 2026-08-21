@@ -14,6 +14,7 @@ import { getDatabaseHandle } from '../../src/persistence/database.js'
 
 const EXPECTED_TABLES = [
   'artifacts',
+  'connection_catalog',
   'connections',
   'execution_messages',
   'node_executions',
@@ -87,7 +88,7 @@ describe('database connection', () => {
     expect(database.status()).toEqual({
       foreignKeysEnabled: true,
       journalMode: 'wal',
-      schemaVersion: 7,
+      schemaVersion: 8,
       writable: true,
     })
   })

@@ -41,8 +41,8 @@ export function WorkflowNodeContent({
   return (
     <article
       className={cn(
-        'flex h-30 w-54 flex-col gap-3 rounded-lg border bg-card/95 p-3.5 text-card-foreground shadow-sm backdrop-blur transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)]',
-        selected && 'border-primary shadow-md shadow-primary/10 ring-2 ring-primary/15',
+        'flex h-30 w-54 flex-col gap-3 rounded-lg border bg-card p-3.5 text-card-foreground transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)]',
+        selected && 'border-foreground/30 ring-2 ring-foreground/10',
       )}
       data-selected={selected || undefined}
     >
