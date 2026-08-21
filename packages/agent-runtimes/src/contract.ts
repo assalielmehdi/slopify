@@ -169,6 +169,12 @@ const AgentMessageEventSchema = z.strictObject({
   data: z.strictObject({ content }),
 })
 
+const AgentReasoningEventSchema = z.strictObject({
+  ...eventBase,
+  type: z.literal('AGENT_REASONING'),
+  data: z.strictObject({ content }),
+})
+
 const AgentToolStartedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_TOOL_STARTED'),
@@ -225,6 +231,7 @@ export const AgentExecutionEventSchema = z.discriminatedUnion('type', [
   AgentStartedEventSchema,
   AgentSessionIdentifiedEventSchema,
   AgentMessageEventSchema,
+  AgentReasoningEventSchema,
   AgentToolStartedEventSchema,
   AgentToolUpdatedEventSchema,
   AgentToolCompletedEventSchema,

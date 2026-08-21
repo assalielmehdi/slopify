@@ -163,50 +163,41 @@ export function ProjectProfileSettings({ client = defaultClient }: ProjectProfil
   )
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-xl font-semibold">Settings</h1>
-          <p className="text-xs/relaxed text-muted-foreground">
-            Configure ordered project candidates and inspect the runtime boundary before starting
-            work.
-          </p>
-        </div>
-        {catalog === undefined ? null : (
-          <div className="flex flex-wrap items-end gap-2">
-            <Field className="min-w-52">
-              <FieldLabel htmlFor="profile-selector">Profile</FieldLabel>
-              <NativeSelect
-                id="profile-selector"
-                onChange={(event) => selectProfile(event.currentTarget.value)}
-                value={selectedProfileId ?? ''}
-              >
-                {mode === 'create' ? (
-                  <NativeSelectOption value="">New profile</NativeSelectOption>
-                ) : null}
-                {catalog.profiles.map((profile) => (
-                  <NativeSelectOption key={profile.profileId} value={profile.profileId}>
-                    {profile.displayName}
-                  </NativeSelectOption>
-                ))}
-              </NativeSelect>
-            </Field>
-            <Button onClick={startCreating} type="button" variant="outline">
-              <PlusIcon aria-hidden="true" /> New profile
+    <main className="flex w-full flex-col gap-6">
+      {catalog === undefined ? null : (
+        <div className="flex flex-wrap items-end justify-end gap-2 rounded-lg border bg-card p-4 shadow-xs">
+          <Field className="min-w-52">
+            <FieldLabel htmlFor="profile-selector">Profile</FieldLabel>
+            <NativeSelect
+              id="profile-selector"
+              onChange={(event) => selectProfile(event.currentTarget.value)}
+              value={selectedProfileId ?? ''}
+            >
+              {mode === 'create' ? (
+                <NativeSelectOption value="">New profile</NativeSelectOption>
+              ) : null}
+              {catalog.profiles.map((profile) => (
+                <NativeSelectOption key={profile.profileId} value={profile.profileId}>
+                  {profile.displayName}
+                </NativeSelectOption>
+              ))}
+            </NativeSelect>
+          </Field>
+          <Button onClick={startCreating} type="button" variant="outline">
+            <PlusIcon aria-hidden="true" /> New profile
+          </Button>
+          {selectedProfileId === undefined ? null : (
+            <Button
+              disabled={readinessPending}
+              onClick={() => void loadReadiness(selectedProfileId)}
+              type="button"
+              variant="outline"
+            >
+              <RefreshCwIcon aria-hidden="true" /> Check readiness
             </Button>
-            {selectedProfileId === undefined ? null : (
-              <Button
-                disabled={readinessPending}
-                onClick={() => void loadReadiness(selectedProfileId)}
-                type="button"
-                variant="outline"
-              >
-                <RefreshCwIcon aria-hidden="true" /> Check readiness
-              </Button>
-            )}
-          </div>
-        )}
-      </header>
+          )}
+        </div>
+      )}
 
       {error === undefined ? null : (
         <Alert variant="destructive">
@@ -231,12 +222,14 @@ export function ProjectProfileSettings({ client = defaultClient }: ProjectProfil
             profile={editingProfile}
             runtime={catalog.runtime}
           />
-          <ReadinessPanel
-            connectors={connectors}
-            pending={readinessPending}
-            readiness={readiness}
-            repositoryNames={repositoryNames}
-          />
+          <div className="xl:sticky xl:top-20">
+            <ReadinessPanel
+              connectors={connectors}
+              pending={readinessPending}
+              readiness={readiness}
+              repositoryNames={repositoryNames}
+            />
+          </div>
         </div>
       )}
     </main>

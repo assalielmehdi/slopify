@@ -41,7 +41,7 @@ export function ReadinessPanel({
         <h2 id="readiness-heading" className="font-heading text-base font-semibold">
           Runtime readiness
         </h2>
-        <p className="text-xs/relaxed text-muted-foreground">
+        <p className="text-sm/5 text-muted-foreground">
           Connection state and repository checks are reported without private values.
         </p>
       </div>
@@ -94,7 +94,7 @@ export function ReadinessPanel({
               </CardHeader>
               <CardContent>
                 {repository.findings.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">All configured checks passed.</p>
+                  <p className="text-sm text-muted-foreground">All configured checks passed.</p>
                 ) : (
                   <ul className="grid gap-2">
                     {repository.findings.map((finding, index) => (
@@ -108,7 +108,7 @@ export function ReadinessPanel({
                             {finding.code}
                           </code>
                         </div>
-                        <p className="mt-1 text-xs/relaxed">{finding.message}</p>
+                        <p className="mt-1 text-sm/5">{finding.message}</p>
                       </li>
                     ))}
                   </ul>

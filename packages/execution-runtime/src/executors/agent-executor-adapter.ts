@@ -33,6 +33,8 @@ const observableContent = (event: AgentExecutionEvent): string | undefined => {
       return `Session identified: ${event.data.sessionId}`
     case 'AGENT_MESSAGE':
       return event.data.content
+    case 'AGENT_REASONING':
+      return JSON.stringify({ eventType: event.type, data: event.data })
     case 'AGENT_TOOL_STARTED':
       return `Tool started: ${event.data.toolName} (${event.data.toolCallId})`
     case 'AGENT_TOOL_UPDATED':

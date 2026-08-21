@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import type { NodeExecutionStatus, RunEvent, RunStatus } from '@loop/contracts'
 
+import { AgentTranscript } from '@/components/runs/agent-transcript'
 import { RunEventStream } from '@/components/runs/run-event-stream'
 import {
   formatDuration,
@@ -17,6 +18,13 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet'
 import { createApiClient, type ApiClient, type RunDetailResponse } from '@/lib/api-client'
 import {
   connectRunEventStream,
@@ -350,6 +358,7 @@ export function LiveRun({
   const [streamStatus, setStreamStatus] = useState('Connecting')
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string>()
+  const [selectedNodeId, setSelectedNodeId] = useState<string>()
 
   useEffect(() => {
     mounted.current = true
@@ -362,6 +371,7 @@ export function LiveRun({
     setLoadError(undefined)
     setStreamError(undefined)
     setStreamStatus('Connecting')
+    setSelectedNodeId(undefined)
     let active = true
     let disconnected = false
 
@@ -511,6 +521,11 @@ export function LiveRun({
     !cancellationRequested
   const taskTitle = objectString(detail.run.taskSnapshot, 'title') ?? detail.run.taskReference
   const taskUrl = safeWebUrl(objectString(detail.run.taskSnapshot, 'url'))
+  const selectedNode = detail.workflowRevision.nodes.find(({ id }) => id === selectedNodeId)
+  const selectedExecution =
+    selectedNode === undefined
+      ? undefined
+      : latestExecutions(detail.nodeExecutions).get(selectedNode.id)
 
   const cancel = async () => {
     if (!cancellable || cancelling) return
@@ -541,18 +556,18 @@ export function LiveRun({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="space-y-2">
+    <main className="flex w-full flex-col gap-5">
+      <header className="flex flex-wrap items-start justify-between gap-4 rounded-lg border bg-card p-4 shadow-xs">
+        <div className="min-w-0 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <h1 className="font-heading text-xl font-semibold">Run {detail.run.runId}</h1>
+            <h2 className="font-mono text-sm font-semibold">Run {detail.run.runId}</h2>
             <RunStatusBadge status={status} />
             <Badge variant="outline" aria-live="polite">
               {streamStatus}
             </Badge>
           </div>
-          <p>{taskTitle}</p>
-          <p className="text-muted-foreground">
+          <p className="font-medium">{taskTitle}</p>
+          <p className="max-w-[90ch] text-sm/5 text-muted-foreground">
             Pinned revision {detail.run.revisionId} · {detail.profileSnapshot.displayName} (
             {detail.profileSnapshot.profileId}) · snapshot {detail.profileSnapshot.snapshotId} ·
             Task{' '}
@@ -585,19 +600,16 @@ export function LiveRun({
         </Alert>
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Run status</CardTitle>
-          <CardDescription>
+      <Card size="sm">
+        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <p className="sr-only">
             {terminalStatuses.has(status)
               ? 'Exact terminal snapshot; current configuration is not consulted.'
               : 'Server-confirmed lifecycle and active transition.'}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          </p>
           <div>
-            <p className="text-muted-foreground">Elapsed</p>
-            <p className="font-medium">
+            <p className="text-xs font-medium text-muted-foreground">Elapsed</p>
+            <p className="mt-1 font-medium tabular-nums">
               <ElapsedTime
                 completedAt={detail.run.completedAt}
                 running={status === 'RUNNING'}
@@ -606,12 +618,12 @@ export function LiveRun({
             </p>
           </div>
           <div>
-            <p className="text-muted-foreground">Current node</p>
-            <p className="font-medium">Current node: {currentNode?.name ?? 'None'}</p>
+            <p className="text-xs font-medium text-muted-foreground">Current node</p>
+            <p className="mt-1 font-medium">Current node: {currentNode?.name ?? 'None'}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">Selected transition</p>
-            <p className="font-medium">
+            <p className="text-xs font-medium text-muted-foreground">Selected transition</p>
+            <p className="mt-1 font-medium">
               Selected transition:{' '}
               {selectedTransition === undefined
                 ? 'None'
@@ -619,12 +631,12 @@ export function LiveRun({
             </p>
           </div>
           <div>
-            <p className="text-muted-foreground">Started</p>
-            <p className="font-medium">{formatTimestamp(detail.run.startedAt)}</p>
+            <p className="text-xs font-medium text-muted-foreground">Started</p>
+            <p className="mt-1 font-medium tabular-nums">{formatTimestamp(detail.run.startedAt)}</p>
           </div>
           <div>
-            <p className="text-muted-foreground">Stopped node</p>
-            <p className="font-medium">
+            <p className="text-xs font-medium text-muted-foreground">Stopped node</p>
+            <p className="mt-1 font-medium">
               Stopped node:{' '}
               {stoppedNode === undefined ? 'None' : `${stoppedNode.name} (${stoppedNode.id})`}
             </p>
@@ -632,7 +644,7 @@ export function LiveRun({
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-xs">
         <CardHeader>
           <CardTitle>{detail.workflowRevision.name}</CardTitle>
           <CardDescription>Pinned revision {detail.workflowRevision.revisionId}</CardDescription>
@@ -640,12 +652,45 @@ export function LiveRun({
         <CardContent>
           <WorkflowCanvas
             revision={detail.workflowRevision}
-            selectedNodeId={currentNodeId ?? detail.workflowRevision.startNodeId}
-            onNodeSelect={() => undefined}
+            selectedNodeId={selectedNodeId ?? currentNodeId ?? detail.workflowRevision.startNodeId}
+            onNodeSelect={setSelectedNodeId}
             recentRunStatuses={statuses}
           />
         </CardContent>
       </Card>
+
+      <Sheet
+        open={selectedNode !== undefined}
+        onOpenChange={(open) => {
+          if (!open) setSelectedNodeId(undefined)
+        }}
+      >
+        {selectedNode === undefined ? null : (
+          <SheetContent
+            className="w-full sm:max-w-xl"
+            aria-label={`${selectedNode.name} transcript`}
+          >
+            <SheetHeader className="border-b pr-12">
+              <SheetTitle>{selectedNode.name} transcript</SheetTitle>
+              <SheetDescription>
+                Prompt, reasoning, and response from this run&apos;s pinned agent execution.
+              </SheetDescription>
+            </SheetHeader>
+            {selectedNode.type === 'agent' ? (
+              <AgentTranscript
+                events={events}
+                node={selectedNode}
+                result={selectedExecution?.output}
+                streaming={statuses[selectedNode.id] === 'RUNNING'}
+              />
+            ) : (
+              <p className="p-4 text-muted-foreground">
+                This node does not produce an agent conversation.
+              </p>
+            )}
+          </SheetContent>
+        )}
+      </Sheet>
 
       <NodeProgress detail={detail} statuses={statuses} />
       <RepositoryEvidence detail={detail} />

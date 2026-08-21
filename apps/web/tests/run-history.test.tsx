@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RunsPage from '../app/runs/page'
@@ -71,7 +71,7 @@ describe('run history page', () => {
     expect(invalid).toMatchObject({ props: { page: 1 } })
   })
 
-  it('renders server-ordered identity, timing, stopped-node, and created-MR evidence', async () => {
+  it('renders run identity and execution metadata in a sortable table', async () => {
     const page = {
       data: [
         runSummary,
@@ -93,36 +93,103 @@ describe('run history page', () => {
 
     render(<RunHistory client={{ listRuns }} page={2} />)
 
-    const runLinks = await screen.findAllByRole('link', { name: /^Open run/ })
-    expect(runLinks.map((link) => link.textContent)).toEqual([
-      'Inspect historical runs',
-      'Follow a live run',
-    ])
-    expect(runLinks.map((link) => link.getAttribute('aria-label'))).toEqual([
-      'Open run run-newest for LOOP-38: Inspect historical runs',
-      'Open run run-older for LOOP-37: Follow a live run',
-    ])
-    expect(screen.getAllByText('Local delivery · local-profile')).toHaveLength(2)
-    expect(screen.getAllByText('revision-frozen')).toHaveLength(2)
-    expect(screen.getByText('2m 0s')).toBeTruthy()
-    expect(screen.getByText('Stopped at verify')).toBeTruthy()
-
-    const mergeRequest = screen.getByRole('link', {
-      name: 'Created merge request 1 for LOOP-38 in run run-newest',
-    })
-    expect(mergeRequest.getAttribute('href')).toBe(
-      'https://gitlab.example.com/group/project/-/merge_requests/38',
-    )
+    const table = await screen.findByRole('table', { name: 'Workflow runs' })
+    expect(table).toBeTruthy()
     expect(
-      screen.getByText(
-        'Created merge requests do not confirm pipeline success, approval, merge, deployment, or release.',
+      ['Run ID', 'Revision', 'Started', 'Duration', 'Status'].map((name) =>
+        screen.getByRole('button', { name: new RegExp(`Sort by ${name}`) }),
       ),
-    ).toBeTruthy()
+    ).toHaveLength(5)
+
+    const runLinks = screen.getAllByRole('link', { name: /^Open run/ })
+    expect(runLinks.map((link) => link.textContent)).toEqual(['run-newest', 'run-older'])
+    expect(runLinks.map((link) => link.getAttribute('aria-label'))).toEqual([
+      'Open run run-newest',
+      'Open run run-older',
+    ])
+    expect(within(table).getAllByText('revision-frozen')).toHaveLength(2)
+    expect(screen.getByText('2m 0s')).toBeTruthy()
     expect(screen.getByRole('link', { name: 'Previous page' }).getAttribute('href')).toBe(
       '/runs?page=1',
     )
     expect(screen.queryByRole('link', { name: 'Next page' })).toBeNull()
     expect(listRuns).toHaveBeenCalledWith({ page: 2, pageSize: 20 })
+  })
+
+  it('filters by deterministic status and revision values without free-text search', async () => {
+    const failedRun = {
+      ...runSummary,
+      runId: 'run-failed',
+      revisionId: 'revision-next',
+      status: 'FAILED' as const,
+    }
+    const listRuns = vi.fn<ApiClient['listRuns']>(
+      async () =>
+        ({
+          data: [runSummary, failedRun],
+          pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+        }) as unknown as RunHistoryPage,
+    )
+    render(<RunHistory client={{ listRuns }} page={1} />)
+
+    await screen.findByRole('link', { name: 'Open run run-newest' })
+    expect(screen.queryByRole('searchbox')).toBeNull()
+    expect(
+      Array.from(screen.getByRole('combobox', { name: 'Workflow revision' }).children).map(
+        (option) => option.textContent,
+      ),
+    ).toEqual(['All revisions', 'revision-frozen', 'revision-next'])
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Run status' }), {
+      target: { value: 'SUCCEEDED' },
+    })
+
+    expect(screen.getByRole('link', { name: 'Open run run-newest' })).toBeTruthy()
+    expect(screen.queryByRole('link', { name: 'Open run run-failed' })).toBeNull()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Run status' }), {
+      target: { value: 'ALL' },
+    })
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workflow revision' }), {
+      target: { value: 'revision-next' },
+    })
+
+    expect(screen.queryByRole('link', { name: 'Open run run-newest' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Open run run-failed' })).toBeTruthy()
+  })
+
+  it('sorts each column and reverses the active column direction', async () => {
+    const olderFailedRun = {
+      ...runSummary,
+      runId: 'a-run',
+      revisionId: 'revision-a',
+      status: 'FAILED' as const,
+      startedAt: '2026-08-20T09:00:00Z',
+      durationMs: 240_000,
+    }
+    const listRuns = vi.fn<ApiClient['listRuns']>(
+      async () =>
+        ({
+          data: [runSummary, olderFailedRun],
+          pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+        }) as unknown as RunHistoryPage,
+    )
+    render(<RunHistory client={{ listRuns }} page={1} />)
+
+    await screen.findByRole('link', { name: 'Open run run-newest' })
+    const ids = () =>
+      screen.getAllByRole('link', { name: /^Open run/ }).map((link) => link.textContent)
+
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by Run ID ascending' }))
+    expect(ids()).toEqual(['a-run', 'run-newest'])
+    fireEvent.click(screen.getByRole('button', { name: 'Sort by Run ID descending' }))
+    expect(ids()).toEqual(['run-newest', 'a-run'])
+
+    for (const column of ['Revision', 'Started', 'Duration', 'Status']) {
+      const button = screen.getByRole('button', { name: new RegExp(`Sort by ${column}`) })
+      fireEvent.click(button)
+      expect(button.closest('th')?.getAttribute('aria-sort')).not.toBe('none')
+    }
   })
 
   it('renders explicit empty and failure states', async () => {

@@ -1,10 +1,13 @@
 'use client'
 
 import type { WorkflowRevision } from '@loop/workflow-model'
+import { PlayIcon } from 'lucide-react'
+import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
+import { buttonVariants } from '@/components/ui/button'
 import {
   Select,
   SelectContent,
@@ -152,16 +155,9 @@ export function WorkflowWorkbench({
 
   if (revision === undefined) {
     return (
-      <section className="flex max-w-3xl flex-col gap-4" aria-busy={loading}>
-        <div className="grid gap-2">
-          <h1 className="font-heading text-2xl/8 font-semibold tracking-tight">Workflow</h1>
-          <p className="text-base/6 text-muted-foreground">
-            Inspect the immutable delivery workflow and its revisions.
-          </p>
-        </div>
+      <section className="flex w-full flex-col gap-4" aria-busy={loading} aria-label="Editor">
         {error === undefined ? (
-          <div role="status" aria-label="Loading workflow" className="grid gap-3">
-            <Skeleton className="h-8 w-64" />
+          <div role="status" aria-label="Loading workflow">
             <Skeleton className="h-160 w-full" />
           </div>
         ) : (
@@ -178,51 +174,55 @@ export function WorkflowWorkbench({
   const selectedNode = revision.nodes.find(({ id }) => id === selectedNodeId) ?? revision.nodes[0]
 
   return (
-    <section className="flex min-w-0 flex-col gap-4" aria-busy={loading}>
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div className="grid gap-2">
-          <h1 className="font-heading text-2xl/8 font-semibold tracking-tight">Workflow</h1>
-          <p className="max-w-3xl text-base/6 text-muted-foreground">{revision.description}</p>
+    <section className="flex min-w-0 flex-col gap-4" aria-busy={loading} aria-label="Editor">
+      <div className="flex flex-wrap items-end justify-between gap-4 rounded-lg border bg-card p-3 shadow-xs">
+        <div className="flex flex-wrap items-end gap-3">
+          <Badge variant="outline" className="mb-2">
+            Read-only topology
+          </Badge>
+          <div className="grid gap-1.5">
+            <label htmlFor="workflow-revision" className="text-xs/4 font-medium">
+              Workflow revision
+            </label>
+            <Select
+              items={
+                workflow?.revisions.map(({ revisionId }) => ({
+                  label: revisionId,
+                  value: revisionId,
+                })) ?? []
+              }
+              value={revision.revisionId}
+              onValueChange={(value) => {
+                if (value !== null) void selectRevision(value)
+              }}
+              disabled={loading}
+            >
+              <SelectTrigger id="workflow-revision" aria-label="Workflow revision">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent align="start">
+                <SelectGroup>
+                  {workflow?.revisions.map((summary) => (
+                    <SelectItem key={summary.revisionId} value={summary.revisionId}>
+                      <span className="font-mono">{summary.revisionId}</span>
+                      <span className="text-muted-foreground">
+                        {summary.createdAt.slice(0, 10)}
+                      </span>
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
-        <Badge variant="outline">Read-only topology</Badge>
-      </header>
-
-      <div className="flex flex-wrap items-end justify-between gap-4 border-y py-3">
-        <div className="grid gap-1">
-          <label htmlFor="workflow-revision" className="text-xs/4 font-medium">
-            Workflow revision
-          </label>
-          <Select
-            items={
-              workflow?.revisions.map(({ revisionId }) => ({
-                label: revisionId,
-                value: revisionId,
-              })) ?? []
-            }
-            value={revision.revisionId}
-            onValueChange={(value) => {
-              if (value !== null) void selectRevision(value)
-            }}
-            disabled={loading}
-          >
-            <SelectTrigger id="workflow-revision" aria-label="Workflow revision">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-              <SelectGroup>
-                {workflow?.revisions.map((summary) => (
-                  <SelectItem key={summary.revisionId} value={summary.revisionId}>
-                    <span className="font-mono">{summary.revisionId}</span>
-                    <span className="text-muted-foreground">{summary.createdAt.slice(0, 10)}</span>
-                  </SelectItem>
-                ))}
-              </SelectGroup>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid gap-1 text-right">
-          <span className="text-xs/4 font-medium text-muted-foreground">Transition limit</span>
-          <span className="font-mono text-sm/5">{revision.maxTransitions}</span>
+        <div className="flex items-center gap-4">
+          <div className="grid gap-1 text-right">
+            <span className="text-xs/4 font-medium text-muted-foreground">Transition limit</span>
+            <span className="font-mono text-sm/5 tabular-nums">{revision.maxTransitions}</span>
+          </div>
+          <Link href="/runs/new" className={buttonVariants()}>
+            <PlayIcon aria-hidden="true" /> New run
+          </Link>
         </div>
       </div>
 
@@ -233,14 +233,14 @@ export function WorkflowWorkbench({
         </Alert>
       )}
 
-      <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_20rem] items-start gap-4">
+      <div className="grid min-w-0 items-start gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <WorkflowCanvas
           revision={revision}
           selectedNodeId={selectedNode?.id ?? revision.startNodeId}
           onNodeSelect={setSelectedNodeId}
         />
         {selectedNode === undefined ? null : (
-          <aside aria-label="Selected node details">
+          <aside aria-label="Selected node details" className="xl:sticky xl:top-18">
             <NodeInspector
               node={selectedNode}
               revisionId={revision.revisionId}

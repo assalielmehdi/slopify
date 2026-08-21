@@ -44,7 +44,7 @@ export function TaskConfirmation({
           </div>
           <div>
             <dt className="text-muted-foreground">Revision</dt>
-            <dd className="font-mono text-xs">{revisionId}</dd>
+            <dd className="font-mono text-sm">{revisionId}</dd>
           </div>
           <div className="sm:col-span-2">
             <dt className="text-muted-foreground">Project profile</dt>
@@ -54,7 +54,7 @@ export function TaskConfirmation({
 
         <div>
           <h3 className="mb-2 font-medium">Candidate repositories and targets</h3>
-          <ol className="divide-y border">
+          <ol className="divide-y overflow-hidden rounded-md border">
             {profile.repositories.map((repository) => (
               <li
                 className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"
@@ -70,7 +70,7 @@ export function TaskConfirmation({
           </ol>
         </div>
 
-        <label className="flex items-start gap-2 border p-3 text-xs/relaxed">
+        <label className="flex items-start gap-3 rounded-md border bg-muted/30 p-3 text-sm/5">
           <input
             checked={confirmed}
             className="mt-0.5 size-4 accent-primary"

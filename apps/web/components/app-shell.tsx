@@ -3,7 +3,15 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
-import { BookOpenIcon, HistoryIcon, PlayIcon, SettingsIcon, WorkflowIcon } from 'lucide-react'
+import {
+  BotIcon,
+  BookOpenIcon,
+  BoxesIcon,
+  CpuIcon,
+  HistoryIcon,
+  PlugIcon,
+  WorkflowIcon,
+} from 'lucide-react'
 
 import { Separator } from '@/components/ui/separator'
 import {
@@ -21,18 +29,32 @@ import {
   SidebarTrigger,
 } from '@/components/ui/sidebar'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { ThemeToggle } from '@/components/theme-toggle'
 
-const navigationItems = [
-  { href: '/', label: 'Workflow', icon: WorkflowIcon },
-  { href: '/runs/new', label: 'New run', icon: PlayIcon },
-  { href: '/runs', label: 'Run history', icon: HistoryIcon },
-  { href: '/skills', label: 'Skills', icon: BookOpenIcon },
-  { href: '/settings', label: 'Settings', icon: SettingsIcon },
+const navigationSections = [
+  {
+    label: 'Workflow',
+    items: [
+      { href: '/', label: 'Editor', icon: WorkflowIcon },
+      { href: '/runs', label: 'Runs', icon: HistoryIcon },
+    ],
+  },
+  {
+    label: 'Configuration',
+    items: [
+      { href: '/providers', label: 'Providers', icon: CpuIcon },
+      { href: '/connectors', label: 'Connectors', icon: PlugIcon },
+      { href: '/skills', label: 'Skills', icon: BookOpenIcon },
+      { href: '/agent-profiles', label: 'Agent profiles', icon: BotIcon },
+      { href: '/project-profiles', label: 'Project profiles', icon: BoxesIcon },
+    ],
+  },
 ] as const
 
-function isNavigationItemActive(pathname: string, href: (typeof navigationItems)[number]['href']) {
-  if (href === '/') return pathname === '/'
-  if (href === '/runs/new') return pathname === href
+type NavigationItem = (typeof navigationSections)[number]['items'][number]
+
+function isNavigationItemActive(pathname: string, href: NavigationItem['href']) {
+  if (href === '/') return pathname === '/' || pathname === '/runs/new'
   if (href === '/runs') {
     return pathname === href || (pathname.startsWith('/runs/') && pathname !== '/runs/new')
   }
@@ -41,11 +63,14 @@ function isNavigationItemActive(pathname: string, href: (typeof navigationItems)
 
 function getRouteTitle(pathname: string) {
   if (pathname === '/runs/new') return 'New run'
-  if (pathname === '/runs') return 'Run history'
+  if (pathname === '/runs') return 'Runs'
   if (pathname.startsWith('/runs/')) return 'Run detail'
-  if (pathname === '/settings') return 'Settings'
+  if (pathname === '/providers') return 'Providers'
+  if (pathname === '/connectors') return 'Connectors'
   if (pathname === '/skills') return 'Skills'
-  return 'Workflow'
+  if (pathname === '/agent-profiles') return 'Agent profiles'
+  if (pathname === '/project-profiles' || pathname === '/settings') return 'Project profiles'
+  return 'Editor'
 }
 
 export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
@@ -55,7 +80,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
     <TooltipProvider>
       <SidebarProvider>
         <Sidebar collapsible="icon">
-          <SidebarHeader>
+          <SidebarHeader className="px-3 py-3">
             <SidebarMenu>
               <SidebarMenuItem>
                 <SidebarMenuButton
@@ -63,7 +88,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
                   tooltip="Slopify"
                   render={<Link href="/" aria-label="Slopify" />}
                 >
-                  <span className="flex size-8 shrink-0 items-center justify-center bg-primary text-primary-foreground">
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground shadow-sm shadow-primary/20">
                     <WorkflowIcon aria-hidden="true" className="size-4" />
                   </span>
                   <span className="grid min-w-0 flex-1 text-left leading-tight">
@@ -77,41 +102,50 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
             </SidebarMenu>
           </SidebarHeader>
           <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Workbench</SidebarGroupLabel>
-              <nav aria-label="Primary">
-                <SidebarMenu>
-                  {navigationItems.map(({ href, icon: Icon, label }) => {
-                    const isActive = isNavigationItemActive(pathname, href)
+            {navigationSections.map((section) => (
+              <SidebarGroup key={section.label}>
+                <SidebarGroupLabel>{section.label}</SidebarGroupLabel>
+                <nav aria-label={section.label}>
+                  <SidebarMenu>
+                    {section.items.map(({ href, icon: Icon, label }) => {
+                      const isActive = isNavigationItemActive(pathname, href)
 
-                    return (
-                      <SidebarMenuItem key={href}>
-                        <SidebarMenuButton
-                          isActive={isActive}
-                          tooltip={label}
-                          render={<Link href={href} aria-current={isActive ? 'page' : undefined} />}
-                        >
-                          <Icon aria-hidden="true" />
-                          <span>{label}</span>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    )
-                  })}
-                </SidebarMenu>
-              </nav>
-            </SidebarGroup>
+                      return (
+                        <SidebarMenuItem key={href}>
+                          <SidebarMenuButton
+                            isActive={isActive}
+                            tooltip={label}
+                            render={
+                              <Link href={href} aria-current={isActive ? 'page' : undefined} />
+                            }
+                          >
+                            <Icon aria-hidden="true" />
+                            <span>{label}</span>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      )
+                    })}
+                  </SidebarMenu>
+                </nav>
+              </SidebarGroup>
+            ))}
           </SidebarContent>
           <SidebarRail />
         </Sidebar>
         <SidebarInset>
-          <header className="flex h-12 shrink-0 items-center border-b">
-            <div className="flex items-center gap-2 px-4">
-              <SidebarTrigger className="-ml-1" />
-              <Separator orientation="vertical" className="h-4 data-vertical:self-auto" />
-              <p className="text-sm/5 font-medium">{getRouteTitle(pathname)}</p>
+          <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center border-b bg-background/85 backdrop-blur-xl supports-backdrop-filter:bg-background/75">
+            <div className="flex w-full items-center justify-between gap-4 px-4 sm:px-6">
+              <div className="flex items-center gap-2">
+                <SidebarTrigger className="-ml-1" />
+                <Separator orientation="vertical" className="h-4 data-vertical:self-auto" />
+                <h1 className="text-sm/5 font-semibold tracking-[-0.01em]">
+                  {getRouteTitle(pathname)}
+                </h1>
+              </div>
+              <ThemeToggle />
             </div>
           </header>
-          <div className="flex flex-1 flex-col gap-6 p-6">{children}</div>
+          <main className="flex flex-1 flex-col gap-6 p-4 sm:p-6 lg:p-8">{children}</main>
         </SidebarInset>
       </SidebarProvider>
     </TooltipProvider>

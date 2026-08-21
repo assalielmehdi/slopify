@@ -381,6 +381,7 @@ export interface ApiClient {
   listConnections?(): Promise<readonly ConnectionRecord[]>
   connect?(
     input: Readonly<{
+      connectionId?: string
       type: 'gitlab' | 'clickup' | 'openrouter'
       label: string
       configuration: unknown

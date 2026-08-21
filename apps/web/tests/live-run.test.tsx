@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RunEventSchema, type RunEvent, type RunStatus } from '@loop/contracts'
@@ -13,17 +13,24 @@ import type { RunDetailResponse, StartRunResponse } from '../lib/api-client'
 
 vi.mock('../components/workflow/workflow-canvas', () => ({
   WorkflowCanvas: ({
+    onNodeSelect,
     recentRunStatuses,
     revision,
     selectedNodeId,
   }: {
+    onNodeSelect: (nodeId: string) => void
     recentRunStatuses: Readonly<Record<string, string>>
     revision: { revisionId: string }
     selectedNodeId: string
   }) => (
     <div aria-label="Workflow graph" role="region">
-      Graph {revision.revisionId}; current {selectedNodeId}; statuses{' '}
-      {JSON.stringify(recentRunStatuses)}
+      <p>
+        Graph {revision.revisionId}; current {selectedNodeId}; statuses{' '}
+        {JSON.stringify(recentRunStatuses)}
+      </p>
+      <button type="button" onClick={() => onNodeSelect('implement')}>
+        Inspect Implement transcript
+      </button>
     </div>
   ),
 }))
@@ -276,6 +283,103 @@ const createConnector = () => {
 afterEach(cleanup)
 
 describe('LiveRun', () => {
+  it('shows the structured agent result when Pi completes without a message delta', async () => {
+    const terminalDetail = {
+      ...detail,
+      events: events.map((event) =>
+        event.sequence === 4 && event.type === 'NODE_OUTPUT'
+          ? {
+              ...event,
+              data: {
+                ...event.data,
+                content: JSON.stringify({ eventType: 'AGENT_STARTED', data: {} }),
+              },
+            }
+          : event,
+      ),
+      nodeExecutions: detail.nodeExecutions.map((execution) =>
+        execution.nodeId === 'implement'
+          ? {
+              ...execution,
+              output: {
+                summary: 'Answered the user.',
+                data: { response: 'I am Pi, an AI coding assistant.' },
+              },
+            }
+          : execution,
+      ),
+    }
+    const client = {
+      getRun: vi.fn(async () => terminalDetail as unknown as RunDetailResponse),
+      cancelRun: vi.fn(),
+    }
+
+    render(<LiveRun runId="run-01" client={client} connect={createConnector().connector} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect Implement transcript' }))
+
+    expect(screen.getByText('I am Pi, an AI coding assistant.')).toBeTruthy()
+  })
+
+  it('opens the selected agent transcript and streams reasoning and response chunks', async () => {
+    const transcriptEvents = RunEventSchema.array().parse([
+      ...events,
+      {
+        runId: 'run-01',
+        sequence: 8,
+        timestamp: '2026-08-20T10:00:07Z',
+        type: 'NODE_OUTPUT',
+        nodeId: 'implement',
+        data: {
+          channel: 'agent',
+          content: JSON.stringify({
+            eventType: 'AGENT_REASONING',
+            data: { content: 'I should inspect the code first.' },
+          }),
+        },
+      },
+    ])
+    const transcriptDetail = { ...detail, events: transcriptEvents }
+    const client = {
+      getRun: vi.fn(async () => transcriptDetail as unknown as RunDetailResponse),
+      cancelRun: vi.fn(),
+    }
+    const connection = createConnector()
+
+    render(<LiveRun runId="run-01" client={client} connect={connection.connector} />)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect Implement transcript' }))
+
+    expect(screen.getByRole('dialog', { name: 'Implement transcript' })).toBeTruthy()
+    expect(
+      screen.getByText(
+        'Implement only the approved execution plan across the selected worktrees. Verify changes incrementally and commit each repository-specific result.',
+      ),
+    ).toBeTruthy()
+    expect(screen.getByText('I should inspect the code first.')).toBeTruthy()
+
+    await waitFor(() => expect(connection.connector).toHaveBeenCalled())
+
+    act(() => {
+      connection.handlers()?.onEvent(
+        RunEventSchema.parse({
+          runId: 'run-01',
+          sequence: 9,
+          timestamp: '2026-08-20T10:00:08Z',
+          type: 'NODE_OUTPUT',
+          nodeId: 'implement',
+          data: {
+            channel: 'agent',
+            content: JSON.stringify({
+              eventType: 'AGENT_MESSAGE',
+              data: { content: 'Implementation complete.' },
+            }),
+          },
+        }),
+      )
+    })
+
+    expect(await screen.findByText(/Implementation complete\.$/)).toBeTruthy()
+  })
+
   it('renders the pinned graph, ordered events, and complete repository evidence as text', async () => {
     const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
     const connection = createConnector()

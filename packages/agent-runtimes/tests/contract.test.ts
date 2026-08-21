@@ -206,6 +206,7 @@ describe('agent execution event contract', () => {
         data: { sessionId: 'session-01' },
       },
       { ...eventBase, type: 'AGENT_MESSAGE', data: { content: 'Visible assistant text.' } },
+      { ...eventBase, type: 'AGENT_REASONING', data: { content: 'Visible reasoning.' } },
       {
         ...eventBase,
         type: 'AGENT_TOOL_STARTED',

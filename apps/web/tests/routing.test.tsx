@@ -9,13 +9,11 @@ import Page from '../app/page'
 afterEach(cleanup)
 
 describe('App Router root', () => {
-  it('renders the workbench root through an accessible page heading', () => {
+  it('leaves the visible route heading to the shared application shell', () => {
     render(<Page />)
 
-    expect(screen.getByRole('heading', { level: 1, name: 'Workflow' })).toBeTruthy()
-    expect(
-      screen.getByText('Inspect the immutable delivery workflow and its revisions.'),
-    ).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Editor' })).toBeNull()
+    expect(screen.getByRole('region', { name: 'Editor' })).toBeTruthy()
   })
 
   it('provides the required English root document layout', () => {

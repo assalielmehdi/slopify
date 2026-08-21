@@ -242,13 +242,19 @@ describe('Pi SDK executor', () => {
       'AGENT_STARTED',
       'AGENT_SESSION_IDENTIFIED',
       'AGENT_MESSAGE',
+      'AGENT_REASONING',
       'AGENT_TOOL_STARTED',
       'AGENT_TOOL_UPDATED',
       'AGENT_TOOL_COMPLETED',
       'AGENT_RESULT',
     ])
     expect(JSON.stringify(events)).not.toContain(secret)
-    expect(JSON.stringify(events)).not.toContain('Hidden')
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'AGENT_REASONING',
+        data: { content: 'Hidden [REDACTED]' },
+      }),
+    )
     expect(events.at(-1)).toMatchObject({
       type: 'AGENT_RESULT',
       data: {

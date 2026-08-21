@@ -95,7 +95,8 @@ describe('ProjectProfileSettings', () => {
     const { client, getProjectProfileReadiness, updateProjectProfile } = createClient()
     render(<ProjectProfileSettings client={client} />)
 
-    expect(await screen.findByRole('heading', { level: 1, name: 'Settings' })).toBeTruthy()
+    expect(await screen.findByLabelText('Profile')).toBeTruthy()
+    expect(screen.queryByRole('heading', { level: 1, name: 'Project profiles' })).toBeNull()
     expect(await screen.findByRole('group', { name: 'API readiness' })).toBeTruthy()
     expect((screen.getByLabelText('Profile') as HTMLSelectElement).value).toBe(profile.profileId)
 

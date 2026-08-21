@@ -108,7 +108,9 @@ export function RunConfigurationFields({
       {taskLocked ? (
         <Field>
           <FieldLabel>Run input</FieldLabel>
-          <p className="border px-3 py-2 text-xs">Basic agent run</p>
+          <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm font-medium">
+            Basic agent run
+          </p>
           <FieldDescription>No external task is required for this workflow.</FieldDescription>
         </Field>
       ) : (

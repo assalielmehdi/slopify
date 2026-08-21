@@ -7,7 +7,12 @@ const MAX_CONTENT_LENGTH = 1_000_000
 type ObservableAgentEvent = Extract<
   AgentExecutionEvent,
   {
-    type: 'AGENT_MESSAGE' | 'AGENT_TOOL_STARTED' | 'AGENT_TOOL_UPDATED' | 'AGENT_TOOL_COMPLETED'
+    type:
+      | 'AGENT_MESSAGE'
+      | 'AGENT_REASONING'
+      | 'AGENT_TOOL_STARTED'
+      | 'AGENT_TOOL_UPDATED'
+      | 'AGENT_TOOL_COMPLETED'
   }
 >
 
@@ -54,14 +59,24 @@ const messageEvent = (content: string): readonly NormalizedPiEvent[] => {
   return bounded === undefined ? [] : [{ type: 'AGENT_MESSAGE', data: { content: bounded } }]
 }
 
+const reasoningEvent = (content: string): readonly NormalizedPiEvent[] => {
+  const bounded = boundedContent(content)
+  return bounded === undefined ? [] : [{ type: 'AGENT_REASONING', data: { content: bounded } }]
+}
+
 export const createPiEventNormalizer = (
   options: CreatePiEventNormalizerOptions,
 ): PiEventNormalizer => {
   let assistantText: RedactionStream = options.redactor.createStream()
+  let reasoningText: RedactionStream = options.redactor.createStream()
   const toolStreams = new Map<string, { observedContent: string; redaction: RedactionStream }>()
   const resetAssistantText = (): void => {
     assistantText.finish()
     assistantText = options.redactor.createStream()
+  }
+  const resetReasoningText = (): void => {
+    reasoningText.finish()
+    reasoningText = options.redactor.createStream()
   }
 
   return {
@@ -80,11 +95,18 @@ export const createPiEventNormalizer = (
               case 'text_end':
                 resetAssistantText()
                 return []
+              case 'thinking_start':
+                resetReasoningText()
+                return []
+              case 'thinking_delta':
+                return typeof assistantEvent.delta === 'string'
+                  ? reasoningEvent(reasoningText.push(assistantEvent.delta))
+                  : []
+              case 'thinking_end':
+                resetReasoningText()
+                return []
               case 'start':
               case 'text_start':
-              case 'thinking_start':
-              case 'thinking_delta':
-              case 'thinking_end':
               case 'toolcall_start':
               case 'toolcall_delta':
               case 'toolcall_end':
@@ -158,10 +180,12 @@ export const createPiEventNormalizer = (
 
           case 'message_start':
             resetAssistantText()
+            resetReasoningText()
             return []
 
           case 'message_end':
             resetAssistantText()
+            resetReasoningText()
             return []
 
           case 'agent_start':
@@ -190,6 +214,7 @@ export const createPiEventNormalizer = (
     },
     finish() {
       resetAssistantText()
+      resetReasoningText()
       for (const stream of toolStreams.values()) stream.redaction.finish()
       toolStreams.clear()
     },

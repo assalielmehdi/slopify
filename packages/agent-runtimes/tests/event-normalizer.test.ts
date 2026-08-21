@@ -11,7 +11,7 @@ const createNormalizer = () =>
   })
 
 describe('Pi event normalizer', () => {
-  it('preserves visible assistant text in order while dropping thinking deltas', () => {
+  it('preserves visible assistant text and reasoning in order', () => {
     const normalizer = createNormalizer()
 
     const first = normalizer.normalize({
@@ -39,6 +39,7 @@ describe('Pi event normalizer', () => {
 
     expect([...first, ...thinking, ...second, ...ended]).toEqual([
       { type: 'AGENT_MESSAGE', data: { content: 'Visible [REDACTED]. ' } },
+      { type: 'AGENT_REASONING', data: { content: 'Hidden reasoning with [REDACTED]' } },
       { type: 'AGENT_MESSAGE', data: { content: 'Done.' } },
     ])
   })

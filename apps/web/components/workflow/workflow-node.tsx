@@ -41,8 +41,8 @@ export function WorkflowNodeContent({
   return (
     <article
       className={cn(
-        'flex h-32 w-56 flex-col gap-3 border bg-card p-3 text-card-foreground shadow-sm',
-        selected && 'ring-2 ring-ring ring-offset-2 ring-offset-background',
+        'flex h-30 w-54 flex-col gap-3 rounded-lg border bg-card/95 p-3.5 text-card-foreground shadow-sm backdrop-blur transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)]',
+        selected && 'border-primary shadow-md shadow-primary/10 ring-2 ring-primary/15',
       )}
       data-selected={selected || undefined}
     >
@@ -63,7 +63,7 @@ export function WorkflowNodeContent({
         {selected ? <Badge>Selected</Badge> : null}
       </div>
       <div className="min-w-0">
-        <h3 className="truncate text-sm/5 font-medium">{domainNode.name}</h3>
+        <h3 className="truncate text-sm/5 font-semibold tracking-[-0.01em]">{domainNode.name}</h3>
         <p className="truncate font-mono text-xs/4 text-muted-foreground">{domainNode.id}</p>
       </div>
     </article>

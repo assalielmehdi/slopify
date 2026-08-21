@@ -63,7 +63,10 @@ const catalog = [
   },
 ] as const
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.restoreAllMocks()
+})
 
 describe('WorkflowWorkbench', () => {
   it('loads the latest revision and keeps graph selection in the inspector', async () => {
@@ -78,10 +81,29 @@ describe('WorkflowWorkbench', () => {
     expect(await screen.findByText('Graph revision-02')).toBeTruthy()
     expect(client.getWorkflowRevision).toHaveBeenCalledWith('delivery-workflow', 'revision-02')
     expect(screen.getByRole('heading', { name: 'Load ClickUp task' })).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'New run' }).getAttribute('href')).toBe('/runs/new')
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspect Implement' }))
 
     expect(screen.getByRole('heading', { name: 'Implement' })).toBeTruthy()
+  })
+
+  it('renders New run as a link without a native button warning', async () => {
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const client = {
+      listWorkflows: vi.fn(async () => catalog),
+      getWorkflowRevision: vi.fn(async () => latestRevision),
+      createWorkflowRevision: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} />)
+
+    const newRunLink = await screen.findByRole('link', { name: 'New run' })
+
+    expect(newRunLink.getAttribute('data-slot')).toBeNull()
+    expect(consoleError.mock.calls.some((call) => call.join(' ').includes('nativeButton'))).toBe(
+      false,
+    )
   })
 
   it('loads another immutable revision from the accessible selector', async () => {

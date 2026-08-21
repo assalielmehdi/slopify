@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { RunHistory } from '@/components/runs/run-history'
 
 export const metadata: Metadata = {
-  title: 'Run history',
+  title: 'Runs',
 }
 
 export default async function RunsPage({

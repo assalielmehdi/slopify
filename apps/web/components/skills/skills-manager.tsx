@@ -114,24 +114,15 @@ export function SkillsManager({
   }
 
   return (
-    <main className="mx-auto flex w-full max-w-7xl flex-col gap-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-heading text-xl font-semibold">Skills</h1>
-          <p className="text-xs/relaxed text-muted-foreground">
-            The local skills directory is the source of truth. Published workflows use immutable
-            snapshots.
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline" onClick={() => void refresh()} disabled={pending}>
-            <RefreshCwIcon aria-hidden="true" /> Refresh filesystem
-          </Button>
-          <Button onClick={() => setCreating(true)}>
-            <PlusIcon aria-hidden="true" /> New skill
-          </Button>
-        </div>
-      </header>
+    <main className="flex w-full flex-col gap-6">
+      <div className="flex justify-end gap-2">
+        <Button variant="outline" onClick={() => void refresh()} disabled={pending}>
+          <RefreshCwIcon aria-hidden="true" /> Refresh filesystem
+        </Button>
+        <Button onClick={() => setCreating(true)}>
+          <PlusIcon aria-hidden="true" /> New skill
+        </Button>
+      </div>
       {error === undefined ? null : (
         <Alert variant="destructive">
           <AlertTitle>Skills unavailable</AlertTitle>
@@ -170,8 +161,8 @@ export function SkillsManager({
           </CardContent>
         </Card>
       ) : null}
-      <div className="grid min-h-[30rem] gap-6 lg:grid-cols-[18rem_minmax(0,1fr)]">
-        <Card>
+      <div className="grid min-h-[34rem] overflow-hidden rounded-xl border bg-card shadow-xs lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <Card className="rounded-none border-0 border-r py-4">
           <CardHeader>
             <CardTitle>Available skills</CardTitle>
             <CardDescription>
@@ -197,13 +188,13 @@ export function SkillsManager({
           </CardContent>
         </Card>
         {selected === undefined ? (
-          <Card>
+          <Card className="rounded-none border-0">
             <CardContent className="pt-6 text-sm text-muted-foreground">
               No skill selected.
             </CardContent>
           </Card>
         ) : (
-          <Card>
+          <Card className="rounded-none border-0">
             <CardHeader className="flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle>{selected.name}</CardTitle>
@@ -214,7 +205,10 @@ export function SkillsManager({
               </Button>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-[14rem_minmax(0,1fr)]">
-              <nav aria-label="Skill files" className="grid content-start gap-1 border p-2">
+              <nav
+                aria-label="Skill files"
+                className="grid content-start gap-1 rounded-md border bg-muted/25 p-2"
+              >
                 {selected.files.map((file) => (
                   <Button
                     key={file.path}
@@ -238,7 +232,7 @@ export function SkillsManager({
                 </div>
                 <Textarea
                   aria-label="Raw skill file"
-                  className="min-h-96 font-mono text-xs"
+                  className="min-h-96 bg-muted/20 font-mono text-sm/6"
                   value={draft}
                   onChange={(event) => setDraft(event.currentTarget.value)}
                 />
