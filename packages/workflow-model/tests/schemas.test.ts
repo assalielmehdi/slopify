@@ -7,9 +7,9 @@ import {
   TerminalNodeSchema,
   WorkflowEdgeSchema,
   WorkflowNodeSchema,
-  WorkflowRevisionSchema,
+  WorkflowSchema,
   type WorkflowNode,
-  type WorkflowRevision,
+  type Workflow,
 } from '../src/index.js'
 
 const agentNode = {
@@ -17,17 +17,20 @@ const agentNode = {
   id: 'plan',
   name: 'Plan',
   description: 'Produce the approved execution plan.',
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
-  thinkingLevel: 'high',
-  promptTemplate: 'Create an execution plan for {{task}}.',
-  workspacePolicy: 'selected-worktrees',
-  permissionProfile: 'read-only',
-  resourceBundleId: 'delivery-planning',
-  inputArtifacts: [],
-  outputSchemaRef: 'workflow-output/plan-v1',
-  outcomes: ['ready', 'blocked'],
   timeoutSeconds: 900,
+  result: { schemaRef: 'workflow-output/plan-v1' },
+  sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
+  job: {
+    kind: 'agent',
+    prompt: 'Create an execution plan for the task.',
+    skillSnapshotRefs: [],
+    inference: {
+      connectionId: 'openrouter-primary',
+      modelId: 'anthropic/claude-sonnet-4.5',
+      thinkingLevel: 'high',
+    },
+    connectorIds: [],
+  },
 }
 
 const commandNode = {
@@ -56,9 +59,8 @@ const terminalNode = {
   terminalStatus: 'SUCCEEDED',
 }
 
-const revision = {
+const workflow = {
   workflowId: 'delivery-workflow',
-  revisionId: 'revision-01',
   name: 'Delivery workflow',
   description: 'Deliver one approved ClickUp task.',
   startNodeId: 'plan',
@@ -73,7 +75,7 @@ const revision = {
   ],
   maxTransitions: 24,
   createdAt: '2026-08-18T20:00:00Z',
-  parentRevisionId: 'revision-00',
+  updatedAt: '2026-08-18T21:00:00Z',
 }
 
 describe('workflow node contracts', () => {
@@ -91,7 +93,7 @@ describe('workflow node contracts', () => {
     const labelFor = (node: WorkflowNode): string => {
       switch (node.type) {
         case 'agent':
-          return node.provider
+          return node.job.inference.connectionId
         case 'command':
           return node.commandId
         case 'router':
@@ -105,7 +107,7 @@ describe('workflow node contracts', () => {
       }
     }
 
-    expect(labelFor(WorkflowNodeSchema.parse(agentNode))).toBe('anthropic')
+    expect(labelFor(WorkflowNodeSchema.parse(agentNode))).toBe('openrouter-primary')
     expect(WorkflowNodeSchema.safeParse({ ...agentNode, type: 'human' }).success).toBe(false)
   })
 
@@ -125,16 +127,14 @@ describe('workflow node contracts', () => {
     },
   )
 
-  it('requires every agent execution field and rejects a configurable harness', () => {
-    const withoutProvider: Partial<typeof agentNode> = { ...agentNode }
-    delete withoutProvider.provider
-
-    expect(AgentNodeSchema.safeParse(withoutProvider).success).toBe(false)
+  it('requires the agent prompt and rejects a configurable harness', () => {
+    expect(
+      AgentNodeSchema.safeParse({ ...agentNode, job: { ...agentNode.job, prompt: ' ' } }).success,
+    ).toBe(false)
     expect(AgentNodeSchema.safeParse({ ...agentNode, harness: 'external-cli' }).success).toBe(false)
   })
 
   it('requires outcomes for every non-terminal variant', () => {
-    expect(AgentNodeSchema.safeParse({ ...agentNode, outcomes: [] }).success).toBe(false)
     expect(CommandNodeSchema.safeParse({ ...commandNode, outcomes: [] }).success).toBe(false)
     expect(RouterNodeSchema.safeParse({ ...routerNode, outcomes: [] }).success).toBe(false)
   })
@@ -149,55 +149,54 @@ describe('workflow node contracts', () => {
   })
 })
 
-describe('workflow edge and revision contracts', () => {
+describe('workflow contracts', () => {
   it('parses a labeled directed edge', () => {
-    expect(WorkflowEdgeSchema.parse(revision.edges[0])).toEqual(revision.edges[0])
+    expect(WorkflowEdgeSchema.parse(workflow.edges[0])).toEqual(workflow.edges[0])
   })
 
-  it('parses a complete immutable revision document', () => {
-    const parsed = WorkflowRevisionSchema.parse(revision)
+  it('parses a complete workflow without revision metadata', () => {
+    const parsed = WorkflowSchema.parse(workflow)
 
-    expect(parsed).toEqual(revision)
-    expectTypeOf(parsed).toEqualTypeOf<WorkflowRevision>()
+    expect(parsed).toEqual(workflow)
+    expectTypeOf(parsed).toEqualTypeOf<Workflow>()
+    expect(WorkflowSchema.safeParse({ ...workflow, revisionId: 'revision-01' }).success).toBe(false)
+    expect(WorkflowSchema.safeParse({ ...workflow, parentRevisionId: 'revision-00' }).success).toBe(
+      false,
+    )
   })
 
-  it('freezes the parsed revision and its graph records', () => {
-    const parsed = WorkflowRevisionSchema.parse(revision)
+  it('freezes the parsed workflow and its graph records', () => {
+    const parsed = WorkflowSchema.parse(workflow)
 
     expect(Object.isFrozen(parsed)).toBe(true)
     expect(Object.isFrozen(parsed.nodes)).toBe(true)
     expect(Object.isFrozen(parsed.nodes[0])).toBe(true)
     expect(parsed.nodes[0]?.type).toBe('agent')
     if (parsed.nodes[0]?.type === 'agent') {
-      expect(Object.isFrozen(parsed.nodes[0].inputArtifacts)).toBe(true)
-      expect(Object.isFrozen(parsed.nodes[0].outcomes)).toBe(true)
+      expect(Object.isFrozen(parsed.nodes[0].job)).toBe(true)
+      expect(Object.isFrozen(parsed.nodes[0].job.skillSnapshotRefs)).toBe(true)
     }
     expect(Object.isFrozen(parsed.edges)).toBe(true)
     expect(Object.isFrozen(parsed.edges[0])).toBe(true)
   })
 
-  it.each([0, -1, 1.5, Number.POSITIVE_INFINITY])(
+  it.each([-1, 1.5, Number.POSITIVE_INFINITY])(
     'rejects invalid transition bound %j',
     (maxTransitions) => {
-      expect(WorkflowRevisionSchema.safeParse({ ...revision, maxTransitions }).success).toBe(false)
+      expect(WorkflowSchema.safeParse({ ...workflow, maxTransitions }).success).toBe(false)
     },
   )
 
   it('rejects malformed start and edge outcome identifiers', () => {
+    expect(WorkflowSchema.safeParse({ ...workflow, startNodeId: 'Plan Node' }).success).toBe(false)
     expect(
-      WorkflowRevisionSchema.safeParse({ ...revision, startNodeId: 'Plan Node' }).success,
-    ).toBe(false)
-    expect(
-      WorkflowEdgeSchema.safeParse({ ...revision.edges[0], outcome: 'READY_NOW' }).success,
+      WorkflowEdgeSchema.safeParse({ ...workflow.edges[0], outcome: 'READY_NOW' }).success,
     ).toBe(false)
   })
 
   it('rejects invalid timestamps and secret-bearing public fields', () => {
-    expect(WorkflowRevisionSchema.safeParse({ ...revision, createdAt: 'yesterday' }).success).toBe(
-      false,
-    )
-    expect(WorkflowRevisionSchema.safeParse({ ...revision, apiToken: 'secret' }).success).toBe(
-      false,
-    )
+    expect(WorkflowSchema.safeParse({ ...workflow, createdAt: 'yesterday' }).success).toBe(false)
+    expect(WorkflowSchema.safeParse({ ...workflow, updatedAt: 'tomorrow' }).success).toBe(false)
+    expect(WorkflowSchema.safeParse({ ...workflow, apiToken: 'secret' }).success).toBe(false)
   })
 })

@@ -1,11 +1,10 @@
 import type { Metadata } from 'next'
-
-import { ProjectProfileSettings } from '@/components/settings/project-profile-settings'
+import { redirect } from 'next/navigation'
 
 export const metadata: Metadata = {
-  title: 'Settings',
+  title: 'Preferences',
 }
 
 export default function SettingsPage() {
-  return <ProjectProfileSettings />
+  redirect('/preferences')
 }

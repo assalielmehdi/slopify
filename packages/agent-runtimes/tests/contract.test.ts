@@ -64,6 +64,15 @@ describe('agent execution input contract', () => {
     expect(parsed).toEqual(executionInput)
   })
 
+  it('allows a repository-free private workspace', () => {
+    expect(
+      AgentExecutionInputSchema.parse({
+        ...executionInput,
+        workspace: { rootPath: '/', repositories: [] },
+      }).workspace,
+    ).toEqual({ rootPath: '/', repositories: [] })
+  })
+
   it.each([
     ['execution ID', { ...executionInput, executionId: undefined }],
     ['run ID', { ...executionInput, runId: undefined }],
@@ -197,6 +206,7 @@ describe('agent execution event contract', () => {
         data: { sessionId: 'session-01' },
       },
       { ...eventBase, type: 'AGENT_MESSAGE', data: { content: 'Visible assistant text.' } },
+      { ...eventBase, type: 'AGENT_REASONING', data: { content: 'Visible reasoning.' } },
       {
         ...eventBase,
         type: 'AGENT_TOOL_STARTED',

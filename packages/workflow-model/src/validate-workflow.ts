@@ -1,22 +1,21 @@
-import type { NodeId } from '@loop/contracts'
+import type { NodeId } from '@slopify/contracts'
 
 import { getReachableNodeIds } from './graph-queries.js'
-import { WorkflowRevisionSchema } from './schemas.js'
-import type { WorkflowRevision } from './types.js'
+import { WorkflowSchema } from './schemas.js'
+import type { Workflow } from './types.js'
 
 export const WORKFLOW_VALIDATION_CODES = [
   'SCHEMA_INVALID',
   'DUPLICATE_NODE_ID',
   'START_NODE_NOT_FOUND',
+  'START_NODE_REQUIRED',
   'START_NODE_AMBIGUOUS',
-  'TERMINAL_NODE_MISSING',
   'EDGE_SOURCE_NOT_FOUND',
   'EDGE_TARGET_NOT_FOUND',
   'START_NODE_HAS_INCOMING_EDGE',
   'TERMINAL_NODE_HAS_OUTGOING_EDGE',
   'EDGE_OUTCOME_UNDECLARED',
   'OUTCOME_EDGE_MISSING',
-  'OUTCOME_EDGE_AMBIGUOUS',
   'NODE_UNREACHABLE',
   'COMMAND_UNREGISTERED',
 ] as const
@@ -37,7 +36,7 @@ export interface WorkflowValidationOptions {
 export type WorkflowValidationResult =
   | Readonly<{
       valid: true
-      workflow: WorkflowRevision
+      workflow: Workflow
       findings: readonly []
     }>
   | Readonly<{
@@ -92,7 +91,7 @@ function invalidResult(findings: WorkflowValidationFinding[]): WorkflowValidatio
 }
 
 function validateNodeIdentities(
-  workflow: WorkflowRevision,
+  workflow: Workflow,
   findings: WorkflowValidationFinding[],
 ): Map<NodeId, number[]> {
   const indexesByNodeId = new Map<NodeId, number[]>()
@@ -112,13 +111,29 @@ function validateNodeIdentities(
     indexesByNodeId.set(node.id, indexes)
   })
 
-  const startIndexes = indexesByNodeId.get(workflow.startNodeId) ?? []
+  if (workflow.nodes.length > 0 && workflow.startNodeId === null) {
+    findings.push(
+      createFinding(
+        'START_NODE_REQUIRED',
+        ['startNodeId'],
+        'A workflow containing jobs must declare a start node.',
+      ),
+    )
+    return indexesByNodeId
+  }
+
+  if (workflow.nodes.length === 0 && workflow.startNodeId === null) {
+    return indexesByNodeId
+  }
+
+  const startIndexes =
+    workflow.startNodeId === null ? [] : (indexesByNodeId.get(workflow.startNodeId) ?? [])
   if (startIndexes.length === 0) {
     findings.push(
       createFinding(
         'START_NODE_NOT_FOUND',
         ['startNodeId'],
-        `Start node "${workflow.startNodeId}" does not exist.`,
+        `Start node "${String(workflow.startNodeId)}" does not exist.`,
       ),
     )
   } else if (startIndexes.length > 1) {
@@ -126,14 +141,8 @@ function validateNodeIdentities(
       createFinding(
         'START_NODE_AMBIGUOUS',
         ['startNodeId'],
-        `Start node "${workflow.startNodeId}" resolves to multiple nodes.`,
+        `Start node "${String(workflow.startNodeId)}" resolves to multiple nodes.`,
       ),
-    )
-  }
-
-  if (!workflow.nodes.some((node) => node.type === 'terminal')) {
-    findings.push(
-      createFinding('TERMINAL_NODE_MISSING', ['nodes'], 'Workflow must declare a terminal node.'),
     )
   }
 
@@ -141,7 +150,7 @@ function validateNodeIdentities(
 }
 
 function validateEdges(
-  workflow: WorkflowRevision,
+  workflow: Workflow,
   indexesByNodeId: ReadonlyMap<NodeId, readonly number[]>,
   findings: WorkflowValidationFinding[],
 ): void {
@@ -167,7 +176,7 @@ function validateEdges(
         ),
       )
     }
-    if (edge.targetNodeId === workflow.startNodeId) {
+    if (workflow.startNodeId !== null && edge.targetNodeId === workflow.startNodeId) {
       findings.push(
         createFinding(
           'START_NODE_HAS_INCOMING_EDGE',
@@ -195,7 +204,7 @@ function validateEdges(
       )
       return
     }
-    if (!sourceNode.outcomes.includes(edge.outcome)) {
+    if (sourceNode.type !== 'agent' && !sourceNode.outcomes.includes(edge.outcome)) {
       findings.push(
         createFinding(
           'EDGE_OUTCOME_UNDECLARED',
@@ -207,9 +216,13 @@ function validateEdges(
   })
 }
 
-function validateOutcomes(workflow: WorkflowRevision, findings: WorkflowValidationFinding[]): void {
+function validateOutcomes(workflow: Workflow, findings: WorkflowValidationFinding[]): void {
   workflow.nodes.forEach((node, nodeIndex) => {
     if (node.type === 'terminal') {
+      return
+    }
+
+    if (node.type === 'agent') {
       return
     }
 
@@ -225,25 +238,20 @@ function validateOutcomes(workflow: WorkflowRevision, findings: WorkflowValidati
             `Outcome "${outcome}" on node "${node.id}" has no edge.`,
           ),
         )
-      } else if (edgeCount > 1) {
-        findings.push(
-          createFinding(
-            'OUTCOME_EDGE_AMBIGUOUS',
-            ['nodes', nodeIndex, 'outcomes', outcomeIndex],
-            `Outcome "${outcome}" on node "${node.id}" has multiple edges.`,
-          ),
-        )
       }
     })
   })
 }
 
 function validateReachability(
-  workflow: WorkflowRevision,
+  workflow: Workflow,
   indexesByNodeId: ReadonlyMap<NodeId, readonly number[]>,
   findings: WorkflowValidationFinding[],
 ): void {
-  if ((indexesByNodeId.get(workflow.startNodeId) ?? []).length !== 1) {
+  if (
+    workflow.startNodeId === null ||
+    (indexesByNodeId.get(workflow.startNodeId) ?? []).length !== 1
+  ) {
     return
   }
 
@@ -262,7 +270,7 @@ function validateReachability(
 }
 
 function validateCommands(
-  workflow: WorkflowRevision,
+  workflow: Workflow,
   registeredCommandIds: ReadonlySet<string>,
   findings: WorkflowValidationFinding[],
 ): void {
@@ -283,7 +291,7 @@ export function validateWorkflow(
   input: unknown,
   options: WorkflowValidationOptions,
 ): WorkflowValidationResult {
-  const parsed = WorkflowRevisionSchema.safeParse(input)
+  const parsed = WorkflowSchema.safeParse(input)
   if (!parsed.success) {
     return invalidResult(
       parsed.error.issues.map((issue) =>

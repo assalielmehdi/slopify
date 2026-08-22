@@ -1,4 +1,14 @@
 export {
+  createBunChildAgentExecutor,
+  createIpcPiCredentialStore,
+  getBunAgentWorkerScriptPath,
+  type BunWorkerExecutionContext,
+  type BunWorkerProcess,
+  type BunWorkerSpawnInput,
+  type BunWorkerSpawner,
+  type WorkerCredentialStore,
+} from './bun-child-agent-executor.js'
+export {
   AgentCancelResultSchema,
   AgentExecutionEventSchema,
   AgentExecutionIdSchema,
@@ -42,16 +52,6 @@ export {
   type WorkspaceResourceRepository,
 } from './resource-loader.js'
 export {
-  PromptRendererError,
-  renderAgentPrompt,
-  type PromptRendererErrorCode,
-  type RenderAgentPromptInput,
-  type RenderedAgentPrompt,
-  type RenderedPromptRepository,
-  type RenderedPromptWorkspace,
-  type RenderedReviewRepository,
-} from './prompt-renderer.js'
-export {
   createEnvironmentModelCredentialSource,
   ModelRuntimeError,
   type CreateEnvironmentModelCredentialSourceOptions,
@@ -87,3 +87,20 @@ export {
   type NormalizedPiEvent,
   type PiEventNormalizer,
 } from './event-normalizer.js'
+export {
+  createGondolinAgentSandboxFactory,
+  type AgentSandbox,
+  type AgentSandboxFactory,
+  type AgentSandboxVm,
+  type CreateAgentSandboxInput,
+} from './gondolin-sandbox.js'
+export {
+  createGondolinPiSdkAgentExecutor,
+  type GondolinPiExecutionContext,
+} from './gondolin-pi-executor.js'
+export {
+  createChatGptOAuthService,
+  type ChatGptOAuthLoginInteraction,
+  type ChatGptOAuthService,
+  type ChatGptOAuthTransaction,
+} from './chatgpt-oauth.js'

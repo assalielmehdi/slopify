@@ -1,33 +1,48 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { ProjectProfileConfigurationSchema } from '@loop/contracts'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import {
+  AgentTraceSchema,
+  DeletionReceiptSchema,
+  ProjectSchema,
+  UndoDeletionResponseSchema,
+} from '@slopify/contracts'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { ApiClientError, createApiClient } from '../lib/api-client'
 
 describe('API client', () => {
-  const profile = ProjectProfileConfigurationSchema.parse({
-    profileId: 'local-profile',
-    displayName: 'Local profile',
-    clickupWorkspaceId: 'workspace-01',
-    clickupListId: 'list-01',
-    clickupInReviewStatusId: 'in-review',
-    repositories: [
-      {
-        repositoryId: 'api',
-        displayName: 'API',
-        purpose: 'Backend',
-        repositoryPath: '/workspace/api',
-        gitlabProject: 'group/api',
-        remote: 'origin',
-        targetBranch: 'main',
-        worktreeParent: '/workspace/.worktrees',
-        branchTemplate: 'ai/{task}-{run}',
-        executableChecks: [{ executable: 'node', arguments: ['--version'] }],
-        verificationCommands: [{ executable: 'pnpm', arguments: ['test'] }],
-        mergeRequestLabels: ['backend'],
+  it('loads a typed agent trace for one captured node execution', async () => {
+    const trace = AgentTraceSchema.parse({
+      header: {
+        version: 1,
+        runId: 'run-01',
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'attempt-01',
+        nodeId: 'identify-agent',
+        createdAt: '2026-08-22T10:00:00.000Z',
+        configuration: {
+          connectionId: 'provider-default',
+          provider: 'openrouter',
+          model: 'test/model',
+          thinkingLevel: 'medium',
+          renderedPrompt: 'Inspect the repository.',
+          permissionProfile: 'workspace-write',
+          timeoutSeconds: 600,
+        },
       },
-    ],
+      events: [],
+      complete: false,
+    })
+    const fetchImplementation = vi.fn(async () => Response.json(trace))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(
+      client.getAgentTrace('run-01', 'node-execution-01', 'attempt-01'),
+    ).resolves.toEqual(trace)
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      '/api/runs/run-01/node-executions/node-execution-01/trace?attemptId=attempt-01',
+      { headers: { accept: 'application/json' }, method: 'GET' },
+    )
   })
 
   it('loads typed health data from the same-origin Hono boundary', async () => {
@@ -72,9 +87,89 @@ describe('API client', () => {
     )
   })
 
-  it('loads and validates the workflow catalog and exact revision', async () => {
-    const revision = createPredefinedV1Revision({
-      revisionId: 'revision-01',
+  it('loads the API-owned connection catalog with current connection state', async () => {
+    const catalogEntry = {
+      type: 'gitlab',
+      category: 'connector',
+      name: 'GitLab',
+      icon: 'gitlab',
+      eyebrow: 'Source control',
+      summary: 'Read repositories and manage delivery through GitLab.',
+      description: 'Connect GitLab to manage delivery.',
+      setup: ['Create a personal access token.'],
+      access: 'Uses the permissions available to your GitLab user.',
+      credentialLabel: 'Personal access token',
+      credentialDescription: 'Validated before storage.',
+      replacementLabel: 'New personal access token',
+      resourceHref: 'https://gitlab.com/-/user_settings/personal_access_tokens',
+      resourceLabel: 'Create a personal access token',
+    }
+    const fetchImplementation = vi.fn(async () =>
+      Response.json({ catalog: [catalogEntry], connections: [] }),
+    )
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listConnections?.()).resolves.toEqual({
+      catalog: [catalogEntry],
+      connections: [],
+    })
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/connections', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
+  })
+
+  it('lists, adds, deletes, and restores local Git projects through the same-origin API', async () => {
+    const project = ProjectSchema.parse({
+      projectId: 'project-01',
+      name: 'slopify',
+      repositoryPath: '/workspace/slopify',
+      availability: 'AVAILABLE',
+      createdAt: '2026-08-21T10:00:00Z',
+      updatedAt: '2026-08-21T10:00:00Z',
+    })
+    const deletion = DeletionReceiptSchema.parse({
+      deletionId: 'deletion-01',
+      subject: { type: 'PROJECT', id: 'project-01' },
+      deletedAt: '2026-08-22T10:00:00Z',
+      undoExpiresAt: '2026-08-22T10:00:10Z',
+    })
+    const undone = UndoDeletionResponseSchema.parse({ ...deletion, state: 'UNDONE' })
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ projects: [project] }))
+      .mockResolvedValueOnce(Response.json(project, { status: 201 }))
+      .mockResolvedValueOnce(Response.json(deletion))
+      .mockResolvedValueOnce(Response.json(undone))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listProjects?.()).resolves.toEqual([project])
+    await expect(client.addProject?.({ repositoryPath: '/workspace/slopify' })).resolves.toEqual(
+      project,
+    )
+    await expect(client.deleteProject?.('project-01')).resolves.toEqual(deletion)
+    await expect(client.undoDeletion?.('deletion-01')).resolves.toEqual(undone)
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/projects', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/projects', {
+      body: JSON.stringify({ repositoryPath: '/workspace/slopify' }),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/projects/project-01', {
+      method: 'DELETE',
+      headers: { accept: 'application/json' },
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(4, '/api/deletions/deletion-01/undo', {
+      method: 'POST',
+      headers: { accept: 'application/json' },
+    })
+  })
+
+  it('loads and validates the workflow catalog and current workflow', async () => {
+    const workflow = createPredefinedV1Workflow({
       createdAt: '2026-08-18T12:00:00Z',
       agentDefaults: {
         provider: 'test-provider',
@@ -86,38 +181,22 @@ describe('API client', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
         Response.json({
-          workflows: [
-            {
-              workflowId: revision.workflowId,
-              name: revision.name,
-              latestRevisionId: revision.revisionId,
-              revisions: [
-                {
-                  revisionId: revision.revisionId,
-                  parentRevisionId: null,
-                  createdAt: revision.createdAt,
-                },
-              ],
-            },
-          ],
+          workflows: [workflow],
         }),
       )
-      .mockResolvedValueOnce(Response.json(revision))
+      .mockResolvedValueOnce(Response.json(workflow))
     const client = createApiClient({ fetch: fetchImplementation })
 
-    await expect(client.listWorkflows()).resolves.toHaveLength(1)
-    await expect(
-      client.getWorkflowRevision(revision.workflowId, revision.revisionId),
-    ).resolves.toEqual(revision)
+    await expect(client.listWorkflows()).resolves.toEqual([workflow])
+    await expect(client.getWorkflow(workflow.workflowId)).resolves.toEqual(workflow)
     expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/workflows', {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(
-      2,
-      '/api/workflows/delivery-workflow/revisions/revision-01',
-      { headers: { accept: 'application/json' }, method: 'GET' },
-    )
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/delivery-workflow', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
   })
 
   it('rejects malformed workflow catalog data at the browser boundary', async () => {
@@ -128,97 +207,36 @@ describe('API client', () => {
     await expect(client.listWorkflows()).rejects.toMatchObject({ name: 'ZodError' })
   })
 
-  it('loads the typed profile catalog, connector status, and repository readiness', async () => {
-    const readiness = {
-      profileId: profile.profileId,
-      ready: false,
-      repositories: [
-        {
-          repositoryId: 'api',
-          ready: false,
-          findings: [
-            {
-              category: 'git',
-              code: 'GIT_REMOTE_MISMATCH',
-              message: 'Git remote does not match the configured project',
-            },
-          ],
-        },
-      ],
-    }
+  it('loads connector status without exposing removed delivery profile APIs', async () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(
-        Response.json({ profiles: [profile], runtime: { mode: 'container', root: '/workspace' } }),
-      )
       .mockResolvedValueOnce(Response.json({ clickup: false, gitlab: true, modelProvider: false }))
-      .mockResolvedValueOnce(Response.json(readiness))
     const client = createApiClient({ fetch: fetchImplementation })
 
-    await expect(client.listProjectProfiles()).resolves.toMatchObject({
-      profiles: [profile],
-      runtime: { mode: 'container', root: '/workspace' },
-    })
     await expect(client.getConnectorStatus()).resolves.toEqual({
       clickup: false,
       gitlab: true,
       modelProvider: false,
     })
-    await expect(client.getProjectProfileReadiness(profile.profileId)).resolves.toEqual(readiness)
-    expect(fetchImplementation).toHaveBeenNthCalledWith(
-      3,
-      '/api/project-profiles/local-profile/readiness',
-      {
-        headers: { accept: 'application/json' },
-        method: 'GET',
-      },
-    )
+    expect('listProjectProfiles' in client).toBe(false)
+    expect('getProjectProfileReadiness' in client).toBe(false)
+    expect('resolveClickUpTask' in client).toBe(false)
   })
 
-  it('creates and updates profiles through JSON requests and trusts only validated responses', async () => {
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(profile, { status: 201 }))
-      .mockResolvedValueOnce(Response.json({ ...profile, displayName: 'Edited profile' }))
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(client.createProjectProfile(profile)).resolves.toEqual(profile)
-    await expect(
-      client.updateProjectProfile({ ...profile, displayName: 'Edited profile' }),
-    ).resolves.toMatchObject({ displayName: 'Edited profile' })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/project-profiles', {
-      body: JSON.stringify(profile),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
-    })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/project-profiles/local-profile', {
-      body: JSON.stringify({ ...profile, displayName: 'Edited profile' }),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'PUT',
-    })
-  })
-
-  it('resolves a canonical ClickUp task and starts a validated run', async () => {
-    const task = {
-      taskId: '86abc123',
-      customTaskId: 'PROJ-42',
-      url: 'https://app.clickup.com/t/86abc123',
-      title: 'Implement confirmed run start',
-      description: 'Preserve the selected revision and profile.',
-      status: { id: 'status-1', name: 'in progress', type: 'custom' },
-      priority: { id: '2', name: 'high' },
-      comments: [],
-      resourceLinks: [],
-    }
+  it('starts a run with generic variables', async () => {
     const run = {
       runId: 'run-01',
       workflowId: 'delivery-workflow',
-      revisionId: 'revision-01',
-      profileSnapshotId: 'profile-snapshot-01',
-      taskReference: '86abc123',
-      notes: 'Coordinate API and web delivery.',
-      taskSnapshot: task,
-      effectiveConfiguration: {},
+      workflowSnapshot: createPredefinedV1Workflow({
+        createdAt: '2026-08-18T12:00:00Z',
+        agentDefaults: {
+          provider: 'test-provider',
+          model: 'test-model',
+          thinkingLevel: 'high',
+        },
+      }),
+      variables: { task: 'Coordinate API and web delivery.', attempts: 2 },
+      missingVariables: [],
       status: 'PENDING',
       currentNodeId: null,
       transitionCount: 0,
@@ -228,34 +246,19 @@ describe('API client', () => {
     }
     const fetchImplementation = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(task))
       .mockResolvedValueOnce(Response.json(run, { status: 201 }))
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(
-      client.resolveClickUpTask({ taskReference: '86abc123', profileId: 'local-profile' }),
-    ).resolves.toEqual(task)
-    await expect(
       client.startRun({
-        taskReference: '86abc123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
-        notes: 'Coordinate API and web delivery.',
+        variables: { task: 'Coordinate API and web delivery.', attempts: 2 },
       }),
     ).resolves.toEqual(run)
-    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/clickup/tasks/resolve', {
-      body: JSON.stringify({ taskReference: '86abc123', profileId: 'local-profile' }),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
-    })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/runs', {
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/runs', {
       body: JSON.stringify({
-        taskReference: '86abc123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
-        notes: 'Coordinate API and web delivery.',
+        variables: { task: 'Coordinate API and web delivery.', attempts: 2 },
       }),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       method: 'POST',
@@ -279,10 +282,8 @@ describe('API client', () => {
 
     await expect(
       client.startRun({
-        taskReference: '86abc123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
+        variables: {},
       }),
     ).rejects.toEqual(
       new ApiClientError({

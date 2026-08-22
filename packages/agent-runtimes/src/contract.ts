@@ -6,8 +6,8 @@ import {
   OutcomeNameSchema,
   RepositoryIdSchema,
   RunIdSchema,
-} from '@loop/contracts'
-import { PermissionProfileSchema, ResourceBundleIdSchema } from '@loop/workflow-model'
+} from '@slopify/contracts'
+import { PermissionProfileSchema, ResourceBundleIdSchema } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const OPAQUE_ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
@@ -36,7 +36,7 @@ const AgentWorkspaceRepositorySchema = z
 export const AgentWorkspaceSchema = z
   .strictObject({
     rootPath: z.string().min(1).max(4_096).refine(isAbsolute),
-    repositories: z.array(AgentWorkspaceRepositorySchema).min(1).max(32).readonly(),
+    repositories: z.array(AgentWorkspaceRepositorySchema).max(32).readonly(),
   })
   .superRefine((workspace, context) => {
     const repositoryIds = new Set<string>()
@@ -169,10 +169,20 @@ const AgentMessageEventSchema = z.strictObject({
   data: z.strictObject({ content }),
 })
 
+const AgentReasoningEventSchema = z.strictObject({
+  ...eventBase,
+  type: z.literal('AGENT_REASONING'),
+  data: z.strictObject({ content }),
+})
+
 const AgentToolStartedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_TOOL_STARTED'),
-  data: z.strictObject({ toolCallId: identifier, toolName: identifier }),
+  data: z.strictObject({
+    toolCallId: identifier,
+    toolName: identifier,
+    input: z.json().optional(),
+  }),
 })
 
 const AgentToolUpdatedEventSchema = z.strictObject({
@@ -225,6 +235,7 @@ export const AgentExecutionEventSchema = z.discriminatedUnion('type', [
   AgentStartedEventSchema,
   AgentSessionIdentifiedEventSchema,
   AgentMessageEventSchema,
+  AgentReasoningEventSchema,
   AgentToolStartedEventSchema,
   AgentToolUpdatedEventSchema,
   AgentToolCompletedEventSchema,

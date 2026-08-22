@@ -1,37 +1,64 @@
-import { isAbsolute, relative, resolve, sep } from 'node:path'
-import { createClickUpClient } from '@loop/clickup-artifacts'
-import { ConnectorStatusSchema, type ConnectorStatus } from '@loop/contracts'
+import { pathToFileURL } from 'node:url'
+import { homedir } from 'node:os'
+import { join, resolve } from 'node:path'
+import {
+  createBunChildAgentExecutor,
+  createChatGptOAuthService,
+  getBunAgentWorkerScriptPath,
+} from '@slopify/agent-runtimes'
+import { DEFAULT_CHATGPT_CONNECTION_ID } from '@slopify/contracts'
 import {
   createProcessRunner,
-  createCancellationService,
-  createProfileRepository,
-  createProjectProfileService,
-  createReadinessService,
-  createRecoveryService,
+  createAgentJobRunner,
+  createAgentResultSchemaRegistry,
+  createCoordinatorCancellationService,
+  createChatGptSubscriptionConnectionDriver,
+  createClickUpConnectionDriver,
+  createConnectionCatalogRepository,
+  createDeletionOperationRepository,
+  createDeletionService,
+  createConnectionRepository,
+  createProjectRepository,
+  createProjectService,
+  createNativeGitProjectInspector,
+  createConnectionService,
+  createFileCredentialStore,
+  createFilesystemSkillCatalog,
+  createFilesystemSkillSnapshotStore,
+  createFilesystemAgentTraceStore,
+  createGitLabConnectionDriver,
+  createOpenRouterConnectionDriver,
   createEventStore,
   createRunRepository,
   createRunService,
+  createOrchestratedRunService,
   createRunEventFeed,
   createWorkflowRepository,
   createWorkflowService,
+  createExecutionWorker,
+  createJobRunnerRegistry,
+  createSqliteCoordinatorStateStore,
+  createSqliteExecutionMessageQueue,
+  createWorkflowCoordinator,
   openDatabase,
-  type RunTaskResolver,
+  type ConnectionService,
+  type Credential,
   type WorkflowRepository,
-} from '@loop/execution-runtime'
-import { PREDEFINED_V1_WORKFLOW_ID, createPredefinedV1Revision } from '@loop/workflow-model'
+} from '@slopify/execution-runtime'
+import {
+  PREDEFINED_V1_WORKFLOW_ID,
+  WorkflowSchema,
+  createPredefinedV1Workflow,
+} from '@slopify/workflow-model'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 
 import { createApiApp } from './app.js'
+import { createExecutionPump } from './execution-pump.js'
 import { createShutdownCoordinator, registerShutdownSignals } from './shutdown.js'
 
 export type ServerConfigurationErrorCode =
-  | 'API_CONTAINER_MODE_INVALID'
-  | 'API_HOST_INVALID'
-  | 'API_PORT_INVALID'
-  | 'API_SHUTDOWN_GRACE_INVALID'
-  | 'DATABASE_PATH_INVALID'
-  | 'WORKSPACE_ROOT_INVALID'
+  'API_HOST_INVALID' | 'API_PORT_INVALID' | 'API_SHUTDOWN_GRACE_INVALID' | 'DATABASE_PATH_INVALID'
 
 export class ServerConfigurationError extends Error {
   readonly code: ServerConfigurationErrorCode
@@ -47,7 +74,10 @@ export interface ApiServerConfiguration {
   readonly hostname: string
   readonly port: number
   readonly databasePath: string
-  readonly workspaceRoot: string
+  readonly skillsRoot: string
+  readonly skillSnapshotsRoot: string
+  readonly credentialPath: string
+  readonly tracesRoot: string
   readonly shutdownGracePeriodMs: number
 }
 
@@ -74,74 +104,54 @@ const createBunApiServer: ApiServerFactory = (options) => {
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
 
-const PREDEFINED_V1_REVISION_ID = 'revision-01'
-
 export const ensurePredefinedWorkflow = (
-  workflows: Pick<WorkflowRepository, 'addRevision' | 'getRevision'>,
+  workflows: Pick<WorkflowRepository, 'get' | 'save'>,
 ): void => {
-  const reference = {
-    workflowId: PREDEFINED_V1_WORKFLOW_ID,
-    revisionId: PREDEFINED_V1_REVISION_ID,
-  }
-  if (workflows.getRevision(reference) !== undefined) return
+  const existing = workflows.get(PREDEFINED_V1_WORKFLOW_ID)
+  const isLegacySeed =
+    existing?.name === 'Who are you?' &&
+    existing.nodes.length === 2 &&
+    existing.nodes.some(({ id, type }) => id === 'identify-agent' && type === 'agent') &&
+    existing.nodes.some(({ id, type }) => id === 'succeeded' && type === 'terminal') &&
+    existing.edges.length === 1 &&
+    existing.edges[0]?.sourceNodeId === 'identify-agent' &&
+    existing.edges[0].targetNodeId === 'succeeded'
 
-  workflows.addRevision(
-    createPredefinedV1Revision({
-      revisionId: PREDEFINED_V1_REVISION_ID,
-      createdAt: '2026-08-18T00:00:00.000Z',
+  if (existing !== undefined && !isLegacySeed) return
+
+  workflows.save(
+    createPredefinedV1Workflow({
+      createdAt: '2026-08-20T23:30:00.000Z',
       agentDefaults: {
-        provider: 'anthropic',
-        model: 'claude-sonnet-4-5',
-        thinkingLevel: 'high',
+        provider: 'chatgpt-subscription',
+        model: 'gpt-5.4',
+        thinkingLevel: 'medium',
       },
     }),
   )
 }
 
+export const connectDefaultChatGpt = (
+  connect: ConnectionService['connect'],
+  input: Readonly<{ label: string; credential: Extract<Credential, { type: 'oauth' }> }>,
+) =>
+  connect({
+    connectionId: DEFAULT_CHATGPT_CONNECTION_ID,
+    type: 'chatgpt-subscription',
+    label: input.label,
+    configuration: { provider: 'openai-codex' },
+    credential: input.credential,
+  })
+
 const nonBlank = (
   value: string | undefined,
   fallback: string,
-  code: 'API_HOST_INVALID' | 'DATABASE_PATH_INVALID' | 'WORKSPACE_ROOT_INVALID',
+  code: 'API_HOST_INVALID' | 'DATABASE_PATH_INVALID',
 ): string => {
   if (value === undefined) return fallback
   if (value.trim() === '')
     throw new ServerConfigurationError(code, 'Configuration must not be blank')
   return value
-}
-
-const containerPath = (input: {
-  readonly value: string | undefined
-  readonly fallback: string
-  readonly root: string
-  readonly code: 'DATABASE_PATH_INVALID' | 'WORKSPACE_ROOT_INVALID'
-  readonly allowRoot: boolean
-}): string => {
-  const candidate = nonBlank(input.value, input.fallback, input.code)
-  const normalized = resolve(candidate)
-  const relativePath = relative(input.root, normalized)
-  const isWithinRoot =
-    isAbsolute(candidate) &&
-    !isAbsolute(relativePath) &&
-    relativePath !== '..' &&
-    !relativePath.startsWith(`..${sep}`) &&
-    (input.allowRoot || relativePath !== '')
-
-  if (!isWithinRoot) {
-    throw new ServerConfigurationError(
-      input.code,
-      `Configuration must resolve within ${input.root}`,
-    )
-  }
-  return normalized
-}
-
-const containerMode = (value: string | undefined): boolean => {
-  if (value === undefined || value === 'false') return false
-  if (value === 'true') return true
-  throw new ServerConfigurationError(
-    'API_CONTAINER_MODE_INVALID',
-    'API_CONTAINER_MODE must be true or false',
-  )
 }
 
 const port = (value: string | undefined): number => {
@@ -171,73 +181,25 @@ const shutdownGracePeriod = (value: string | undefined): number => {
 export const resolveApiServerConfiguration = (
   environment: ApiEnvironment = process.env,
 ): ApiServerConfiguration => {
-  const isContainer = containerMode(environment.API_CONTAINER_MODE)
-  const databasePath = isContainer
-    ? containerPath({
-        value: environment.DATABASE_PATH,
-        fallback: '/var/lib/workbench/workbench.sqlite',
-        root: '/var/lib/workbench',
-        code: 'DATABASE_PATH_INVALID',
-        allowRoot: false,
-      })
-    : nonBlank(environment.DATABASE_PATH, './data/workbench.sqlite', 'DATABASE_PATH_INVALID')
-  const workspaceRoot = isContainer
-    ? containerPath({
-        value: environment.WORKSPACE_ROOT,
-        fallback: '/workspace',
-        root: '/workspace',
-        code: 'WORKSPACE_ROOT_INVALID',
-        allowRoot: true,
-      })
-    : nonBlank(environment.WORKSPACE_ROOT, '/workspace', 'WORKSPACE_ROOT_INVALID')
-
+  const stateRoot = resolve(
+    nonBlank(environment.SLOPIFY_HOME, join(homedir(), '.slopify'), 'DATABASE_PATH_INVALID'),
+  )
+  const databasePath = resolve(
+    nonBlank(environment.DATABASE_PATH, join(stateRoot, 'slopify.db'), 'DATABASE_PATH_INVALID'),
+  )
   return {
-    hostname: nonBlank(
-      environment.API_HOST,
-      isContainer ? '0.0.0.0' : '127.0.0.1',
-      'API_HOST_INVALID',
-    ),
+    hostname: nonBlank(environment.API_HOST, '127.0.0.1', 'API_HOST_INVALID'),
     port: port(environment.API_PORT),
     databasePath,
-    workspaceRoot,
+    skillsRoot: resolve(environment.SKILLS_ROOT ?? join(stateRoot, 'skills')),
+    skillSnapshotsRoot: resolve(
+      environment.SKILL_SNAPSHOTS_ROOT ?? join(stateRoot, 'skill-snapshots'),
+    ),
+    credentialPath: resolve(environment.CREDENTIAL_PATH ?? join(stateRoot, 'credentials.json')),
+    tracesRoot: resolve(join(stateRoot, 'traces')),
     shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
   }
 }
-
-const configured = (value: string | undefined): boolean =>
-  value !== undefined && value.trim() !== ''
-
-export const resolveConnectorStatus = (environment: ApiEnvironment): ConnectorStatus =>
-  ConnectorStatusSchema.parse({
-    clickup: configured(environment.CLICKUP_API_TOKEN),
-    gitlab: configured(environment.GITLAB_TOKEN),
-    modelProvider: configured(environment.MODEL_PROVIDER_API_KEY),
-  })
-
-type ClickUpTaskClientFactory = (options: {
-  readonly baseUrl?: string
-  readonly token: string
-  readonly workspaceId: string
-}) => Readonly<{ getTask(taskReference: string): Promise<unknown> }>
-
-export const createConfiguredTaskResolver = (
-  environment: ApiEnvironment,
-  createClient: ClickUpTaskClientFactory = createClickUpClient,
-): RunTaskResolver => ({
-  async resolve(taskReference, context) {
-    if (context === undefined) throw new Error('ClickUp workspace context is required')
-    const baseUrl = environment.CLICKUP_API_BASE_URL
-    const clientOptions = {
-      token: environment.CLICKUP_API_TOKEN ?? '',
-      workspaceId: context.clickupWorkspaceId,
-    }
-    const client =
-      baseUrl === undefined || baseUrl.trim() === ''
-        ? createClient(clientOptions)
-        : createClient({ ...clientOptions, baseUrl })
-    return z.json().parse(await client.getTask(taskReference))
-  },
-})
 
 export const startApiServer = (input: {
   readonly app: Hono
@@ -262,58 +224,199 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     return startApiServer({ app: createApiApp({}), configuration })
   }
 
-  const profileRepository = createProfileRepository(database)
+  const projectRepository = createProjectRepository(database)
   const workflowRepository = createWorkflowRepository(database)
   ensurePredefinedWorkflow(workflowRepository)
   const runRepository = createRunRepository(database)
   const eventStore = createEventStore(database)
-  createRecoveryService({ runs: runRepository }).reconcile()
-  const profileService = createProjectProfileService({
-    profiles: profileRepository,
-    runtimeMode: containerMode(environment.API_CONTAINER_MODE) ? 'container' : 'native',
-    workspaceRoot: configuration.workspaceRoot,
+  const credentials = createFileCredentialStore({ path: configuration.credentialPath })
+  const connectionCatalog = createConnectionCatalogRepository(database)
+  const connections = createConnectionService({
+    connections: createConnectionRepository(database),
+    credentials,
+    drivers: [
+      createGitLabConnectionDriver(),
+      createClickUpConnectionDriver(),
+      createOpenRouterConnectionDriver(),
+      createChatGptSubscriptionConnectionDriver(),
+    ],
   })
-  const redactedValues = [
-    environment.CLICKUP_API_TOKEN,
-    environment.GITLAB_TOKEN,
-    environment.MODEL_PROVIDER_API_KEY,
-  ].filter((value): value is string => configured(value))
-  const readiness = createReadinessService({
-    profiles: profileService,
-    processRunner: createProcessRunner({ maxOutputBytes: 65_536, redactedValues }),
-    connectors: () => resolveConnectorStatus(environment),
+  const skills = createFilesystemSkillCatalog({ root: configuration.skillsRoot })
+  const skillSnapshots = createFilesystemSkillSnapshotStore({
+    root: configuration.skillSnapshotsRoot,
   })
-  const tasks = createConfiguredTaskResolver(environment)
-  const runService = createRunService({
-    events: eventStore,
-    profiles: profileRepository,
-    readiness,
+  const traces = createFilesystemAgentTraceStore({ root: configuration.tracesRoot })
+  const projects = createProjectService({
+    projects: projectRepository,
+    inspector: createNativeGitProjectInspector({
+      processRunner: createProcessRunner({ maxOutputBytes: 8_192, redactedValues: [] }),
+    }),
+  })
+  const deletions = createDeletionService({
+    operations: createDeletionOperationRepository(database),
+    handlers: [projects],
+  })
+  const queue = createSqliteExecutionMessageQueue(database)
+  const coordinator = createWorkflowCoordinator({
+    coordinatorId: `coordinator-${process.pid}`,
+    queue,
+    state: createSqliteCoordinatorStateStore(database),
+  })
+  const agent = createBunChildAgentExecutor({
+    childScriptPath: getBunAgentWorkerScriptPath(),
+    credentials,
+    async resolveContext(input) {
+      const run = runRepository.get(input.runId)
+      if (run === undefined) throw new Error('Run was not found')
+      const workflow = WorkflowSchema.parse(run.workflowSnapshot)
+      const parsedNode = workflow.nodes.find(({ id }) => id === input.nodeId)
+      if (parsedNode?.type !== 'agent') throw new Error('Agent job was not found')
+      const inference = connections.get(parsedNode.job.inference.connectionId)
+      if (inference.status !== 'CONNECTED' || inference.category !== 'inference')
+        throw new Error('Inference connection is unavailable')
+      const snapshots = await Promise.all(
+        parsedNode.job.skillSnapshotRefs.map(async (reference) => {
+          const snapshot = await skillSnapshots.get(reference.digest)
+          if (snapshot === undefined) throw new Error('Skill snapshot is unavailable')
+          return {
+            skillId: reference.skillId,
+            name: reference.name,
+            description: reference.description,
+            hostPath: snapshot.path,
+          }
+        }),
+      )
+      const connectorRecords = parsedNode.job.connectorIds.map((connectionId) =>
+        connections.get(connectionId),
+      )
+      const connectorsForVm = connectorRecords.map((connection) => {
+        if (
+          connection.status !== 'CONNECTED' ||
+          connection.category !== 'connector' ||
+          (connection.type !== 'gitlab' && connection.type !== 'clickup')
+        ) {
+          throw new Error('Connector connection is unavailable')
+        }
+        const configuration = z
+          .strictObject({ baseUrl: z.url().optional() })
+          .default({})
+          .parse(connection.configuration)
+        const defaultHost = connection.type === 'gitlab' ? 'gitlab.com' : 'api.clickup.com'
+        return {
+          connectionId: connection.connectionId,
+          type: connection.type,
+          authority: connection.authority,
+          allowedHosts: [
+            configuration.baseUrl === undefined
+              ? defaultHost
+              : new URL(configuration.baseUrl).hostname,
+          ],
+        }
+      })
+      return {
+        outputSchemaRef: parsedNode.result.schemaRef,
+        inferenceConnectionId: inference.connectionId,
+        resourceBundle: {
+          bundleId: input.resourceBundleId,
+          applicationVersion: '1',
+          skills: [],
+          promptFragments: [],
+          contextFiles: [],
+        },
+        skills: snapshots,
+        connectors: connectorsForVm,
+      }
+    },
+  })
+  const agentRunner = createAgentJobRunner({
+    agent,
     runs: runRepository,
-    tasks,
+    traces,
+    resultSchemas: createAgentResultSchemaRegistry({
+      'json:any-v1': z.json(),
+    }),
+    resolveInference(connectionId) {
+      try {
+        const connection = connections.get(connectionId)
+        if (connection.status !== 'CONNECTED' || connection.category !== 'inference')
+          return undefined
+        return {
+          provider: connection.type === 'chatgpt-subscription' ? 'openai-codex' : 'openrouter',
+        }
+      } catch {
+        return undefined
+      }
+    },
+  })
+  const worker = createExecutionWorker({
+    workerId: `worker-${process.pid}`,
+    queue,
+    runners: createJobRunnerRegistry({
+      agent: agentRunner,
+    }),
+    concurrency: 2,
+  })
+  const pump = createExecutionPump({
+    coordinator,
+    worker,
+    pollIntervalMs: 100,
+  })
+  const baseRunService = createRunService({
+    events: eventStore,
+    runs: runRepository,
     workflows: workflowRepository,
   })
-  const cancellation = createCancellationService({
+  const orchestratedRuns = createOrchestratedRunService({
+    runs: baseRunService,
+    coordinator,
+  })
+  const runService = {
+    ...orchestratedRuns,
+    async create(input: Parameters<typeof orchestratedRuns.create>[0]) {
+      const run = await orchestratedRuns.create(input)
+      void pump.wake()
+      return run
+    },
+  }
+  const cancellation = createCoordinatorCancellationService({
     runs: runRepository,
-    activeExecution: () => undefined,
+    coordinator,
+    worker,
   })
   const server = startApiServer({
     app: createApiApp({
       cancellation,
+      chatGptOAuth: createChatGptOAuthService({
+        async connect({ label, credential }) {
+          const connection = await connectDefaultChatGpt(connections.connect, {
+            label,
+            credential,
+          })
+          return connection.connectionId
+        },
+      }),
+      connections,
+      connectionCatalog,
       database,
+      deletions,
       eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
-      profiles: profileService,
-      readiness,
+      projects,
       runs: runService,
-      tasks,
-      workflows: createWorkflowService({ workflows: workflowRepository }),
+      traces,
+      skills,
+      workflows: createWorkflowService({
+        workflows: workflowRepository,
+      }),
     }),
     configuration,
   })
+  pump.start()
   registerShutdownSignals({
     coordinator: createShutdownCoordinator({
       server,
       runs: runService,
       cancellation,
+      execution: pump,
       database,
       gracePeriodMs: configuration.shutdownGracePeriodMs,
     }),
@@ -321,4 +424,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   return server
 }
 
-if (import.meta.main) startConfiguredApiServer()
+const executable = process.argv[1]
+if (executable !== undefined && pathToFileURL(executable).href === import.meta.url) {
+  startConfiguredApiServer()
+}

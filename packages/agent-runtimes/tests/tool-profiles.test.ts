@@ -1,4 +1,4 @@
-import type { PermissionProfile } from '@loop/workflow-model'
+import type { PermissionProfile } from '@slopify/workflow-model'
 import { describe, expect, it } from 'vitest'
 
 import { AGENT_TOOL_PROFILES, getAgentToolProfile } from '../src/index.js'

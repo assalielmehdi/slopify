@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactFlowProps } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { WorkflowCanvas } from '../components/workflow/workflow-canvas'
 
@@ -31,8 +31,7 @@ vi.mock('@xyflow/react', async (importOriginal) => {
   }
 })
 
-const revision = createPredefinedV1Revision({
-  revisionId: 'revision-01',
+const workflow = createPredefinedV1Workflow({
   createdAt: '2026-08-18T12:00:00Z',
   agentDefaults: {
     provider: 'test-provider',
@@ -51,16 +50,16 @@ describe('WorkflowCanvas rendering', () => {
     const onNodeSelect = vi.fn()
     const view = render(
       <WorkflowCanvas
-        revision={revision}
-        selectedNodeId={revision.startNodeId}
+        workflow={workflow}
+        selectedNodeId={workflow.startNodeId}
         onNodeSelect={onNodeSelect}
       />,
     )
 
     view.rerender(
       <WorkflowCanvas
-        revision={revision}
-        selectedNodeId={revision.startNodeId}
+        workflow={workflow}
+        selectedNodeId={workflow.startNodeId}
         onNodeSelect={onNodeSelect}
       />,
     )

@@ -1,4 +1,4 @@
-import { ProjectProfileIdSchema, RepositoryIdSchema, type RepositoryId } from '@loop/contracts'
+import { ProjectProfileIdSchema, RepositoryIdSchema, type RepositoryId } from '@slopify/contracts'
 
 import type { WorkbenchDatabase } from './database.js'
 import { getDatabaseHandle } from './database.js'
@@ -114,14 +114,6 @@ const parseRepository = (row: RepositoryRow): ProfileRepositorySnapshot => ({
 
 const validateProfile = (profile: ProjectProfileConfiguration): void => {
   ProjectProfileIdSchema.parse(profile.profileId)
-  if (profile.repositories.length === 0) {
-    throw new PersistenceError({
-      code: 'PERSISTENCE_VALIDATION_FAILED',
-      message: 'Project profile must contain at least one repository',
-      details: { field: 'repositories' },
-    })
-  }
-
   const repositoryIds = profile.repositories.map(({ repositoryId }) =>
     RepositoryIdSchema.parse(repositoryId),
   )

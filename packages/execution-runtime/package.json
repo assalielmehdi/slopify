@@ -1,5 +1,5 @@
 {
-  "name": "@loop/execution-runtime",
+  "name": "@slopify/execution-runtime",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -16,15 +16,15 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run --filter @loop/agent-runtimes build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
-    "typecheck": "bun run --filter @loop/agent-runtimes build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "build": "bun run --filter @slopify/agent-runtimes build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "typecheck": "bun run --filter @slopify/agent-runtimes build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
     "lint": "bun --bun eslint src tests --max-warnings 0",
     "test": "bun --bun vitest run --root ../.. packages/execution-runtime/tests"
   },
   "dependencies": {
-    "@loop/agent-runtimes": "workspace:*",
-    "@loop/contracts": "workspace:*",
-    "@loop/workflow-model": "workspace:*",
+    "@slopify/agent-runtimes": "workspace:*",
+    "@slopify/contracts": "workspace:*",
+    "@slopify/workflow-model": "workspace:*",
     "execa": "10.0.1",
     "zod": "4.4.3"
   }

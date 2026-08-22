@@ -1,57 +1,41 @@
-import type { ProjectProfileCatalogResponse } from '@loop/contracts'
+import { PlusIcon, XIcon } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from '@/components/ui/field'
+import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
-import { Textarea } from '@/components/ui/textarea'
 import type { WorkflowCatalogEntry } from '@/lib/api-client'
 
+export interface RunVariableRow {
+  readonly id: string
+  readonly key: string
+  readonly required: boolean
+  readonly value: string
+}
+
 export interface RunConfigurationFieldsProps {
-  readonly catalog: ProjectProfileCatalogResponse
-  readonly notes: string
-  readonly onNotesChange: (notes: string) => void
-  readonly onProfileChange: (profileId: string) => void
-  readonly onResolveTask: () => void
-  readonly onRevisionChange: (revisionId: string) => void
-  readonly onTaskReferenceChange: (taskReference: string) => void
+  readonly onAddVariable: () => void
+  readonly onRemoveVariable: (id: string) => void
+  readonly onVariableKeyChange: (id: string, key: string) => void
+  readonly onVariableValueChange: (id: string, value: string) => void
   readonly onWorkflowChange: (workflowId: string) => void
-  readonly profileError?: string | undefined
-  readonly profileId: string
-  readonly readinessPending: boolean
-  readonly resolving: boolean
-  readonly revisionError?: string | undefined
-  readonly revisionId: string
-  readonly selectedWorkflow?: WorkflowCatalogEntry | undefined
-  readonly taskError?: string | undefined
-  readonly taskReference: string
+  readonly rows: readonly RunVariableRow[]
   readonly workflowId: string
   readonly workflows: readonly WorkflowCatalogEntry[]
 }
 
 export function RunConfigurationFields({
-  catalog,
-  notes,
-  onNotesChange,
-  onProfileChange,
-  onResolveTask,
-  onRevisionChange,
-  onTaskReferenceChange,
+  onAddVariable,
+  onRemoveVariable,
+  onVariableKeyChange,
+  onVariableValueChange,
   onWorkflowChange,
-  profileError,
-  profileId,
-  readinessPending,
-  resolving,
-  revisionError,
-  revisionId,
-  selectedWorkflow,
-  taskError,
-  taskReference,
+  rows,
   workflowId,
   workflows,
 }: RunConfigurationFieldsProps) {
   return (
-    <FieldGroup className="grid gap-4 md:grid-cols-2">
+    <FieldGroup className="grid gap-6">
       <Field>
         <FieldLabel htmlFor="workflow">Workflow</FieldLabel>
         <NativeSelect
@@ -66,71 +50,74 @@ export function RunConfigurationFields({
           ))}
         </NativeSelect>
       </Field>
-      <Field data-invalid={revisionError !== undefined}>
-        <FieldLabel htmlFor="revision">Workflow revision</FieldLabel>
-        <NativeSelect
-          aria-describedby={revisionError === undefined ? undefined : 'revision-error'}
-          aria-invalid={revisionError !== undefined}
-          id="revision"
-          onChange={(event) => onRevisionChange(event.currentTarget.value)}
-          value={revisionId}
-        >
-          {selectedWorkflow?.revisions.map((revision) => (
-            <NativeSelectOption key={revision.revisionId} value={revision.revisionId}>
-              {revision.revisionId}
-              {revision.revisionId === selectedWorkflow.latestRevisionId ? ' · Latest' : ''}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        <FieldError id="revision-error">{revisionError}</FieldError>
-      </Field>
-      <Field data-invalid={profileError !== undefined}>
-        <FieldLabel htmlFor="profile">Project profile</FieldLabel>
-        <NativeSelect
-          aria-describedby={profileError === undefined ? undefined : 'profile-error'}
-          aria-invalid={profileError !== undefined}
-          disabled={readinessPending}
-          id="profile"
-          onChange={(event) => onProfileChange(event.currentTarget.value)}
-          value={profileId}
-        >
-          {catalog.profiles.map((profile) => (
-            <NativeSelectOption key={profile.profileId} value={profile.profileId}>
-              {profile.displayName}
-            </NativeSelectOption>
-          ))}
-        </NativeSelect>
-        {readinessPending ? <FieldDescription>Checking readiness…</FieldDescription> : null}
-        <FieldError id="profile-error">{profileError}</FieldError>
-      </Field>
-      <Field data-invalid={taskError !== undefined}>
-        <FieldLabel htmlFor="task-reference">ClickUp task ID or URL</FieldLabel>
-        <div className="flex gap-2">
-          <Input
-            aria-describedby={taskError === undefined ? undefined : 'task-reference-error'}
-            aria-invalid={taskError !== undefined}
-            id="task-reference"
-            maxLength={512}
-            onChange={(event) => onTaskReferenceChange(event.currentTarget.value)}
-            placeholder="86abc123 or https://app.clickup.com/t/86abc123"
-            value={taskReference}
-          />
-          <Button disabled={resolving || profileId === ''} onClick={onResolveTask} type="button">
-            {resolving ? 'Resolving…' : 'Resolve task'}
+
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm/5 font-semibold">Variables</h2>
+            <p className="mt-1 text-xs/4 text-muted-foreground">
+              Prompt variables are prelisted. Values accept JSON; invalid JSON remains text.
+            </p>
+          </div>
+          <Button onClick={onAddVariable} size="sm" type="button" variant="outline">
+            <PlusIcon aria-hidden="true" /> Add variable
           </Button>
         </div>
-        <FieldError id="task-reference-error">{taskError}</FieldError>
-      </Field>
-      <Field className="md:col-span-2">
-        <FieldLabel htmlFor="run-notes">Run notes</FieldLabel>
-        <Textarea
-          id="run-notes"
-          maxLength={2_000}
-          onChange={(event) => onNotesChange(event.currentTarget.value)}
-          placeholder="Optional operator context; workflow semantics stay unchanged."
-          value={notes}
-        />
-      </Field>
+
+        {rows.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-4 text-sm/5 text-muted-foreground">
+            This workflow has no prompt variables. Add one only if the workflow expects runtime
+            context outside its prompt templates.
+          </p>
+        ) : (
+          <div className="grid gap-2">
+            {rows.map((row, index) => {
+              const variableLabel = row.key.trim() === '' ? String(index + 1) : row.key
+              return (
+                <div
+                  className="grid items-end gap-2 rounded-lg border bg-background p-3 sm:grid-cols-[minmax(9rem,0.8fr)_minmax(12rem,1.2fr)_auto]"
+                  key={row.id}
+                >
+                  <Field>
+                    <FieldLabel htmlFor={`${row.id}-key`}>Name</FieldLabel>
+                    <Input
+                      aria-label={`Variable name ${index + 1}`}
+                      disabled={row.required}
+                      id={`${row.id}-key`}
+                      onChange={(event) => onVariableKeyChange(row.id, event.currentTarget.value)}
+                      value={row.key}
+                    />
+                    {row.required ? (
+                      <FieldDescription>Required by a prompt</FieldDescription>
+                    ) : null}
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor={`${row.id}-value`}>Value</FieldLabel>
+                    <Input
+                      aria-label={`Variable value for ${variableLabel}`}
+                      id={`${row.id}-value`}
+                      onChange={(event) => onVariableValueChange(row.id, event.currentTarget.value)}
+                      placeholder='Text, 42, true, null, ["one"], or {"key":"value"}'
+                      value={row.value}
+                    />
+                  </Field>
+                  <Button
+                    aria-label={`Remove variable ${variableLabel}`}
+                    className="self-end"
+                    disabled={row.required}
+                    onClick={() => onRemoveVariable(row.id)}
+                    size="icon"
+                    type="button"
+                    variant="ghost"
+                  >
+                    <XIcon aria-hidden="true" />
+                  </Button>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
     </FieldGroup>
   )
 }

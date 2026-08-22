@@ -25,6 +25,7 @@ export interface CreateShutdownCoordinatorOptions {
   readonly server: ShutdownServer
   readonly runs: Readonly<{ stopAdmissions(): void }>
   readonly cancellation: Readonly<{ cancelActive(reason?: string): Promise<unknown> }>
+  readonly execution?: Readonly<{ stop(): Promise<void> }>
   readonly database: Readonly<{ readonly isOpen: boolean; close(): void }>
   readonly gracePeriodMs: number
 }
@@ -54,6 +55,7 @@ export const createShutdownCoordinator = (
         } catch {
           // Shutdown still has to close persistence and exit within its deadline.
         }
+        await options.execution?.stop()
         await serverStopped
         closeDatabase()
         return { signal, forced: false }

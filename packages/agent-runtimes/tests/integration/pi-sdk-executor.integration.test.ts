@@ -223,10 +223,11 @@ describe('Pi SDK executor with the offline faux provider', () => {
       expect(events[1]?.type).toBe('AGENT_SESSION_IDENTIFIED')
       expect(events.at(-1)?.type).toBe('AGENT_RESULT')
       expect(events.some(({ type }) => type === 'AGENT_MESSAGE')).toBe(true)
+      expect(events.some(({ type }) => type === 'AGENT_REASONING')).toBe(true)
       expect(events.some(({ type }) => type === 'AGENT_TOOL_STARTED')).toBe(true)
       expect(events.some(({ type }) => type === 'AGENT_TOOL_COMPLETED')).toBe(true)
       expect(JSON.stringify(events)).not.toContain(secret)
-      expect(JSON.stringify(events)).not.toContain('Hidden')
+      expect(JSON.stringify(events)).toContain('Hidden')
     },
   )
 

@@ -4,15 +4,19 @@ import {
   ApiErrorSchema,
   ArtifactTypeSchema,
   CreateRunRequestSchema,
+  DeletionReceiptSchema,
+  UndoDeletionResponseSchema,
   EvidenceSchema,
   FinalizeClickUpInputSchema,
   HealthResponseSchema,
   NodeIdSchema,
   OutcomeNameSchema,
   ProjectProfileCatalogResponseSchema,
+  ProjectProfileConfigurationSchema,
   RepositoryReferenceSchema,
   RunEventSchema,
   RunIdSchema,
+  RunPaginationQuerySchema,
   RunStatusSchema,
   WorkflowIdSchema,
   type RunId,
@@ -49,6 +53,27 @@ describe('branded identifiers', () => {
 })
 
 describe('public API records', () => {
+  it('keeps deletion receipts generic while subjects remain explicit', () => {
+    const receipt = {
+      deletionId: 'deletion-01',
+      subject: { type: 'PROJECT', id: 'project-01' },
+      deletedAt: '2026-08-22T10:00:00Z',
+      undoExpiresAt: '2026-08-22T10:00:10Z',
+    }
+
+    expect(DeletionReceiptSchema.parse(receipt)).toEqual(receipt)
+    expect(UndoDeletionResponseSchema.parse({ ...receipt, state: 'UNDONE' })).toEqual({
+      ...receipt,
+      state: 'UNDONE',
+    })
+    expect(
+      DeletionReceiptSchema.safeParse({
+        ...receipt,
+        subject: { type: 'CONNECTION', id: 'connection-01' },
+      }).success,
+    ).toBe(false)
+  })
+
   it('uses one strict API error envelope', () => {
     expect(
       ApiErrorSchema.parse({
@@ -86,7 +111,7 @@ describe('public API records', () => {
     expect(
       EvidenceSchema.parse({
         kind: 'test',
-        value: 'pnpm --filter @loop/contracts test',
+        value: 'pnpm --filter @slopify/contracts test',
         repositoryId: 'workbench',
       }),
     ).toMatchObject({ kind: 'test', repositoryId: 'workbench' })
@@ -126,26 +151,84 @@ describe('public API records', () => {
     ).toBe(false)
   })
 
-  it('accepts bounded optional run notes without changing the run identity contract', () => {
+  it('accepts a repository-free profile for workflows that need no source checkout', () => {
+    expect(
+      ProjectProfileConfigurationSchema.parse({
+        profileId: 'default-profile',
+        displayName: 'Default profile',
+        clickupWorkspaceId: 'not-required',
+        clickupListId: 'not-required',
+        clickupInReviewStatusId: 'not-required',
+        repositories: [],
+      }),
+    ).toMatchObject({ profileId: 'default-profile', repositories: [] })
+  })
+
+  it('accepts workflow variables and rejects removed task and profile inputs', () => {
     expect(
       CreateRunRequestSchema.parse({
-        taskReference: 'CU-123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
-        notes: '  Coordinate the API and web changes.  ',
+        variables: {
+          objective: 'Coordinate the API and web changes.',
+          attempts: 2,
+          flags: ['focused'],
+        },
+        confirmMissingVariables: true,
       }),
-    ).toMatchObject({ notes: 'Coordinate the API and web changes.' })
+    ).toEqual({
+      workflowId: 'delivery-workflow',
+      variables: {
+        objective: 'Coordinate the API and web changes.',
+        attempts: 2,
+        flags: ['focused'],
+      },
+      confirmMissingVariables: true,
+    })
 
     expect(
       CreateRunRequestSchema.safeParse({
         taskReference: 'CU-123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
         profileId: 'local-profile',
-        notes: '   ',
       }).success,
     ).toBe(false)
+  })
+
+  it('validates run filters together with pagination', () => {
+    expect(
+      RunPaginationQuerySchema.parse({
+        page: '2',
+        pageSize: '20',
+        runId: 'run-api',
+        statuses: ['FAILED', 'CANCELLED'],
+        startedFrom: '2026-08-20T00:00:00.000Z',
+        startedTo: '2026-08-22T23:59:59.999Z',
+        durationMinMs: '1000',
+        durationMaxMs: '5000',
+      }),
+    ).toEqual({
+      page: 2,
+      pageSize: 20,
+      runId: 'run-api',
+      statuses: ['FAILED', 'CANCELLED'],
+      startedFrom: '2026-08-20T00:00:00.000Z',
+      startedTo: '2026-08-22T23:59:59.999Z',
+      durationMinMs: 1000,
+      durationMaxMs: 5000,
+    })
+
+    expect(
+      RunPaginationQuerySchema.safeParse({
+        startedFrom: '2026-08-23T00:00:00.000Z',
+        startedTo: '2026-08-22T00:00:00.000Z',
+      }).success,
+    ).toBe(false)
+    expect(
+      RunPaginationQuerySchema.safeParse({ durationMinMs: 5000, durationMaxMs: 1000 }).success,
+    ).toBe(false)
+    expect(RunPaginationQuerySchema.safeParse({ statuses: ['FAILED', 'FAILED'] }).success).toBe(
+      false,
+    )
   })
 
   it.each([
@@ -181,12 +264,7 @@ describe('run events', () => {
     {
       ...eventBase,
       type: 'RUN_STARTED',
-      data: {
-        workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
-        taskReference: 'CU-123',
-      },
+      data: { workflowId: 'delivery-workflow' },
     },
     { ...eventBase, type: 'RUN_STATUS_CHANGED', data: { from: 'PENDING', to: 'RUNNING' } },
     { ...eventBase, type: 'NODE_STARTED', nodeId: 'load-task', data: {} },

@@ -3,12 +3,11 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { WorkflowNodeContent } from '../components/workflow/workflow-node'
 
-const revision = createPredefinedV1Revision({
-  revisionId: 'revision-01',
+const workflow = createPredefinedV1Workflow({
   createdAt: '2026-08-18T12:00:00Z',
   agentDefaults: {
     provider: 'test-provider',
@@ -21,15 +20,14 @@ afterEach(cleanup)
 
 describe('WorkflowNode', () => {
   it('uses text and icons to identify kind, start, selection, and recent status', () => {
-    const node = revision.nodes.find(({ id }) => id === 'select-repositories')
-    if (node === undefined) throw new Error('Expected repository-selection node')
+    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (node === undefined || node.type !== 'agent') throw new Error('Expected agent node')
 
     render(
       <WorkflowNodeContent
         data={{
           domainNode: node,
           isStart: true,
-          isTerminal: false,
           recentRunStatus: 'RUNNING',
         }}
         selected
@@ -40,21 +38,34 @@ describe('WorkflowNode', () => {
     expect(screen.getByText('Start')).toBeTruthy()
     expect(screen.getByText('Running')).toBeTruthy()
     expect(screen.getByText('Selected')).toBeTruthy()
-    expect(screen.getByText('Select affected repositories')).toBeTruthy()
+    expect(screen.getByText('Who are you?')).toBeTruthy()
   })
 
-  it('identifies terminal outcome with a non-color cue', () => {
-    const node = revision.nodes.find(({ id }) => id === 'failed')
-    if (node === undefined) throw new Error('Expected failed terminal node')
+  it.each([
+    ['SUCCEEDED', 'border-status-success', 'bg-status-success'],
+    ['FAILED', 'border-destructive', 'bg-destructive'],
+    ['RUNNING', 'border-status-info', 'bg-status-info'],
+  ] as const)(
+    'uses a semantic whole-card treatment for %s nodes',
+    (status, borderClass, backgroundClass) => {
+      const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+      if (node === undefined || node.type !== 'agent') throw new Error('Expected agent node')
 
-    render(
-      <WorkflowNodeContent
-        data={{ domainNode: node, isStart: false, isTerminal: true }}
-        selected={false}
-      />,
-    )
+      const { container } = render(
+        <WorkflowNodeContent
+          data={{
+            domainNode: node,
+            isStart: false,
+            recentRunStatus: status,
+          }}
+          selected={false}
+        />,
+      )
 
-    expect(screen.getByText('Terminal')).toBeTruthy()
-    expect(screen.getAllByText('Failed')).toHaveLength(2)
-  })
+      const card = container.querySelector('article')
+      expect(card?.getAttribute('data-status')).toBe(status)
+      expect(card?.className).toContain(borderClass)
+      expect(card?.className).toContain(backgroundClass)
+    },
+  )
 })

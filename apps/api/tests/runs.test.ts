@@ -1,13 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { createRunService } from '@slopify/execution-runtime'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 import {
-  createRunService,
-  type ReadinessService,
-  type RunTaskResolver,
-} from '@loop/execution-runtime'
-import {
-  TEST_PROFILE_ID,
-  TEST_REVISION_ID,
   TEST_WORKFLOW_ID,
   createPersistenceFixture,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
@@ -20,62 +15,33 @@ afterEach(() => {
 })
 
 const createFixture = () => {
-  const fixture = createPersistenceFixture()
+  const fixture = createPersistenceFixture(
+    createPredefinedV1Workflow({
+      createdAt: '2026-08-18T23:15:00Z',
+      agentDefaults: {
+        provider: 'test-provider',
+        model: 'test-model',
+        thinkingLevel: 'medium',
+      },
+    }),
+  )
   fixtures.push(fixture)
-  const readiness: ReadinessService = {
-    connectorStatus: () => ({ clickup: true, gitlab: true, modelProvider: true }),
-    check: async () => ({
-      profileId: TEST_PROFILE_ID,
-      ready: true,
-      repositories: fixture.snapshot.repositories.map(({ repositoryId }) => ({
-        repositoryId,
-        ready: true,
-        findings: [],
-      })),
-    }),
-  }
-  const tasks: RunTaskResolver = {
-    resolve: async (taskReference) => ({
-      id: taskReference,
-      name: `Resolved ${taskReference}`,
-    }),
-  }
   let identity = 0
   const runs = createRunService({
     events: fixture.events,
-    profiles: fixture.profiles,
-    readiness,
     runs: fixture.runs,
-    tasks,
     workflows: fixture.workflows,
-    sources: {
-      get: (commandId) =>
-        commandId === 'load-clickup-task'
-          ? {
-              commandId,
-              sourceFile: 'commands/load-clickup-task.ts',
-              content: 'export const loadClickUpTask = async () => undefined\n',
-            }
-          : undefined,
-    },
     now: () => '2026-08-18T23:15:00Z',
     createRunId: () => `run-api-${++identity}`,
-    createProfileSnapshotId: () => `snapshot-api-${identity}`,
   })
-  return { fixture, runs, app: createApiApp({ database: fixture.database, runs }) }
+  return { runs, app: createApiApp({ database: fixture.database, runs }) }
 }
 
-const createBody = {
-  taskReference: 'TASK-1',
-  workflowId: TEST_WORKFLOW_ID,
-  revisionId: TEST_REVISION_ID,
-  profileId: TEST_PROFILE_ID,
-}
+const createBody = { workflowId: TEST_WORKFLOW_ID }
 
 describe('run JSON API', () => {
-  it('creates a run and returns its exact detail', async () => {
+  it('creates a self-contained run and returns its exact public detail', async () => {
     const { app } = createFixture()
-
     const createdResponse = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -84,18 +50,44 @@ describe('run JSON API', () => {
     const created = (await createdResponse.json()) as { runId: string }
     const detailResponse = await app.request(`/api/runs/${created.runId}`)
     const detail = (await detailResponse.json()) as {
-      run: { runId: string }
-      repositorySelection: unknown
+      run: { runId: string; workflowSnapshot: { workflowId: string } }
     }
 
     expect(createdResponse.status).toBe(201)
     expect(created).toMatchObject({ runId: 'run-api-1', status: 'PENDING' })
     expect(detailResponse.status).toBe(200)
     expect(detail.run.runId).toBe(created.runId)
-    expect(detail.repositorySelection).toBeNull()
+    expect(detail.run.workflowSnapshot.workflowId).toBe(TEST_WORKFLOW_ID)
+    expect(detail).toEqual({
+      run: expect.any(Object),
+      events: expect.any(Array),
+      nodeExecutions: expect.any(Array),
+      outputChunks: expect.any(Array),
+      artifacts: expect.any(Array),
+    })
+    expect(detail.run).not.toHaveProperty('profileSnapshotId')
+    expect(detail.run).not.toHaveProperty('taskReference')
   })
 
-  it('lists runs through validated one-based pagination', async () => {
+  it('rejects removed revision and task context fields in run requests', async () => {
+    const { app } = createFixture()
+
+    for (const input of [
+      { ...createBody, revisionId: 'revision-01' },
+      { ...createBody, taskReference: 'TASK-1' },
+      { ...createBody, profileId: 'profile-01' },
+    ]) {
+      const response = await app.request('/api/runs', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+      expect(response.status).toBe(400)
+      expect(await response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+    }
+  })
+
+  it('lists minimal run summaries through validated one-based pagination', async () => {
     const { app } = createFixture()
     await app.request('/api/runs', {
       method: 'POST',
@@ -106,13 +98,23 @@ describe('run JSON API', () => {
     const response = await app.request('/api/runs?page=1&pageSize=1')
 
     expect(response.status).toBe(200)
-    expect(await response.json()).toMatchObject({
-      data: [{ runId: 'run-api-1', profileId: TEST_PROFILE_ID }],
+    expect(await response.json()).toEqual({
+      data: [
+        {
+          runId: 'run-api-1',
+          workflowId: TEST_WORKFLOW_ID,
+          status: 'PENDING',
+          createdAt: '2026-08-18T23:15:00Z',
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
+        },
+      ],
       pagination: { page: 1, pageSize: 1, totalItems: 1, totalPages: 1 },
     })
   })
 
-  it('returns 409 with the active identity and preserves the first run', async () => {
+  it('admits independent runs concurrently', async () => {
     const { app } = createFixture()
     const first = await app.request('/api/runs', {
       method: 'POST',
@@ -122,20 +124,38 @@ describe('run JSON API', () => {
     const second = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...createBody, taskReference: 'TASK-2' }),
+      body: JSON.stringify({ ...createBody, variables: { objective: 'second' } }),
     })
 
     expect(first.status).toBe(201)
-    expect(second.status).toBe(409)
-    expect(await second.json()).toEqual({
-      error: {
-        code: 'RUN_ACTIVE',
-        message: 'Another run is already active',
-        details: { activeRunId: 'run-api-1' },
-      },
-    })
+    expect(second.status).toBe(201)
+    expect(await second.json()).toMatchObject({ runId: 'run-api-2', status: 'PENDING' })
     expect(await (await app.request('/api/runs')).json()).toMatchObject({
-      pagination: { totalItems: 1 },
+      pagination: { totalItems: 2 },
+    })
+  })
+
+  it('passes repeated and typed filters through to server-backed pagination', async () => {
+    const { app } = createFixture()
+    await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createBody),
+    })
+    await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createBody),
+    })
+
+    const response = await app.request(
+      '/api/runs?page=1&pageSize=20&runId=api-1&status=PENDING&status=FAILED',
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: [{ runId: 'run-api-1' }],
+      pagination: { totalItems: 1, totalPages: 1 },
     })
   })
 
@@ -158,39 +178,27 @@ describe('run JSON API', () => {
 
   it('rejects invalid pagination and reports an unknown run consistently', async () => {
     const { app } = createFixture()
-
     const invalid = await app.request('/api/runs?page=0&pageSize=101')
+    const invalidFilters = await app.request('/api/runs?durationMinMs=2000&durationMaxMs=1000')
     const unknown = await app.request('/api/runs/unknown')
 
     expect(invalid.status).toBe(400)
     expect(await invalid.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+    expect(invalidFilters.status).toBe(400)
+    expect(await invalidFilters.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
     expect(unknown.status).toBe(404)
     expect(await unknown.json()).toEqual({
       error: { code: 'RUN_NOT_FOUND', message: 'Run was not found' },
     })
   })
 
-  it('returns only the registered source for a command in the pinned run revision', async () => {
+  it('does not expose the removed node-source route', async () => {
     const { app } = createFixture()
-    await app.request('/api/runs', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(createBody),
-    })
+    const response = await app.request('/api/runs/run-api-1/nodes/identify-agent/source')
 
-    const response = await app.request('/api/runs/run-api-1/nodes/load-clickup-task/source')
-    const unavailable = await app.request('/api/runs/run-api-1/nodes/plan/source')
-
-    expect(response.status).toBe(200)
+    expect(response.status).toBe(404)
     expect(await response.json()).toEqual({
-      nodeId: 'load-clickup-task',
-      commandId: 'load-clickup-task',
-      sourceFile: 'commands/load-clickup-task.ts',
-      content: 'export const loadClickUpTask = async () => undefined\n',
-    })
-    expect(unavailable.status).toBe(404)
-    expect(await unavailable.json()).toMatchObject({
-      error: { code: 'NODE_SOURCE_UNAVAILABLE' },
+      error: { code: 'NOT_FOUND', message: 'Route not found' },
     })
   })
 })

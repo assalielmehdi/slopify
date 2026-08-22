@@ -1,17 +1,9 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  RunServiceError,
-  createRunService,
-  type ReadinessService,
-  type RunTaskResolver,
-} from '../../src/index.js'
-import {
-  TEST_PROFILE_ID,
-  TEST_REVISION_ID,
-  TEST_WORKFLOW_ID,
-  createPersistenceFixture,
-} from '../persistence/test-fixture.js'
+import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
+
+import { RunServiceError, createRunService } from '../../src/index.js'
+import { createPersistenceFixture } from '../persistence/test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
 
@@ -19,52 +11,48 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup()
 })
 
-const createServiceFixture = (ready = true) => {
-  const fixture = createPersistenceFixture()
+const agentWorkflow = (): Workflow => {
+  const workflow = createPredefinedV1Workflow({
+    createdAt: '2026-08-18T22:00:00Z',
+    agentDefaults: {
+      provider: 'test-provider',
+      model: 'test-model',
+      thinkingLevel: 'medium',
+    },
+  })
+  const node = workflow.nodes[0]
+  if (node?.type !== 'agent') throw new Error('Expected the predefined workflow to be agent-only')
+  return {
+    ...workflow,
+    nodes: [
+      {
+        ...node,
+        job: {
+          ...node.job,
+          prompt: 'Implement {{ objective }} for {{project}}. Escaped: \\{{ignored}}.',
+        },
+      },
+    ],
+  }
+}
+
+const createServiceFixture = (workflow: Workflow = agentWorkflow()) => {
+  const fixture = createPersistenceFixture(workflow)
   fixtures.push(fixture)
-  const readiness: ReadinessService = {
-    connectorStatus: () => ({ clickup: ready, gitlab: ready, modelProvider: ready }),
-    check: async () => ({
-      profileId: TEST_PROFILE_ID,
-      ready,
-      repositories: fixture.snapshot.repositories.map(({ repositoryId }) => ({
-        repositoryId,
-        ready,
-        findings: ready
-          ? []
-          : [
-              {
-                category: 'clickup' as const,
-                code: 'CLICKUP_UNAVAILABLE',
-                message: 'ClickUp credentials are unavailable',
-              },
-            ],
-      })),
-    }),
-  }
-  const tasks: RunTaskResolver = {
-    resolve: async (taskReference) => ({ id: 'TASK-1', name: 'Implement run API', taskReference }),
-  }
   let identity = 0
   const service = createRunService({
     events: fixture.events,
-    profiles: fixture.profiles,
-    readiness,
     runs: fixture.runs,
-    tasks,
     workflows: fixture.workflows,
     now: () => '2026-08-18T22:30:00Z',
     createRunId: () => `run-service-${++identity}`,
-    createProfileSnapshotId: () => `snapshot-service-${identity}`,
   })
   return { fixture, service }
 }
 
 const createInput = {
-  taskReference: 'TASK-1',
-  workflowId: TEST_WORKFLOW_ID,
-  revisionId: TEST_REVISION_ID,
-  profileId: TEST_PROFILE_ID,
+  workflowId: 'delivery-workflow',
+  variables: { objective: 'the run API', project: 'Slopify' },
 }
 
 describe('run service admission', () => {
@@ -79,7 +67,7 @@ describe('run service admission', () => {
     expect(service.list({ page: 1, pageSize: 20 }).data).toEqual([])
   })
 
-  it('validates readiness and snapshots the exact task, profile, and workflow configuration', async () => {
+  it('snapshots the workflow, supplied variables, and missing-variable decision', async () => {
     const { fixture, service } = createServiceFixture()
 
     const run = await service.create(createInput)
@@ -88,58 +76,106 @@ describe('run service admission', () => {
     expect(run).toMatchObject({
       runId: 'run-service-1',
       status: 'PENDING',
-      taskSnapshot: {
-        id: 'TASK-1',
-        name: 'Implement run API',
-        taskReference: 'TASK-1',
-      },
+      workflowSnapshot: fixture.workflow,
+      variables: { objective: 'the run API', project: 'Slopify' },
+      missingVariables: [],
     })
     expect(detail).toMatchObject({
       run,
-      workflowRevision: fixture.revision,
-      profileSnapshot: {
-        snapshotId: 'snapshot-service-1',
-        profileId: TEST_PROFILE_ID,
-      },
-      events: [{ type: 'RUN_STARTED', sequence: 1 }],
+      events: [{ type: 'RUN_STARTED', sequence: 1, data: { workflowId: 'delivery-workflow' } }],
     })
-    expect(detail?.profileSnapshot.repositories.map(({ repositoryId }) => repositoryId)).toEqual([
-      'api',
-      'web',
-      'docs',
-    ])
+    expect(detail).not.toHaveProperty('profileSnapshot')
+    expect(detail?.run).not.toHaveProperty('taskReference')
+    expect(detail?.run).not.toHaveProperty('taskSnapshot')
   })
 
-  it('rejects a second admission without changing the active run', async () => {
+  it('reports every missing prompt variable before persisting a run', async () => {
     const { service } = createServiceFixture()
-    const active = await service.create(createInput)
 
-    await expect(service.create({ ...createInput, taskReference: 'TASK-2' })).rejects.toMatchObject(
-      {
-        code: 'RUN_ACTIVE',
-        activeRunId: active.runId,
-      } satisfies Partial<RunServiceError>,
-    )
-
-    expect(service.list({ page: 1, pageSize: 20 })).toMatchObject({
-      data: [expect.objectContaining({ runId: active.runId, status: active.status })],
-      pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
-    })
-    expect(service.get(active.runId)?.run).toEqual(active)
-  })
-
-  it('rejects an unready profile before creating a run', async () => {
-    const { service } = createServiceFixture(false)
-
-    await expect(service.create(createInput)).rejects.toMatchObject({
-      code: 'PROFILE_NOT_READY',
+    await expect(
+      service.create({ workflowId: 'delivery-workflow', variables: { objective: 'the API' } }),
+    ).rejects.toMatchObject({
+      code: 'RUN_VARIABLES_MISSING',
+      missingVariables: ['project'],
     } satisfies Partial<RunServiceError>)
     expect(service.list({ page: 1, pageSize: 20 }).data).toEqual([])
+  })
+
+  it('persists confirmed missing variables as part of the immutable run input', async () => {
+    const { service } = createServiceFixture()
+
+    const run = await service.create({
+      workflowId: 'delivery-workflow',
+      variables: { objective: 'the API' },
+      confirmMissingVariables: true,
+    })
+
+    expect(run).toMatchObject({
+      variables: { objective: 'the API' },
+      missingVariables: ['project'],
+    })
+  })
+
+  it.each([
+    {
+      name: 'empty draft',
+      workflow: {
+        ...agentWorkflow(),
+        startNodeId: null,
+        nodes: [],
+        edges: [],
+        maxTransitions: 0,
+      },
+    },
+    {
+      name: 'workflow containing a non-agent node',
+      workflow: {
+        ...agentWorkflow(),
+        startNodeId: 'command',
+        nodes: [
+          {
+            type: 'command' as const,
+            id: 'command',
+            name: 'Command',
+            description: 'Historical command node',
+            timeoutSeconds: 60,
+            commandId: 'historical-command',
+            outcomes: ['completed'],
+          },
+        ],
+        edges: [],
+        maxTransitions: 0,
+      },
+    },
+  ])('rejects a $name as not runnable in V1', async ({ workflow }) => {
+    const { service } = createServiceFixture(workflow)
+
+    await expect(service.create({ workflowId: workflow.workflowId })).rejects.toMatchObject({
+      code: 'WORKFLOW_NOT_RUNNABLE',
+    } satisfies Partial<RunServiceError>)
+  })
+
+  it('reads the workflow and variables captured by the run after live data changes', async () => {
+    const { fixture, service } = createServiceFixture()
+    const variables = { objective: 'the API', project: 'Slopify' }
+    const run = await service.create({ workflowId: fixture.workflow.workflowId, variables })
+    variables.objective = 'mutated after create'
+
+    fixture.workflows.save({
+      ...fixture.workflow,
+      name: 'Changed after the run started',
+      updatedAt: '2026-08-18T23:00:00Z',
+    })
+
+    expect(service.get(run.runId)?.run).toMatchObject({
+      workflowSnapshot: fixture.workflow,
+      variables: { objective: 'the API', project: 'Slopify' },
+    })
   })
 })
 
 describe('run service inspection', () => {
-  it('returns newest-first pages with stable run, profile, and delivery summaries', async () => {
+  it('returns newest-first pages containing only run execution information', async () => {
     const { fixture, service } = createServiceFixture()
     const first = await service.create(createInput)
     fixture.runs.completeRun({
@@ -149,143 +185,73 @@ describe('run service inspection', () => {
       durationMs: 2_000,
       timestamp: '2026-08-18T22:30:02Z',
     })
-    const second = await service.create({ ...createInput, taskReference: 'TASK-2' })
+    const second = await service.create(createInput)
 
     const page = service.list({ page: 1, pageSize: 1 })
 
     expect(page.pagination).toEqual({ page: 1, pageSize: 1, totalItems: 2, totalPages: 2 })
     expect(page.data).toEqual([
-      expect.objectContaining({
+      {
         runId: second.runId,
-        taskReference: 'TASK-2',
-        profileId: TEST_PROFILE_ID,
-        profileDisplayName: 'Local profile',
-        workflowId: TEST_WORKFLOW_ID,
-        revisionId: TEST_REVISION_ID,
+        workflowId: 'delivery-workflow',
         status: 'PENDING',
+        createdAt: '2026-08-18T22:30:00Z',
+        startedAt: null,
+        completedAt: null,
         durationMs: null,
-        failedNodeId: null,
-        mergeRequestUrls: [],
-      }),
+      },
     ])
   })
 
-  it('reproduces the exact execution path, timings, output, artifacts, evidence, and errors', async () => {
+  it('filters the complete run history before applying pagination', async () => {
     const { fixture, service } = createServiceFixture()
-    const run = await service.create(createInput)
+    const matching = await service.create(createInput)
     fixture.runs.changeStatus({
-      runId: run.runId,
+      runId: matching.runId,
       expectedStatus: 'PENDING',
       status: 'RUNNING',
-      timestamp: '2026-08-18T22:30:01Z',
+      timestamp: '2026-08-18T22:30:00Z',
     })
-    fixture.runs.selectRepositories({
-      runId: run.runId,
-      selectedAt: '2026-08-18T22:30:02Z',
-      selection: {
-        selected: [
-          {
-            repositoryId: 'api',
-            rationale: 'API owns the run boundary',
-            responsibility: 'Implement the API',
-          },
-        ],
-        excluded: [
-          { repositoryId: 'web', rationale: 'No UI change' },
-          { repositoryId: 'docs', rationale: 'No documentation change' },
-        ],
-      },
+    fixture.runs.completeRun({
+      runId: matching.runId,
+      expectedStatus: 'RUNNING',
+      status: 'SUCCEEDED',
+      durationMs: 2_000,
+      timestamp: '2026-08-18T22:30:02Z',
     })
-    fixture.runs.recordWorkspace({
-      runId: run.runId,
-      repositoryId: 'api',
-      repositoryPath: '/workspace/api',
-      worktreePath: '/worktrees/api-run',
-      remote: 'origin',
-      targetBranch: 'main',
-      sourceBranch: 'ai/task-1-run',
-      baseSha: '0123456789abcdef',
-      createdAt: '2026-08-18T22:30:03Z',
+    const excluded = await service.create(createInput)
+    fixture.runs.changeStatus({
+      runId: excluded.runId,
+      expectedStatus: 'PENDING',
+      status: 'RUNNING',
+      timestamp: '2026-08-18T22:31:00Z',
     })
-    fixture.runs.startNode({
-      runId: run.runId,
-      nodeExecutionId: 'node-execution-service-1',
-      nodeId: 'load-clickup-task',
-      inputReferences: [{ kind: 'task', id: 'TASK-1' }],
-      timestamp: '2026-08-18T22:30:04Z',
-    })
-    fixture.runs.recordOutput({
-      runId: run.runId,
-      nodeExecutionId: 'node-execution-service-1',
-      nodeId: 'load-clickup-task',
-      channel: 'stdout',
-      content: 'loading task',
-      repositoryId: 'api',
-      timestamp: '2026-08-18T22:30:05Z',
-    })
-    fixture.runs.recordArtifact({
-      artifactId: 'artifact-service-1',
-      runId: run.runId,
-      nodeExecutionId: 'node-execution-service-1',
-      nodeId: 'load-clickup-task',
-      artifactType: 'EXECUTION_PLAN',
-      content: '# Plan',
-      metadata: { source: 'test' },
-      timestamp: '2026-08-18T22:30:06Z',
-    })
-    fixture.runs.upsertDeliveryEvidence({
-      runId: run.runId,
-      repositoryId: 'api',
-      status: 'MERGE_REQUEST_CREATED',
-      mergeRequestUrl: 'https://gitlab.example/group/api/-/merge_requests/7',
-      evidence: { verified: false },
-      updatedAt: '2026-08-18T22:30:07Z',
-    })
-    fixture.runs.failNodeAndRun({
-      runId: run.runId,
-      nodeExecutionId: 'node-execution-service-1',
-      nodeId: 'load-clickup-task',
-      nodeStatus: 'FAILED',
-      runStatus: 'FAILED',
-      code: 'TASK_LOAD_FAILED',
-      message: 'Task could not be loaded',
-      nodeDurationMs: 4_000,
-      runDurationMs: 8_000,
-      timestamp: '2026-08-18T22:30:09Z',
+    fixture.runs.completeRun({
+      runId: excluded.runId,
+      expectedStatus: 'RUNNING',
+      status: 'FAILED',
+      durationMs: 5_000,
+      timestamp: '2026-08-18T22:31:05Z',
     })
 
-    const detail = service.get(run.runId)
-
-    expect(detail).toMatchObject({
-      repositorySelection: {
-        selected: [{ repositoryId: 'api', responsibility: 'Implement the API' }],
-        excluded: [{ repositoryId: 'web' }, { repositoryId: 'docs' }],
-      },
-      workspaces: [
-        {
-          repositoryId: 'api',
-          worktreePath: '/worktrees/api-run',
-          baseSha: '0123456789abcdef',
-        },
-      ],
-      nodeExecutions: [
-        {
-          nodeId: 'load-clickup-task',
-          status: 'FAILED',
-          durationMs: 4_000,
-          errorCode: 'TASK_LOAD_FAILED',
-          errorMessage: 'Task could not be loaded',
-        },
-      ],
-      outputChunks: [{ content: 'loading task', repositoryId: 'api' }],
-      artifacts: [{ artifactId: 'artifact-service-1', content: '# Plan' }],
-      deliveryEvidence: [
-        {
-          repositoryId: 'api',
-          mergeRequestUrl: 'https://gitlab.example/group/api/-/merge_requests/7',
-        },
-      ],
+    const page = service.list({
+      page: 1,
+      pageSize: 1,
+      runId: 'service-1',
+      statuses: ['SUCCEEDED'],
+      startedFrom: '2026-08-18T22:29:00Z',
+      startedTo: '2026-08-18T22:30:30Z',
+      durationMinMs: 1_500,
+      durationMaxMs: 2_500,
     })
-    expect(detail?.events.map(({ sequence }) => sequence)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
+
+    expect(page.pagination).toEqual({ page: 1, pageSize: 1, totalItems: 1, totalPages: 1 })
+    expect(page.data).toEqual([
+      expect.objectContaining({
+        runId: matching.runId,
+        status: 'SUCCEEDED',
+        durationMs: 2_000,
+      }),
+    ])
   })
 })

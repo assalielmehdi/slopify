@@ -1,8 +1,8 @@
-import { RunEventSchema, RunIdSchema, type RunEvent, type RunId } from '@loop/contracts'
+import { RunEventSchema, RunIdSchema, type RunEvent, type RunId } from '@slopify/contracts'
 import type { WorkbenchDatabase } from '../persistence/database.js'
 import { getDatabaseHandle } from '../persistence/database.js'
-import type { Database } from '../persistence/sqlite.js'
 import { PersistenceError } from '../persistence/errors.js'
+import type { Database } from '../persistence/sqlite.js'
 
 export type NewRunEvent = RunEvent extends infer Event
   ? Event extends RunEvent

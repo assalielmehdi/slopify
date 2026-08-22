@@ -1,103 +1,101 @@
 import {
   ApiErrorSchema,
+  AddProjectRequestSchema,
+  DeletionReceiptSchema,
+  AgentTraceSchema,
   ArtifactIdSchema,
   ArtifactTypeSchema,
   CancelRunRequestSchema,
+  ConnectionCatalogEntrySchema,
   ConnectorStatusSchema,
   CreateRunRequestSchema,
-  GitShaSchema,
   HealthResponseSchema,
   NodeIdSchema,
   NodeExecutionStatusSchema,
   OutcomeNameSchema,
-  ProfileRepositoryConfigurationSchema,
-  ProjectProfileCatalogResponseSchema,
-  ProjectProfileConfigurationSchema,
-  ProjectProfileReadinessSchema,
+  ProjectCatalogResponseSchema,
+  ProjectSchema,
+  UndoDeletionResponseSchema,
   RepositoryIdSchema,
-  ResolveClickUpTaskRequestSchema,
-  RevisionIdSchema,
   RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
   RunStatusSchema,
   WorkflowIdSchema,
   type ConnectorStatus,
+  type ConnectionCatalogEntry,
   type HealthResponse,
-  type ProjectProfileCatalogResponse,
-  type ProjectProfileConfiguration,
-  type ProjectProfileReadiness,
-} from '@loop/contracts'
-import {
-  WorkflowRevisionSchema,
-  type AgentNodeConfigurationChanges,
-  type WorkflowRevision,
-} from '@loop/workflow-model'
+  type AgentTrace,
+  type Project,
+  type DeletionReceipt,
+  type UndoDeletionResponse,
+  type RunStatus,
+} from '@slopify/contracts'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 import { z } from 'zod'
 
-const WorkflowRevisionSummarySchema = z.strictObject({
-  revisionId: RevisionIdSchema,
-  parentRevisionId: RevisionIdSchema.nullable(),
-  createdAt: z.iso.datetime({ offset: true }),
-})
-
-const WorkflowCatalogEntrySchema = z.strictObject({
-  workflowId: WorkflowIdSchema,
-  name: z.string().trim().min(1),
-  latestRevisionId: RevisionIdSchema,
-  revisions: z.array(WorkflowRevisionSummarySchema).min(1).readonly(),
-})
+const JsonValueSchema = z.json()
 
 const WorkflowCatalogResponseSchema = z.strictObject({
-  workflows: z.array(WorkflowCatalogEntrySchema).readonly(),
+  workflows: z.array(WorkflowSchema).readonly(),
 })
 
-const ClickUpTaskSnapshotSchema = z.strictObject({
-  taskId: z.string().trim().min(1).max(128),
-  customTaskId: z.string().trim().min(1).max(128).nullable(),
-  url: z.url().max(4_096),
-  title: z.string().trim().min(1).max(10_000),
-  description: z.string().max(1_000_000),
-  status: z.strictObject({
-    id: z.string().trim().min(1).max(128).nullable(),
-    name: z.string().trim().min(1).max(256),
-    type: z.string().trim().min(1).max(128).nullable(),
-  }),
-  priority: z
-    .strictObject({
-      id: z.string().trim().min(1).max(128),
-      name: z.string().trim().min(1).max(128),
-    })
-    .nullable(),
-  comments: z
-    .array(
-      z.strictObject({
-        commentId: z.string().trim().min(1).max(128),
-        text: z.string().max(1_000_000),
-        author: z.string().trim().min(1).max(10_000),
-        createdAt: z.string().trim().min(1).max(32),
-      }),
-    )
-    .readonly(),
-  resourceLinks: z
-    .array(
-      z.strictObject({
-        url: z.url().max(4_096),
-        source: z.enum(['attachment', 'comment', 'description']),
-      }),
-    )
-    .readonly(),
+const SkillFileSchema = z.strictObject({
+  path: z.string().min(1),
+  content: z.string(),
+  size: z.number().int().nonnegative(),
 })
+const SkillRecordSchema = z.strictObject({
+  skillId: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string(),
+  digest: z.string().length(64),
+  modifiedAt: z.iso.datetime({ offset: true }),
+  valid: z.boolean(),
+  issues: z.array(z.string()).readonly(),
+  files: z.array(SkillFileSchema).readonly(),
+})
+const SkillsResponseSchema = z.strictObject({ skills: z.array(SkillRecordSchema).readonly() })
+
+const ConnectionRecordSchema = z.strictObject({
+  connectionId: z.string().min(1),
+  type: z.enum(['gitlab', 'clickup', 'openrouter', 'chatgpt-subscription']),
+  category: z.enum(['connector', 'inference']),
+  label: z.string().min(1),
+  authority: z.string().min(1),
+  configuration: z.unknown(),
+  metadata: z.unknown(),
+  status: z.enum(['CONNECTED', 'INVALID']),
+  validatedAt: z.iso.datetime({ offset: true }),
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
+})
+const ConnectionsResponseSchema = z.strictObject({
+  catalog: z.array(ConnectionCatalogEntrySchema).readonly(),
+  connections: z.array(ConnectionRecordSchema).readonly(),
+})
+const ChatGptOAuthTransactionSchema = z.discriminatedUnion('status', [
+  z.strictObject({
+    id: z.string(),
+    status: z.literal('PENDING'),
+    authorizationUrl: z.url().optional(),
+    instructions: z.string().optional(),
+  }),
+  z.strictObject({
+    id: z.string(),
+    status: z.literal('CONNECTED'),
+    connectionId: z.string(),
+  }),
+  z.strictObject({ id: z.string(), status: z.literal('FAILED'), message: z.string() }),
+  z.strictObject({ id: z.string(), status: z.literal('CANCELLED') }),
+])
 
 const StartRunResponseSchema = z.strictObject({
   runId: RunIdSchema,
   workflowId: WorkflowIdSchema,
-  revisionId: RevisionIdSchema,
-  profileSnapshotId: z.string().trim().min(1).max(256),
-  taskReference: z.string().trim().min(1).max(512),
-  notes: z.string().trim().min(1).max(2_000).nullable(),
-  taskSnapshot: z.json(),
-  effectiveConfiguration: z.json(),
+  workflowSnapshot: WorkflowSchema,
+  variables: z.record(z.string(), JsonValueSchema).readonly(),
+  missingVariables: z.array(z.string().trim().min(1).max(128)).readonly(),
   status: RunStatusSchema,
   currentNodeId: NodeIdSchema.nullable(),
   transitionCount: z.number().int().nonnegative().safe(),
@@ -109,21 +107,11 @@ const StartRunResponseSchema = z.strictObject({
 const RunHistoryEntrySchema = z.strictObject({
   runId: RunIdSchema,
   workflowId: WorkflowIdSchema,
-  revisionId: RevisionIdSchema,
-  profileSnapshotId: z.string().trim().min(1).max(256),
-  profileId: ProjectProfileConfigurationSchema.shape.profileId,
-  profileDisplayName: ProjectProfileConfigurationSchema.shape.displayName,
-  taskReference: z.string().trim().min(1).max(512),
-  notes: z.string().trim().min(1).max(2_000).nullable(),
-  taskSnapshot: z.json(),
   status: RunStatusSchema,
-  currentNodeId: NodeIdSchema.nullable(),
   createdAt: z.iso.datetime({ offset: true }),
   startedAt: z.iso.datetime({ offset: true }).nullable(),
   completedAt: z.iso.datetime({ offset: true }).nullable(),
   durationMs: z.number().int().nonnegative().safe().nullable(),
-  failedNodeId: NodeIdSchema.nullable(),
-  mergeRequestUrls: z.array(z.url().max(4_096)).readonly(),
 })
 
 const RunHistoryPageSchema = z.strictObject({
@@ -136,28 +124,14 @@ const RunHistoryPageSchema = z.strictObject({
   }),
 })
 
-const ProfileSnapshotRepositorySchema = ProfileRepositoryConfigurationSchema.extend({
-  profilePosition: z.number().int().nonnegative().safe(),
-})
-
 const RunDetailResponseSchema = z.strictObject({
   run: StartRunResponseSchema,
-  workflowRevision: WorkflowRevisionSchema,
-  profileSnapshot: z.strictObject({
-    snapshotId: z.string().trim().min(1).max(256),
-    profileId: ProjectProfileConfigurationSchema.shape.profileId,
-    displayName: ProjectProfileConfigurationSchema.shape.displayName,
-    clickupWorkspaceId: ProjectProfileConfigurationSchema.shape.clickupWorkspaceId,
-    clickupListId: ProjectProfileConfigurationSchema.shape.clickupListId,
-    clickupInReviewStatusId: ProjectProfileConfigurationSchema.shape.clickupInReviewStatusId,
-    createdAt: z.iso.datetime({ offset: true }),
-    repositories: z.array(ProfileSnapshotRepositorySchema).min(1).max(32).readonly(),
-  }),
   events: z.array(RunEventSchema).readonly(),
   nodeExecutions: z
     .array(
       z.strictObject({
         nodeExecutionId: z.string().trim().min(1).max(256),
+        attemptId: z.string().trim().min(1).max(256).nullable().default(null),
         nodeId: NodeIdSchema,
         executionIndex: z.number().int().nonnegative().safe(),
         status: NodeExecutionStatusSchema,
@@ -170,59 +144,6 @@ const RunDetailResponseSchema = z.strictObject({
         startedAt: z.iso.datetime({ offset: true }).nullable(),
         completedAt: z.iso.datetime({ offset: true }).nullable(),
         durationMs: z.number().int().nonnegative().finite().nullable(),
-      }),
-    )
-    .readonly(),
-  repositorySelection: z
-    .strictObject({
-      selected: z
-        .array(
-          z.strictObject({
-            repositoryId: RepositoryIdSchema,
-            rationale: z.string().trim().min(1),
-            responsibility: z.string().trim().min(1),
-          }),
-        )
-        .readonly(),
-      excluded: z
-        .array(
-          z.strictObject({
-            repositoryId: RepositoryIdSchema,
-            rationale: z.string().trim().min(1),
-          }),
-        )
-        .readonly(),
-    })
-    .nullable(),
-  workspaces: z
-    .array(
-      z.strictObject({
-        repositoryId: RepositoryIdSchema,
-        profilePosition: z.number().int().nonnegative().safe(),
-        repositoryPath: z.string().trim().min(1).max(4_096),
-        worktreePath: z.string().trim().min(1).max(4_096),
-        remote: z.string().trim().min(1).max(256),
-        targetBranch: z.string().trim().min(1).max(512),
-        sourceBranch: z.string().trim().min(1).max(512),
-        baseSha: GitShaSchema,
-        createdAt: z.iso.datetime({ offset: true }),
-      }),
-    )
-    .readonly(),
-  deliveryEvidence: z
-    .array(
-      z.strictObject({
-        repositoryId: RepositoryIdSchema,
-        profilePosition: z.number().int().nonnegative().safe(),
-        status: z.enum(['PENDING', 'BRANCH_PUSHED', 'MERGE_REQUEST_CREATED', 'VERIFIED', 'FAILED']),
-        gitlabProject: z.string().trim().min(1).max(512).nullable(),
-        mergeRequestIid: z.number().int().positive().safe().nullable(),
-        mergeRequestUrl: z.url().max(4_096).nullable(),
-        sourceBranch: z.string().trim().min(1).max(512).nullable(),
-        targetBranch: z.string().trim().min(1).max(512).nullable(),
-        headSha: GitShaSchema.nullable(),
-        evidence: z.json(),
-        updatedAt: z.iso.datetime({ offset: true }),
       }),
     )
     .readonly(),
@@ -253,51 +174,82 @@ const RunDetailResponseSchema = z.strictObject({
     .readonly(),
 })
 
-export type WorkflowCatalogEntry = z.infer<typeof WorkflowCatalogEntrySchema>
-export type ClickUpTaskSnapshot = z.infer<typeof ClickUpTaskSnapshotSchema>
+export type WorkflowCatalogEntry = Workflow
+export type JsonValue = z.infer<typeof JsonValueSchema>
 export type StartRunResponse = z.infer<typeof StartRunResponseSchema>
 export type RunHistoryEntry = z.infer<typeof RunHistoryEntrySchema>
 export type RunHistoryPage = z.infer<typeof RunHistoryPageSchema>
 export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
+export type SkillRecord = z.infer<typeof SkillRecordSchema>
+export type ConnectionRecord = z.infer<typeof ConnectionRecordSchema>
+export type ConnectionCatalogResponse = Readonly<{
+  catalog: readonly ConnectionCatalogEntry[]
+  connections: readonly ConnectionRecord[]
+}>
+export type ChatGptOAuthTransaction = z.infer<typeof ChatGptOAuthTransactionSchema>
 
-export interface CreateWorkflowRevisionInput {
-  readonly parentRevisionId: string
-  readonly revisionId: string
-  readonly updates: readonly {
-    readonly nodeId: string
-    readonly changes: AgentNodeConfigurationChanges
-  }[]
-}
-
-export interface ResolveClickUpTaskInput {
-  readonly taskReference: string
-  readonly profileId: string
-}
-
-export interface StartRunInput extends ResolveClickUpTaskInput {
+export interface StartRunInput {
   readonly workflowId: string
-  readonly revisionId: string
-  readonly notes?: string
+  readonly variables?: Readonly<Record<string, JsonValue>>
+  readonly confirmMissingVariables?: boolean
+}
+
+export interface ListRunsInput {
+  readonly page: number
+  readonly pageSize: number
+  readonly runId?: string
+  readonly statuses?: readonly RunStatus[]
+  readonly startedFrom?: string
+  readonly startedTo?: string
+  readonly durationMinMs?: number
+  readonly durationMaxMs?: number
 }
 
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>
-  listProjectProfiles(): Promise<ProjectProfileCatalogResponse>
-  createProjectProfile(profile: ProjectProfileConfiguration): Promise<ProjectProfileConfiguration>
-  updateProjectProfile(profile: ProjectProfileConfiguration): Promise<ProjectProfileConfiguration>
-  getProjectProfileReadiness(profileId: string): Promise<ProjectProfileReadiness>
+  listProjects?(): Promise<readonly Project[]>
+  addProject?(input: { readonly repositoryPath: string }): Promise<Project>
+  deleteProject?(projectId: string): Promise<DeletionReceipt>
+  undoDeletion?(deletionId: string): Promise<UndoDeletionResponse>
   getConnectorStatus(): Promise<ConnectorStatus>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
-  getWorkflowRevision(workflowId: string, revisionId: string): Promise<WorkflowRevision>
-  createWorkflowRevision(
-    workflowId: string,
-    input: CreateWorkflowRevisionInput,
-  ): Promise<WorkflowRevision>
-  resolveClickUpTask(input: ResolveClickUpTaskInput): Promise<ClickUpTaskSnapshot>
+  getWorkflow(workflowId: string): Promise<Workflow>
   startRun(input: StartRunInput): Promise<StartRunResponse>
-  listRuns(input: { readonly page: number; readonly pageSize: number }): Promise<RunHistoryPage>
+  listRuns(input: ListRunsInput): Promise<RunHistoryPage>
   getRun(runId: string): Promise<RunDetailResponse>
+  getAgentTrace(runId: string, nodeExecutionId: string, attemptId: string): Promise<AgentTrace>
   cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
+  listSkills?(): Promise<readonly SkillRecord[]>
+  getSkill?(skillId: string): Promise<SkillRecord>
+  createSkill?(
+    input: Readonly<{
+      skillId: string
+      name: string
+      description: string
+      instructions: string
+    }>,
+  ): Promise<SkillRecord>
+  updateSkill?(
+    skillId: string,
+    input: Readonly<{ expectedDigest: string; files: Readonly<Record<string, string>> }>,
+  ): Promise<SkillRecord>
+  deleteSkill?(skillId: string, expectedDigest: string): Promise<void>
+  listConnections?(): Promise<ConnectionCatalogResponse>
+  connect?(
+    input: Readonly<{
+      connectionId?: string
+      type: 'gitlab' | 'clickup' | 'openrouter'
+      label: string
+      configuration: unknown
+      credential: Readonly<{ type: 'api_key'; key: string }>
+    }>,
+  ): Promise<ConnectionRecord>
+  revalidateConnection?(connectionId: string): Promise<ConnectionRecord>
+  replaceConnectionCredential?(connectionId: string, key: string): Promise<ConnectionRecord>
+  deleteConnection?(connectionId: string): Promise<void>
+  startChatGptOAuth?(label: string): Promise<ChatGptOAuthTransaction>
+  getChatGptOAuth?(transactionId: string): Promise<ChatGptOAuthTransaction>
+  cancelChatGptOAuth?(transactionId: string): Promise<void>
 }
 
 export class ApiClientError extends Error {
@@ -348,43 +300,52 @@ export const createApiClient = (
   const get = <Schema extends z.ZodType>(path: string, schema: Schema) =>
     request(path, { headers: { accept: 'application/json' }, method: 'GET' }, schema)
 
+  const noContent = async (path: string, init: RequestInit): Promise<void> => {
+    const response = await fetchImplementation(path, init)
+    if (response.ok) return
+    const apiError = ApiErrorSchema.parse(await response.json()).error
+    throw new ApiClientError({
+      code: apiError.code,
+      message: apiError.message,
+      status: response.status,
+      ...(apiError.details === undefined ? {} : { details: apiError.details }),
+    })
+  }
+
   return {
     async getHealth() {
       return get('/api/healthz', HealthResponseSchema)
     },
 
-    async listProjectProfiles() {
-      return get('/api/project-profiles', ProjectProfileCatalogResponseSchema)
+    async listProjects() {
+      return (await get('/api/projects', ProjectCatalogResponseSchema)).projects
     },
 
-    async createProjectProfile(profile) {
+    async addProject(input) {
       return request(
-        '/api/project-profiles',
+        '/api/projects',
         {
-          body: JSON.stringify(profile),
+          body: JSON.stringify(AddProjectRequestSchema.parse(input)),
           headers: { accept: 'application/json', 'content-type': 'application/json' },
           method: 'POST',
         },
-        ProjectProfileConfigurationSchema,
+        ProjectSchema,
       )
     },
 
-    async updateProjectProfile(profile) {
+    async deleteProject(projectId) {
       return request(
-        `/api/project-profiles/${encodeURIComponent(profile.profileId)}`,
-        {
-          body: JSON.stringify(profile),
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          method: 'PUT',
-        },
-        ProjectProfileConfigurationSchema,
+        `/api/projects/${encodeURIComponent(projectId)}`,
+        { method: 'DELETE', headers: { accept: 'application/json' } },
+        DeletionReceiptSchema,
       )
     },
 
-    async getProjectProfileReadiness(profileId) {
-      return get(
-        `/api/project-profiles/${encodeURIComponent(profileId)}/readiness`,
-        ProjectProfileReadinessSchema,
+    async undoDeletion(deletionId) {
+      return request(
+        `/api/deletions/${encodeURIComponent(deletionId)}/undo`,
+        { method: 'POST', headers: { accept: 'application/json' } },
+        UndoDeletionResponseSchema,
       )
     },
 
@@ -396,35 +357,8 @@ export const createApiClient = (
       return (await get('/api/workflows', WorkflowCatalogResponseSchema)).workflows
     },
 
-    async getWorkflowRevision(workflowId, revisionId) {
-      return get(
-        `/api/workflows/${encodeURIComponent(workflowId)}/revisions/${encodeURIComponent(revisionId)}`,
-        WorkflowRevisionSchema,
-      )
-    },
-
-    async createWorkflowRevision(workflowId, input) {
-      return request(
-        `/api/workflows/${encodeURIComponent(workflowId)}/revisions`,
-        {
-          body: JSON.stringify(input),
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-        WorkflowRevisionSchema,
-      )
-    },
-
-    async resolveClickUpTask(input) {
-      return request(
-        '/api/clickup/tasks/resolve',
-        {
-          body: JSON.stringify(ResolveClickUpTaskRequestSchema.parse(input)),
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-        ClickUpTaskSnapshotSchema,
-      )
+    async getWorkflow(workflowId) {
+      return get(`/api/workflows/${encodeURIComponent(workflowId)}`, WorkflowSchema)
     },
 
     async startRun(input) {
@@ -440,11 +374,22 @@ export const createApiClient = (
     },
 
     async listRuns(input) {
-      const query = RunPaginationQuerySchema.parse(input)
+      const query = RunPaginationQuerySchema.parse({
+        ...input,
+        ...(input.statuses === undefined ? {} : { statuses: [...input.statuses] }),
+      })
       const search = new URLSearchParams({
         page: String(query.page),
         pageSize: String(query.pageSize),
       })
+      if (query.runId !== undefined) search.set('runId', query.runId)
+      for (const status of query.statuses ?? []) search.append('status', status)
+      if (query.startedFrom !== undefined) search.set('startedFrom', query.startedFrom)
+      if (query.startedTo !== undefined) search.set('startedTo', query.startedTo)
+      if (query.durationMinMs !== undefined)
+        search.set('durationMinMs', String(query.durationMinMs))
+      if (query.durationMaxMs !== undefined)
+        search.set('durationMaxMs', String(query.durationMaxMs))
       return get(`/api/runs?${search.toString()}`, RunHistoryPageSchema)
     },
 
@@ -452,6 +397,14 @@ export const createApiClient = (
       return get(
         `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}`,
         RunDetailResponseSchema,
+      )
+    },
+
+    async getAgentTrace(runId, nodeExecutionId, attemptId) {
+      const search = new URLSearchParams({ attemptId })
+      return get(
+        `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/node-executions/${encodeURIComponent(nodeExecutionId)}/trace?${search.toString()}`,
+        AgentTraceSchema,
       )
     },
 
@@ -465,6 +418,101 @@ export const createApiClient = (
         },
         StartRunResponseSchema,
       )
+    },
+
+    async listSkills() {
+      return (await get('/api/skills', SkillsResponseSchema)).skills
+    },
+    async getSkill(skillId) {
+      return get(`/api/skills/${encodeURIComponent(skillId)}`, SkillRecordSchema)
+    },
+    async createSkill(input) {
+      return request(
+        '/api/skills',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+        SkillRecordSchema,
+      )
+    },
+    async updateSkill(skillId, input) {
+      return request(
+        `/api/skills/${encodeURIComponent(skillId)}`,
+        {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+        SkillRecordSchema,
+      )
+    },
+    async deleteSkill(skillId, expectedDigest) {
+      return noContent(`/api/skills/${encodeURIComponent(skillId)}`, {
+        method: 'DELETE',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ expectedDigest }),
+      })
+    },
+    async listConnections() {
+      return get('/api/connections', ConnectionsResponseSchema)
+    },
+    async connect(input) {
+      return request(
+        '/api/connections',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify(input),
+        },
+        ConnectionRecordSchema,
+      )
+    },
+    async revalidateConnection(connectionId) {
+      return request(
+        `/api/connections/${encodeURIComponent(connectionId)}/revalidate`,
+        { method: 'POST', headers: { accept: 'application/json' } },
+        ConnectionRecordSchema,
+      )
+    },
+    async replaceConnectionCredential(connectionId, key) {
+      return request(
+        `/api/connections/${encodeURIComponent(connectionId)}/credential`,
+        {
+          method: 'PUT',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify({ credential: { type: 'api_key', key } }),
+        },
+        ConnectionRecordSchema,
+      )
+    },
+    async deleteConnection(connectionId) {
+      return noContent(`/api/connections/${encodeURIComponent(connectionId)}`, {
+        method: 'DELETE',
+      })
+    },
+    async startChatGptOAuth(label) {
+      return request(
+        '/api/connections/chatgpt/oauth',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify({ label }),
+        },
+        ChatGptOAuthTransactionSchema,
+      )
+    },
+    async getChatGptOAuth(transactionId) {
+      return get(
+        `/api/connections/chatgpt/oauth/${encodeURIComponent(transactionId)}`,
+        ChatGptOAuthTransactionSchema,
+      )
+    },
+    async cancelChatGptOAuth(transactionId) {
+      return noContent(`/api/connections/chatgpt/oauth/${encodeURIComponent(transactionId)}`, {
+        method: 'DELETE',
+      })
     },
   }
 }

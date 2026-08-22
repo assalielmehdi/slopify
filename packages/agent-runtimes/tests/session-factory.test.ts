@@ -1,5 +1,6 @@
 import { z } from 'zod'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { Type } from 'typebox'
 
 import { AgentExecutionInputSchema } from '../src/contract.js'
 import type { ModelCredentialSource } from '../src/model-runtime.js'
@@ -237,5 +238,58 @@ describe('Pi session factory', () => {
       }),
     ).rejects.toMatchObject<PiSessionFactoryError>({ code: 'PI_SESSION_CONFIGURATION_INVALID' })
     expect(createAgentSessionMock).not.toHaveBeenCalled()
+  })
+
+  it('uses only the Gondolin-backed tools and snapshot-pinned skills when sandboxed', async () => {
+    createAgentSessionMock.mockResolvedValue({
+      session: createSdkSession('session-sandboxed'),
+      extensionsResult: {},
+    })
+    const factory = createPiSessionFactory({ credentialSource })
+    const guestTool = (name: string) => ({
+      name,
+      label: name,
+      description: name,
+      parameters: Type.Object({}),
+      execute: vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
+    })
+    const tools = ['read', 'bash', 'edit', 'write'].map(guestTool)
+    const skills = [
+      {
+        name: 'gitlab-delivery',
+        description: 'Use GitLab safely',
+        filePath: '/skills/gitlab-delivery/SKILL.md',
+        baseDir: '/skills/gitlab-delivery',
+        sourceInfo: {
+          path: '/skills/gitlab-delivery/SKILL.md',
+          source: 'slopify-snapshot',
+          scope: 'temporary' as const,
+          origin: 'top-level' as const,
+        },
+        disableModelInvocation: false,
+      },
+    ]
+
+    const session = await factory.create({
+      input,
+      outputSchema: z.unknown(),
+      resourceBundle,
+      sandbox: { workspaceRoot: '/workspace', tools, skills },
+    })
+
+    const options = createAgentSessionMock.mock.calls[0]?.[0]
+    expect(options.cwd).toBe('/workspace')
+    expect(options.agentDir).toBe('/workspace')
+    expect(options.tools).toEqual(['read', 'bash', 'edit', 'write', 'complete_node'])
+    expect(options.customTools.map(({ name }: { name: string }) => name)).toEqual([
+      'read',
+      'bash',
+      'edit',
+      'write',
+      'complete_node',
+    ])
+    expect(options.resourceLoader.getSkills()).toEqual({ skills, diagnostics: [] })
+    expect(options.resourceLoader.getAgentsFiles()).toEqual({ agentsFiles: [] })
+    session.dispose()
   })
 })

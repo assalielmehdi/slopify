@@ -1,7 +1,7 @@
 'use client'
 
-import type { NodeExecutionStatus } from '@loop/contracts'
-import type { WorkflowRevision } from '@loop/workflow-model'
+import type { NodeExecutionStatus } from '@slopify/contracts'
+import type { AgentNode, Workflow } from '@slopify/workflow-model'
 import dagre from '@dagrejs/dagre'
 import {
   Background,
@@ -29,8 +29,8 @@ export interface WorkflowGraphLayout {
 }
 
 export interface WorkflowCanvasProps {
-  readonly revision: WorkflowRevision
-  readonly selectedNodeId: string
+  readonly workflow: Workflow
+  readonly selectedNodeId?: string | null | undefined
   readonly onNodeSelect: (nodeId: string) => void
   readonly recentRunStatuses?: Readonly<Record<string, NodeExecutionStatus>>
 }
@@ -38,12 +38,18 @@ export interface WorkflowCanvasProps {
 const nodeTypes = { workflow: WorkflowNode } satisfies NodeTypes
 
 export function layoutWorkflowGraph(
-  revision: WorkflowRevision,
+  workflow: Workflow,
   options: Readonly<{
-    selectedNodeId?: string
+    selectedNodeId?: string | null | undefined
     recentRunStatuses?: Readonly<Record<string, NodeExecutionStatus>>
   }> = {},
 ): WorkflowGraphLayout {
+  const visibleNodes = workflow.nodes.filter((node): node is AgentNode => node.type === 'agent')
+  const visibleNodeIds = new Set(visibleNodes.map(({ id }) => id))
+  const visibleEdges = workflow.edges.filter(
+    ({ sourceNodeId, targetNodeId }) =>
+      visibleNodeIds.has(sourceNodeId) && visibleNodeIds.has(targetNodeId),
+  )
   const graph = new dagre.graphlib.Graph({ multigraph: true })
     .setGraph({
       acyclicer: 'greedy',
@@ -54,20 +60,19 @@ export function layoutWorkflowGraph(
     })
     .setDefaultEdgeLabel(() => ({}))
 
-  for (const node of revision.nodes) {
+  for (const node of visibleNodes) {
     graph.setNode(node.id, { height: NODE_HEIGHT, width: NODE_WIDTH })
   }
-  revision.edges.forEach((edge, index) => {
+  visibleEdges.forEach((edge, index) => {
     graph.setEdge(edge.sourceNodeId, edge.targetNodeId, {}, `${index}:${edge.outcome}`)
   })
   dagre.layout(graph)
 
-  const nodes = revision.nodes.map((domainNode): WorkflowCanvasNode => {
+  const nodes = visibleNodes.map((domainNode): WorkflowCanvasNode => {
     const position = graph.node(domainNode.id)
     const data: WorkflowNodeData = {
       domainNode,
-      isStart: domainNode.id === revision.startNodeId,
-      isTerminal: domainNode.type === 'terminal',
+      isStart: domainNode.id === workflow.startNodeId,
       ...(options.recentRunStatuses?.[domainNode.id] === undefined
         ? {}
         : { recentRunStatus: options.recentRunStatuses[domainNode.id] }),
@@ -91,7 +96,7 @@ export function layoutWorkflowGraph(
     }
   })
 
-  const edges = revision.edges.map((edge, index): Edge => ({
+  const edges = visibleEdges.map((edge, index): Edge => ({
     id: `${index}:${edge.sourceNodeId}:${edge.outcome}:${edge.targetNodeId}`,
     source: edge.sourceNodeId,
     target: edge.targetNodeId,
@@ -107,18 +112,18 @@ export function layoutWorkflowGraph(
 }
 
 export function WorkflowCanvas({
-  revision,
+  workflow,
   selectedNodeId,
   onNodeSelect,
   recentRunStatuses,
 }: WorkflowCanvasProps) {
   const graph = useMemo(
     () =>
-      layoutWorkflowGraph(revision, {
+      layoutWorkflowGraph(workflow, {
         selectedNodeId,
         ...(recentRunStatuses === undefined ? {} : { recentRunStatuses }),
       }),
-    [recentRunStatuses, revision, selectedNodeId],
+    [recentRunStatuses, selectedNodeId, workflow],
   )
   const handleNodeClick = useCallback<NodeMouseHandler<WorkflowCanvasNode>>(
     (_event, node) => onNodeSelect(node.id),
@@ -136,9 +141,26 @@ export function WorkflowCanvas({
     [onNodeSelect],
   )
 
+  if (graph.nodes.length === 0) {
+    return (
+      <div
+        className="workflow-graph grid h-full min-h-0 min-w-0 place-items-center overflow-hidden rounded-lg border bg-card"
+        role="region"
+        aria-label="Workflow graph"
+      >
+        <div className="max-w-sm px-6 text-center">
+          <p className="text-sm/5 font-medium">No agent jobs</p>
+          <p className="mt-1 text-sm/5 text-muted-foreground">
+            This workflow is empty and cannot be run yet.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div
-      className="workflow-graph h-160 min-w-0 border bg-muted/30"
+      className="workflow-graph h-full min-h-0 min-w-0 overflow-hidden rounded-lg border bg-card"
       role="region"
       aria-label="Workflow graph"
     >

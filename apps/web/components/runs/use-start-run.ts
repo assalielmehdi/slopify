@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 
-import type { ProjectProfileCatalogResponse, ProjectProfileReadiness } from '@loop/contracts'
+import { getWorkflowPromptVariableNames, type Workflow } from '@slopify/workflow-model'
 
+import type { RunVariableRow } from '@/components/runs/run-configuration-fields'
 import {
   ApiClientError,
   type ApiClient,
-  type ClickUpTaskSnapshot,
+  type JsonValue,
   type StartRunResponse,
   type WorkflowCatalogEntry,
 } from '@/lib/api-client'
 
-export type StartRunErrorScope = 'load' | 'profile' | 'revision' | 'start' | 'task'
+export type StartRunErrorScope = 'load' | 'start'
 
 export interface StartRunError {
   readonly activeRunId?: string | undefined
@@ -25,13 +26,22 @@ const activeRunIdFrom = (details: unknown): string | undefined => {
   return typeof activeRunId === 'string' && activeRunId !== '' ? activeRunId : undefined
 }
 
+const missingVariablesFrom = (details: unknown): readonly string[] | undefined => {
+  if (typeof details !== 'object' || details === null || !('missingVariables' in details))
+    return undefined
+  const missingVariables = details.missingVariables
+  if (
+    !Array.isArray(missingVariables) ||
+    !missingVariables.every((value) => typeof value === 'string')
+  )
+    return undefined
+  return missingVariables
+}
+
 const normalizeStartError = (cause: unknown): StartRunError => {
   if (!(cause instanceof ApiClientError)) {
     return { scope: 'start', message: 'Run could not be started.' }
   }
-  if (cause.code === 'PROFILE_NOT_READY') return { scope: 'profile', message: cause.message }
-  if (cause.code === 'TASK_RESOLUTION_FAILED') return { scope: 'task', message: cause.message }
-  if (cause.code === 'WORKFLOW_NOT_FOUND') return { scope: 'revision', message: cause.message }
   return {
     scope: 'start',
     message: cause.message,
@@ -39,48 +49,57 @@ const normalizeStartError = (cause: unknown): StartRunError => {
   }
 }
 
+const requiredRows = (workflow: Workflow): readonly RunVariableRow[] =>
+  getWorkflowPromptVariableNames(workflow).map((key, index) => ({
+    id: `required-${index}`,
+    key,
+    required: true,
+    value: '',
+  }))
+
+const parseVariableValue = (value: string): JsonValue => {
+  try {
+    return JSON.parse(value) as JsonValue
+  } catch {
+    return value
+  }
+}
+
+const variablesFrom = (rows: readonly RunVariableRow[]): Readonly<Record<string, JsonValue>> =>
+  Object.fromEntries(
+    rows
+      .filter((row) => row.value !== '')
+      .map((row) => [row.key.trim(), parseVariableValue(row.value)] as const)
+      .filter(([key]) => key !== ''),
+  )
+
+const hasValidKeys = (rows: readonly RunVariableRow[]): boolean => {
+  const keys = rows.map(({ key }) => key.trim())
+  return keys.every((key) => key !== '') && new Set(keys).size === keys.length
+}
+
 export function useStartRun(client: ApiClient) {
-  const readinessRequest = useRef(0)
-  const [catalog, setCatalog] = useState<ProjectProfileCatalogResponse>()
+  const nextRowId = useRef(0)
   const [workflows, setWorkflows] = useState<readonly WorkflowCatalogEntry[]>([])
   const [workflowId, setWorkflowId] = useState('')
-  const [revisionId, setRevisionId] = useState('')
-  const [profileId, setProfileId] = useState('')
-  const [readiness, setReadiness] = useState<ProjectProfileReadiness>()
-  const [taskReference, setTaskReference] = useState('')
-  const [notes, setNotes] = useState('')
-  const [task, setTask] = useState<ClickUpTaskSnapshot>()
-  const [confirmed, setConfirmed] = useState(false)
+  const [rows, setRows] = useState<readonly RunVariableRow[]>([])
+  const [missingVariables, setMissingVariables] = useState<readonly string[]>([])
   const [startedRun, setStartedRun] = useState<StartRunResponse>()
   const [error, setError] = useState<StartRunError>()
   const [loading, setLoading] = useState(true)
-  const [readinessPending, setReadinessPending] = useState(false)
-  const [resolving, setResolving] = useState(false)
   const [starting, setStarting] = useState(false)
 
   useEffect(() => {
     let active = true
     const load = async () => {
       try {
-        const [nextWorkflows, nextCatalog] = await Promise.all([
-          client.listWorkflows(),
-          client.listProjectProfiles(),
-        ])
+        const nextWorkflows = await client.listWorkflows()
         if (!active) return
         setWorkflows(nextWorkflows)
-        setCatalog(nextCatalog)
         const workflow = nextWorkflows[0]
-        const profile = nextCatalog.profiles[0]
         if (workflow !== undefined) {
           setWorkflowId(workflow.workflowId)
-          setRevisionId(workflow.latestRevisionId)
-        }
-        if (profile !== undefined) {
-          setProfileId(profile.profileId)
-          setReadinessPending(true)
-          const request = ++readinessRequest.current
-          const nextReadiness = await client.getProjectProfileReadiness(profile.profileId)
-          if (active && request === readinessRequest.current) setReadiness(nextReadiness)
+          setRows(requiredRows(workflow))
         }
       } catch (cause) {
         if (active) {
@@ -90,121 +109,78 @@ export function useStartRun(client: ApiClient) {
           })
         }
       } finally {
-        if (active) {
-          setLoading(false)
-          setReadinessPending(false)
-        }
+        if (active) setLoading(false)
       }
     }
     void load()
     return () => {
       active = false
-      readinessRequest.current += 1
     }
   }, [client])
 
   const selectedWorkflow = workflows.find((workflow) => workflow.workflowId === workflowId)
-  const selectedProfile = catalog?.profiles.find((profile) => profile.profileId === profileId)
-  const profileError =
-    error?.scope === 'profile'
-      ? error.message
-      : readiness !== undefined && !readiness.ready
-        ? 'Project profile is not ready.'
-        : undefined
+  const runnable = selectedWorkflow?.nodes.some(({ type }) => type === 'agent') === true
   const canStart =
-    task !== undefined &&
     selectedWorkflow !== undefined &&
-    selectedProfile !== undefined &&
-    revisionId !== '' &&
-    readiness?.ready === true &&
-    confirmed &&
+    runnable &&
+    hasValidKeys(rows) &&
     !starting &&
     startedRun === undefined
 
   const resetConfirmation = () => {
-    setConfirmed(false)
+    setMissingVariables([])
     setStartedRun(undefined)
     setError(undefined)
   }
 
   const changeWorkflow = (nextWorkflowId: string) => {
-    const nextWorkflow = workflows.find((workflow) => workflow.workflowId === nextWorkflowId)
+    const workflow = workflows.find(({ workflowId: candidateId }) => candidateId === nextWorkflowId)
     setWorkflowId(nextWorkflowId)
-    setRevisionId(nextWorkflow?.latestRevisionId ?? '')
+    setRows(workflow === undefined ? [] : requiredRows(workflow))
     resetConfirmation()
   }
 
-  const changeRevision = (nextRevisionId: string) => {
-    setRevisionId(nextRevisionId)
+  const addVariable = () => {
+    nextRowId.current += 1
+    setRows((current) => [
+      ...current,
+      { id: `extra-${nextRowId.current}`, key: '', required: false, value: '' },
+    ])
     resetConfirmation()
   }
 
-  const changeTaskReference = (nextTaskReference: string) => {
-    setTaskReference(nextTaskReference)
-    setTask(undefined)
+  const removeVariable = (id: string) => {
+    setRows((current) => current.filter((row) => row.id !== id || row.required))
     resetConfirmation()
   }
 
-  const selectProfile = async (nextProfileId: string) => {
-    const request = ++readinessRequest.current
-    setProfileId(nextProfileId)
-    setReadiness(undefined)
-    setTask(undefined)
+  const changeVariable = (id: string, field: 'key' | 'value', value: string) => {
+    setRows((current) => current.map((row) => (row.id === id ? { ...row, [field]: value } : row)))
     resetConfirmation()
-    setReadinessPending(true)
-    try {
-      const nextReadiness = await client.getProjectProfileReadiness(nextProfileId)
-      if (request === readinessRequest.current) setReadiness(nextReadiness)
-    } catch (cause) {
-      if (request === readinessRequest.current) {
-        setError({
-          scope: 'profile',
-          message: cause instanceof Error ? cause.message : 'Profile readiness could not load.',
-        })
-      }
-    } finally {
-      if (request === readinessRequest.current) setReadinessPending(false)
-    }
   }
 
-  const resolveTask = async () => {
-    const reference = taskReference.trim()
-    if (reference === '' || selectedProfile === undefined) {
-      setError({ scope: 'task', message: 'Enter a ClickUp task ID or URL.' })
-      return
-    }
-    setResolving(true)
-    setTask(undefined)
-    resetConfirmation()
-    try {
-      setTask(await client.resolveClickUpTask({ taskReference: reference, profileId }))
-    } catch (cause) {
-      setError({
-        scope: 'task',
-        message: cause instanceof Error ? cause.message : 'Task could not be resolved.',
-      })
-    } finally {
-      setResolving(false)
-    }
-  }
-
-  const start = async () => {
+  const start = async (confirmMissingVariables = false) => {
     if (!canStart) return
     setStarting(true)
     setStartedRun(undefined)
     setError(undefined)
-    const normalizedNotes = notes.trim()
     try {
       setStartedRun(
         await client.startRun({
-          taskReference: taskReference.trim(),
           workflowId,
-          revisionId,
-          profileId,
-          ...(normalizedNotes === '' ? {} : { notes: normalizedNotes }),
+          variables: variablesFrom(rows),
+          ...(confirmMissingVariables ? { confirmMissingVariables: true } : {}),
         }),
       )
+      setMissingVariables([])
     } catch (cause) {
+      if (cause instanceof ApiClientError && cause.code === 'RUN_VARIABLES_MISSING') {
+        const missing = missingVariablesFrom(cause.details)
+        if (missing !== undefined && missing.length > 0) {
+          setMissingVariables(missing)
+          return
+        }
+      }
       setError(normalizeStartError(cause))
     } finally {
       setStarting(false)
@@ -212,32 +188,20 @@ export function useStartRun(client: ApiClient) {
   }
 
   return {
+    addVariable,
     canStart,
-    catalog,
-    changeRevision,
-    changeTaskReference,
+    changeVariable,
     changeWorkflow,
-    confirmed,
     error,
     loading,
-    notes,
-    profileError,
-    profileId,
-    readiness,
-    readinessPending,
-    resolveTask,
-    resolving,
-    revisionId,
-    selectProfile,
-    selectedProfile,
+    missingVariables,
+    removeVariable,
+    rows,
+    runnable,
     selectedWorkflow,
-    setConfirmed,
-    setNotes,
     start,
     startedRun,
     starting,
-    task,
-    taskReference,
     workflowId,
     workflows,
   }

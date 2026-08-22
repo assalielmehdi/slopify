@@ -1,5 +1,5 @@
 {
-  "name": "@loop/api",
+  "name": "@slopify/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,17 +9,18 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run --filter @loop/clickup-artifacts build && bun run --filter @loop/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
-    "typecheck": "bun run --filter @loop/clickup-artifacts build && bun run --filter @loop/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "build": "bun run --filter @slopify/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "dev": "bun --watch --conditions=source src/server.ts",
+    "typecheck": "bun run --filter @slopify/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
     "lint": "bun --bun eslint src tests --max-warnings 0",
     "test": "bun --bun vitest run --root ../.. apps/api/tests",
     "start": "bun dist/server.js"
   },
   "dependencies": {
-    "@loop/clickup-artifacts": "workspace:*",
-    "@loop/contracts": "workspace:*",
-    "@loop/execution-runtime": "workspace:*",
-    "@loop/workflow-model": "workspace:*",
+    "@slopify/agent-runtimes": "workspace:*",
+    "@slopify/contracts": "workspace:*",
+    "@slopify/execution-runtime": "workspace:*",
+    "@slopify/workflow-model": "workspace:*",
     "hono": "4.13.3",
     "zod": "4.4.3"
   }

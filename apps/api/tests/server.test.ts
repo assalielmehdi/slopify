@@ -3,9 +3,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
-  createConfiguredTaskResolver,
+  connectDefaultChatGpt,
   ensurePredefinedWorkflow,
-  resolveConnectorStatus,
   resolveApiServerConfiguration,
   startApiServer,
 } from '../src/server.js'
@@ -22,85 +21,114 @@ const database = {
 
 describe('API server configuration', () => {
   it('seeds the source-controlled V1 workflow exactly once', () => {
-    const addRevision = vi.fn()
+    const save = vi.fn()
     const workflows = {
-      addRevision,
-      getRevision: vi.fn(() => undefined),
+      save,
+      get: vi.fn(() => undefined),
     }
 
     ensurePredefinedWorkflow(workflows)
 
-    expect(addRevision).toHaveBeenCalledTimes(1)
-    expect(addRevision).toHaveBeenCalledWith(
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        startNodeId: 'load-clickup-task',
+        startNodeId: 'identify-agent',
       }),
     )
-
-    workflows.getRevision.mockReturnValue(addRevision.mock.calls[0]?.[0])
-    ensurePredefinedWorkflow(workflows)
-    expect(addRevision).toHaveBeenCalledTimes(1)
-  })
-
-  it('binds all interfaces by default in container mode', () => {
-    expect(resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true' })).toMatchObject({
-      hostname: '0.0.0.0',
-      port: 3001,
-      databasePath: '/var/lib/workbench/workbench.sqlite',
-      workspaceRoot: '/workspace',
-      shutdownGracePeriodMs: 10_000,
+    expect(save.mock.calls[0]?.[0].nodes[0]).toMatchObject({
+      type: 'agent',
+      job: {
+        prompt: "Who are you? What's your name?",
+        inference: {
+          connectionId: 'chatgpt-subscription-default',
+          modelId: 'gpt-5.4',
+        },
+      },
     })
+
+    workflows.get.mockReturnValue(save.mock.calls[0]?.[0])
+    ensurePredefinedWorkflow(workflows)
+    expect(save).toHaveBeenCalledTimes(1)
   })
 
-  it('uses loopback natively and accepts explicit host and port overrides', () => {
+  it('replaces only the legacy seeded workflow that still has synthetic nodes', () => {
+    const save = vi.fn()
+    const workflows = {
+      save,
+      get: vi.fn(() => ({
+        workflowId: 'delivery-workflow',
+        name: 'Who are you?',
+        nodes: [
+          { type: 'agent', id: 'identify-agent' },
+          { type: 'terminal', id: 'succeeded' },
+        ],
+        edges: [
+          {
+            sourceNodeId: 'identify-agent',
+            outcome: 'completed',
+            targetNodeId: 'succeeded',
+          },
+        ],
+      })),
+    }
+
+    ensurePredefinedWorkflow(workflows)
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0]?.[0].nodes).toEqual([
+      expect.objectContaining({ type: 'agent', id: 'identify-agent' }),
+    ])
+  })
+
+  it('stores ChatGPT OAuth as the inference connection used by the default workflow', async () => {
+    const connect = vi.fn(async (input) => ({ connectionId: input.connectionId }))
+
+    await expect(
+      connectDefaultChatGpt(connect, {
+        label: 'ChatGPT subscription',
+        credential: {
+          type: 'oauth',
+          access: 'access-token',
+          refresh: 'refresh-token',
+          expires: Date.now() + 60_000,
+        },
+      }),
+    ).resolves.toEqual({ connectionId: 'chatgpt-subscription-default' })
+    expect(connect).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectionId: 'chatgpt-subscription-default',
+        type: 'chatgpt-subscription',
+      }),
+    )
+  })
+
+  it('uses native owner-local state and accepts explicit host and port overrides', () => {
     expect(
       resolveApiServerConfiguration({
         API_HOST: '127.0.0.2',
         API_PORT: '4310',
         API_SHUTDOWN_GRACE_MS: '2500',
         DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
-        WORKSPACE_ROOT: '/custom/workspace',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
       port: 4310,
       shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
-      workspaceRoot: '/custom/workspace',
+      skillsRoot: expect.any(String),
+      skillSnapshotsRoot: expect.any(String),
+      credentialPath: expect.any(String),
+      tracesRoot: expect.any(String),
     })
-    expect(resolveApiServerConfiguration({})).toMatchObject({ hostname: '127.0.0.1' })
-  })
-
-  it.each(['/tmp/workbench.sqlite', '/var/lib/workbench/../escape.sqlite'])(
-    'rejects container database path %j outside the writable data root',
-    (DATABASE_PATH) => {
-      expect(() =>
-        resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true', DATABASE_PATH }),
-      ).toThrowError(expect.objectContaining({ code: 'DATABASE_PATH_INVALID' }))
-    },
-  )
-
-  it.each(['/tmp/workspace', '/workspace/../escape'])(
-    'rejects container workspace root %j outside the mounted workspace root',
-    (WORKSPACE_ROOT) => {
-      expect(() =>
-        resolveApiServerConfiguration({ API_CONTAINER_MODE: 'true', WORKSPACE_ROOT }),
-      ).toThrowError(expect.objectContaining({ code: 'WORKSPACE_ROOT_INVALID' }))
-    },
-  )
-
-  it('accepts container paths below the approved data and workspace roots', () => {
-    expect(
-      resolveApiServerConfiguration({
-        API_CONTAINER_MODE: 'true',
-        DATABASE_PATH: '/var/lib/workbench/team/workbench.sqlite',
-        WORKSPACE_ROOT: '/workspace/team',
-      }),
-    ).toMatchObject({
-      databasePath: '/var/lib/workbench/team/workbench.sqlite',
-      workspaceRoot: '/workspace/team',
+    expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
+      hostname: '127.0.0.1',
+      port: 3001,
+      databasePath: '/tmp/slopify-test/slopify.db',
+      skillsRoot: '/tmp/slopify-test/skills',
+      skillSnapshotsRoot: '/tmp/slopify-test/skill-snapshots',
+      credentialPath: '/tmp/slopify-test/credentials.json',
+      tracesRoot: '/tmp/slopify-test/traces',
     })
   })
 
@@ -136,7 +164,10 @@ describe('API server configuration', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
-        workspaceRoot: '/workspace',
+        skillsRoot: '/skills',
+        skillSnapshotsRoot: '/skill-snapshots',
+        credentialPath: '/credentials.json',
+        tracesRoot: '/traces',
         shutdownGracePeriodMs: 10_000,
       },
       serve,
@@ -149,77 +180,5 @@ describe('API server configuration', () => {
 
     await server.stop()
     expect(stop).toHaveBeenCalledOnce()
-  })
-
-  it('reduces connector credentials to non-secret readiness booleans', () => {
-    const status = resolveConnectorStatus({
-      CLICKUP_API_TOKEN: 'clickup-secret',
-      GITLAB_TOKEN: '',
-      MODEL_PROVIDER_API_KEY: 'provider-secret',
-    })
-
-    expect(status).toEqual({ clickup: true, gitlab: false, modelProvider: true })
-    expect(JSON.stringify(status)).not.toContain('clickup-secret')
-    expect(JSON.stringify(status)).not.toContain('provider-secret')
-  })
-
-  it('creates ClickUp task clients with profile-scoped workspace context', async () => {
-    const getTask = vi.fn(async (taskReference: string) => ({
-      taskId: '86abc123',
-      title: `Resolved ${taskReference}`,
-    }))
-    const createClient = vi.fn(() => ({ getTask }))
-    const resolver = createConfiguredTaskResolver(
-      { CLICKUP_API_TOKEN: 'clickup-secret' },
-      createClient,
-    )
-
-    const snapshot = await resolver.resolve('CU-123', {
-      clickupWorkspaceId: 'workspace-01',
-    })
-
-    expect(snapshot).toEqual({ taskId: '86abc123', title: 'Resolved CU-123' })
-    expect(createClient).toHaveBeenCalledWith({
-      token: 'clickup-secret',
-      workspaceId: 'workspace-01',
-    })
-    expect(getTask).toHaveBeenCalledWith('CU-123')
-    expect(JSON.stringify(snapshot)).not.toContain('clickup-secret')
-  })
-
-  it('forwards an explicit ClickUp base URL to an isolated provider boundary', async () => {
-    const getTask = vi.fn(async () => ({ taskId: '86abc123' }))
-    const createClient = vi.fn(() => ({ getTask }))
-    const resolver = createConfiguredTaskResolver(
-      {
-        CLICKUP_API_BASE_URL: 'http://127.0.0.1:4555/api/v2/',
-        CLICKUP_API_TOKEN: 'fake-clickup-secret',
-      },
-      createClient,
-    )
-
-    await resolver.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })
-
-    expect(createClient).toHaveBeenCalledWith({
-      baseUrl: 'http://127.0.0.1:4555/api/v2/',
-      token: 'fake-clickup-secret',
-      workspaceId: 'workspace-01',
-    })
-  })
-
-  it('treats a blank optional ClickUp base URL as the provider default', async () => {
-    const getTask = vi.fn(async () => ({ taskId: '86abc123' }))
-    const createClient = vi.fn(() => ({ getTask }))
-    const resolver = createConfiguredTaskResolver(
-      { CLICKUP_API_BASE_URL: '  ', CLICKUP_API_TOKEN: 'clickup-secret' },
-      createClient,
-    )
-
-    await resolver.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })
-
-    expect(createClient).toHaveBeenCalledWith({
-      token: 'clickup-secret',
-      workspaceId: 'workspace-01',
-    })
   })
 })

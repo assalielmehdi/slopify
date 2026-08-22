@@ -1,38 +1,52 @@
-import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
+import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/contracts'
+import type { ChatGptOAuthService } from '@slopify/agent-runtimes'
 import {
   CancellationServiceError,
-  ProjectProfileServiceError,
+  AgentTraceStoreError,
+  ConnectionServiceError,
+  DeletionServiceError,
+  ProjectServiceError,
   RunEventFeedError,
   RunServiceError,
+  SkillCatalogError,
   WorkflowServiceError,
   type CancellationService,
-  type ProjectProfileService,
-  type ReadinessService,
+  type AgentTraceStore,
+  type ConnectionCatalog,
+  type ConnectionService,
+  type DeletionService,
+  type ProjectService,
   type RunService,
   type RunEventFeed,
-  type RunTaskResolver,
+  type SkillCatalog,
   type WorkbenchDatabase,
   type WorkflowService,
-} from '@loop/execution-runtime'
+} from '@slopify/execution-runtime'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
-import { registerClickUpTaskRoutes } from './routes/clickup-tasks.js'
-import { registerProjectProfileRoutes } from './routes/project-profiles.js'
+import { registerConnectionRoutes } from './routes/connections.js'
+import { registerDeletionRoutes } from './routes/deletions.js'
+import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
+import { registerSkillRoutes } from './routes/skills.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
 export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
+  readonly traces?: AgentTraceStore
+  readonly connectionCatalog?: ConnectionCatalog
+  readonly connections?: ConnectionService
+  readonly chatGptOAuth?: ChatGptOAuthService
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
-  readonly profiles?: ProjectProfileService
-  readonly readiness?: ReadinessService
+  readonly deletions?: DeletionService
+  readonly projects?: ProjectService
   readonly runs?: RunService
-  readonly tasks?: RunTaskResolver
+  readonly skills?: SkillCatalog
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
 }
@@ -73,25 +87,61 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
     }
   })
 
-  if (options.profiles !== undefined && options.readiness !== undefined) {
-    registerProjectProfileRoutes(app, {
-      profiles: options.profiles,
-      readiness: options.readiness,
-    })
-  }
-  if (options.profiles !== undefined && options.tasks !== undefined) {
-    registerClickUpTaskRoutes(app, { profiles: options.profiles, tasks: options.tasks })
-  }
-
+  if (options.projects !== undefined) registerProjectRoutes(app, options.projects)
+  if (options.deletions !== undefined) registerDeletionRoutes(app, options.deletions)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
-  if (options.runs !== undefined) registerRunRoutes(app, options.runs, options.cancellation)
+  if (options.runs !== undefined)
+    registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
+  if (options.skills !== undefined) registerSkillRoutes(app, options.skills)
+  if (options.connections !== undefined && options.connectionCatalog !== undefined)
+    registerConnectionRoutes(
+      app,
+      options.connections,
+      options.connectionCatalog,
+      options.chatGptOAuth,
+    )
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof DeletionServiceError) {
+      const status =
+        error.code === 'DELETION_NOT_FOUND'
+          ? 404
+          : error.code === 'DELETION_UNDO_EXPIRED'
+            ? 410
+            : 409
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
+    if (error instanceof AgentTraceStoreError) {
+      const status = error.code === 'TRACE_NOT_FOUND' ? 404 : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
+    if (error instanceof SkillCatalogError) {
+      const status =
+        error.code === 'SKILL_NOT_FOUND'
+          ? 404
+          : error.code === 'SKILL_CONFLICT'
+            ? 409
+            : error.code === 'SKILL_LIMIT_EXCEEDED'
+              ? 413
+              : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
+    if (error instanceof ConnectionServiceError) {
+      const status =
+        error.code === 'CONNECTION_NOT_FOUND'
+          ? 404
+          : error.code === 'CONNECTION_VALIDATION_FAILED'
+            ? 422
+            : error.code === 'CREDENTIAL_NOT_FOUND'
+              ? 409
+              : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
     if (error instanceof CancellationServiceError) {
       return context.json(
         errorBody({ code: error.code, message: error.message }),
@@ -108,47 +158,41 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       const status =
         error.code === 'RUN_ADMISSION_CLOSED'
           ? 503
-          : error.code === 'RUN_ACTIVE'
+          : error.code === 'RUN_ACTIVE' || error.code === 'RUN_VARIABLES_MISSING'
             ? 409
             : error.code === 'RUN_REQUEST_INVALID'
               ? 400
-              : error.code === 'PROFILE_NOT_READY' || error.code === 'TASK_RESOLUTION_FAILED'
+              : error.code === 'WORKFLOW_NOT_RUNNABLE'
                 ? 422
                 : 404
       return context.json(
         errorBody({
           code: error.code,
           message: error.message,
-          ...(error.activeRunId === undefined
-            ? {}
-            : { details: { activeRunId: error.activeRunId } }),
+          ...(error.missingVariables !== undefined
+            ? { details: { missingVariables: error.missingVariables } }
+            : error.activeRunId === undefined
+              ? {}
+              : { details: { activeRunId: error.activeRunId } }),
         }),
         status,
       )
     }
     if (error instanceof WorkflowServiceError) {
+      return context.json(errorBody({ code: error.code, message: error.message }), 404)
+    }
+    if (error instanceof ProjectServiceError) {
       const status =
-        error.code === 'WORKFLOW_NOT_FOUND'
+        error.code === 'PROJECT_NOT_FOUND'
           ? 404
-          : error.code === 'REVISION_CONFLICT'
+          : error.code === 'PROJECT_PATH_CONFLICT'
             ? 409
-            : error.code === 'REVISION_INVALID'
+            : error.code === 'PROJECT_PATH_NOT_FOUND' ||
+                error.code === 'PROJECT_NOT_GIT_REPOSITORY' ||
+                error.code === 'PROJECT_UNAVAILABLE'
               ? 422
               : 400
-      return context.json(
-        errorBody({
-          code: error.code,
-          message: error.message,
-          ...(error.details === undefined ? {} : { details: error.details }),
-        }),
-        status,
-      )
-    }
-    if (error instanceof ProjectProfileServiceError) {
-      return context.json(
-        errorBody({ code: error.code, message: error.message }),
-        error.code === 'PROFILE_NOT_FOUND' ? 404 : 400,
-      )
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof ApiApplicationError) {
       return context.json(

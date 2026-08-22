@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from '../components/app-shell'
 
 const navigation = vi.hoisted(() => ({ pathname: '/' }))
+const storedPreferences = new Map<string, string>()
 
 vi.mock('next/navigation', () => ({
   usePathname: () => navigation.pathname,
@@ -13,7 +14,18 @@ vi.mock('next/navigation', () => ({
 
 beforeEach(() => {
   navigation.pathname = '/'
-  Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
+  storedPreferences.clear()
+  Object.defineProperty(window, 'localStorage', {
+    configurable: true,
+    value: {
+      clear: () => storedPreferences.clear(),
+      getItem: (key: string) => storedPreferences.get(key) ?? null,
+      removeItem: (key: string) => storedPreferences.delete(key),
+      setItem: (key: string, value: string) => storedPreferences.set(key, value),
+    },
+  })
+  document.documentElement.classList.remove('dark')
+  document.documentElement.style.colorScheme = ''
   Object.defineProperty(window, 'matchMedia', {
     configurable: true,
     value: vi.fn().mockImplementation((query: string) => ({
@@ -30,48 +42,108 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('AppShell', () => {
-  it('renders the workbench navigation and route content with a current-page cue', () => {
-    render(
+  it('uses one base surface across navigation and the workspace', () => {
+    const { container } = render(
       <AppShell>
-        <h1>Workflow graph</h1>
+        <p>Workflow graph</p>
       </AppShell>,
     )
 
-    expect(screen.getByRole('navigation', { name: 'Primary' })).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Slopify' }).getAttribute('href')).toBe('/')
-    expect(screen.getByRole('link', { name: 'Workflow' }).getAttribute('aria-current')).toBe('page')
-    expect(screen.getByRole('link', { name: 'New run' }).getAttribute('href')).toBe('/runs/new')
-    expect(screen.getByRole('link', { name: 'Run history' }).getAttribute('href')).toBe('/runs')
-    expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings')
-    expect(screen.getByRole('heading', { level: 1, name: 'Workflow graph' })).toBeTruthy()
+    const navigation = container.querySelector('aside')
+    expect(navigation?.getAttribute('data-surface')).toBe('base')
+    expect(navigation?.className).toContain('bg-background')
+    expect(navigation?.className).not.toContain('bg-sidebar')
+    expect(container.querySelector('header')?.getAttribute('data-surface')).toBe('base')
+    expect(screen.getByRole('main').getAttribute('data-surface')).toBe('base')
   })
 
-  it('supports the visible toggle and documented keyboard shortcut', () => {
+  it('renders the approved navigation hierarchy and clickable breadcrumbs', () => {
+    render(
+      <AppShell>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+
+    expect(primaryNavigation.getAttribute('data-state')).toBe('expanded')
+    expect(within(primaryNavigation).getByText('Workflow')).toBeTruthy()
+    expect(within(primaryNavigation).getByText('Configuration')).toBeTruthy()
+    expect(
+      within(primaryNavigation).getByRole('link', { name: 'Editor' }).getAttribute('aria-current'),
+    ).toBe('page')
+    expect(
+      within(primaryNavigation).getByRole('link', { name: 'Providers' }).getAttribute('href'),
+    ).toBe('/providers')
+    expect(within(primaryNavigation).queryByRole('link', { name: 'Agent profiles' })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Preferences' }).getAttribute('href')).toBe(
+      '/preferences',
+    )
+    expect(within(breadcrumb).getByRole('link', { name: 'Workflows' }).getAttribute('href')).toBe(
+      '/',
+    )
+    expect(
+      within(breadcrumb).getByRole('link', { name: 'Who are you?' }).getAttribute('href'),
+    ).toBe('/')
+    expect(screen.getByText('Workflow graph')).toBeTruthy()
+    expect(screen.queryByText('Local operator')).toBeNull()
+  })
+
+  it('places the collapse control in the title row and toggles with B outside inputs', () => {
+    render(
+      <AppShell>
+        <input aria-label="Workflow name" />
+      </AppShell>,
+    )
+
+    const navigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const collapseButton = screen.getByRole('button', { name: 'Collapse navigation' })
+
+    expect(collapseButton.closest('aside')).not.toBeNull()
+    expect(collapseButton.getAttribute('aria-keyshortcuts')).toBe('B')
+
+    fireEvent.keyDown(window, { key: 'b' })
+    expect(navigation.getAttribute('data-state')).toBe('collapsed')
+
+    const expandButton = screen.getByRole('button', { name: 'Expand navigation' })
+    expect(expandButton.closest('aside')).toBeNull()
+    expect(expandButton.getAttribute('aria-keyshortcuts')).toBe('B')
+
+    const input = screen.getByRole('textbox', { name: 'Workflow name' })
+    input.focus()
+    fireEvent.keyDown(input, { key: 'b' })
+    expect(navigation.getAttribute('data-state')).toBe('collapsed')
+  })
+
+  it('uses D for a persisted direct light and dark toggle', () => {
+    window.localStorage.setItem('slopify-theme', 'dark')
+
     render(
       <AppShell>
         <p>Workbench</p>
       </AppShell>,
     )
 
-    const sidebar = document.querySelector('[data-slot="sidebar"]')
-    expect(sidebar?.getAttribute('data-state')).toBe('expanded')
-    const keyboardToggles = screen
-      .getAllByRole('button', { name: 'Toggle Sidebar' })
-      .filter((button) => button.tabIndex === 0)
-    expect(keyboardToggles).toHaveLength(1)
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    expect(document.documentElement.style.colorScheme).toBe('dark')
 
-    fireEvent.keyDown(window, { ctrlKey: true, key: 'b' })
+    fireEvent.keyDown(window, { key: 'd' })
 
-    expect(sidebar?.getAttribute('data-state')).toBe('collapsed')
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    expect(window.localStorage.getItem('slopify-theme')).toBe('light')
   })
 
   it.each([
-    ['/', 'Workflow', 'Workflow'],
-    ['/runs/new', 'New run', 'New run'],
-    ['/runs', 'Run history', 'Run history'],
-    ['/runs/run-123', 'Run history', 'Run detail'],
-    ['/settings', 'Settings', 'Settings'],
-  ])('maps %s to one current destination and the %s shell title', (pathname, linkName, title) => {
+    ['/runs', 'Runs', ['Runs']],
+    ['/runs/new', 'Runs', ['Runs', 'New run']],
+    ['/runs/run-123', 'Runs', ['Runs', 'Run detail']],
+    ['/providers', 'Providers', ['Providers']],
+    ['/connectors', 'Connectors', ['Connectors']],
+    ['/skills', 'Skills', ['Skills']],
+    ['/projects', 'Projects', ['Projects']],
+    ['/preferences', 'Preferences', ['Preferences']],
+  ])('maps %s to the %s destination and breadcrumb', (pathname, linkName, crumbs) => {
     navigation.pathname = pathname
 
     render(
@@ -80,11 +152,43 @@ describe('AppShell', () => {
       </AppShell>,
     )
 
-    const currentLinks = screen
+    const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    const currentNavigationLinks = within(primaryNavigation)
       .getAllByRole('link')
       .filter((link) => link.getAttribute('aria-current') === 'page')
-    expect(currentLinks).toHaveLength(1)
-    expect(currentLinks[0]?.textContent).toContain(linkName)
-    expect(screen.getByText(title, { selector: 'header p' })).toBeTruthy()
+
+    expect(currentNavigationLinks).toHaveLength(linkName === 'Preferences' ? 0 : 1)
+    if (linkName !== 'Preferences') {
+      expect(currentNavigationLinks[0]?.textContent).toContain(linkName)
+    } else {
+      const preferencesLinks = screen.getAllByRole('link', { name: 'Preferences' })
+      expect(preferencesLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(
+        true,
+      )
+    }
+    expect(
+      within(breadcrumb)
+        .getAllByRole('link')
+        .map((link) => link.textContent),
+    ).toEqual(crumbs)
   })
+
+  it.each(['/providers', '/connectors', '/projects', '/runs', '/runs/run-123'])(
+    'does not add shell padding around the full-width route %s',
+    (pathname) => {
+      navigation.pathname = pathname
+
+      render(
+        <AppShell>
+          <section className="w-full px-6 pt-6">Catalog</section>
+        </AppShell>,
+      )
+
+      const main = screen.getByRole('main')
+      expect(main.className).not.toContain('p-6')
+      expect(main.className).not.toContain('sm:p-8')
+      if (pathname.startsWith('/runs/')) expect(main.className).toContain('overflow-hidden')
+    },
+  )
 })

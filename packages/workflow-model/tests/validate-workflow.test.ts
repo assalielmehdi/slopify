@@ -9,17 +9,20 @@ const agentNode = {
   id: 'start',
   name: 'Start',
   description: 'Start the workflow.',
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
-  thinkingLevel: 'high',
-  promptTemplate: 'Begin the task.',
-  workspacePolicy: 'selected-worktrees',
-  permissionProfile: 'read-only',
-  resourceBundleId: 'delivery-start',
-  inputArtifacts: [],
-  outputSchemaRef: 'workflow-output/start-v1',
-  outcomes: ['ready'],
   timeoutSeconds: 900,
+  result: { schemaRef: 'workflow-output/start-v1' },
+  sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
+  job: {
+    kind: 'agent',
+    prompt: 'Begin the task.',
+    skillSnapshotRefs: [],
+    inference: {
+      connectionId: 'openrouter-primary',
+      modelId: 'anthropic/claude-sonnet-4.5',
+      thinkingLevel: 'high',
+    },
+    connectorIds: [],
+  },
 }
 
 const commandNode = {
@@ -41,7 +44,6 @@ const terminalNode = {
 
 const validWorkflow = {
   workflowId: 'delivery-workflow',
-  revisionId: 'revision-01',
   name: 'Delivery workflow',
   description: 'Deliver one approved task.',
   startNodeId: 'start',
@@ -53,6 +55,7 @@ const validWorkflow = {
   ],
   maxTransitions: 24,
   createdAt: '2026-08-18T20:00:00Z',
+  updatedAt: '2026-08-18T20:00:00Z',
 }
 
 describe('validateWorkflow', () => {
@@ -70,7 +73,11 @@ describe('validateWorkflow', () => {
   it.each([
     ['missing node ID', { ...agentNode, id: undefined }, ['nodes', 0, 'id']],
     ['malformed node ID', { ...agentNode, id: 'Start Node' }, ['nodes', 0, 'id']],
-    ['missing agent provider', { ...agentNode, provider: undefined }, ['nodes', 0, 'provider']],
+    [
+      'missing agent prompt',
+      { ...agentNode, job: { ...agentNode.job, prompt: undefined } },
+      ['nodes', 0, 'job', 'prompt'],
+    ],
   ])('returns a field-addressable schema finding for %s', (_case, node, path) => {
     const result = validateWorkflow(
       { ...validWorkflow, nodes: [node, commandNode, terminalNode] },
@@ -85,16 +92,19 @@ describe('validateWorkflow', () => {
     )
   })
 
-  it('returns a field-addressable schema finding for a non-positive transition limit', () => {
+  it('accepts a zero transition limit for a workflow with no edges', () => {
     const result = validateWorkflow(
-      { ...validWorkflow, maxTransitions: 0 },
+      {
+        ...validWorkflow,
+        nodes: [agentNode],
+        edges: [],
+        maxTransitions: 0,
+      },
       { registeredCommandIds },
     )
 
-    expect(result.valid).toBe(false)
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({ code: 'SCHEMA_INVALID', path: ['maxTransitions'] }),
-    )
+    expect(result.valid).toBe(true)
+    expect(result.findings).toEqual([])
   })
 
   it('reports duplicate node IDs and an ambiguous start', () => {
@@ -127,17 +137,43 @@ describe('validateWorkflow', () => {
     )
   })
 
-  it('reports a workflow without a terminal node', () => {
+  it('accepts a one-agent workflow and treats the leaf agent as completion', () => {
     const result = validateWorkflow(
-      { ...validWorkflow, nodes: [agentNode, commandNode] },
+      { ...validWorkflow, nodes: [agentNode], edges: [], maxTransitions: 0 },
       {
         registeredCommandIds,
       },
     )
 
+    expect(result.valid).toBe(true)
+    expect(result.findings).toEqual([])
+  })
+
+  it('accepts an empty draft workflow with no start node', () => {
+    const result = validateWorkflow(
+      {
+        ...validWorkflow,
+        startNodeId: null,
+        nodes: [],
+        edges: [],
+        maxTransitions: 0,
+      },
+      { registeredCommandIds },
+    )
+
+    expect(result.valid).toBe(true)
+    expect(result.findings).toEqual([])
+  })
+
+  it('requires a start node when a workflow contains jobs', () => {
+    const result = validateWorkflow(
+      { ...validWorkflow, startNodeId: null, nodes: [agentNode], edges: [], maxTransitions: 0 },
+      { registeredCommandIds },
+    )
+
     expect(result.valid).toBe(false)
     expect(result.findings).toContainEqual(
-      expect.objectContaining({ code: 'TERMINAL_NODE_MISSING', path: ['nodes'] }),
+      expect.objectContaining({ code: 'START_NODE_REQUIRED', path: ['startNodeId'] }),
     )
   })
 
@@ -241,7 +277,7 @@ describe('validateWorkflow', () => {
     )
   })
 
-  it('reports a declared outcome with multiple edges', () => {
+  it('accepts multiple edges for one outcome as an explicit fan-out', () => {
     const result = validateWorkflow(
       {
         ...validWorkflow,
@@ -253,13 +289,7 @@ describe('validateWorkflow', () => {
       { registeredCommandIds },
     )
 
-    expect(result.valid).toBe(false)
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({
-        code: 'OUTCOME_EDGE_AMBIGUOUS',
-        path: ['nodes', 1, 'outcomes', 0],
-      }),
-    )
+    expect(result.valid).toBe(true)
   })
 
   it('reports a node unreachable from the explicit start', () => {

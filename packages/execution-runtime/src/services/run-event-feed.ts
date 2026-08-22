@@ -1,4 +1,4 @@
-import { RunIdSchema, type RunEvent, type RunId } from '@loop/contracts'
+import { RunIdSchema, type RunEvent, type RunId } from '@slopify/contracts'
 
 import type { EventStore } from '../events/event-store.js'
 import type { RunRepository } from '../persistence/run-repository.js'

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createRunEventFeed } from '@loop/execution-runtime'
+import { createRunEventFeed } from '@slopify/execution-runtime'
 import {
   TEST_RUN_ID,
   createPersistenceFixture,
@@ -109,7 +109,10 @@ describe('run event SSE API', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
-        workspaceRoot: '/workspace',
+        skillsRoot: '/skills',
+        skillSnapshotsRoot: '/skill-snapshots',
+        credentialPath: '/credentials.json',
+        tracesRoot: '/traces',
         shutdownGracePeriodMs: 10_000,
       },
     })

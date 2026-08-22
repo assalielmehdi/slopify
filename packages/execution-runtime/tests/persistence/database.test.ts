@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -12,12 +13,17 @@ import { getDatabaseHandle } from '../../src/persistence/database.js'
 
 const EXPECTED_TABLES = [
   'artifacts',
+  'connection_catalog',
+  'connections',
+  'deletion_operations',
+  'execution_messages',
   'node_executions',
   'output_chunks',
   'profile_snapshot_repositories',
   'project_profile_repositories',
   'project_profile_snapshots',
   'project_profiles',
+  'projects',
   'repository_delivery_evidence',
   'run_events',
   'run_repository_selection_snapshots',
@@ -25,7 +31,7 @@ const EXPECTED_TABLES = [
   'run_workspaces',
   'runs',
   'schema_migrations',
-  'workflow_revisions',
+  'workflow_coordinator_states',
   'workflows',
 ] as const
 
@@ -49,6 +55,26 @@ afterEach(() => {
 })
 
 describe('database connection', () => {
+  it('opens, migrates, and queries SQLite under the Bun runtime', () => {
+    const databasePath = createDatabasePath('bun.sqlite')
+    const moduleUrl = new URL('../../src/persistence/database.ts', import.meta.url).href
+    const source = [
+      `import { openDatabase, getDatabaseHandle } from ${JSON.stringify(moduleUrl)}`,
+      `const database = openDatabase({ path: ${JSON.stringify(databasePath)} })`,
+      "const row = getDatabaseHandle(database).prepare('SELECT 1 AS ok').get()",
+      'console.log(JSON.stringify(row))',
+      'database.close()',
+    ].join(';')
+
+    const output = execFileSync('bun', ['-e', source], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      timeout: 30_000,
+    })
+
+    expect(output.trim()).toBe('{"ok":1}')
+  })
+
   it('creates the configured file and enables the required SQLite settings', () => {
     const databasePath = createDatabasePath()
     const database = openDatabase({ path: databasePath })
@@ -60,7 +86,7 @@ describe('database connection', () => {
     expect(database.status()).toEqual({
       foreignKeysEnabled: true,
       journalMode: 'wal',
-      schemaVersion: 3,
+      schemaVersion: 13,
       writable: true,
     })
   })
@@ -121,20 +147,18 @@ describe('database connection', () => {
     expect(secretBearingColumns).toEqual([])
   })
 
-  it('enforces immutable snapshots, run-scoped foreign keys, and profile ordering', () => {
+  it('enforces run-scoped foreign keys, immutable profile snapshots, and profile ordering', () => {
     const database = openDatabase({ path: createDatabasePath() })
     openedDatabases.push(database)
     const connection = getDatabaseHandle(database)
     const timestamp = '2026-08-18T20:00:00Z'
 
     connection.exec(`
-      INSERT INTO workflows (workflow_id, name, created_at)
-      VALUES ('delivery-workflow', 'Delivery workflow', '${timestamp}');
-
-      INSERT INTO workflow_revisions (
-        workflow_id, revision_id, name, definition_json, created_at
+      INSERT INTO workflows (
+        workflow_id, name, description, definition_json, created_at, updated_at
       ) VALUES (
-        'delivery-workflow', 'revision-01', 'Revision 1', '{}', '${timestamp}'
+        'delivery-workflow', 'Delivery workflow', 'Test workflow', '{}',
+        '${timestamp}', '${timestamp}'
       );
 
       INSERT INTO project_profiles (
@@ -165,11 +189,12 @@ describe('database connection', () => {
          'group/web', 'origin', 'main', '/worktrees', 'ai/{task}-{run}', '[]', '[]', '[]');
 
       INSERT INTO runs (
-        run_id, workflow_id, revision_id, profile_snapshot_id, task_reference,
-        task_snapshot_json, effective_configuration_json, status, created_at
+        run_id, workflow_id, profile_snapshot_id, task_reference,
+        task_snapshot_json, workflow_snapshot_json, variables_json,
+        missing_variables_json, status, created_at
       ) VALUES (
-        'run-01', 'delivery-workflow', 'revision-01', 'snapshot-01', 'TASK-1',
-        '{}', '{}', 'PENDING', '${timestamp}'
+        'run-01', 'delivery-workflow', 'snapshot-01', 'TASK-1',
+        '{}', '{}', '{}', '[]', 'PENDING', '${timestamp}'
       );
 
       INSERT INTO run_repository_selections (
@@ -232,11 +257,6 @@ describe('database connection', () => {
       .all('run-01')
 
     expect(selectedRepositories).toEqual(['api', 'web'])
-    expect(() =>
-      connection
-        .prepare('UPDATE workflow_revisions SET definition_json = ? WHERE revision_id = ?')
-        .run('{"changed":true}', 'revision-01'),
-    ).toThrow(/immutable/i)
     expect(() =>
       connection
         .prepare('UPDATE project_profile_snapshots SET display_name = ? WHERE snapshot_id = ?')

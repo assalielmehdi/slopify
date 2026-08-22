@@ -1,4 +1,4 @@
-import { OutcomeNameSchema, type OutcomeName } from '@loop/contracts'
+import { OutcomeNameSchema, type OutcomeName } from '@slopify/contracts'
 import { z } from 'zod'
 
 import { AgentNodeResultSchema, type AgentNodeResult } from './contract.js'

@@ -11,7 +11,7 @@ const createNormalizer = () =>
   })
 
 describe('Pi event normalizer', () => {
-  it('preserves visible assistant text in order while dropping thinking deltas', () => {
+  it('preserves visible assistant text and reasoning in order', () => {
     const normalizer = createNormalizer()
 
     const first = normalizer.normalize({
@@ -39,11 +39,12 @@ describe('Pi event normalizer', () => {
 
     expect([...first, ...thinking, ...second, ...ended]).toEqual([
       { type: 'AGENT_MESSAGE', data: { content: 'Visible [REDACTED]. ' } },
+      { type: 'AGENT_REASONING', data: { content: 'Hidden reasoning with [REDACTED]' } },
       { type: 'AGENT_MESSAGE', data: { content: 'Done.' } },
     ])
   })
 
-  it('maps tool lifecycle evidence without exposing arguments, details, or credentials', () => {
+  it('maps tool lifecycle evidence with redacted arguments and without private details', () => {
     const normalizer = createNormalizer()
 
     const events = [
@@ -78,7 +79,11 @@ describe('Pi event normalizer', () => {
     expect(events).toEqual([
       {
         type: 'AGENT_TOOL_STARTED',
-        data: { toolCallId: 'tool-01', toolName: 'bash' },
+        data: {
+          toolCallId: 'tool-01',
+          toolName: 'bash',
+          input: { command: 'echo [REDACTED]' },
+        },
       },
       {
         type: 'AGENT_TOOL_UPDATED',
@@ -95,7 +100,6 @@ describe('Pi event normalizer', () => {
       },
     ])
     expect(JSON.stringify(events)).not.toContain(secret)
-    expect(JSON.stringify(events)).not.toContain('command')
     expect(JSON.stringify(events)).not.toContain('details')
   })
 

@@ -1,9 +1,9 @@
-import type { NodeId } from '@loop/contracts'
+import type { NodeId } from '@slopify/contracts'
 
-import type { WorkflowEdge, WorkflowRevision } from './types.js'
+import type { Workflow, WorkflowEdge } from './types.js'
 
 export interface WorkflowNodeInspection {
-  readonly node: WorkflowRevision['nodes'][number]
+  readonly node: Workflow['nodes'][number]
   readonly isStart: boolean
   readonly isTerminal: boolean
   readonly isReachable: boolean
@@ -16,22 +16,25 @@ export interface WorkflowGraphInspection {
   readonly nodes: readonly WorkflowNodeInspection[]
 }
 
-export function getIncomingEdges(
-  workflow: WorkflowRevision,
-  nodeId: NodeId,
-): readonly WorkflowEdge[] {
+export function getIncomingEdges(workflow: Workflow, nodeId: NodeId): readonly WorkflowEdge[] {
   return Object.freeze(workflow.edges.filter((edge) => edge.targetNodeId === nodeId))
 }
 
-export function getOutgoingEdges(
-  workflow: WorkflowRevision,
-  nodeId: NodeId,
-): readonly WorkflowEdge[] {
+export function getOutgoingEdges(workflow: Workflow, nodeId: NodeId): readonly WorkflowEdge[] {
   return Object.freeze(workflow.edges.filter((edge) => edge.sourceNodeId === nodeId))
 }
 
-export function getReachableNodeIds(workflow: WorkflowRevision): readonly NodeId[] {
+export function getDeclaredOutcomes(workflow: Workflow, nodeId: NodeId): readonly string[] {
+  return Object.freeze([
+    ...new Set(getOutgoingEdges(workflow, nodeId).map(({ outcome }) => outcome)),
+  ])
+}
+
+export function getReachableNodeIds(workflow: Workflow): readonly NodeId[] {
   const knownNodeIds = new Set(workflow.nodes.map((node) => node.id))
+  if (workflow.startNodeId === null) {
+    return Object.freeze([])
+  }
   if (!knownNodeIds.has(workflow.startNodeId)) {
     return Object.freeze([])
   }
@@ -61,7 +64,7 @@ export function getReachableNodeIds(workflow: WorkflowRevision): readonly NodeId
   )
 }
 
-export function hasDirectedCycle(workflow: WorkflowRevision): boolean {
+export function hasDirectedCycle(workflow: Workflow): boolean {
   const knownNodeIds = new Set(workflow.nodes.map((node) => node.id))
   const adjacency = new Map<NodeId, readonly NodeId[]>()
 
@@ -99,7 +102,7 @@ export function hasDirectedCycle(workflow: WorkflowRevision): boolean {
   return workflow.nodes.some((node) => visit(node.id))
 }
 
-export function inspectWorkflowGraph(workflow: WorkflowRevision): WorkflowGraphInspection {
+export function inspectWorkflowGraph(workflow: Workflow): WorkflowGraphInspection {
   const reachableNodeIds = new Set(getReachableNodeIds(workflow))
   const nodes = workflow.nodes.map((node) =>
     Object.freeze({

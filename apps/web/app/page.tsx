@@ -3,7 +3,7 @@ import type { Metadata } from 'next'
 import { WorkflowWorkbench } from '@/components/workflow/workflow-workbench'
 
 export const metadata: Metadata = {
-  title: 'Workflow',
+  title: 'Editor',
 }
 
 export default function Page() {

@@ -1,6 +1,6 @@
 export * from './graph-queries.js'
 export * from './predefined-v1.js'
-export * from './revisions.js'
+export * from './prompt-variables.js'
 export * from './schemas.js'
 export * from './types.js'
 export * from './validate-workflow.js'

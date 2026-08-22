@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { RunEventSchema, type RunEvent } from '@loop/contracts'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { RunEventSchema, type RunEvent } from '@slopify/contracts'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { createApiClient } from '../lib/api-client'
 import { parseRunEvent, reconcileRunEvents, runEventStreamUrl } from '../lib/event-stream'
@@ -16,9 +16,6 @@ const event = (sequence: number, type: RunEvent['type'] = 'NODE_STARTED'): RunEv
           type,
           data: {
             workflowId: 'delivery-workflow',
-            revisionId: 'revision-01',
-            profileId: 'local-profile',
-            taskReference: 'PROJ-42',
           },
         }
       : {
@@ -31,8 +28,7 @@ const event = (sequence: number, type: RunEvent['type'] = 'NODE_STARTED'): RunEv
         },
   )
 
-const revision = createPredefinedV1Revision({
-  revisionId: 'revision-01',
+const workflow = createPredefinedV1Workflow({
   createdAt: '2026-08-20T10:00:00Z',
   agentDefaults: {
     provider: 'test-provider',
@@ -43,13 +39,10 @@ const revision = createPredefinedV1Revision({
 
 const run = {
   runId: 'run-01',
-  workflowId: revision.workflowId,
-  revisionId: revision.revisionId,
-  profileSnapshotId: 'profile-snapshot-01',
-  taskReference: 'PROJ-42',
-  notes: null,
-  taskSnapshot: { taskId: 'PROJ-42', title: 'Follow a live run' },
-  effectiveConfiguration: revision,
+  workflowId: workflow.workflowId,
+  workflowSnapshot: workflow,
+  variables: { task: 'Follow a live run' },
+  missingVariables: [],
   status: 'RUNNING',
   currentNodeId: 'implementation',
   transitionCount: 1,
@@ -60,38 +53,8 @@ const run = {
 
 const detail = {
   run,
-  workflowRevision: revision,
-  profileSnapshot: {
-    snapshotId: 'profile-snapshot-01',
-    profileId: 'local-profile',
-    displayName: 'Local delivery',
-    clickupWorkspaceId: 'workspace-01',
-    clickupListId: 'list-01',
-    clickupInReviewStatusId: 'in-review',
-    createdAt: '2026-08-20T10:00:00Z',
-    repositories: [
-      {
-        repositoryId: 'web',
-        profilePosition: 0,
-        displayName: 'Web',
-        purpose: 'Operator workbench',
-        repositoryPath: '/workspace/web',
-        gitlabProject: 'group/web',
-        remote: 'origin',
-        targetBranch: 'main',
-        worktreeParent: '/workspace/.worktrees',
-        branchTemplate: 'ai/{task}-{run}',
-        executableChecks: [],
-        verificationCommands: [],
-        mergeRequestLabels: [],
-      },
-    ],
-  },
   events: [event(1, 'RUN_STARTED'), event(2)],
   nodeExecutions: [],
-  repositorySelection: null,
-  workspaces: [],
-  deliveryEvidence: [],
   outputChunks: [],
   artifacts: [],
 }
@@ -120,7 +83,7 @@ describe('run event reconciliation', () => {
 })
 
 describe('live run API contract', () => {
-  it('loads the exact pinned run detail and validates every evidence collection', async () => {
+  it('loads the exact captured run detail and validates every evidence collection', async () => {
     const fetchImplementation = vi.fn(async () => Response.json(detail))
     const client = createApiClient({ fetch: fetchImplementation })
 
