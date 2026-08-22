@@ -13,8 +13,8 @@ import {
   type RunEvent,
   type RunId,
   type RunStatus,
-} from '@loop/contracts'
-import { WorkflowSchema, type Workflow } from '@loop/workflow-model'
+} from '@slopify/contracts'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 import { appendEvent } from '../events/event-store.js'
@@ -63,6 +63,12 @@ export interface CreateRunInput {
 export interface ListRunsInput {
   readonly page: number
   readonly pageSize: number
+  readonly runId?: string | undefined
+  readonly statuses?: readonly RunStatus[] | undefined
+  readonly startedFrom?: string | undefined
+  readonly startedTo?: string | undefined
+  readonly durationMinMs?: number | undefined
+  readonly durationMaxMs?: number | undefined
 }
 
 export interface RunPage {
@@ -656,7 +662,41 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
           details: { page: input.page, pageSize: input.pageSize },
         })
       }
-      const totalItems = connection.prepare('SELECT COUNT(*) FROM runs').pluck().get()
+      const clauses: string[] = []
+      const parameters: (string | number)[] = []
+      if (input.runId !== undefined) {
+        clauses.push(`run_id LIKE ? ESCAPE '\\'`)
+        parameters.push(
+          `%${input.runId.replaceAll('\\', '\\\\').replaceAll('%', '\\%').replaceAll('_', '\\_')}%`,
+        )
+      }
+      if (input.statuses !== undefined && input.statuses.length > 0) {
+        clauses.push(`status IN (${input.statuses.map(() => '?').join(', ')})`)
+        parameters.push(...input.statuses)
+      }
+      if (input.startedFrom !== undefined) {
+        clauses.push('unixepoch(started_at) >= unixepoch(?)')
+        parameters.push(input.startedFrom)
+      }
+      if (input.startedTo !== undefined) {
+        clauses.push('unixepoch(started_at) <= unixepoch(?)')
+        parameters.push(input.startedTo)
+      }
+      const durationExpression =
+        'CAST(ROUND((julianday(completed_at) - julianday(started_at)) * 86400000) AS INTEGER)'
+      if (input.durationMinMs !== undefined) {
+        clauses.push(`${durationExpression} >= ?`)
+        parameters.push(input.durationMinMs)
+      }
+      if (input.durationMaxMs !== undefined) {
+        clauses.push(`${durationExpression} <= ?`)
+        parameters.push(input.durationMaxMs)
+      }
+      const where = clauses.length === 0 ? '' : `WHERE ${clauses.join(' AND ')}`
+      const totalItems = connection
+        .prepare(`SELECT COUNT(*) FROM runs ${where}`)
+        .pluck()
+        .get(...parameters)
       if (typeof totalItems !== 'number') {
         throw new PersistenceError({
           code: 'PERSISTENCE_READ_FAILED',
@@ -671,10 +711,11 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
                   status, current_node_id, transition_count, created_at,
                   started_at, completed_at
            FROM runs
+           ${where}
            ORDER BY created_at DESC, run_id DESC
            LIMIT ? OFFSET ?`,
         )
-        .all(input.pageSize, (input.page - 1) * input.pageSize) as RunRow[]
+        .all(...parameters, input.pageSize, (input.page - 1) * input.pageSize) as RunRow[]
       return {
         data: rows.map(mapRun),
         pagination: {

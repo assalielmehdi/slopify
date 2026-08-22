@@ -20,7 +20,7 @@ function NativeSelect({ className, size = 'default', ...props }: NativeSelectPro
       <select
         data-slot="native-select"
         data-size={size}
-        className="h-9 w-full min-w-0 appearance-none rounded-md border border-input bg-card py-1.5 pr-9 pl-3 text-sm transition-[color,background-color,border-color,box-shadow] duration-[var(--duration-quick)] outline-none select-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20 disabled:pointer-events-none disabled:cursor-not-allowed aria-invalid:border-destructive aria-invalid:ring-2 aria-invalid:ring-destructive/20 data-[size=sm]:h-8 data-[size=sm]:rounded-md data-[size=sm]:py-1 dark:bg-input/20 dark:hover:bg-input/40 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40"
+        className="h-9 w-full min-w-0 appearance-none rounded-md border border-input bg-card py-1.5 pr-9 pl-3 text-sm transition-[color,background-color,border-color] duration-[var(--duration-quick)] outline-none select-none selection:bg-primary selection:text-primary-foreground placeholder:text-muted-foreground focus-visible:border-ring disabled:pointer-events-none disabled:cursor-not-allowed aria-invalid:border-destructive data-[size=sm]:h-8 data-[size=sm]:rounded-md data-[size=sm]:py-1 dark:bg-input/20 dark:hover:bg-input/40 dark:aria-invalid:border-destructive/50"
         {...props}
       />
       <ChevronDownIcon

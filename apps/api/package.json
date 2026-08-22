@@ -1,5 +1,5 @@
 {
-  "name": "@loop/api",
+  "name": "@slopify/api",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,19 +9,19 @@
     "dist"
   ],
   "scripts": {
-    "build": "pnpm --filter @loop/execution-runtime build && tsc --project tsconfig.json",
+    "build": "pnpm --filter @slopify/execution-runtime build && tsc --project tsconfig.json",
     "dev": "bun --watch --conditions=source src/server.ts",
-    "typecheck": "pnpm --filter @loop/execution-runtime build && tsc --project tsconfig.json --noEmit",
+    "typecheck": "pnpm --filter @slopify/execution-runtime build && tsc --project tsconfig.json --noEmit",
     "lint": "eslint src tests --max-warnings 0",
     "test": "vitest run --root ../.. apps/api/tests",
     "start": "bun dist/server.js"
   },
   "dependencies": {
     "@hono/node-server": "2.1.1",
-    "@loop/agent-runtimes": "workspace:*",
-    "@loop/contracts": "workspace:*",
-    "@loop/execution-runtime": "workspace:*",
-    "@loop/workflow-model": "workspace:*",
+    "@slopify/agent-runtimes": "workspace:*",
+    "@slopify/contracts": "workspace:*",
+    "@slopify/execution-runtime": "workspace:*",
+    "@slopify/workflow-model": "workspace:*",
     "hono": "4.13.3",
     "zod": "4.4.3"
   }

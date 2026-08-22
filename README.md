@@ -17,13 +17,13 @@ optional input variables so historical execution remains inspectable and reprodu
 ```sh
 pnpm install --frozen-lockfile
 pnpm build
-pnpm --filter @loop/api start
+pnpm --filter @slopify/api start
 ```
 
 Start the web application in another terminal:
 
 ```sh
-pnpm --filter @loop/web dev
+pnpm --filter @slopify/web dev
 ```
 
 Open <http://127.0.0.1:3000>. Local application data is stored in `~/.slopify/`.

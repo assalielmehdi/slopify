@@ -121,6 +121,7 @@ describe('API server configuration', () => {
       skillsRoot: expect.any(String),
       skillSnapshotsRoot: expect.any(String),
       credentialPath: expect.any(String),
+      tracesRoot: expect.any(String),
     })
     expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
       hostname: '127.0.0.1',
@@ -129,6 +130,7 @@ describe('API server configuration', () => {
       skillsRoot: '/tmp/slopify-test/skills',
       skillSnapshotsRoot: '/tmp/slopify-test/skill-snapshots',
       credentialPath: '/tmp/slopify-test/credentials.json',
+      tracesRoot: '/tmp/slopify-test/traces',
     })
   })
 
@@ -161,6 +163,7 @@ describe('API server configuration', () => {
         skillsRoot: '/skills',
         skillSnapshotsRoot: '/skill-snapshots',
         credentialPath: '/credentials.json',
+        tracesRoot: '/traces',
         shutdownGracePeriodMs: 10_000,
       },
     })

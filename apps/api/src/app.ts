@@ -1,28 +1,33 @@
-import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@loop/contracts'
-import type { ChatGptOAuthService } from '@loop/agent-runtimes'
+import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/contracts'
+import type { ChatGptOAuthService } from '@slopify/agent-runtimes'
 import {
   CancellationServiceError,
+  AgentTraceStoreError,
   ConnectionServiceError,
+  DeletionServiceError,
   ProjectServiceError,
   RunEventFeedError,
   RunServiceError,
   SkillCatalogError,
   WorkflowServiceError,
   type CancellationService,
+  type AgentTraceStore,
   type ConnectionCatalog,
   type ConnectionService,
+  type DeletionService,
   type ProjectService,
   type RunService,
   type RunEventFeed,
   type SkillCatalog,
   type WorkbenchDatabase,
   type WorkflowService,
-} from '@loop/execution-runtime'
+} from '@slopify/execution-runtime'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
 import { registerConnectionRoutes } from './routes/connections.js'
+import { registerDeletionRoutes } from './routes/deletions.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
@@ -33,10 +38,12 @@ export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
 export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
+  readonly traces?: AgentTraceStore
   readonly connectionCatalog?: ConnectionCatalog
   readonly connections?: ConnectionService
   readonly chatGptOAuth?: ChatGptOAuthService
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
+  readonly deletions?: DeletionService
   readonly projects?: ProjectService
   readonly runs?: RunService
   readonly skills?: SkillCatalog
@@ -81,8 +88,10 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   })
 
   if (options.projects !== undefined) registerProjectRoutes(app, options.projects)
+  if (options.deletions !== undefined) registerDeletionRoutes(app, options.deletions)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
-  if (options.runs !== undefined) registerRunRoutes(app, options.runs, options.cancellation)
+  if (options.runs !== undefined)
+    registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
   if (options.skills !== undefined) registerSkillRoutes(app, options.skills)
   if (options.connections !== undefined && options.connectionCatalog !== undefined)
@@ -98,6 +107,19 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   )
 
   app.onError((error, context) => {
+    if (error instanceof DeletionServiceError) {
+      const status =
+        error.code === 'DELETION_NOT_FOUND'
+          ? 404
+          : error.code === 'DELETION_UNDO_EXPIRED'
+            ? 410
+            : 409
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
+    if (error instanceof AgentTraceStoreError) {
+      const status = error.code === 'TRACE_NOT_FOUND' ? 404 : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
     if (error instanceof SkillCatalogError) {
       const status =
         error.code === 'SKILL_NOT_FOUND'

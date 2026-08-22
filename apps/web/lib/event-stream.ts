@@ -1,4 +1,4 @@
-import { RunEventSchema, RunIdSchema, type RunEvent } from '@loop/contracts'
+import { RunEventSchema, RunIdSchema, type RunEvent } from '@slopify/contracts'
 
 export interface EventReconciliation {
   readonly events: readonly RunEvent[]

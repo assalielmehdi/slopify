@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { WorkflowNodeContent } from '../components/workflow/workflow-node'
 

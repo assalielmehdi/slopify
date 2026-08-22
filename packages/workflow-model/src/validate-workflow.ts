@@ -1,4 +1,4 @@
-import type { NodeId } from '@loop/contracts'
+import type { NodeId } from '@slopify/contracts'
 
 import { getReachableNodeIds } from './graph-queries.js'
 import { WorkflowSchema } from './schemas.js'

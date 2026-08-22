@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { RunEventSchema, type RunEvent } from '@loop/contracts'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { RunEventSchema, type RunEvent } from '@slopify/contracts'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { createApiClient } from '../lib/api-client'
 import { parseRunEvent, reconcileRunEvents, runEventStreamUrl } from '../lib/event-stream'

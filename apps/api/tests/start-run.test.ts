@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createRunService } from '@loop/execution-runtime'
-import { createPredefinedV1Workflow, WorkflowSchema } from '@loop/workflow-model'
+import { createRunService } from '@slopify/execution-runtime'
+import { createPredefinedV1Workflow, WorkflowSchema } from '@slopify/workflow-model'
 import {
   TEST_WORKFLOW_ID,
   createPersistenceFixture,

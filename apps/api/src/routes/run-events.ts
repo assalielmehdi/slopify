@@ -1,4 +1,4 @@
-import { RunEventFeedError, type RunEventFeed } from '@loop/execution-runtime'
+import { RunEventFeedError, type RunEventFeed } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 

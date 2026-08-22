@@ -1,17 +1,19 @@
-import type { NodeExecutionStatus, RunStatus } from '@loop/contracts'
+import type { NodeExecutionStatus, RunStatus } from '@slopify/contracts'
 import type { ComponentProps } from 'react'
 
 import { Badge } from '@/components/ui/badge'
 
-const statusSuccessClassName = 'border-status-success/25 bg-status-success/10 text-status-success'
-const statusInfoClassName = 'border-status-info/25 bg-status-info/10 text-status-info'
+const statusSuccessClassName = 'bg-status-success/10 text-status-success'
+const statusInfoClassName = 'bg-status-info/10 text-status-info'
+const statusWarningClassName = 'bg-status-warning/10 text-status-warning'
+const statusNeutralClassName = 'bg-muted text-muted-foreground'
 
 const runStatusPresentation = {
-  PENDING: { label: 'Pending', variant: 'outline' },
+  PENDING: { label: 'Pending', variant: 'outline', className: statusNeutralClassName },
   RUNNING: { label: 'Running', variant: 'outline', className: statusInfoClassName },
   SUCCEEDED: { label: 'Succeeded', variant: 'outline', className: statusSuccessClassName },
   FAILED: { label: 'Failed', variant: 'destructive' },
-  CANCELLED: { label: 'Cancelled', variant: 'outline' },
+  CANCELLED: { label: 'Cancelled', variant: 'outline', className: statusWarningClassName },
   INTERRUPTED: { label: 'Interrupted', variant: 'destructive' },
 } as const satisfies Readonly<
   Record<

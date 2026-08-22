@@ -1,5 +1,11 @@
 export { createOrchestratedRunService } from './orchestration/orchestrated-run-service.js'
 export {
+  AgentTraceStoreError,
+  createFilesystemAgentTraceStore,
+  type AgentTraceStore,
+  type AgentTraceStoreErrorCode,
+} from './traces/filesystem-agent-trace-store.js'
+export {
   createAgentJobRunner,
   createAgentResultSchemaRegistry,
   type AgentInferenceResolution,
@@ -62,6 +68,17 @@ export {
 export { createConnectionRepository } from './persistence/connection-repository.js'
 export { createConnectionCatalogRepository } from './persistence/connection-catalog-repository.js'
 export { createProjectRepository } from './persistence/project-repository.js'
+export { createDeletionOperationRepository } from './persistence/deletion-operation-repository.js'
+export {
+  DeletionServiceError,
+  createDeletionService,
+  type DeletionOperation,
+  type DeletionOperationRepository,
+  type DeletionOperationState,
+  type DeletionService,
+  type DeletionServiceErrorCode,
+  type ReversibleDeletionHandler,
+} from './deletions/deletion-service.js'
 export {
   ProjectServiceError,
   createProjectService,

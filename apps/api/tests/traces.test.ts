@@ -1,0 +1,79 @@
+import { AgentTraceSchema } from '@slopify/contracts'
+import type { AgentTraceStore, RunService } from '@slopify/execution-runtime'
+import { describe, expect, it, vi } from 'vitest'
+
+import { createApiApp } from '../src/app.js'
+
+const trace = AgentTraceSchema.parse({
+  header: {
+    version: 1,
+    runId: 'run-01',
+    nodeExecutionId: 'node-execution-01',
+    attemptId: 'attempt-01',
+    nodeId: 'identify-agent',
+    createdAt: '2026-08-22T10:00:00.000Z',
+    configuration: {
+      connectionId: 'provider-default',
+      provider: 'openrouter',
+      model: 'test/model',
+      thinkingLevel: 'medium',
+      renderedPrompt: 'Inspect the repository.',
+      permissionProfile: 'workspace-write',
+      timeoutSeconds: 600,
+    },
+  },
+  events: [
+    {
+      sequence: 1,
+      timestamp: '2026-08-22T10:00:01.000Z',
+      type: 'AGENT_REASONING',
+      data: { content: 'Inspect the files first.' },
+    },
+  ],
+  complete: false,
+})
+
+const runs = {
+  get: vi.fn(() => ({
+    nodeExecutions: [
+      {
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'attempt-01',
+      },
+    ],
+  })),
+} as unknown as RunService
+
+describe('agent trace API', () => {
+  it('loads one node execution trace without exposing its filesystem path', async () => {
+    const traces = { read: vi.fn(async () => trace) } as unknown as AgentTraceStore
+    const app = createApiApp({ runs, traces })
+
+    const response = await app.request(
+      '/api/runs/run-01/node-executions/node-execution-01/trace?attemptId=attempt-01',
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual(trace)
+    expect(traces.read).toHaveBeenCalledWith({
+      runId: 'run-01',
+      nodeExecutionId: 'node-execution-01',
+      attemptId: 'attempt-01',
+    })
+  })
+
+  it('rejects a trace request that does not match a captured node execution', async () => {
+    const traces = { read: vi.fn(async () => trace) } as unknown as AgentTraceStore
+    const app = createApiApp({ runs, traces })
+
+    const response = await app.request(
+      '/api/runs/run-01/node-executions/another-execution/trace?attemptId=attempt-01',
+    )
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: { code: 'TRACE_NOT_FOUND', message: 'Agent trace was not found' },
+    })
+    expect(traces.read).not.toHaveBeenCalled()
+  })
+})

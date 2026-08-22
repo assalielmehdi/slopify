@@ -1,6 +1,8 @@
 import {
   ApiErrorSchema,
   AddProjectRequestSchema,
+  DeletionReceiptSchema,
+  AgentTraceSchema,
   ArtifactIdSchema,
   ArtifactTypeSchema,
   CancelRunRequestSchema,
@@ -13,6 +15,7 @@ import {
   OutcomeNameSchema,
   ProjectCatalogResponseSchema,
   ProjectSchema,
+  UndoDeletionResponseSchema,
   RepositoryIdSchema,
   RunEventSchema,
   RunIdSchema,
@@ -22,9 +25,13 @@ import {
   type ConnectorStatus,
   type ConnectionCatalogEntry,
   type HealthResponse,
+  type AgentTrace,
   type Project,
-} from '@loop/contracts'
-import { WorkflowSchema, type Workflow } from '@loop/workflow-model'
+  type DeletionReceipt,
+  type UndoDeletionResponse,
+  type RunStatus,
+} from '@slopify/contracts'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()
@@ -187,17 +194,30 @@ export interface StartRunInput {
   readonly confirmMissingVariables?: boolean
 }
 
+export interface ListRunsInput {
+  readonly page: number
+  readonly pageSize: number
+  readonly runId?: string
+  readonly statuses?: readonly RunStatus[]
+  readonly startedFrom?: string
+  readonly startedTo?: string
+  readonly durationMinMs?: number
+  readonly durationMaxMs?: number
+}
+
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>
   listProjects?(): Promise<readonly Project[]>
   addProject?(input: { readonly repositoryPath: string }): Promise<Project>
-  deleteProject?(projectId: string): Promise<void>
+  deleteProject?(projectId: string): Promise<DeletionReceipt>
+  undoDeletion?(deletionId: string): Promise<UndoDeletionResponse>
   getConnectorStatus(): Promise<ConnectorStatus>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   getWorkflow(workflowId: string): Promise<Workflow>
   startRun(input: StartRunInput): Promise<StartRunResponse>
-  listRuns(input: { readonly page: number; readonly pageSize: number }): Promise<RunHistoryPage>
+  listRuns(input: ListRunsInput): Promise<RunHistoryPage>
   getRun(runId: string): Promise<RunDetailResponse>
+  getAgentTrace(runId: string, nodeExecutionId: string, attemptId: string): Promise<AgentTrace>
   cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
   listSkills?(): Promise<readonly SkillRecord[]>
   getSkill?(skillId: string): Promise<SkillRecord>
@@ -314,7 +334,19 @@ export const createApiClient = (
     },
 
     async deleteProject(projectId) {
-      return noContent(`/api/projects/${encodeURIComponent(projectId)}`, { method: 'DELETE' })
+      return request(
+        `/api/projects/${encodeURIComponent(projectId)}`,
+        { method: 'DELETE', headers: { accept: 'application/json' } },
+        DeletionReceiptSchema,
+      )
+    },
+
+    async undoDeletion(deletionId) {
+      return request(
+        `/api/deletions/${encodeURIComponent(deletionId)}/undo`,
+        { method: 'POST', headers: { accept: 'application/json' } },
+        UndoDeletionResponseSchema,
+      )
     },
 
     async getConnectorStatus() {
@@ -342,11 +374,22 @@ export const createApiClient = (
     },
 
     async listRuns(input) {
-      const query = RunPaginationQuerySchema.parse(input)
+      const query = RunPaginationQuerySchema.parse({
+        ...input,
+        ...(input.statuses === undefined ? {} : { statuses: [...input.statuses] }),
+      })
       const search = new URLSearchParams({
         page: String(query.page),
         pageSize: String(query.pageSize),
       })
+      if (query.runId !== undefined) search.set('runId', query.runId)
+      for (const status of query.statuses ?? []) search.append('status', status)
+      if (query.startedFrom !== undefined) search.set('startedFrom', query.startedFrom)
+      if (query.startedTo !== undefined) search.set('startedTo', query.startedTo)
+      if (query.durationMinMs !== undefined)
+        search.set('durationMinMs', String(query.durationMinMs))
+      if (query.durationMaxMs !== undefined)
+        search.set('durationMaxMs', String(query.durationMaxMs))
       return get(`/api/runs?${search.toString()}`, RunHistoryPageSchema)
     },
 
@@ -354,6 +397,14 @@ export const createApiClient = (
       return get(
         `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}`,
         RunDetailResponseSchema,
+      )
+    },
+
+    async getAgentTrace(runId, nodeExecutionId, attemptId) {
+      const search = new URLSearchParams({ attemptId })
+      return get(
+        `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/node-executions/${encodeURIComponent(nodeExecutionId)}/trace?${search.toString()}`,
+        AgentTraceSchema,
       )
     },
 

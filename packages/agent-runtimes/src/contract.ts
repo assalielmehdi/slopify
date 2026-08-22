@@ -6,8 +6,8 @@ import {
   OutcomeNameSchema,
   RepositoryIdSchema,
   RunIdSchema,
-} from '@loop/contracts'
-import { PermissionProfileSchema, ResourceBundleIdSchema } from '@loop/workflow-model'
+} from '@slopify/contracts'
+import { PermissionProfileSchema, ResourceBundleIdSchema } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const OPAQUE_ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
@@ -178,7 +178,11 @@ const AgentReasoningEventSchema = z.strictObject({
 const AgentToolStartedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_TOOL_STARTED'),
-  data: z.strictObject({ toolCallId: identifier, toolName: identifier }),
+  data: z.strictObject({
+    toolCallId: identifier,
+    toolName: identifier,
+    input: z.json().optional(),
+  }),
 })
 
 const AgentToolUpdatedEventSchema = z.strictObject({

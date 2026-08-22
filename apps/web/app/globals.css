@@ -68,7 +68,7 @@
   --accent-foreground: #1c1c1c;
   --destructive: #c93434;
   --border: #dcdce0;
-  --input: #8e8e95;
+  --input: var(--border);
   --ring: #1c1c1c;
   --status-success: #0f7b45;
   --status-warning: #b45309;
@@ -82,6 +82,8 @@
   --duration-micro: 80ms;
   --duration-quick: 150ms;
   --duration-overlay: 240ms;
+  --resize-dur: 300ms;
+  --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
   --ease-enter: cubic-bezier(0, 0, 0.2, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
@@ -99,7 +101,7 @@
   --shadow-raised: 0 1px 2px rgb(24 24 27 / 3%);
   --shadow-raised-hover: 0 2px 6px rgb(24 24 27 / 4%);
   --shadow-overlay: 0 8px 24px rgb(24 24 27 / 7%), 0 1px 3px rgb(24 24 27 / 4%);
-  --sidebar: #f7f7f8;
+  --sidebar: #ffffff;
   --sidebar-foreground: #55565a;
   --sidebar-primary: #1c1c1c;
   --sidebar-primary-foreground: #fafafa;
@@ -110,14 +112,14 @@
 }
 
 .dark {
-  --background: #171719;
+  --background: #000000;
   --foreground: #f1f1f2;
-  --card: #171719;
+  --card: #000000;
   --card-foreground: #f1f1f2;
-  --popover: #171719;
+  --popover: #000000;
   --popover-foreground: #f1f1f2;
   --primary: #f1f1f2;
-  --primary-foreground: #171719;
+  --primary-foreground: #000000;
   --secondary: #222225;
   --secondary-foreground: #c5c5c8;
   --muted: #222225;
@@ -126,7 +128,7 @@
   --accent-foreground: #f1f1f2;
   --destructive: #ff6b6b;
   --border: #303034;
-  --input: #505057;
+  --input: var(--border);
   --ring: #d8d8da;
   --status-success: #5ccf8a;
   --status-warning: #f6b73c;
@@ -143,10 +145,10 @@
   --shadow-raised: 0 1px 2px rgb(0 0 0 / 12%);
   --shadow-raised-hover: 0 2px 6px rgb(0 0 0 / 14%);
   --shadow-overlay: 0 8px 24px rgb(0 0 0 / 24%), 0 1px 3px rgb(0 0 0 / 16%);
-  --sidebar: #111113;
+  --sidebar: #000000;
   --sidebar-foreground: #b7b7bc;
   --sidebar-primary: #f1f1f2;
-  --sidebar-primary-foreground: #171719;
+  --sidebar-primary-foreground: #000000;
   --sidebar-accent: #2a2a2e;
   --sidebar-accent-foreground: #f5f5f6;
   --sidebar-border: #2b2b2f;
@@ -211,6 +213,19 @@
 @media (prefers-reduced-motion: reduce) {
   .provider-floating-panel-shell,
   .t-panel-slide {
+    transition: none !important;
+  }
+}
+
+.t-resize {
+  transition:
+    width var(--resize-dur) var(--resize-ease),
+    height var(--resize-dur) var(--resize-ease);
+  will-change: width, height;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t-resize {
     transition: none !important;
   }
 }

@@ -3,8 +3,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { RunEventSchema, type RunEvent } from '@loop/contracts'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { AgentTraceSchema, RunEventSchema, type RunEvent } from '@slopify/contracts'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse, StartRunResponse } from '../lib/api-client'
@@ -130,6 +130,46 @@ const detail = {
   artifacts: [],
 } as unknown as RunDetailResponse
 
+const trace = AgentTraceSchema.parse({
+  header: {
+    version: 1,
+    runId: 'run-01',
+    nodeExecutionId: 'node-execution-01',
+    attemptId: 'attempt-01',
+    nodeId: 'identify-agent',
+    createdAt: '2026-08-20T10:00:02Z',
+    configuration: {
+      connectionId: 'test-provider-default',
+      provider: 'openrouter',
+      model: 'test-model',
+      thinkingLevel: 'high',
+      renderedPrompt: "Who are you? What's your name?",
+      permissionProfile: 'workspace-write',
+      timeoutSeconds: 300,
+    },
+  },
+  events: [
+    {
+      sequence: 1,
+      timestamp: '2026-08-20T10:00:03Z',
+      type: 'AGENT_TOOL_STARTED',
+      data: { toolCallId: 'tool-01', toolName: 'read_file', input: { path: 'README.md' } },
+    },
+    {
+      sequence: 2,
+      timestamp: '2026-08-20T10:00:04Z',
+      type: 'AGENT_TOOL_COMPLETED',
+      data: {
+        toolCallId: 'tool-01',
+        toolName: 'read_file',
+        status: 'succeeded',
+        content: 'Read 42 lines',
+      },
+    },
+  ],
+  complete: false,
+})
+
 const createConnector = () => {
   let handlers: RunEventConnectionHandlers | undefined
   const close = vi.fn()
@@ -178,18 +218,34 @@ describe('LiveRun', () => {
   })
 
   it('opens a non-modal floating captured-job panel and closes without blocking background actions', async () => {
-    const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
+    const client = {
+      getRun: vi.fn(async () => detail),
+      getAgentTrace: vi.fn(async () => trace),
+      cancelRun: vi.fn(),
+    }
     render(<LiveRun runId="run-01" client={client} connect={createConnector().connector} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Inspect agent' }))
+    const inspectAgent = await screen.findByRole('button', { name: 'Inspect agent' })
+    inspectAgent.focus()
+    fireEvent.click(inspectAgent)
 
     const panel = screen.getByRole('dialog', { name: 'Who are you?' })
     expect(panel.getAttribute('aria-modal')).toBe('false')
     expect(panel.getAttribute('data-layout')).toBe('floating')
+    expect(screen.getByTestId('run-node-panel-shell').hasAttribute('aria-hidden')).toBe(false)
     expect(panel.textContent).toContain('test-provider-default')
     expect(panel.textContent).toContain('test-model')
-    expect(panel.textContent).toContain('read_file')
+    await waitFor(() => expect(panel.textContent).toContain('read_file'))
+    fireEvent.click(screen.getByRole('button', { name: /read_file/ }))
     expect(panel.textContent).toContain('Read 42 lines')
+    expect(client.getAgentTrace).toHaveBeenCalledWith('run-01', 'node-execution-01', 'attempt-01')
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(document.activeElement).toBe(inspectAgent)
+    fireEvent.transitionEnd(screen.getByTestId('run-node-panel-shell'), {
+      propertyName: 'translate',
+    })
+    fireEvent.click(inspectAgent)
 
     const backgroundButton = screen.getByRole('button', { name: 'Background action' })
     fireEvent.pointerDown(backgroundButton)

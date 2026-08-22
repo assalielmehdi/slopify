@@ -1,4 +1,4 @@
-import { RunIdSchema, type NodeId, type RunId } from '@loop/contracts'
+import { RunIdSchema, type NodeId, type RunId } from '@slopify/contracts'
 
 import type { RunRecord, RunRepository } from '../persistence/run-repository.js'
 import type { ExecutionWorker } from '../orchestration/execution-worker.js'

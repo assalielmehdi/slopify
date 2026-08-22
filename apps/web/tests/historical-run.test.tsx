@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse } from '../lib/api-client'

@@ -7,7 +7,7 @@ const source = (path: string) => readFileSync(new URL(`../${path}`, import.meta.
 const token = (stylesheet: string, scope: ':root' | '.dark', name: string): string | undefined => {
   const block = new RegExp(`\\${scope} \\{(?<tokens>[\\s\\S]*?)\\n\\}`).exec(stylesheet)?.groups
     ?.tokens
-  return new RegExp(`--${name}:\\s*(?<value>#[0-9a-f]{6});`, 'i').exec(block ?? '')?.groups?.value
+  return new RegExp(`--${name}:\\s*(?<value>[^;]+);`, 'i').exec(block ?? '')?.groups?.value
 }
 
 describe('the application design foundation', () => {
@@ -19,17 +19,38 @@ describe('the application design foundation', () => {
     expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce)')
   })
 
-  it('uses a muted shell beside one shared content surface in both themes', () => {
+  it('uses one pure canvas for the shell and ordinary surfaces in both themes', () => {
     const stylesheet = source('app/globals.css')
 
     expect(token(stylesheet, ':root', 'background')).toBe('#ffffff')
     expect(token(stylesheet, ':root', 'card')).toBe('#ffffff')
     expect(token(stylesheet, ':root', 'popover')).toBe('#ffffff')
-    expect(token(stylesheet, ':root', 'sidebar')).toBe('#f7f7f8')
-    expect(token(stylesheet, '.dark', 'background')).toBe('#171719')
-    expect(token(stylesheet, '.dark', 'card')).toBe('#171719')
-    expect(token(stylesheet, '.dark', 'popover')).toBe('#171719')
-    expect(token(stylesheet, '.dark', 'sidebar')).toBe('#111113')
+    expect(token(stylesheet, ':root', 'sidebar')).toBe('#ffffff')
+    expect(token(stylesheet, '.dark', 'background')).toBe('#000000')
+    expect(token(stylesheet, '.dark', 'card')).toBe('#000000')
+    expect(token(stylesheet, '.dark', 'popover')).toBe('#000000')
+    expect(token(stylesheet, '.dark', 'sidebar')).toBe('#000000')
+  })
+
+  it('uses the quiet structural border color for input boundaries in both themes', () => {
+    const stylesheet = source('app/globals.css')
+
+    expect(token(stylesheet, ':root', 'input')).toBe('var(--border)')
+    expect(token(stylesheet, '.dark', 'input')).toBe('var(--border)')
+  })
+
+  it.each([
+    'components/ui/input.tsx',
+    'components/ui/textarea.tsx',
+    'components/ui/native-select.tsx',
+    'components/ui/select.tsx',
+  ])('%s uses border-only focus and validation states without a halo', (path) => {
+    const control = source(path)
+
+    expect(control).toContain('focus-visible:border-ring')
+    expect(control).toContain('aria-invalid:border-destructive')
+    expect(control).not.toContain('focus-visible:ring')
+    expect(control).not.toContain('aria-invalid:ring')
   })
 
   it('defines restrained raised and overlay shadows for semantic depth', () => {
@@ -52,6 +73,7 @@ describe('the application design foundation', () => {
     'components/settings/project-settings.tsx',
     'components/runs/live-run.tsx',
     'components/ui/sheet.tsx',
+    'components/ui/toast.tsx',
   ])('%s uses the shared overlay elevation instead of an arbitrary heavy shadow', (path) => {
     const component = source(path)
 
@@ -83,6 +105,7 @@ describe('the application design foundation', () => {
     'components/ui/select.tsx',
     'components/ui/badge.tsx',
     'components/ui/table.tsx',
+    'components/ui/toast.tsx',
   ])('%s respects the shared radius instead of forcing square corners', (path) => {
     expect(source(path)).not.toContain('rounded-none')
   })
@@ -94,5 +117,18 @@ describe('the application design foundation', () => {
     expect(button).toContain(
       'transition-[color,background-color,border-color,box-shadow,transform]',
     )
+  })
+
+  it('renders tags with background and text color without borders', () => {
+    const badge = source('components/ui/badge.tsx')
+    const runFilters = source('components/runs/run-filters.tsx')
+    const runStatus = source('components/runs/run-status.tsx')
+    const agentTranscript = source('components/runs/agent-transcript.tsx')
+
+    expect(badge).not.toMatch(/\bborder(?:-|\b)/)
+    expect(badge).toContain("outline: 'bg-muted text-foreground")
+    expect(runFilters).not.toContain('rounded-full border border-border bg-background')
+    expect(runStatus).not.toContain('border-status')
+    expect(agentTranscript).not.toContain('border-status-success')
   })
 })

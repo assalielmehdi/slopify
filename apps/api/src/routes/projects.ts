@@ -1,9 +1,10 @@
 import {
   AddProjectRequestSchema,
+  DeletionReceiptSchema,
   ProjectCatalogResponseSchema,
   ProjectSchema,
-} from '@loop/contracts'
-import type { ProjectService } from '@loop/execution-runtime'
+} from '@slopify/contracts'
+import type { ProjectService } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 
 import { parseJsonBody } from '../api-error.js'
@@ -19,7 +20,9 @@ export const registerProjectRoutes = (app: Hono, projects: ProjectService): void
   })
 
   app.delete('/api/projects/:projectId', async (context) => {
-    await projects.delete(context.req.param('projectId'))
-    return context.body(null, 204)
+    return context.json(
+      DeletionReceiptSchema.parse(await projects.delete(context.req.param('projectId'))),
+      200,
+    )
   })
 }

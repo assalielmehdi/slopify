@@ -4,13 +4,13 @@ import {
   WorkflowIdSchema,
   type CreateRunRequest,
   type RunId,
-} from '@loop/contracts'
+} from '@slopify/contracts'
 import {
   WorkflowSchema,
   findMissingPromptVariables,
   getWorkflowPromptVariableNames,
   validateWorkflow,
-} from '@loop/workflow-model'
+} from '@slopify/workflow-model'
 
 import type { EventStore } from '../events/event-store.js'
 import type { JsonValue } from '../persistence/json.js'
@@ -18,6 +18,7 @@ import type {
   NodeExecutionRecord,
   OutputChunk,
   PersistedArtifact,
+  ListRunsInput,
   RunRecord,
   RunRepository,
 } from '../persistence/run-repository.js'
@@ -92,7 +93,7 @@ export interface RunService {
   stopAdmissions(): void
   create(input: CreateRunServiceInput): Promise<PublicRunRecord>
   get(runId: string): RunDetail | undefined
-  list(input: { readonly page: number; readonly pageSize: number }): RunSummaryPage
+  list(input: ListRunsInput): RunSummaryPage
 }
 
 export interface CreateRunServiceOptions {

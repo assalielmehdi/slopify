@@ -1,5 +1,5 @@
-import { WorkflowIdSchema } from '@loop/contracts'
-import type { Workflow } from '@loop/workflow-model'
+import { WorkflowIdSchema } from '@slopify/contracts'
+import type { Workflow } from '@slopify/workflow-model'
 
 import type { WorkflowRepository } from '../persistence/workflow-repository.js'
 

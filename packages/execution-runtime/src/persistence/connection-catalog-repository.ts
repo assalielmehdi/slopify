@@ -1,4 +1,4 @@
-import { ConnectionCatalogEntrySchema, type ConnectionCatalogEntry } from '@loop/contracts'
+import { ConnectionCatalogEntrySchema, type ConnectionCatalogEntry } from '@slopify/contracts'
 
 import type { ConnectionCatalog } from '../connections/connection-catalog.js'
 import type { WorkbenchDatabase } from './database.js'

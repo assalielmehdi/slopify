@@ -3,6 +3,7 @@ import type { EventRedactor, RedactionStream } from './redaction.js'
 
 const IDENTIFIER = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
 const MAX_CONTENT_LENGTH = 1_000_000
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 type ObservableAgentEvent = Extract<
   AgentExecutionEvent,
@@ -52,6 +53,17 @@ const visibleToolContent = (result: unknown): string => {
     if (visible.length === MAX_CONTENT_LENGTH) break
   }
   return visible
+}
+
+const visibleToolInput = (input: unknown, redactor: EventRedactor): JsonValue => {
+  try {
+    const serialized = JSON.stringify(input)
+    if (serialized === undefined) return null
+    if (serialized.length > MAX_CONTENT_LENGTH) return '[Tool input omitted: too large]'
+    return JSON.parse(redactor.redact(serialized)) as JsonValue
+  } catch {
+    return '[Tool input unavailable]'
+  }
 }
 
 const messageEvent = (content: string): readonly NormalizedPiEvent[] => {
@@ -127,7 +139,11 @@ export const createPiEventNormalizer = (
             return [
               {
                 type: 'AGENT_TOOL_STARTED',
-                data: { toolCallId: event.toolCallId, toolName: event.toolName },
+                data: {
+                  toolCallId: event.toolCallId,
+                  toolName: event.toolName,
+                  input: visibleToolInput(event.args, options.redactor),
+                },
               },
             ]
           }

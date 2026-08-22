@@ -1,11 +1,50 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { ProjectSchema } from '@loop/contracts'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import {
+  AgentTraceSchema,
+  DeletionReceiptSchema,
+  ProjectSchema,
+  UndoDeletionResponseSchema,
+} from '@slopify/contracts'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { ApiClientError, createApiClient } from '../lib/api-client'
 
 describe('API client', () => {
+  it('loads a typed agent trace for one captured node execution', async () => {
+    const trace = AgentTraceSchema.parse({
+      header: {
+        version: 1,
+        runId: 'run-01',
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'attempt-01',
+        nodeId: 'identify-agent',
+        createdAt: '2026-08-22T10:00:00.000Z',
+        configuration: {
+          connectionId: 'provider-default',
+          provider: 'openrouter',
+          model: 'test/model',
+          thinkingLevel: 'medium',
+          renderedPrompt: 'Inspect the repository.',
+          permissionProfile: 'workspace-write',
+          timeoutSeconds: 600,
+        },
+      },
+      events: [],
+      complete: false,
+    })
+    const fetchImplementation = vi.fn(async () => Response.json(trace))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(
+      client.getAgentTrace('run-01', 'node-execution-01', 'attempt-01'),
+    ).resolves.toEqual(trace)
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      '/api/runs/run-01/node-executions/node-execution-01/trace?attemptId=attempt-01',
+      { headers: { accept: 'application/json' }, method: 'GET' },
+    )
+  })
+
   it('loads typed health data from the same-origin Hono boundary', async () => {
     const fetchImplementation = vi.fn(async () => Response.json({ status: 'ok' }, { status: 200 }))
     const client = createApiClient({ fetch: fetchImplementation })
@@ -80,7 +119,7 @@ describe('API client', () => {
     })
   })
 
-  it('lists, adds, and deletes local Git projects through the same-origin API', async () => {
+  it('lists, adds, deletes, and restores local Git projects through the same-origin API', async () => {
     const project = ProjectSchema.parse({
       projectId: 'project-01',
       name: 'slopify',
@@ -89,18 +128,27 @@ describe('API client', () => {
       createdAt: '2026-08-21T10:00:00Z',
       updatedAt: '2026-08-21T10:00:00Z',
     })
+    const deletion = DeletionReceiptSchema.parse({
+      deletionId: 'deletion-01',
+      subject: { type: 'PROJECT', id: 'project-01' },
+      deletedAt: '2026-08-22T10:00:00Z',
+      undoExpiresAt: '2026-08-22T10:00:10Z',
+    })
+    const undone = UndoDeletionResponseSchema.parse({ ...deletion, state: 'UNDONE' })
     const fetchImplementation = vi
       .fn<typeof fetch>()
       .mockResolvedValueOnce(Response.json({ projects: [project] }))
       .mockResolvedValueOnce(Response.json(project, { status: 201 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(Response.json(deletion))
+      .mockResolvedValueOnce(Response.json(undone))
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(client.listProjects?.()).resolves.toEqual([project])
     await expect(client.addProject?.({ repositoryPath: '/workspace/slopify' })).resolves.toEqual(
       project,
     )
-    await expect(client.deleteProject?.('project-01')).resolves.toBeUndefined()
+    await expect(client.deleteProject?.('project-01')).resolves.toEqual(deletion)
+    await expect(client.undoDeletion?.('deletion-01')).resolves.toEqual(undone)
     expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/projects', {
       headers: { accept: 'application/json' },
       method: 'GET',
@@ -112,6 +160,11 @@ describe('API client', () => {
     })
     expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/projects/project-01', {
       method: 'DELETE',
+      headers: { accept: 'application/json' },
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(4, '/api/deletions/deletion-01/undo', {
+      method: 'POST',
+      headers: { accept: 'application/json' },
     })
   })
 

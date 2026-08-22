@@ -16,7 +16,7 @@ export const writeAgentWorkflowFixture = async (
     `import { writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
-import { getBunAgentWorkerScriptPath } from 'file:///app/node_modules/@loop/agent-runtimes/dist/index.js'
+import { getBunAgentWorkerScriptPath } from 'file:///app/node_modules/@slopify/agent-runtimes/dist/index.js'
 import {
   createChatGptSubscriptionConnectionDriver,
   createConnectionRepository,
@@ -24,7 +24,7 @@ import {
   createFileCredentialStore,
   createWorkflowRepository,
   openDatabase,
-} from 'file:///app/node_modules/@loop/execution-runtime/dist/index.js'
+} from 'file:///app/node_modules/@slopify/execution-runtime/dist/index.js'
 
 const secret = process.argv[2]
 if (secret === undefined) throw new Error('secret is required')

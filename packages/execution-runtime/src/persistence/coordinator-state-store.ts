@@ -1,4 +1,4 @@
-import { NodeIdSchema, RunIdSchema } from '@loop/contracts'
+import { NodeIdSchema, RunIdSchema } from '@slopify/contracts'
 import type BetterSqlite3 from 'better-sqlite3'
 
 import { appendEvent } from '../events/event-store.js'

@@ -1,4 +1,4 @@
-import { RunEventSchema, RunIdSchema, type RunEvent, type RunId } from '@loop/contracts'
+import { RunEventSchema, RunIdSchema, type RunEvent, type RunId } from '@slopify/contracts'
 import type BetterSqlite3 from 'better-sqlite3'
 
 import type { WorkbenchDatabase } from '../persistence/database.js'

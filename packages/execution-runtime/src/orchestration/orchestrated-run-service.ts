@@ -1,4 +1,4 @@
-import { WorkflowSchema } from '@loop/workflow-model'
+import { WorkflowSchema } from '@slopify/workflow-model'
 
 import type { RunService } from '../services/run-service.js'
 import type { WorkflowCoordinator } from './workflow-coordinator.js'

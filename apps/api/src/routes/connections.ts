@@ -2,8 +2,8 @@ import {
   CredentialSchema,
   type ConnectionCatalog,
   type ConnectionService,
-} from '@loop/execution-runtime'
-import type { ChatGptOAuthService } from '@loop/agent-runtimes'
+} from '@slopify/execution-runtime'
+import type { ChatGptOAuthService } from '@slopify/agent-runtimes'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 

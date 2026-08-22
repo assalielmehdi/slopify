@@ -15,6 +15,7 @@ const EXPECTED_TABLES = [
   'artifacts',
   'connection_catalog',
   'connections',
+  'deletion_operations',
   'execution_messages',
   'node_executions',
   'output_chunks',
@@ -85,7 +86,7 @@ describe('database connection', () => {
     expect(database.status()).toEqual({
       foreignKeysEnabled: true,
       journalMode: 'wal',
-      schemaVersion: 12,
+      schemaVersion: 13,
       writable: true,
     })
   })

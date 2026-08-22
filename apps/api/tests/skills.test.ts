@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { SkillCatalogError, type SkillCatalog, type SkillRecord } from '@loop/execution-runtime'
+import { SkillCatalogError, type SkillCatalog, type SkillRecord } from '@slopify/execution-runtime'
 
 import { createApiApp } from '../src/app.js'
 

@@ -4,7 +4,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import type { ReactFlowProps } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { WorkflowCanvas } from '../components/workflow/workflow-canvas'
 

@@ -63,6 +63,7 @@ describe('forward-only migrations', () => {
       { version: 10, name: 'update_openrouter_description' },
       { version: 11, name: 'replace_workflow_revisions_with_run_snapshots' },
       { version: 12, name: 'persist_run_variables' },
+      { version: 13, name: 'add_reversible_deletions' },
     ])
 
     expect(

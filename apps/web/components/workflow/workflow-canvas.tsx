@@ -1,7 +1,7 @@
 'use client'
 
-import type { NodeExecutionStatus } from '@loop/contracts'
-import type { AgentNode, Workflow } from '@loop/workflow-model'
+import type { NodeExecutionStatus } from '@slopify/contracts'
+import type { AgentNode, Workflow } from '@slopify/workflow-model'
 import dagre from '@dagrejs/dagre'
 import {
   Background,

@@ -1,4 +1,4 @@
-import type { NodeId } from '@loop/contracts'
+import type { NodeId } from '@slopify/contracts'
 
 import type { Workflow, WorkflowEdge } from './types.js'
 

@@ -1,4 +1,4 @@
-import { WorkflowSchema, type Workflow } from '@loop/workflow-model'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 import {

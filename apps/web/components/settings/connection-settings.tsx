@@ -1,15 +1,7 @@
 'use client'
 
-import {
-  ExternalLinkIcon,
-  Grid2X2Icon,
-  ListIcon,
-  RefreshCwIcon,
-  Trash2Icon,
-  XIcon,
-  type LucideIcon,
-} from 'lucide-react'
-import type { ConnectionCatalogEntry } from '@loop/contracts'
+import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react'
+import type { ConnectionCatalogEntry } from '@slopify/contracts'
 import type { ComponentType, CSSProperties, SVGProps } from 'react'
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
 
@@ -18,7 +10,6 @@ import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { SegmentedControl } from '@/components/ui/segmented-control'
 import { Separator } from '@/components/ui/separator'
 import {
   createApiClient,
@@ -44,12 +35,6 @@ type ConnectionClient = Required<
 
 type ConnectionType = ConnectionRecord['type']
 type CatalogKind = 'all' | 'providers' | 'connectors'
-type CatalogView = 'grid' | 'list'
-
-const catalogViewOptions: readonly { value: CatalogView; label: string; icon: LucideIcon }[] = [
-  { value: 'grid', label: 'Grid view', icon: Grid2X2Icon },
-  { value: 'list', label: 'List view', icon: ListIcon },
-]
 
 function prefersReducedMotion() {
   return (
@@ -229,22 +214,17 @@ function ConnectionTile({
   connection,
   definition,
   onSelect,
-  view,
 }: Readonly<{
   connection: ConnectionRecord | undefined
   definition: ConnectionCatalogEntry
   onSelect: () => void
-  view: CatalogView
 }>) {
   return (
     <Button
       type="button"
       variant="ghost"
       aria-label={`${definition.name}, ${statusLabel(connection)}`}
-      className={cn(
-        'w-full items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input',
-        view === 'grid' ? 'h-[140px] flex-col' : 'min-h-24 flex-col',
-      )}
+      className="h-[140px] w-full flex-col items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input"
       onClick={onSelect}
     >
       <span className="flex min-h-0 flex-1 items-start gap-3.5 p-4">
@@ -259,12 +239,7 @@ function ConnectionTile({
           <span className="text-[12px]/4 font-medium text-muted-foreground">
             {definition.eyebrow}
           </span>
-          <span
-            className={cn(
-              'mt-1 text-[13px]/5 font-normal text-muted-foreground',
-              view === 'grid' ? 'line-clamp-3' : 'line-clamp-1',
-            )}
-          >
+          <span className="mt-1 line-clamp-3 text-[13px]/5 font-normal text-muted-foreground">
             {definition.summary}
           </span>
         </span>
@@ -283,7 +258,6 @@ export function ConnectionSettings({
   const [error, setError] = useState<string>()
   const [selectedType, setSelectedType] = useState<ConnectionType>()
   const [isPanelOpen, setIsPanelOpen] = useState(false)
-  const [view, setView] = useState<CatalogView>('grid')
   const [replacing, setReplacing] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const panelOpenFrameRef = useRef<number | undefined>(undefined)
@@ -460,16 +434,6 @@ export function ConnectionSettings({
 
   return (
     <section aria-label={title} className={catalogSectionClassName}>
-      <div className="mb-3 flex justify-start">
-        <SegmentedControl
-          ariaLabel="View options"
-          indicatorTestId="connection-view-selection-indicator"
-          onValueChange={(value) => setView(value as CatalogView)}
-          options={catalogViewOptions}
-          value={view}
-        />
-      </div>
-
       {error === undefined ? null : (
         <Alert variant="destructive" className="mb-3">
           <AlertTitle>Connection unavailable</AlertTitle>
@@ -479,18 +443,13 @@ export function ConnectionSettings({
 
       <div
         data-testid="connection-grid"
-        data-layout={view}
-        className={cn(
-          'grid grid-cols-1 gap-3',
-          view === 'grid' && 'sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]',
-        )}
+        className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
       >
         {catalog.map((definition) => (
           <ConnectionTile
             key={definition.type}
             definition={definition}
             connection={connectionFor(connections, definition.type)}
-            view={view}
             onSelect={() => openPanel(definition.type)}
           />
         ))}

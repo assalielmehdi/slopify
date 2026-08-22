@@ -70,7 +70,10 @@ describe('same-origin API proxy', () => {
 
     await POST(
       new Request('http://web:3000/api/runs', {
-        body: JSON.stringify({ workflowId: 'delivery-workflow', variables: { task: 'LOOP-40' } }),
+        body: JSON.stringify({
+          workflowId: 'delivery-workflow',
+          variables: { task: 'SLOPIFY-40' },
+        }),
         headers: { 'content-type': 'application/json' },
         method: 'POST',
       }),
@@ -83,7 +86,7 @@ describe('same-origin API proxy', () => {
     expect(forwardedRequest.headers.get('content-type')).toBe('application/json')
     await expect(forwardedRequest.json()).resolves.toEqual({
       workflowId: 'delivery-workflow',
-      variables: { task: 'LOOP-40' },
+      variables: { task: 'SLOPIFY-40' },
     })
   })
 

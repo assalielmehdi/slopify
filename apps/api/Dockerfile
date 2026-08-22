@@ -17,13 +17,13 @@ RUN corepack enable \
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile --filter @loop/api...
+RUN pnpm install --frozen-lockfile --filter @slopify/api...
 
 FROM dependencies AS builder
 
-RUN pnpm --filter @loop/api build \
+RUN pnpm --filter @slopify/api build \
   && pnpm --config.store-dir=/var/lib/workbench/pnpm/store \
-    --filter @loop/api deploy --prod --legacy /prod/api
+    --filter @slopify/api deploy --prod --legacy /prod/api
 
 FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runner
 

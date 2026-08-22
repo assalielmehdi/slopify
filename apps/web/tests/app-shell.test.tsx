@@ -42,14 +42,17 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('AppShell', () => {
-  it('uses a recessed navigation surface and one base work surface', () => {
+  it('uses one base surface across navigation and the workspace', () => {
     const { container } = render(
       <AppShell>
         <p>Workflow graph</p>
       </AppShell>,
     )
 
-    expect(container.querySelector('aside')?.getAttribute('data-surface')).toBe('shell-muted')
+    const navigation = container.querySelector('aside')
+    expect(navigation?.getAttribute('data-surface')).toBe('base')
+    expect(navigation?.className).toContain('bg-background')
+    expect(navigation?.className).not.toContain('bg-sidebar')
     expect(container.querySelector('header')?.getAttribute('data-surface')).toBe('base')
     expect(screen.getByRole('main').getAttribute('data-surface')).toBe('base')
   })
@@ -171,8 +174,8 @@ describe('AppShell', () => {
     ).toEqual(crumbs)
   })
 
-  it.each(['/providers', '/connectors', '/projects', '/runs/run-123'])(
-    'does not add shell padding around the catalog route %s',
+  it.each(['/providers', '/connectors', '/projects', '/runs', '/runs/run-123'])(
+    'does not add shell padding around the full-width route %s',
     (pathname) => {
       navigation.pathname = pathname
 

@@ -151,7 +151,7 @@ describe('ConnectionSettings', () => {
     expect(connectors.className).toBe(providers.className)
   })
 
-  it('renders the approved provider catalog, animated view choice, and floating setup panel', async () => {
+  it('renders the provider card catalog without a view selector and opens its setup panel', async () => {
     render(<ConnectionSettings kind="providers" client={createClient()} />)
 
     expect(screen.getByRole('region', { name: 'Providers' })).toBeTruthy()
@@ -163,22 +163,14 @@ describe('ConnectionSettings', () => {
 
     const catalog = screen.getByRole('region', { name: 'Providers' })
     const grid = within(catalog).getByTestId('connection-grid')
-    const viewOptions = within(catalog).getByRole('radiogroup', { name: 'View options' })
-    const gridView = within(viewOptions).getByRole('radio', { name: 'Grid view' })
-    const listView = within(viewOptions).getByRole('radio', { name: 'List view' })
 
-    expect(gridView.getAttribute('aria-checked')).toBe('true')
-    expect(grid.getAttribute('data-layout')).toBe('grid')
+    expect(within(catalog).queryByRole('radiogroup', { name: 'View options' })).toBeNull()
     expect(catalog.className).toContain('px-6')
     expect(catalog.className).toContain('pt-6')
     expect(grid.className).toContain('auto-fill')
     expect(within(catalog).getByTestId('openrouter-mark')).toBeTruthy()
     expect(within(catalog).getByTestId('chatgpt-mark')).toBeTruthy()
     expect(within(catalog).queryByText('View setup')).toBeNull()
-
-    fireEvent.click(listView)
-    expect(listView.getAttribute('aria-checked')).toBe('true')
-    expect(grid.getAttribute('data-layout')).toBe('list')
 
     fireEvent.click(screen.getByRole('button', { name: /OpenRouter/ }))
     const drawer = await screen.findByRole('dialog', { name: 'OpenRouter' })
@@ -198,24 +190,16 @@ describe('ConnectionSettings', () => {
 
     const catalog = screen.getByRole('region', { name: 'Connectors' })
     const grid = within(catalog).getByTestId('connection-grid')
-    const viewOptions = within(catalog).getByRole('radiogroup', { name: 'View options' })
-    const gridView = within(viewOptions).getByRole('radio', { name: 'Grid view' })
-    const listView = within(viewOptions).getByRole('radio', { name: 'List view' })
 
     expect(await within(catalog).findByRole('button', { name: /GitLab/ })).toBeTruthy()
     expect(within(catalog).getByRole('button', { name: /ClickUp/ })).toBeTruthy()
     expect(within(catalog).getByTestId('gitlab-mark')).toBeTruthy()
     expect(within(catalog).getByTestId('clickup-mark')).toBeTruthy()
-    expect(gridView.getAttribute('aria-checked')).toBe('true')
-    expect(grid.getAttribute('data-layout')).toBe('grid')
+    expect(within(catalog).queryByRole('radiogroup', { name: 'View options' })).toBeNull()
     expect(catalog.className).toContain('px-6')
     expect(catalog.className).toContain('pt-6')
     expect(grid.className).toContain('auto-fill')
     expect(within(catalog).queryByText('View setup')).toBeNull()
-
-    fireEvent.click(listView)
-    expect(listView.getAttribute('aria-checked')).toBe('true')
-    expect(grid.getAttribute('data-layout')).toBe('list')
 
     fireEvent.click(within(catalog).getByRole('button', { name: /ClickUp/ }))
     const drawer = await screen.findByRole('dialog', { name: 'ClickUp' })

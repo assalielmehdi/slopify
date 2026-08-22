@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { NodeIdSchema, RunIdSchema } from '@loop/contracts'
+import { NodeIdSchema, RunIdSchema } from '@slopify/contracts'
 import {
   createCancellationService,
   createRunService,
   type ActiveRunExecution,
-} from '@loop/execution-runtime'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+} from '@slopify/execution-runtime'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 import {
   TEST_WORKFLOW_ID,
   createPersistenceFixture,

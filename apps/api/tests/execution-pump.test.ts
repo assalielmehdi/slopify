@@ -39,7 +39,7 @@ describe('execution pump', () => {
     await pump.stop()
   })
 
-  it('coalesces overlapping wake-ups into one execution loop', async () => {
+  it('coalesces overlapping wake-ups into one execution cycle', async () => {
     let release: (() => void) | undefined
     const worker = {
       drain: vi.fn(

@@ -38,6 +38,7 @@ export const NodeIdSchema = kebabCaseId.brand<'NodeId'>()
 export const ArtifactIdSchema = opaqueId.brand<'ArtifactId'>()
 export const ProjectProfileIdSchema = opaqueId.brand<'ProjectProfileId'>()
 export const ProjectIdSchema = opaqueId.brand<'ProjectId'>()
+export const DeletionIdSchema = opaqueId.brand<'DeletionId'>()
 export const RepositoryIdSchema = opaqueId.brand<'RepositoryId'>()
 export const OutcomeNameSchema = kebabCaseId.brand<'OutcomeName'>()
 
@@ -250,6 +251,24 @@ export const ProjectCatalogResponseSchema = z.strictObject({
   projects: z.array(ProjectSchema).readonly(),
 })
 
+export const DeletionSubjectSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('PROJECT'), id: ProjectIdSchema }),
+])
+
+export const DeletionReceiptSchema = z.strictObject({
+  deletionId: DeletionIdSchema,
+  subject: DeletionSubjectSchema,
+  deletedAt: z.iso.datetime({ offset: true }),
+  undoExpiresAt: z.iso.datetime({ offset: true }),
+})
+
+export const UndoDeletionResponseSchema = DeletionReceiptSchema.extend({
+  state: z.literal('UNDONE'),
+})
+
+export type DeletionReceipt = z.infer<typeof DeletionReceiptSchema>
+export type UndoDeletionResponse = z.infer<typeof UndoDeletionResponseSchema>
+
 const ReadinessFindingSchema = z.strictObject({
   category: z.enum(['filesystem', 'git', 'tool', 'clickup', 'gitlab', 'model-provider']),
   code: errorCode,
@@ -278,10 +297,48 @@ export const CancelRunRequestSchema = z.strictObject({
   reason: z.string().trim().min(1).max(1_024).optional(),
 })
 
-export const RunPaginationQuerySchema = z.strictObject({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-})
+export const RunPaginationQuerySchema = z
+  .strictObject({
+    page: z.coerce.number().int().min(1).default(1),
+    pageSize: z.coerce.number().int().min(1).max(100).default(20),
+    runId: z.string().trim().min(1).max(128).optional(),
+    statuses: z
+      .array(RunStatusSchema)
+      .max(RunStatusSchema.options.length)
+      .refine((statuses) => new Set(statuses).size === statuses.length, {
+        message: 'Statuses must be unique',
+      })
+      .optional(),
+    startedFrom: z.iso.datetime({ offset: true }).optional(),
+    startedTo: z.iso.datetime({ offset: true }).optional(),
+    durationMinMs: z.coerce.number().int().nonnegative().safe().optional(),
+    durationMaxMs: z.coerce.number().int().nonnegative().safe().optional(),
+  })
+  .superRefine((query, context) => {
+    if (
+      query.startedFrom !== undefined &&
+      query.startedTo !== undefined &&
+      Date.parse(query.startedFrom) > Date.parse(query.startedTo)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Started from must be before started to',
+        path: ['startedFrom'],
+      })
+    }
+
+    if (
+      query.durationMinMs !== undefined &&
+      query.durationMaxMs !== undefined &&
+      query.durationMinMs > query.durationMaxMs
+    ) {
+      context.addIssue({
+        code: 'custom',
+        message: 'Minimum duration must not exceed maximum duration',
+        path: ['durationMinMs'],
+      })
+    }
+  })
 
 const runEventBase = z.strictObject({
   runId: RunIdSchema,
@@ -385,6 +442,50 @@ export const RunEventSchema = z.discriminatedUnion('type', [
   RunCompletedEventSchema,
 ])
 
+export const AgentTraceEventTypeSchema = z.enum([
+  'AGENT_STARTED',
+  'AGENT_SESSION_IDENTIFIED',
+  'AGENT_MESSAGE',
+  'AGENT_REASONING',
+  'AGENT_TOOL_STARTED',
+  'AGENT_TOOL_UPDATED',
+  'AGENT_TOOL_COMPLETED',
+  'AGENT_RESULT',
+  'AGENT_FAILED',
+  'AGENT_CANCELLED',
+])
+
+export const AgentTraceHeaderSchema = z.strictObject({
+  version: z.literal(1),
+  runId: RunIdSchema,
+  nodeExecutionId: opaqueId,
+  attemptId: opaqueId,
+  nodeId: NodeIdSchema,
+  createdAt: z.iso.datetime({ offset: true }),
+  configuration: z.strictObject({
+    connectionId: opaqueId,
+    provider: z.string().trim().min(1).max(256),
+    model: z.string().trim().min(1).max(256),
+    thinkingLevel: z.string().trim().min(1).max(128),
+    renderedPrompt: z.string().min(1).max(1_000_000),
+    permissionProfile: z.enum(['read-only', 'workspace-write']),
+    timeoutSeconds: z.number().int().positive().safe(),
+  }),
+})
+
+export const AgentTraceEventSchema = z.strictObject({
+  sequence: z.number().int().positive().safe(),
+  timestamp: z.iso.datetime({ offset: true }),
+  type: AgentTraceEventTypeSchema,
+  data: z.json(),
+})
+
+export const AgentTraceSchema = z.strictObject({
+  header: AgentTraceHeaderSchema,
+  events: z.array(AgentTraceEventSchema).readonly(),
+  complete: z.boolean(),
+})
+
 export type WorkflowId = z.infer<typeof WorkflowIdSchema>
 export type RunId = z.infer<typeof RunIdSchema>
 export type NodeId = z.infer<typeof NodeIdSchema>
@@ -424,3 +525,7 @@ export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
 export type CancelRunRequest = z.infer<typeof CancelRunRequestSchema>
 export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>
 export type RunEvent = z.infer<typeof RunEventSchema>
+export type AgentTraceEventType = z.infer<typeof AgentTraceEventTypeSchema>
+export type AgentTraceHeader = z.infer<typeof AgentTraceHeaderSchema>
+export type AgentTraceEvent = z.infer<typeof AgentTraceEventSchema>
+export type AgentTrace = z.infer<typeof AgentTraceSchema>

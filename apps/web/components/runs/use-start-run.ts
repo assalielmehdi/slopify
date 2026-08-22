@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { getWorkflowPromptVariableNames, type Workflow } from '@loop/workflow-model'
+import { getWorkflowPromptVariableNames, type Workflow } from '@slopify/workflow-model'
 
 import type { RunVariableRow } from '@/components/runs/run-configuration-fields'
 import {

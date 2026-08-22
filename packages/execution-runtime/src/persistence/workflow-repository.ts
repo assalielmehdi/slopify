@@ -1,5 +1,5 @@
-import { WorkflowIdSchema } from '@loop/contracts'
-import { WorkflowSchema, type Workflow } from '@loop/workflow-model'
+import { WorkflowIdSchema } from '@slopify/contracts'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import type { WorkbenchDatabase } from './database.js'
 import { getDatabaseHandle } from './database.js'

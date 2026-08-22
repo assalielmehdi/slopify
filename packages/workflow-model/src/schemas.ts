@@ -1,4 +1,4 @@
-import { NodeIdSchema, OutcomeNameSchema, WorkflowIdSchema } from '@loop/contracts'
+import { NodeIdSchema, OutcomeNameSchema, WorkflowIdSchema } from '@slopify/contracts'
 import { z } from 'zod'
 
 const RESOURCE_BUNDLE_ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/

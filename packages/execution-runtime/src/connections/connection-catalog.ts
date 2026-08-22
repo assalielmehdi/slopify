@@ -1,4 +1,4 @@
-import type { ConnectionCatalogEntry } from '@loop/contracts'
+import type { ConnectionCatalogEntry } from '@slopify/contracts'
 
 export type { ConnectionCatalogEntry }
 

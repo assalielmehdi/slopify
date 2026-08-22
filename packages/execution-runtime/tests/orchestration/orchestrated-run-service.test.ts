@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import {
   createOrchestratedRunService,

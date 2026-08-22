@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Workflow, type Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
 
 import { RunServiceError, createRunService } from '../../src/index.js'
 import { createPersistenceFixture } from '../persistence/test-fixture.js'
@@ -200,6 +200,58 @@ describe('run service inspection', () => {
         completedAt: null,
         durationMs: null,
       },
+    ])
+  })
+
+  it('filters the complete run history before applying pagination', async () => {
+    const { fixture, service } = createServiceFixture()
+    const matching = await service.create(createInput)
+    fixture.runs.changeStatus({
+      runId: matching.runId,
+      expectedStatus: 'PENDING',
+      status: 'RUNNING',
+      timestamp: '2026-08-18T22:30:00Z',
+    })
+    fixture.runs.completeRun({
+      runId: matching.runId,
+      expectedStatus: 'RUNNING',
+      status: 'SUCCEEDED',
+      durationMs: 2_000,
+      timestamp: '2026-08-18T22:30:02Z',
+    })
+    const excluded = await service.create(createInput)
+    fixture.runs.changeStatus({
+      runId: excluded.runId,
+      expectedStatus: 'PENDING',
+      status: 'RUNNING',
+      timestamp: '2026-08-18T22:31:00Z',
+    })
+    fixture.runs.completeRun({
+      runId: excluded.runId,
+      expectedStatus: 'RUNNING',
+      status: 'FAILED',
+      durationMs: 5_000,
+      timestamp: '2026-08-18T22:31:05Z',
+    })
+
+    const page = service.list({
+      page: 1,
+      pageSize: 1,
+      runId: 'service-1',
+      statuses: ['SUCCEEDED'],
+      startedFrom: '2026-08-18T22:29:00Z',
+      startedTo: '2026-08-18T22:30:30Z',
+      durationMinMs: 1_500,
+      durationMaxMs: 2_500,
+    })
+
+    expect(page.pagination).toEqual({ page: 1, pageSize: 1, totalItems: 1, totalPages: 1 })
+    expect(page.data).toEqual([
+      expect.objectContaining({
+        runId: matching.runId,
+        status: 'SUCCEEDED',
+        durationMs: 2_000,
+      }),
     ])
   })
 })

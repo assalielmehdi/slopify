@@ -1,5 +1,5 @@
-import { HealthResponseSchema } from '@loop/contracts'
-import type { DatabaseStatus, WorkbenchDatabase } from '@loop/execution-runtime'
+import { HealthResponseSchema } from '@slopify/contracts'
+import type { DatabaseStatus, WorkbenchDatabase } from '@slopify/execution-runtime'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createApiApp } from '../src/app.js'

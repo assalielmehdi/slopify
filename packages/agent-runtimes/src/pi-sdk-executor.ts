@@ -49,7 +49,7 @@ type PromptOutcome =
   | { readonly kind: 'cancelled' }
   | { readonly kind: 'timed-out' }
 
-type ExecutionLoopOutcome = PromptOutcome | { readonly kind: 'observations' }
+type ExecutionCycleOutcome = PromptOutcome | { readonly kind: 'observations' }
 
 class ObservationQueue {
   readonly #items: NormalizedPiEvent[] = []
@@ -221,7 +221,7 @@ export const createPiSdkAgentExecutor = (
             yield event(input, observation.type, observation.data)
             continue
           }
-          const next: ExecutionLoopOutcome = await Promise.race([
+          const next: ExecutionCycleOutcome = await Promise.race([
             promptOutcome,
             timeoutOutcome,
             active.cancellation,

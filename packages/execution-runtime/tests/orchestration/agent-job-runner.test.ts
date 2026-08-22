@@ -4,8 +4,8 @@ import {
   AgentExecutionEventSchema,
   type AgentExecutionInput,
   type AgentExecutor,
-} from '@loop/agent-runtimes'
-import { createPredefinedV1Workflow, WorkflowSchema } from '@loop/workflow-model'
+} from '@slopify/agent-runtimes'
+import { createPredefinedV1Workflow, WorkflowSchema } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 import { createAgentJobRunner, createAgentResultSchemaRegistry } from '../../src/index.js'
@@ -82,9 +82,15 @@ describe('agent job runner', () => {
         cancel: vi.fn(async () => ({ status: 'cancelled' })),
       }
       const progress = vi.fn(async () => undefined)
+      const traces = {
+        start: vi.fn(async () => undefined),
+        append: vi.fn(async () => undefined),
+        read: vi.fn(),
+      }
       const runner = createAgentJobRunner({
         agent,
         runs: fixture.runs,
+        traces,
         resultSchemas: createAgentResultSchemaRegistry({
           'workflow-output/execution-plan-v1': z.object({ plan: z.array(z.string()) }),
         }),
@@ -127,7 +133,24 @@ describe('agent job runner', () => {
       })
       expect(received?.renderedPrompt).toContain('Plan Implement persistence')
       expect(received?.renderedPrompt).not.toContain('{{ task }}')
-      expect(progress).toHaveBeenCalledWith({ eventType: 'AGENT_STARTED', data: {} })
+      expect(progress).not.toHaveBeenCalled()
+      expect(traces.start).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: TEST_RUN_ID,
+          nodeExecutionId: 'node-execution-plan',
+          attemptId: 'attempt-plan',
+          configuration: expect.objectContaining({
+            connectionId: 'test-provider-default',
+            provider: 'test-provider',
+            model: 'test-model',
+          }),
+        }),
+      )
+      expect(traces.append).toHaveBeenCalledTimes(2)
+      expect(traces.append.mock.calls.map(([, event]) => event.type)).toEqual([
+        'AGENT_STARTED',
+        'AGENT_RESULT',
+      ])
     } finally {
       fixture.cleanup()
     }

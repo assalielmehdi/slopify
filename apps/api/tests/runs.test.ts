@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createRunService } from '@loop/execution-runtime'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createRunService } from '@slopify/execution-runtime'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 import {
   TEST_WORKFLOW_ID,
   createPersistenceFixture,
@@ -135,6 +135,30 @@ describe('run JSON API', () => {
     })
   })
 
+  it('passes repeated and typed filters through to server-backed pagination', async () => {
+    const { app } = createFixture()
+    await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createBody),
+    })
+    await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(createBody),
+    })
+
+    const response = await app.request(
+      '/api/runs?page=1&pageSize=20&runId=api-1&status=PENDING&status=FAILED',
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      data: [{ runId: 'run-api-1' }],
+      pagination: { totalItems: 1, totalPages: 1 },
+    })
+  })
+
   it('returns 503 without creating a run after shutdown closes admissions', async () => {
     const { app, runs } = createFixture()
     runs.stopAdmissions()
@@ -155,10 +179,13 @@ describe('run JSON API', () => {
   it('rejects invalid pagination and reports an unknown run consistently', async () => {
     const { app } = createFixture()
     const invalid = await app.request('/api/runs?page=0&pageSize=101')
+    const invalidFilters = await app.request('/api/runs?durationMinMs=2000&durationMaxMs=1000')
     const unknown = await app.request('/api/runs/unknown')
 
     expect(invalid.status).toBe(400)
     expect(await invalid.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+    expect(invalidFilters.status).toBe(400)
+    expect(await invalidFilters.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
     expect(unknown.status).toBe(404)
     expect(await unknown.json()).toEqual({
       error: { code: 'RUN_NOT_FOUND', message: 'Run was not found' },

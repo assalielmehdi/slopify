@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createWorkflowService } from '@loop/execution-runtime'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createWorkflowService } from '@slopify/execution-runtime'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 import { createPersistenceFixture } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 

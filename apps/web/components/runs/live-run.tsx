@@ -3,8 +3,8 @@
 import { XIcon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 
-import type { NodeExecutionStatus, RunEvent, RunStatus } from '@loop/contracts'
-import type { AgentNode } from '@loop/workflow-model'
+import type { AgentTrace, NodeExecutionStatus, RunEvent, RunStatus } from '@slopify/contracts'
+import type { AgentNode } from '@slopify/workflow-model'
 
 import { RunNodePanel } from '@/components/runs/run-node-panel'
 import { formatDuration, formatTimestamp, RunStatusBadge } from '@/components/runs/run-status'
@@ -21,7 +21,8 @@ import {
   type RunEventConnector,
 } from '@/lib/event-stream'
 
-type LiveRunClient = Pick<ApiClient, 'cancelRun' | 'getRun'>
+type LiveRunClient = Pick<ApiClient, 'cancelRun' | 'getRun'> &
+  Partial<Pick<ApiClient, 'getAgentTrace'>>
 type NodeExecution = RunDetailResponse['nodeExecutions'][number]
 
 const defaultClient = createApiClient()
@@ -127,6 +128,7 @@ export function LiveRun({
   const closeConnection = useRef<(() => void) | undefined>(undefined)
   const refreshSnapshot = useRef<() => Promise<void>>(async () => undefined)
   const panelRef = useRef<HTMLDivElement>(null)
+  const panelInvokerRef = useRef<HTMLElement | null>(null)
   const panelOpenFrameRef = useRef<number | undefined>(undefined)
   const [detail, setDetail] = useState<RunDetailResponse>()
   const [events, setEvents] = useState<readonly RunEvent[]>([])
@@ -138,13 +140,17 @@ export function LiveRun({
   const [cancelError, setCancelError] = useState<string>()
   const [selectedNodeId, setSelectedNodeId] = useState<string>()
   const [isPanelOpen, setIsPanelOpen] = useState(false)
+  const [trace, setTrace] = useState<AgentTrace>()
+  const [traceLoading, setTraceLoading] = useState(false)
+  const [traceError, setTraceError] = useState<string>()
 
-  const closePanel = useCallback(() => {
+  const closePanel = useCallback((restoreFocus = false) => {
     if (panelOpenFrameRef.current !== undefined) {
       window.cancelAnimationFrame(panelOpenFrameRef.current)
       panelOpenFrameRef.current = undefined
     }
     setIsPanelOpen(false)
+    if (restoreFocus) window.requestAnimationFrame(() => panelInvokerRef.current?.focus())
     if (prefersReducedMotion()) setSelectedNodeId(undefined)
   }, [])
 
@@ -152,6 +158,8 @@ export function LiveRun({
     if (panelOpenFrameRef.current !== undefined) {
       window.cancelAnimationFrame(panelOpenFrameRef.current)
     }
+    panelInvokerRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null
     setSelectedNodeId(nodeId)
 
     if (prefersReducedMotion()) {
@@ -182,6 +190,9 @@ export function LiveRun({
     setStreamStatus('Connecting')
     setSelectedNodeId(undefined)
     setIsPanelOpen(false)
+    setTrace(undefined)
+    setTraceLoading(false)
+    setTraceError(undefined)
     let active = true
     let disconnected = false
 
@@ -299,11 +310,21 @@ export function LiveRun({
 
     const handleOutsidePointerDown = (event: PointerEvent) => {
       if (panelRef.current?.contains(event.target as Node)) return
-      closePanel()
+      closePanel(false)
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closePanel(true)
     }
 
     document.addEventListener('pointerdown', handleOutsidePointerDown)
-    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
+    document.addEventListener('keydown', handleKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsidePointerDown)
+      document.removeEventListener('keydown', handleKeyDown)
+    }
   }, [closePanel, isPanelOpen])
 
   useEffect(
@@ -314,6 +335,62 @@ export function LiveRun({
     },
     [],
   )
+
+  const traceExecution =
+    detail === undefined || selectedNodeId === undefined
+      ? undefined
+      : latestExecutions(detail.nodeExecutions).get(selectedNodeId)
+
+  useEffect(() => {
+    if (!isPanelOpen) return
+    if (
+      traceExecution?.attemptId === null ||
+      traceExecution === undefined ||
+      client.getAgentTrace === undefined
+    ) {
+      setTrace(undefined)
+      setTraceLoading(false)
+      setTraceError(undefined)
+      return
+    }
+    let active = true
+    let interval: number | undefined
+    setTrace(undefined)
+    setTraceLoading(true)
+    setTraceError(undefined)
+
+    const loadTrace = async () => {
+      try {
+        const next = await client.getAgentTrace?.(
+          runId,
+          traceExecution.nodeExecutionId,
+          traceExecution.attemptId as string,
+        )
+        if (!active || next === undefined) return
+        setTrace(next)
+        setTraceError(undefined)
+        if (next.complete && interval !== undefined) {
+          window.clearInterval(interval)
+          interval = undefined
+        }
+      } catch (cause) {
+        if (active) {
+          setTraceError(cause instanceof Error ? cause.message : 'Agent trace could not be loaded.')
+        }
+      } finally {
+        if (active) setTraceLoading(false)
+      }
+    }
+
+    void loadTrace()
+    if (traceExecution.status === 'RUNNING') {
+      interval = window.setInterval(() => void loadTrace(), 1_000)
+    }
+    return () => {
+      active = false
+      if (interval !== undefined) window.clearInterval(interval)
+    }
+  }, [client, isPanelOpen, runId, traceExecution])
 
   if (loading) return <p className="text-xs text-muted-foreground">Loading run {runId}…</p>
   if (detail === undefined) {
@@ -443,7 +520,6 @@ export function LiveRun({
           ref={panelRef}
           data-testid="run-node-panel-shell"
           data-open={isPanelOpen}
-          aria-hidden={!isPanelOpen}
           className="provider-floating-panel-shell absolute inset-y-3 right-3 z-30 w-[min(34rem,calc(100%-1.5rem))]"
           style={
             {
@@ -477,23 +553,27 @@ export function LiveRun({
               >
                 {selectedNode.name}
               </h2>
-              <p className="mt-1 font-mono text-xs/4 text-muted-foreground">{selectedNode.id}</p>
+              <p className="mt-1 break-all font-mono text-xs/4 text-muted-foreground">
+                {selectedNode.id}
+              </p>
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 aria-label="Close job details"
-                onClick={closePanel}
-                className="absolute top-3 right-3"
+                onClick={() => closePanel(true)}
+                className="absolute top-3 right-3 size-10 sm:size-9"
               >
                 <XIcon aria-hidden="true" />
               </Button>
             </header>
             <RunNodePanel
-              events={events}
               execution={selectedExecution}
               node={selectedNode}
               status={statuses[selectedNode.id] ?? 'PENDING'}
+              trace={trace}
+              traceError={traceError}
+              traceLoading={traceLoading}
             />
           </aside>
         </div>

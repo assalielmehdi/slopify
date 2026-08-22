@@ -6,10 +6,10 @@ import {
   createInMemoryCredentialStore,
   type ConnectionCatalog,
   type ConnectionDriver,
-} from '@loop/execution-runtime'
+} from '@slopify/execution-runtime'
 
 import { createApiApp } from '../src/app.js'
-import { createChatGptOAuthService } from '@loop/agent-runtimes'
+import { createChatGptOAuthService } from '@slopify/agent-runtimes'
 
 const driver: ConnectionDriver = {
   type: 'gitlab',

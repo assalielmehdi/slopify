@@ -3,8 +3,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   createProjectRepository,
   createProjectService,
+  createDeletionOperationRepository,
+  createDeletionService,
   type ProjectInspection,
-} from '@loop/execution-runtime'
+} from '@slopify/execution-runtime'
 import { createPersistenceFixture } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
@@ -22,16 +24,25 @@ const createFixture = () => {
     canonicalPath: '/workspace/slopify',
     name: 'slopify',
   }
+  let timestamp = '2026-08-21T10:00:00Z'
   const projects = createProjectService({
     projects: createProjectRepository(fixture.database),
     inspector: { inspect: async () => inspection },
     createId: () => 'project-01',
-    now: () => '2026-08-21T10:00:00Z',
+    createDeletionId: () => 'deletion-01',
+    now: () => timestamp,
+  })
+  const deletions = createDeletionService({
+    operations: createDeletionOperationRepository(fixture.database),
+    handlers: [projects],
   })
   return {
-    app: createApiApp({ database: fixture.database, projects }),
+    app: createApiApp({ database: fixture.database, deletions, projects }),
     setInspection(next: ProjectInspection) {
       inspection = next
+    },
+    setNow(next: string) {
+      timestamp = next
     },
   }
 }
@@ -84,7 +95,7 @@ describe('projects API', () => {
     })
   })
 
-  it('deletes a project and returns not found when it is already absent', async () => {
+  it('deletes a project, returns an undo receipt, and restores it through the generic endpoint', async () => {
     const fixture = createFixture()
     await fixture.app.request('/api/projects', {
       method: 'POST',
@@ -93,12 +104,49 @@ describe('projects API', () => {
     })
 
     const deleted = await fixture.app.request('/api/projects/project-01', { method: 'DELETE' })
-    const missing = await fixture.app.request('/api/projects/project-01', { method: 'DELETE' })
+    const listedAfterDelete = await fixture.app.request('/api/projects')
+    const undone = await fixture.app.request('/api/deletions/deletion-01/undo', { method: 'POST' })
+    const listedAfterUndo = await fixture.app.request('/api/projects')
 
-    expect(deleted.status).toBe(204)
-    expect(missing.status).toBe(404)
-    expect(await missing.json()).toEqual({
-      error: { code: 'PROJECT_NOT_FOUND', message: 'Project was not found' },
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual({
+      deletionId: 'deletion-01',
+      subject: { type: 'PROJECT', id: 'project-01' },
+      deletedAt: '2026-08-21T10:00:00Z',
+      undoExpiresAt: '2026-08-21T10:00:10.000Z',
+    })
+    expect(await listedAfterDelete.json()).toEqual({ projects: [] })
+    expect(undone.status).toBe(200)
+    expect(await undone.json()).toMatchObject({ deletionId: 'deletion-01', state: 'UNDONE' })
+    expect(await listedAfterUndo.json()).toMatchObject({
+      projects: [expect.objectContaining({ projectId: 'project-01' })],
+    })
+    const undoneAgain = await fixture.app.request('/api/deletions/deletion-01/undo', {
+      method: 'POST',
+    })
+    expect(undoneAgain.status).toBe(200)
+  })
+
+  it('rejects undo after the server-authoritative window expires', async () => {
+    const fixture = createFixture()
+    await fixture.app.request('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ repositoryPath: '/workspace/slopify' }),
+    })
+    await fixture.app.request('/api/projects/project-01', { method: 'DELETE' })
+    fixture.setNow('2026-08-21T10:00:10Z')
+
+    const expired = await fixture.app.request('/api/deletions/deletion-01/undo', {
+      method: 'POST',
+    })
+
+    expect(expired.status).toBe(410)
+    expect(await expired.json()).toEqual({
+      error: {
+        code: 'DELETION_UNDO_EXPIRED',
+        message: 'The undo window has expired',
+      },
     })
   })
 })

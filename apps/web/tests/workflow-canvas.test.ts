@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Workflow, type Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
 
 import { layoutWorkflowGraph } from '../components/workflow/workflow-canvas'
 

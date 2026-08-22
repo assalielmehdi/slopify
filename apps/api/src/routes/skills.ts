@@ -1,4 +1,4 @@
-import type { SkillCatalog } from '@loop/execution-runtime'
+import type { SkillCatalog } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 

@@ -7,8 +7,8 @@ import {
   createBunChildAgentExecutor,
   createChatGptOAuthService,
   getBunAgentWorkerScriptPath,
-} from '@loop/agent-runtimes'
-import { DEFAULT_CHATGPT_CONNECTION_ID } from '@loop/contracts'
+} from '@slopify/agent-runtimes'
+import { DEFAULT_CHATGPT_CONNECTION_ID } from '@slopify/contracts'
 import {
   createProcessRunner,
   createAgentJobRunner,
@@ -17,6 +17,8 @@ import {
   createChatGptSubscriptionConnectionDriver,
   createClickUpConnectionDriver,
   createConnectionCatalogRepository,
+  createDeletionOperationRepository,
+  createDeletionService,
   createConnectionRepository,
   createProjectRepository,
   createProjectService,
@@ -25,6 +27,7 @@ import {
   createFileCredentialStore,
   createFilesystemSkillCatalog,
   createFilesystemSkillSnapshotStore,
+  createFilesystemAgentTraceStore,
   createGitLabConnectionDriver,
   createOpenRouterConnectionDriver,
   createEventStore,
@@ -43,12 +46,12 @@ import {
   type ConnectionService,
   type Credential,
   type WorkflowRepository,
-} from '@loop/execution-runtime'
+} from '@slopify/execution-runtime'
 import {
   PREDEFINED_V1_WORKFLOW_ID,
   WorkflowSchema,
   createPredefinedV1Workflow,
-} from '@loop/workflow-model'
+} from '@slopify/workflow-model'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 
@@ -76,6 +79,7 @@ export interface ApiServerConfiguration {
   readonly skillsRoot: string
   readonly skillSnapshotsRoot: string
   readonly credentialPath: string
+  readonly tracesRoot: string
   readonly shutdownGracePeriodMs: number
 }
 
@@ -173,6 +177,7 @@ export const resolveApiServerConfiguration = (
       environment.SKILL_SNAPSHOTS_ROOT ?? join(stateRoot, 'skill-snapshots'),
     ),
     credentialPath: resolve(environment.CREDENTIAL_PATH ?? join(stateRoot, 'credentials.json')),
+    tracesRoot: resolve(join(stateRoot, 'traces')),
     shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
   }
 }
@@ -220,11 +225,16 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const skillSnapshots = createFilesystemSkillSnapshotStore({
     root: configuration.skillSnapshotsRoot,
   })
+  const traces = createFilesystemAgentTraceStore({ root: configuration.tracesRoot })
   const projects = createProjectService({
     projects: projectRepository,
     inspector: createNativeGitProjectInspector({
       processRunner: createProcessRunner({ maxOutputBytes: 8_192, redactedValues: [] }),
     }),
+  })
+  const deletions = createDeletionService({
+    operations: createDeletionOperationRepository(database),
+    handlers: [projects],
   })
   const queue = createSqliteExecutionMessageQueue(database)
   const coordinator = createWorkflowCoordinator({
@@ -301,6 +311,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const agentRunner = createAgentJobRunner({
     agent,
     runs: runRepository,
+    traces,
     resultSchemas: createAgentResultSchemaRegistry({
       'json:any-v1': z.json(),
     }),
@@ -367,9 +378,11 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       connections,
       connectionCatalog,
       database,
+      deletions,
       eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
       projects,
       runs: runService,
+      traces,
       skills,
       workflows: createWorkflowService({
         workflows: workflowRepository,

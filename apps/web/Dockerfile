@@ -10,11 +10,11 @@ RUN corepack enable && corepack prepare pnpm@11.22.0 --activate
 
 COPY . .
 
-RUN pnpm install --frozen-lockfile --filter @loop/web...
+RUN pnpm install --frozen-lockfile --filter @slopify/web...
 
 FROM dependencies AS builder
 
-RUN mkdir -p apps/web/public && pnpm --filter @loop/web... build
+RUN mkdir -p apps/web/public && pnpm --filter @slopify/web... build
 
 FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS runner
 

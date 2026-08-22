@@ -1,7 +1,7 @@
 import { isAbsolute, relative } from 'node:path'
 
-import { RepositoryIdSchema } from '@loop/contracts'
-import { ResourceBundleIdSchema } from '@loop/workflow-model'
+import { RepositoryIdSchema } from '@slopify/contracts'
+import { ResourceBundleIdSchema } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const identifier = z

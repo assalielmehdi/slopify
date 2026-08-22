@@ -1,8 +1,8 @@
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ProjectProfileIdSchema, RunIdSchema, WorkflowIdSchema } from '@loop/contracts'
-import { createPredefinedV1Workflow, type Workflow } from '@loop/workflow-model'
+import { ProjectProfileIdSchema, RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
+import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
 
 import {
   createEventStore,

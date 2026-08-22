@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow, type Workflow } from '@loop/workflow-model'
+import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
 
 import { StartRunForm } from '../components/runs/start-run-form'
 import { ApiClientError, type ApiClient, type StartRunResponse } from '../lib/api-client'

@@ -44,7 +44,7 @@ describe('Pi event normalizer', () => {
     ])
   })
 
-  it('maps tool lifecycle evidence without exposing arguments, details, or credentials', () => {
+  it('maps tool lifecycle evidence with redacted arguments and without private details', () => {
     const normalizer = createNormalizer()
 
     const events = [
@@ -79,7 +79,11 @@ describe('Pi event normalizer', () => {
     expect(events).toEqual([
       {
         type: 'AGENT_TOOL_STARTED',
-        data: { toolCallId: 'tool-01', toolName: 'bash' },
+        data: {
+          toolCallId: 'tool-01',
+          toolName: 'bash',
+          input: { command: 'echo [REDACTED]' },
+        },
       },
       {
         type: 'AGENT_TOOL_UPDATED',
@@ -96,7 +100,6 @@ describe('Pi event normalizer', () => {
       },
     ])
     expect(JSON.stringify(events)).not.toContain(secret)
-    expect(JSON.stringify(events)).not.toContain('command')
     expect(JSON.stringify(events)).not.toContain('details')
   })
 

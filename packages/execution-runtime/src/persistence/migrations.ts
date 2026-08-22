@@ -800,6 +800,32 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       `)
     },
   }),
+  Object.freeze({
+    version: 13,
+    name: 'add_reversible_deletions',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        CREATE TABLE deletion_operations (
+          deletion_id TEXT PRIMARY KEY,
+          subject_type TEXT NOT NULL CHECK (subject_type IN ('PROJECT')),
+          subject_id TEXT NOT NULL,
+          state TEXT NOT NULL CHECK (state IN ('PENDING', 'UNDONE', 'PURGED')),
+          deleted_at TEXT NOT NULL,
+          undo_expires_at TEXT NOT NULL,
+          restored_at TEXT,
+          purged_at TEXT
+        ) STRICT;
+
+        CREATE UNIQUE INDEX deletion_operations_pending_subject
+          ON deletion_operations (subject_type, subject_id)
+          WHERE state = 'PENDING';
+
+        ALTER TABLE projects ADD COLUMN deletion_id TEXT REFERENCES deletion_operations(deletion_id);
+        ALTER TABLE projects ADD COLUMN deleted_at TEXT;
+        CREATE INDEX projects_by_deletion_id ON projects (deletion_id);
+      `)
+    },
+  }),
 ])
 
 interface AppliedMigration {

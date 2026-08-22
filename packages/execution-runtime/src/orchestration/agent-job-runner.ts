@@ -3,12 +3,13 @@ import {
   AgentExecutionInputSchema,
   type AgentExecutionEvent,
   type AgentExecutor,
-} from '@loop/agent-runtimes'
-import { RunIdSchema } from '@loop/contracts'
-import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@loop/workflow-model'
+} from '@slopify/agent-runtimes'
+import { AgentTraceHeaderSchema, RunIdSchema } from '@slopify/contracts'
+import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 import type { RunRepository } from '../persistence/run-repository.js'
+import type { AgentTraceStore } from '../traces/filesystem-agent-trace-store.js'
 import type { JobRunner } from './execution-worker.js'
 
 export interface AgentInferenceResolution {
@@ -47,11 +48,13 @@ export const createAgentJobRunner = (
   options: Readonly<{
     agent: AgentExecutor
     runs: Pick<RunRepository, 'get'>
+    traces?: AgentTraceStore
     resultSchemas: AgentResultSchemaRegistry
     resolveInference(connectionId: string): AgentInferenceResolution | undefined
+    now?: () => string
   }>,
 ): JobRunner => ({
-  async run(input, publishProgress) {
+  async run(input) {
     const run = options.runs.get(RunIdSchema.parse(input.runId))
     if (run === undefined) return failed('RUN_NOT_FOUND', 'Run was not found')
     const workflow = WorkflowSchema.safeParse(run.workflowSnapshot)
@@ -88,6 +91,28 @@ export const createAgentJobRunner = (
       resourceBundleId: 'execution-skills',
       timeoutSeconds: node.timeoutSeconds,
     })
+    const traceHeader = AgentTraceHeaderSchema.parse({
+      version: 1,
+      runId: run.runId,
+      nodeExecutionId: input.nodeExecutionId,
+      attemptId: input.attemptId,
+      nodeId: node.id,
+      createdAt: (options.now ?? (() => new Date().toISOString()))(),
+      configuration: {
+        connectionId: node.job.inference.connectionId,
+        provider: inference.provider,
+        model: node.job.inference.modelId,
+        thinkingLevel: node.job.inference.thinkingLevel,
+        renderedPrompt,
+        permissionProfile: executionInput.permissionProfile,
+        timeoutSeconds: node.timeoutSeconds,
+      },
+    })
+    try {
+      await options.traces?.start(traceHeader)
+    } catch {
+      return failed('TRACE_WRITE_FAILED', 'Agent trace could not be created')
+    }
     let terminal:
       | Readonly<{
           status: 'succeeded'
@@ -97,6 +122,12 @@ export const createAgentJobRunner = (
       | Readonly<{ status: 'cancelled'; reason: string }>
       | undefined
     for await (const event of options.agent.execute(executionInput)) {
+      try {
+        await options.traces?.append(traceHeader, event)
+      } catch {
+        await options.agent.cancel(executionInput.executionId).catch(() => undefined)
+        return failed('TRACE_WRITE_FAILED', 'Agent trace could not be written')
+      }
       if (event.type === 'AGENT_RESULT') {
         if (terminal !== undefined)
           return failed('AGENT_RESULT_INVALID', 'Agent produced more than one terminal result')
@@ -105,8 +136,6 @@ export const createAgentJobRunner = (
         terminal = { status: 'failed', code: event.data.code, message: event.data.message }
       } else if (event.type === 'AGENT_CANCELLED') {
         terminal = { status: 'cancelled', reason: event.data.reason }
-      } else {
-        await publishProgress({ eventType: event.type, data: event.data })
       }
     }
     if (terminal === undefined)

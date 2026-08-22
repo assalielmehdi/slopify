@@ -2,8 +2,14 @@ import {
   CancelRunRequestSchema,
   CreateRunRequestSchema,
   RunPaginationQuerySchema,
-} from '@loop/contracts'
-import { RunServiceError, type CancellationService, type RunService } from '@loop/execution-runtime'
+} from '@slopify/contracts'
+import {
+  AgentTraceStoreError,
+  RunServiceError,
+  type AgentTraceStore,
+  type CancellationService,
+  type RunService,
+} from '@slopify/execution-runtime'
 import type { Context, Hono } from 'hono'
 
 const parseRunBody = async (context: Context): Promise<unknown> => {
@@ -27,6 +33,7 @@ export const registerRunRoutes = (
   app: Hono,
   runs: RunService,
   cancellation?: CancellationService,
+  traces?: AgentTraceStore,
 ): void => {
   app.post('/api/runs', async (context) => {
     const input = CreateRunRequestSchema.parse(await parseRunBody(context))
@@ -37,6 +44,12 @@ export const registerRunRoutes = (
     const query = RunPaginationQuerySchema.parse({
       page: context.req.query('page'),
       pageSize: context.req.query('pageSize'),
+      runId: context.req.query('runId'),
+      statuses: context.req.queries('status'),
+      startedFrom: context.req.query('startedFrom'),
+      startedTo: context.req.query('startedTo'),
+      durationMinMs: context.req.query('durationMinMs'),
+      durationMaxMs: context.req.query('durationMaxMs'),
     })
     return context.json(runs.list(query), 200)
   })
@@ -61,4 +74,21 @@ export const registerRunRoutes = (
     }
     return context.json(detail, 200)
   })
+
+  if (traces !== undefined) {
+    app.get('/api/runs/:runId/node-executions/:nodeExecutionId/trace', async (context) => {
+      const runId = context.req.param('runId')
+      const nodeExecutionId = context.req.param('nodeExecutionId')
+      const attemptId = context.req.query('attemptId')
+      const detail = runs.get(runId)
+      const execution = detail?.nodeExecutions.find(
+        (candidate) =>
+          candidate.nodeExecutionId === nodeExecutionId && candidate.attemptId === attemptId,
+      )
+      if (execution === undefined || attemptId === undefined) {
+        throw new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found')
+      }
+      return context.json(await traces.read({ runId, nodeExecutionId, attemptId }), 200)
+    })
+  }
 }

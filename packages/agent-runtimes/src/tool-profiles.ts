@@ -1,4 +1,4 @@
-import { PermissionProfileSchema, type PermissionProfile } from '@loop/workflow-model'
+import { PermissionProfileSchema, type PermissionProfile } from '@slopify/workflow-model'
 
 export type AgentToolName =
   'read' | 'bash' | 'edit' | 'write' | 'grep' | 'find' | 'ls' | 'complete_node'

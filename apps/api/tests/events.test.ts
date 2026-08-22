@@ -2,7 +2,7 @@ import { once } from 'node:events'
 import type { AddressInfo } from 'node:net'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createRunEventFeed } from '@loop/execution-runtime'
+import { createRunEventFeed } from '@slopify/execution-runtime'
 import {
   TEST_RUN_ID,
   createPersistenceFixture,

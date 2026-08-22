@@ -7,7 +7,7 @@ colors:
     foreground: '#1C1C1C'
     surface: '#FFFFFF'
     surfaceForeground: '#1C1C1C'
-    sidebar: '#F7F7F8'
+    sidebar: '#FFFFFF'
     muted: '#F1F1F3'
     mutedForeground: '#6A6B70'
     subtleForeground: '#55565A'
@@ -17,11 +17,11 @@ colors:
     selected: '#EAEAEC'
     focus: '#1C1C1C'
   dark:
-    background: '#171719'
+    background: '#000000'
     foreground: '#F1F1F2'
-    surface: '#171719'
+    surface: '#000000'
     surfaceForeground: '#F1F1F2'
-    sidebar: '#111113'
+    sidebar: '#000000'
     muted: '#222225'
     mutedForeground: '#8E8F95'
     subtleForeground: '#B7B7BC'
@@ -142,21 +142,23 @@ right in one mode.
 - `subtleForeground` is for ordinary navigation and secondary interface copy.
 - `mutedForeground` is for section labels, metadata, descriptions, placeholders, and
   nonessential context. It must remain readable; muted never means disabled.
-- `sidebar` is the recessed navigation canvas, including the product title and collapse
-  control row.
+- `sidebar` is the navigation canvas, including the product title and collapse control
+  row. It always resolves to the same color as `background`.
 - `background` is the base work surface used by the breadcrumb bar and main area.
 - `surface` is used by cards, tables, forms, sheets, menus, and dialogs. Ordinary
   content surfaces use the same color value as `background`; their boundaries come
   from spacing, borders, and intentional elevation rather than a different fill.
 - `selected` identifies the current neutral selection without introducing an accent.
 - `border` and `sidebarBorder` define structure quietly. Prefer borders over shadows.
+- `input` resolves to `border`, so resting fields and selectors use the same quiet
+  boundary as table rows and section delimiters. Focus strengthens only the control
+  border; inputs, textareas, and selectors never add a focus halo or shadow.
 
 ### Light mode
 
-Light mode uses a soft gray recessed navigation canvas beside one white work surface.
-The breadcrumb bar, main area, cards, tables, forms, and sheets share that white base.
-Text uses warm, near-black gray rather than pure black. Selection and hover states are
-neutral gray.
+Light mode uses one pure white canvas across the navigation, breadcrumb bar, main area,
+cards, tables, forms, and sheets. Text uses warm, near-black gray rather than pure
+black. Selection and hover states are neutral gray.
 
 Do not recreate hierarchy by tinting ordinary content containers. Begin with spacing
 and typography, add a one-pixel boundary when grouping is otherwise unclear, and add
@@ -166,16 +168,16 @@ the lowest suitable shadow only when a surface is meaningfully raised.
 
 Dark mode is designed independently, not produced by inverting light mode.
 
-- Use deep charcoal for the recessed sidebar and a slightly lighter charcoal for the
-  work surface and ordinary content. Avoid pure black.
+- Use one pure black canvas across the navigation, breadcrumb bar, work surface, and
+  ordinary content.
 - Primary text is soft white rather than pure white. Secondary text is lighter than in
   light mode so it keeps equivalent perceived importance.
 - Borders must remain visible without becoming luminous outlines.
 - Hover and selected states become lighter neutral surfaces, never colored glows.
-- The breadcrumb bar, main work area, and ordinary content remain one surface. The
-  sidebar stays quieter and darker.
-- Dark shadows are less perceptible, so borders and the sidebar-to-work-surface value
-  difference must carry more of the separation.
+- The breadcrumb bar, main work area, navigation, and ordinary content remain one
+  surface.
+- Dark shadows are less perceptible, so borders, spacing, typography, and neutral
+  interaction states carry the separation.
 - Status colors use the dark signal palette and must be paired with text or an icon.
 
 Switching modes uses a 150ms color transition with no movement, scaling, or crossfade.
@@ -247,6 +249,9 @@ navigation selection, and 12px for larger floating surfaces. Pills are reserved 
 statuses, compact filters, and naturally circular controls; they are not the default
 button shape.
 
+Tags and badges never use borders. Their semantic background and text color carry the
+entire visual treatment; interactive tags retain a visible external focus ring.
+
 Icons use Lucide, normally at 16px with a 1.8 stroke. Use 14px inside compact controls
 and 18px only where an icon needs more visual authority. Icons inherit the semantic
 text color of their role.
@@ -255,8 +260,9 @@ text color of their role.
 
 ### Navigation shell
 
-- The sidebar uses the recessed `sidebar` surface. The breadcrumb bar and workspace use
-  the base `background` surface.
+- The sidebar, breadcrumb bar, and workspace use the same base `background` color. The
+  `sidebar` token remains available for navigation-specific semantics but resolves to
+  that same color.
 - The sidebar title row is part of the sidebar plane; do not detach the logo or collapse
   control onto the work surface.
 - The product title and collapse control share one row when the sidebar is expanded.
@@ -312,12 +318,11 @@ text color of their role.
 - Both routes use the same 24px horizontal and top padding around the catalog. The grid is left-aligned and
   uses responsive `minmax(18rem, 1fr)` columns so additional providers fill available
   space without imposing an arbitrary three-column ceiling.
-- Grid cards and list rows share the same information order, status treatment, and
-  whole-surface interaction. Do not add a secondary `View setup` action.
+- Catalog cards share the same information order, status treatment, and whole-surface
+  interaction. Do not add a secondary `View setup` action.
 - Resting tiles use the work-surface color, a one-pixel border, and `raised` elevation.
   Hover strengthens the border and shadow without introducing a color accent.
-- The grid/list selector is an icon-only accessible radio group using the same moving
-  neutral selection surface and motion rules as the Theme selector.
+- Catalogs always use the responsive card grid. Do not expose a list/card view selector.
 - Provider and connector details open in a floating, non-modal right drawer contained
   by the main workspace. It must not overlap the breadcrumb bar, shift layout, dim
   content, or disable background interaction.
@@ -331,8 +336,10 @@ text color of their role.
 - Projects are local Git repositories identified by one canonical absolute path. The
   add flow asks only for that path; the API validates that it exists and is the root of
   a Git repository before persisting it.
-- Use the same grid/list selector, left-aligned responsive catalog, whole-surface tiles,
-  and contained floating drawer as Providers and Connectors.
+- After the API confirms a Project was added, close the add drawer and show a success
+  toast naming the Project. Never show success before persistence completes.
+- Use the same card-only, left-aligned responsive catalog, whole-surface tiles, and
+  contained floating drawer as Providers and Connectors.
 - Derive availability from the filesystem whenever Projects are listed or used. Never
   remove a saved Project merely because its path is unavailable.
 - A missing Project remains in its original catalog position with a muted tile and the
@@ -368,17 +375,65 @@ text color of their role.
   modal, use danger styling, or imply that optional variables are schema validation
   errors.
 
+### Data tables
+
+- Before using a native browser control or building a bespoke component, use the
+  matching component from the configured ShadCN system. Compose ShadCN primitives for
+  combined patterns such as date pickers, and fall back only when no suitable ShadCN
+  component exists.
+
+- Tables occupy the full horizontal width of their main workspace surface. Do not wrap
+  them in a card, rounded container, enclosing border, contrasting fill, or elevation.
+- A full-width utility strip precedes the column headers. It holds the current scope or
+  result count, quick filters, and filter configuration when those controls exist.
+  Render only working controls; never add inert filter placeholders to reserve space.
+- Sorting belongs in sortable column headers, beside the label. The complete control
+  is keyboard accessible, exposes `aria-sort`, and uses a directional icon to show the
+  active order.
+- Use quiet horizontal separators between the utility strip, header, rows, and footer.
+  Avoid vertical rules unless column grouping would otherwise be ambiguous.
+- Keep dense tabular content on one line and allow the table region to scroll
+  horizontally at narrow widths instead of compressing values into unreadable cells.
+- Pagination and result totals form a flat footer row aligned to the same column inset;
+  they are part of the table flow, not a separate card.
+- Keep table filter configuration and pagination controls borderless. Hover and focus
+  treatments communicate interactivity while table separators and filter chips carry
+  the visible structure.
+- Place applied-filter chips at the far left of the utility strip and the filter button
+  at the far right. Each chip names and summarizes one attribute filter; its remove
+  affordance appears on hover and keyboard focus and clears that attribute everywhere.
+  At rest, a chip fits its label with no reserved remove-button space. Hover or focus
+  smoothly expands its trailing edge to reveal the button, and leaving reverses the
+  same transition.
+- The filter button badge counts active attributes. Inside its popover, keep a search
+  input directly above the attribute list with no redundant category heading, and show
+  each attribute's selected-value count beside its icon and label.
+- Attribute editors match the data type: free text uses an input, bounded numbers use
+  paired range inputs, dates use paired ShadCN calendar pickers, and enumerations use
+  accessible single- or multi-selection controls. Filters apply to the complete
+  server-backed result set before pagination, and the URL preserves them across table
+  pages.
+- When a filter update keeps the previous rows visible while the next server result is
+  loading, mark the table region busy and pair reduced row opacity with explicit
+  updating text. Never leave retained stale rows looking current.
+
 ### Run history
 
 - Run history is a ShadCN table with exactly four informational columns: Run ID,
   Started, Duration, and Status.
+- Keep the utility strip empty on the left when no filters are applied; do not show an
+  `All runs` label or duplicate the total already present in the pagination footer.
 - Run IDs use monospace and remain directly navigable. Started time and duration use
   stable, scan-friendly formatting.
 - Status is a compact ShadCN badge. Success is green, failure is red, active execution
   is informational, and pending or cancelled states remain neutral or warning as
   appropriate. Status color is always paired with its text label.
-- Do not include workflow versions, revisions, configuration columns, or secondary
-  filters that duplicate information available inside a run.
+- Status filter options use plain toggle buttons rather than nested badges. Each label
+  uses its semantic status color, and its hover and selected backgrounds use a quiet
+  tint of that same hue. Selection remains explicit through the button state and check
+  icon, never color alone.
+- Do not include workflow versions, revisions, or configuration columns that duplicate
+  information available inside a run.
 
 ### Run detail
 
@@ -427,8 +482,7 @@ text color of their role.
 ### Do
 
 - Build hierarchy with spacing, typography, neutral contrast, and alignment.
-- Keep the breadcrumb, work area, and ordinary content on one base surface.
-- Use the recessed navigation surface only for the left application shell.
+- Keep the navigation, breadcrumb, work area, and ordinary content on one base surface.
 - Choose the lowest border and elevation treatment that still makes grouping clear.
 - Validate every component in light and dark mode at the same time.
 - Keep chrome quieter than the user's workflow content.
@@ -440,7 +494,7 @@ text color of their role.
 ### Don't
 
 - Do not introduce a default brand accent to make the interface feel designed.
-- Do not use pure black or pure white as large dark-mode surfaces.
+- Do not introduce alternate neutral canvas fills to separate application regions.
 - Do not lower secondary text contrast until it becomes decorative or unreadable.
 - Do not change layout, type scale, or information priority between color modes.
 - Do not use excessive rounding, floating cards, heavy shadows, or gradients.

@@ -1,4 +1,4 @@
-import { ProjectProfileIdSchema, RepositoryIdSchema, type RepositoryId } from '@loop/contracts'
+import { ProjectProfileIdSchema, RepositoryIdSchema, type RepositoryId } from '@slopify/contracts'
 
 import type { WorkbenchDatabase } from './database.js'
 import { getDatabaseHandle } from './database.js'

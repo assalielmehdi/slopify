@@ -1,4 +1,4 @@
-import type { WorkflowService } from '@loop/execution-runtime'
+import type { WorkflowService } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 
 export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowService): void => {

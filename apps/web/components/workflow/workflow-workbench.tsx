@@ -4,7 +4,7 @@ import { PlayIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-import type { Workflow } from '@loop/workflow-model'
+import type { Workflow } from '@slopify/workflow-model'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button, buttonVariants } from '@/components/ui/button'

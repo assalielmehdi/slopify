@@ -30,8 +30,41 @@ describe('SQLite project repository', () => {
     expect(() => projects.add({ ...record, projectId: 'project-02' })).toThrowError(
       expect.objectContaining({ code: 'PERSISTENCE_CONFLICT' }),
     )
-    expect(projects.delete('project-01')).toBe(true)
+    expect(
+      projects.stageDeletion({
+        deletionId: 'deletion-01',
+        subject: { type: 'PROJECT', id: 'project-01' },
+        deletedAt: '2026-08-22T10:00:00Z',
+        undoExpiresAt: '2026-08-22T10:00:10Z',
+      }),
+    ).toBe(true)
     expect(projects.get('project-01')).toBeUndefined()
-    expect(projects.delete('project-01')).toBe(false)
+    expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:05Z')).toBe('UNDONE')
+    expect(projects.get('project-01')).toEqual(record)
+    expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:06Z')).toBe('UNDONE')
+  })
+
+  it('purges an expired project deletion', () => {
+    const fixture = createPersistenceFixture()
+    fixtures.push(fixture)
+    const projects = createProjectRepository(fixture.database)
+    projects.add({
+      projectId: 'project-01',
+      name: 'slopify',
+      repositoryPath: '/workspace/slopify',
+      createdAt: '2026-08-21T10:00:00Z',
+      updatedAt: '2026-08-21T10:00:00Z',
+    })
+    projects.stageDeletion({
+      deletionId: 'deletion-01',
+      subject: { type: 'PROJECT', id: 'project-01' },
+      deletedAt: '2026-08-22T10:00:00Z',
+      undoExpiresAt: '2026-08-22T10:00:10Z',
+    })
+
+    projects.purgeExpired('2026-08-22T10:00:10Z')
+
+    expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:10Z')).toBe('EXPIRED')
+    expect(projects.findByPath('/workspace/slopify')).toBeUndefined()
   })
 })

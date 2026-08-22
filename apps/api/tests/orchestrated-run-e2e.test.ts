@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { z } from 'zod'
 
-import { AgentExecutionEventSchema, type AgentExecutor } from '@loop/agent-runtimes'
+import { AgentExecutionEventSchema, type AgentExecutor } from '@slopify/agent-runtimes'
 import {
   createAgentJobRunner,
   createAgentResultSchemaRegistry,
@@ -21,8 +21,8 @@ import {
   createWorkflowCoordinator,
   createWorkflowRepository,
   openDatabase,
-} from '@loop/execution-runtime'
-import { createPredefinedV1Workflow } from '@loop/workflow-model'
+} from '@slopify/execution-runtime'
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { createApiApp } from '../src/app.js'
 import { createExecutionPump } from '../src/execution-pump.js'

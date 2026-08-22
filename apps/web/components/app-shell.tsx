@@ -20,6 +20,7 @@ import {
 import { ThemePreferenceProvider, useThemePreference } from '@/components/theme-preference'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
+import { Toaster } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
@@ -128,7 +129,9 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   const isPreferences = pathname === '/preferences'
   const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
   const usesOwnPageSpacing =
-    ['/providers', '/connectors', '/projects'].includes(pathname) || isPreferences || isRunDetail
+    ['/providers', '/connectors', '/projects', '/runs'].includes(pathname) ||
+    isPreferences ||
+    isRunDetail
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -157,9 +160,9 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <div className="flex h-svh overflow-hidden bg-background font-sans text-foreground transition-colors duration-150">
       <aside
-        data-surface="shell-muted"
+        data-surface="base"
         className={cn(
-          'flex h-svh shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width,background-color,border-color] duration-150 ease-out',
+          'flex h-svh shrink-0 flex-col border-r border-sidebar-border bg-background transition-[width,background-color,border-color] duration-150 ease-out',
           isCollapsed ? 'w-14' : 'w-64',
         )}
       >
@@ -330,6 +333,7 @@ export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
     <TooltipProvider>
       <ThemePreferenceProvider>
         <AppShellContent>{children}</AppShellContent>
+        <Toaster />
       </ThemePreferenceProvider>
     </TooltipProvider>
   )

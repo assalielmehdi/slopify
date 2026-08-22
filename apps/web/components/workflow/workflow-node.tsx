@@ -1,5 +1,5 @@
-import type { NodeExecutionStatus } from '@loop/contracts'
-import type { AgentNode } from '@loop/workflow-model'
+import type { NodeExecutionStatus } from '@slopify/contracts'
+import type { AgentNode } from '@slopify/workflow-model'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { BotIcon } from 'lucide-react'
 
