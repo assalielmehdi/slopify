@@ -14,6 +14,9 @@ const promptTemplate = z
 const outcomes = z.array(OutcomeNameSchema).min(1).readonly()
 const timeoutSeconds = z.number().int().positive().safe()
 
+export const DEFAULT_AGENT_TIMEOUT_SECONDS = 300
+export const DEFAULT_AGENT_DESCRIPTION = 'Workflow agent'
+
 export const ResourceBundleIdSchema = z
   .string()
   .min(1)
@@ -101,8 +104,8 @@ export const AgentNodeSchema = z
     type: z.literal('agent'),
     id: NodeIdSchema,
     name: nonBlankString,
-    description: nonBlankString,
-    timeoutSeconds,
+    description: nonBlankString.default(DEFAULT_AGENT_DESCRIPTION),
+    timeoutSeconds: timeoutSeconds.default(DEFAULT_AGENT_TIMEOUT_SECONDS),
     result: ResultContractSchema.default({ schemaRef: 'json:any-v1' }),
     sandbox: SandboxReferenceSchema.default({
       profileId: 'agent-default-v1',

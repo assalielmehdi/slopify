@@ -6,16 +6,17 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createGondolinAgentSandboxFactory } from '../../src/index.js'
 
 const roots: string[] = []
+const glabHostPath = process.env.SLOPIFY_GUEST_GLAB_PATH
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })))
 })
 
 describe('Gondolin real VM integration', () => {
-  it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1')(
+  it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1' && glabHostPath !== undefined)(
     'provides an empty private workspace without host mounts',
     async () => {
-      const sandbox = await createGondolinAgentSandboxFactory().create({
+      const sandbox = await createGondolinAgentSandboxFactory({ glabHostPath }).create({
         executionId: 'integration-empty-workspace',
         worktrees: [],
         skills: [],
@@ -41,7 +42,47 @@ describe('Gondolin real VM integration', () => {
     120_000,
   )
 
-  it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1')(
+  it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1' && glabHostPath !== undefined)(
+    'provides glab with connector-scoped placeholder authentication',
+    async () => {
+      const sandbox = await createGondolinAgentSandboxFactory({ glabHostPath }).create({
+        executionId: 'integration-glab',
+        worktrees: [],
+        skills: [],
+        connectors: [
+          {
+            connectionId: 'gitlab-default',
+            type: 'gitlab',
+            authority: 'GitLab API access',
+            secret: 'glpat-integration-secret',
+            allowedHosts: ['gitlab.com'],
+          },
+        ],
+      })
+      try {
+        const bash = sandbox.tools.find(({ name }) => name === 'bash')
+        const result = await bash?.execute(
+          'glab-proof',
+          {
+            command:
+              'glab --version; test "$GITLAB_HOST" = gitlab.com; test -n "$GITLAB_TOKEN"; test "$GITLAB_TOKEN" != glpat-integration-secret',
+          },
+          new AbortController().signal,
+          () => undefined,
+          {},
+        )
+
+        expect(result).toMatchObject({
+          content: [{ type: 'text', text: expect.stringContaining('glab 1.114.0') }],
+        })
+      } finally {
+        await sandbox.close()
+      }
+    },
+    120_000,
+  )
+
+  it.runIf(process.env.SLOPIFY_GONDOLIN_INTEGRATION === '1' && glabHostPath !== undefined)(
     'isolates tool execution in a VM with writable worktrees and read-only skills',
     async () => {
       const root = await mkdtemp(join(tmpdir(), 'slopify-gondolin-integration-'))
@@ -52,7 +93,7 @@ describe('Gondolin real VM integration', () => {
       await mkdir(skill)
       await writeFile(join(skill, 'SKILL.md'), 'immutable instructions\n')
 
-      const sandbox = await createGondolinAgentSandboxFactory().create({
+      const sandbox = await createGondolinAgentSandboxFactory({ glabHostPath }).create({
         executionId: 'integration-execution',
         worktrees: [{ repositoryId: 'api', hostPath: worktree }],
         skills: [

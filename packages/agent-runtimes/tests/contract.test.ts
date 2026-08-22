@@ -209,8 +209,13 @@ describe('agent execution event contract', () => {
       { ...eventBase, type: 'AGENT_REASONING', data: { content: 'Visible reasoning.' } },
       {
         ...eventBase,
+        type: 'PI_EVENT',
+        data: { event: { type: 'turn_start' } },
+      },
+      {
+        ...eventBase,
         type: 'AGENT_TOOL_STARTED',
-        data: { toolCallId: 'tool-call-01', toolName: 'read' },
+        data: { toolCallId: 'call_JkP9a|fc_72ZQ', toolName: 'read' },
       },
       {
         ...eventBase,

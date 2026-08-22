@@ -15,6 +15,7 @@ describe('the application design foundation', () => {
     const stylesheet = source('app/globals.css')
 
     expect(stylesheet).toContain('--duration-quick: 150ms')
+    expect(stylesheet).toContain('--duration-very-slow: 500ms')
     expect(stylesheet).toContain('--duration-overlay: 240ms')
     expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce)')
   })

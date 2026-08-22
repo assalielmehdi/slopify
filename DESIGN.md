@@ -360,6 +360,12 @@ text color of their role.
 - Workflow nodes use the standard neutral card treatment. In a run snapshot, a node's
   whole surface adopts the corresponding semantic success, danger, warning, or info
   treatment while retaining an icon and explicit status label.
+- Agent drawers use one proximity hierarchy on the 4px spacing grid: 4px between a
+  section heading and its description, 8px between a visible field label and its
+  control, 12px between the section introduction and its fields or between related
+  field rows, and 32px between Name, Prompt, Inference, Connectors, and Skills.
+  Repeated section titles do not require a second visible field label; keep the label
+  accessible to assistive technology without adding it to the visual rhythm.
 
 ### Run variables
 

@@ -98,6 +98,7 @@ export {
   createGondolinPiSdkAgentExecutor,
   type GondolinPiExecutionContext,
 } from './gondolin-pi-executor.js'
+export { ensureGuestGlabBinary, GUEST_GLAB_VERSION } from './guest-glab.js'
 export {
   createChatGptOAuthService,
   type ChatGptOAuthLoginInteraction,

@@ -3,7 +3,7 @@ import type { DeletionReceipt } from '@slopify/contracts'
 import { toast } from '@/components/ui/toast'
 
 interface UndoDeletionToastOptions {
-  readonly receipt: DeletionReceipt
+  readonly receipt: Pick<DeletionReceipt, 'undoExpiresAt'>
   readonly deletedTitle: string
   readonly deletedDescription: string
   readonly restoredTitle: string
@@ -11,7 +11,7 @@ interface UndoDeletionToastOptions {
   readonly onUndo: () => Promise<void>
 }
 
-const remainingTime = (receipt: DeletionReceipt): number =>
+const remainingTime = (receipt: Pick<DeletionReceipt, 'undoExpiresAt'>): number =>
   Math.max(0, Date.parse(receipt.undoExpiresAt) - Date.now())
 
 const errorCode = (cause: unknown): string | undefined =>

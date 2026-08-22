@@ -4,6 +4,7 @@ export type SkillCatalogErrorCode =
   | 'SKILL_INVALID'
   | 'SKILL_LIMIT_EXCEEDED'
   | 'SKILL_NOT_FOUND'
+  | 'SKILL_READ_ONLY'
   | 'SKILL_SYMLINK_FORBIDDEN'
 
 export class SkillCatalogError extends Error {
@@ -26,20 +27,18 @@ export interface SkillFile {
 export interface SkillRecord {
   readonly skillId: string
   readonly name: string
+  readonly displayName?: string
   readonly description: string
   readonly digest: string
   readonly modifiedAt: string
   readonly valid: boolean
   readonly issues: readonly string[]
   readonly files: readonly SkillFile[]
+  readonly readOnly?: boolean
 }
 
 export interface CreateSkillInput {
-  readonly skillId: string
-  readonly name: string
-  readonly description: string
-  readonly instructions: string
-  readonly files?: Readonly<Record<string, string>>
+  readonly markdown: string
 }
 
 export interface UpdateSkillInput {

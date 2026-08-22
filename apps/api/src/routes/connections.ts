@@ -10,9 +10,7 @@ import { z } from 'zod'
 import { parseJsonBody } from '../api-error.js'
 
 const ConnectSchema = z.strictObject({
-  connectionId: z.string().trim().min(1).max(128).optional(),
   type: z.enum(['gitlab', 'clickup', 'openrouter']),
-  label: z.string().trim().min(1).max(128),
   configuration: z.unknown(),
   credential: CredentialSchema,
 })
@@ -32,10 +30,8 @@ export const registerConnectionRoutes = (
     return context.json(
       await connections.connect({
         type: input.type,
-        label: input.label,
         configuration: input.configuration,
         credential: input.credential,
-        ...(input.connectionId === undefined ? {} : { connectionId: input.connectionId }),
       }),
       201,
     )
@@ -56,10 +52,10 @@ export const registerConnectionRoutes = (
   })
   if (chatGptOAuth !== undefined) {
     app.post('/api/connections/chatgpt/oauth', async (context) => {
-      const input = z
-        .strictObject({ label: z.string().trim().min(1).max(128) })
-        .parse(await parseJsonBody(context))
-      return context.json(chatGptOAuth.start(input), 202)
+      z.strictObject({}).parse(await parseJsonBody(context))
+      const entry = catalog.list().find(({ type }) => type === 'chatgpt-subscription')
+      if (entry === undefined) throw new Error('ChatGPT is absent from the connection catalog')
+      return context.json(chatGptOAuth.start({ label: entry.name }), 202)
     })
     app.get('/api/connections/chatgpt/oauth/:transactionId', (context) => {
       const transaction = chatGptOAuth.get(context.req.param('transactionId'))

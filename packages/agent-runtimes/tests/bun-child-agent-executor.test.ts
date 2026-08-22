@@ -1,6 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -8,6 +9,7 @@ import {
   AgentExecutionEventSchema,
   AgentExecutionInputSchema,
   createBunChildAgentExecutor,
+  getBunAgentWorkerScriptPath,
   type BunWorkerProcess,
   type BunWorkerSpawnInput,
   type BunWorkerSpawner,
@@ -43,6 +45,7 @@ const input = AgentExecutionInputSchema.parse({
 const context = {
   outputSchemaRef: 'json:any-v1',
   inferenceConnectionId: 'openrouter-main',
+  glabHostPath: '/tmp/slopify-tools/glab',
   resourceBundle: {
     bundleId: 'execution-skills',
     applicationVersion: '1',
@@ -96,6 +99,34 @@ const createFakeSpawner = () => {
 }
 
 describe('Bun child agent executor', () => {
+  it('resolves the compiled worker entrypoint for the Node-hosted Gondolin runtime', () => {
+    expect(getBunAgentWorkerScriptPath()).toMatch(/\/dist\/bun-agent-worker\.js$/u)
+  })
+
+  it('runs the isolated agent worker under Node so Gondolin HTTPS is supported', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'slopify-node-worker-test-'))
+    directories.push(directory)
+    const executor = createBunChildAgentExecutor({
+      childScriptPath: fileURLToPath(new URL('./fixtures/node-agent-worker.mjs', import.meta.url)),
+      credentials: {
+        read: async () => ({ type: 'api_key', key: 'unused' }),
+        modify: async (_connectionId, update) => update(undefined),
+      },
+      resolveContext: async () => context,
+      createExecutionDirectory: async () => directory,
+    })
+
+    const events = []
+    for await (const event of executor.execute(input)) events.push(event)
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'AGENT_CANCELLED',
+        data: expect.objectContaining({ reason: 'Node worker verified' }),
+      }),
+    ])
+  })
+
   it('sends only non-secret execution data initially and serves allowed credentials over IPC', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'slopify-bun-worker-test-'))
     directories.push(directory)

@@ -58,6 +58,11 @@ export {
   createFilesystemSkillSnapshotStore,
 } from './skills/filesystem-skill-catalog.js'
 export {
+  BUILT_IN_CONNECTOR_SKILLS,
+  initializeBuiltInConnectorSkills,
+  type BuiltInConnectorSkill,
+} from './skills/built-in-connector-skills.js'
+export {
   DatabaseInitializationError,
   openDatabase,
   type DatabaseInitializationErrorCode,

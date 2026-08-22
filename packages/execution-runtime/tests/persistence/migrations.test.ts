@@ -64,6 +64,10 @@ describe('forward-only migrations', () => {
       { version: 11, name: 'replace_workflow_revisions_with_run_snapshots' },
       { version: 12, name: 'persist_run_variables' },
       { version: 13, name: 'add_reversible_deletions' },
+      { version: 14, name: 'persist_inference_model_catalog' },
+      { version: 15, name: 'enforce_one_connection_per_type' },
+      { version: 16, name: 'link_connectors_to_skills' },
+      { version: 17, name: 'rename_connector_skills' },
     ])
 
     expect(

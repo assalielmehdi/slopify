@@ -45,6 +45,7 @@ const secretValues = (credential: Credential | undefined): readonly string[] => 
 interface StartContext {
   readonly outputSchemaRef: string
   readonly inferenceConnectionId: string
+  readonly glabHostPath: string
   readonly resourceBundle: LoadedResourceBundle
   readonly skills: readonly Readonly<{
     skillId: string
@@ -65,6 +66,7 @@ const parseContext = (value: unknown): StartContext =>
     .strictObject({
       outputSchemaRef: z.string().trim().min(1).max(512),
       inferenceConnectionId: z.string().trim().min(1).max(128),
+      glabHostPath: z.string().trim().min(1).max(4_096),
       resourceBundle: z.custom<LoadedResourceBundle>(
         (candidate) => candidate !== null && typeof candidate === 'object',
       ),
@@ -124,7 +126,7 @@ const run = async (unparsedInput: unknown, unparsedContext: unknown): Promise<vo
   ]
   executor = createGondolinPiSdkAgentExecutor({
     sessionFactory: createPiSessionFactory({ credentialStore: inferenceCredentials }),
-    sandboxFactory: createGondolinAgentSandboxFactory(),
+    sandboxFactory: createGondolinAgentSandboxFactory({ glabHostPath: context.glabHostPath }),
     sensitiveValues,
     async resolveContext(): Promise<GondolinPiExecutionContext> {
       return {

@@ -69,6 +69,26 @@ afterEach(() => {
 })
 
 describe('ProjectSettings', () => {
+  it('shows card skeletons while projects are loading', async () => {
+    let resolve: ((value: typeof projects) => void) | undefined
+    const listProjects = vi.fn(
+      () =>
+        new Promise<typeof projects>((next) => {
+          resolve = next
+        }),
+    )
+    render(<ProjectSettings client={createClient({ listProjects })} />)
+
+    expect(screen.getByRole('status', { name: 'Loading projects' })).toBeTruthy()
+    expect(screen.getAllByTestId('catalog-card-skeleton')).toHaveLength(3)
+    expect(screen.queryByText('No projects yet')).toBeNull()
+
+    await act(async () => resolve?.(projects))
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Loading projects' })).toBeNull(),
+    )
+  })
+
   it('shows an explicit empty state before the first repository is added', async () => {
     render(<ProjectSettings client={createClient({ listProjects: vi.fn(async () => []) })} />)
 
@@ -83,11 +103,50 @@ describe('ProjectSettings', () => {
 
     const catalog = screen.getByRole('region', { name: 'Projects' })
     const projectGrid = await within(catalog).findByTestId('project-grid')
+    const projectCard = within(catalog).getByRole('button', { name: /slopify, Available/ })
+    const searchSlot = within(catalog).getByRole('search')
+    const add = within(catalog).getByRole('button', { name: 'Add project' })
 
     expect(catalog.className).toContain('px-6')
     expect(catalog.className).toContain('pt-6')
     expect(projectGrid.className).toContain('auto-fill')
+    const projectCardClasses = projectCard.className.split(/\s+/)
+    expect(projectCardClasses).toContain('h-auto')
+    expect(projectCardClasses).toContain('min-h-[140px]')
+    expect(projectCardClasses).not.toContain('h-[140px]')
     expect(within(catalog).queryByRole('radiogroup', { name: 'View options' })).toBeNull()
+    expect(searchSlot.className).toContain('[--resize-dur:var(--duration-very-slow)]')
+    expect(add.className).toContain('t-resize')
+    expect(add.className).toContain('w-8')
+    expect(add.className).toContain('hover:w-max')
+    expect(add.className).not.toMatch(/hover:w-\d/)
+    expect(add.className).toContain('[--resize-dur:var(--duration-very-slow)]')
+    expect(within(catalog).queryByRole('button', { name: 'Refresh from filesystem' })).toBeNull()
+    const tags = (await within(catalog).findByText('Available')).closest(
+      '[data-slot="catalog-card-tags"]',
+    )
+    expect(tags?.className).toContain('justify-end')
+    expect(tags?.className).toContain('pt-2')
+  })
+
+  it('filters projects by name and repository path while typing', async () => {
+    render(<ProjectSettings client={createClient()} />)
+
+    await screen.findByRole('button', { name: /slopify, Available/ })
+    fireEvent.click(screen.getByRole('button', { name: 'Open project search' }))
+    const search = screen.getByRole('searchbox', { name: 'Search projects' })
+    expect(document.activeElement).toBe(search)
+
+    fireEvent.change(search, { target: { value: 'deleted' } })
+    expect(screen.queryByRole('button', { name: /slopify, Available/ })).toBeNull()
+    expect(screen.getByRole('button', { name: /deleted-project/ })).toBeTruthy()
+
+    fireEvent.change(search, { target: { value: '/workspace/slopify' } })
+    expect(screen.getByRole('button', { name: /slopify, Available/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /deleted-project/ })).toBeNull()
+
+    fireEvent.change(search, { target: { value: 'no-result' } })
+    expect(screen.getByText('No matching projects')).toBeTruthy()
   })
 
   it('keeps a missing project visible, muted, and explicitly labeled', async () => {

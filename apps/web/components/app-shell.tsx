@@ -22,6 +22,7 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { displayRunId } from '@/lib/run-id'
 import { cn } from '@/lib/utils'
 
 interface NavigationItem {
@@ -58,8 +59,8 @@ function isNavigationItemActive(pathname: string, href: string) {
 function getBreadcrumbs(pathname: string): readonly { href: string; label: string }[] {
   if (pathname === '/') {
     return [
-      { href: '/', label: 'Workflows' },
-      { href: '/', label: 'Who are you?' },
+      { href: '/', label: 'Workflow' },
+      { href: '/', label: 'Editor' },
     ]
   }
   if (pathname === '/runs/new') {
@@ -71,7 +72,7 @@ function getBreadcrumbs(pathname: string): readonly { href: string; label: strin
   if (pathname.startsWith('/runs/')) {
     return [
       { href: '/runs', label: 'Runs' },
-      { href: pathname, label: 'Run detail' },
+      { href: pathname, label: displayRunId(pathname.slice('/runs/'.length)) },
     ]
   }
 
@@ -127,9 +128,11 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   const { toggleTheme } = useThemePreference()
   const breadcrumbs = getBreadcrumbs(pathname)
   const isPreferences = pathname === '/preferences'
+  const isEditor = pathname === '/'
   const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
   const usesOwnPageSpacing =
-    ['/providers', '/connectors', '/projects', '/runs'].includes(pathname) ||
+    ['/providers', '/connectors', '/skills', '/projects', '/runs'].includes(pathname) ||
+    isEditor ||
     isPreferences ||
     isRunDetail
 
@@ -317,7 +320,7 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
           data-surface="base"
           className={cn(
             'relative min-h-0 flex-1 bg-background transition-colors duration-150',
-            isRunDetail ? 'overflow-hidden' : 'overflow-auto',
+            isRunDetail || isEditor ? 'overflow-hidden' : 'overflow-auto',
             !usesOwnPageSpacing && 'p-6 sm:p-8',
           )}
         >

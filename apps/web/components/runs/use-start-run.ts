@@ -78,7 +78,9 @@ const hasValidKeys = (rows: readonly RunVariableRow[]): boolean => {
   return keys.every((key) => key !== '') && new Set(keys).size === keys.length
 }
 
-export function useStartRun(client: ApiClient) {
+export type StartRunClient = Pick<ApiClient, 'listWorkflows' | 'startRun'>
+
+export function useStartRun(client: StartRunClient) {
   const nextRowId = useRef(0)
   const [workflows, setWorkflows] = useState<readonly WorkflowCatalogEntry[]>([])
   const [workflowId, setWorkflowId] = useState('')

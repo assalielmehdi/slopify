@@ -199,25 +199,32 @@ afterEach(() => {
 })
 
 describe('LiveRun', () => {
-  it('shows only the summary and captured workflow canvas while keeping live updates connected', async () => {
+  it('shows run timing and status as canvas overlays while keeping live updates connected', async () => {
     const connection = createConnector()
     const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
 
     render(<LiveRun runId="run-01" client={client} connect={connection.connector} />)
 
-    const summary = await screen.findByLabelText('Run summary')
-    expect(summary.textContent).toContain('run-01')
-    expect(summary.textContent).toContain('Running')
-    expect(screen.getByRole('region', { name: 'Workflow graph' }).textContent).toContain(
-      'Who are you?',
-    )
+    const graph = await screen.findByRole('region', { name: 'Workflow graph' })
+    const timing = screen.getByLabelText('Run timing')
+    const status = screen.getByLabelText('Run status')
+
+    expect(screen.queryByLabelText('Run summary')).toBeNull()
+    expect(screen.queryByText('Run ID')).toBeNull()
+    expect(timing.textContent).toMatch(/^Started .+ · Took .+$/)
+    expect(timing.className).toContain('absolute')
+    expect(timing.className).toContain('left-3')
+    expect(status.textContent).toContain('Running')
+    expect(status.className).toContain('absolute')
+    expect(status.className).toContain('right-3')
+    expect(graph.textContent).toContain('Who are you?')
     expect(screen.queryByText('Repository selection')).toBeNull()
     expect(screen.queryByText('Delivery evidence')).toBeNull()
     expect(screen.queryByText('Run events')).toBeNull()
     expect(connection.connector).toHaveBeenCalledWith('/api/runs/run-01/events', expect.any(Object))
   })
 
-  it('opens a non-modal floating captured-job panel and closes without blocking background actions', async () => {
+  it('keeps the captured-job panel open during canvas interaction and closes only from its close button', async () => {
     const client = {
       getRun: vi.fn(async () => detail),
       getAgentTrace: vi.fn(async () => trace),
@@ -232,28 +239,35 @@ describe('LiveRun', () => {
     const panel = screen.getByRole('dialog', { name: 'Who are you?' })
     expect(panel.getAttribute('aria-modal')).toBe('false')
     expect(panel.getAttribute('data-layout')).toBe('floating')
+    expect(panel.textContent).not.toContain('identify-agent')
     expect(screen.getByTestId('run-node-panel-shell').hasAttribute('aria-hidden')).toBe(false)
-    expect(panel.textContent).toContain('test-provider-default')
+    const executionSummary = screen.getByLabelText('Execution summary')
+    expect(executionSummary.textContent).toMatch(/^Started .+ - Took Not recorded$/)
+    expect(executionSummary.textContent).not.toContain('Completed')
+    expect(executionSummary.className).toContain('whitespace-nowrap')
+    expect(panel.textContent).toContain('Running')
     expect(panel.textContent).toContain('test-model')
     await waitFor(() => expect(panel.textContent).toContain('read_file'))
-    fireEvent.click(screen.getByRole('button', { name: /read_file/ }))
-    expect(panel.textContent).toContain('Read 42 lines')
+    expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
+    expect(panel.textContent).not.toContain('Read 42 lines')
     expect(client.getAgentTrace).toHaveBeenCalledWith('run-01', 'node-execution-01', 'attempt-01')
 
     fireEvent.keyDown(document, { key: 'Escape' })
-    expect(document.activeElement).toBe(inspectAgent)
-    fireEvent.transitionEnd(screen.getByTestId('run-node-panel-shell'), {
-      propertyName: 'translate',
-    })
-    fireEvent.click(inspectAgent)
-
     const backgroundButton = screen.getByRole('button', { name: 'Background action' })
     fireEvent.pointerDown(backgroundButton)
+    fireEvent.pointerMove(backgroundButton)
+    fireEvent.pointerUp(backgroundButton)
     fireEvent.click(backgroundButton)
 
     expect(backgroundAction).toHaveBeenCalledOnce()
-    expect(screen.getByTestId('run-node-panel-shell').getAttribute('data-open')).toBe('false')
-    fireEvent.transitionEnd(screen.getByTestId('run-node-panel-shell'), {
+    expect(screen.getByTestId('run-node-panel-shell').getAttribute('data-open')).toBe('true')
+    expect(screen.getByRole('dialog', { name: 'Who are you?' })).toBeTruthy()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close job details' }))
+    expect(document.activeElement).toBe(inspectAgent)
+    const shell = screen.getByTestId('run-node-panel-shell')
+    expect(shell.getAttribute('data-open')).toBe('false')
+    fireEvent.transitionEnd(shell, {
       propertyName: 'translate',
     })
     expect(screen.queryByRole('dialog', { name: 'Who are you?' })).toBeNull()

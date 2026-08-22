@@ -48,12 +48,15 @@ const SkillFileSchema = z.strictObject({
 const SkillRecordSchema = z.strictObject({
   skillId: z.string().min(1),
   name: z.string().min(1),
+  displayName: z.string().min(1).optional(),
   description: z.string(),
   digest: z.string().length(64),
   modifiedAt: z.iso.datetime({ offset: true }),
   valid: z.boolean(),
   issues: z.array(z.string()).readonly(),
   files: z.array(SkillFileSchema).readonly(),
+  kind: z.enum(['user', 'built-in', 'connector']).default('user'),
+  readOnly: z.boolean().optional(),
 })
 const SkillsResponseSchema = z.strictObject({ skills: z.array(SkillRecordSchema).readonly() })
 
@@ -214,32 +217,24 @@ export interface ApiClient {
   getConnectorStatus(): Promise<ConnectorStatus>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   getWorkflow(workflowId: string): Promise<Workflow>
+  updateWorkflow(workflowId: string, workflow: Workflow): Promise<Workflow>
   startRun(input: StartRunInput): Promise<StartRunResponse>
   listRuns(input: ListRunsInput): Promise<RunHistoryPage>
   getRun(runId: string): Promise<RunDetailResponse>
   getAgentTrace(runId: string, nodeExecutionId: string, attemptId: string): Promise<AgentTrace>
   cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
-  listSkills?(): Promise<readonly SkillRecord[]>
+  listSkills(): Promise<readonly SkillRecord[]>
   getSkill?(skillId: string): Promise<SkillRecord>
-  createSkill?(
-    input: Readonly<{
-      skillId: string
-      name: string
-      description: string
-      instructions: string
-    }>,
-  ): Promise<SkillRecord>
+  createSkill?(input: Readonly<{ markdown: string }>): Promise<SkillRecord>
   updateSkill?(
     skillId: string,
     input: Readonly<{ expectedDigest: string; files: Readonly<Record<string, string>> }>,
   ): Promise<SkillRecord>
   deleteSkill?(skillId: string, expectedDigest: string): Promise<void>
-  listConnections?(): Promise<ConnectionCatalogResponse>
+  listConnections(): Promise<ConnectionCatalogResponse>
   connect?(
     input: Readonly<{
-      connectionId?: string
       type: 'gitlab' | 'clickup' | 'openrouter'
-      label: string
       configuration: unknown
       credential: Readonly<{ type: 'api_key'; key: string }>
     }>,
@@ -247,7 +242,7 @@ export interface ApiClient {
   revalidateConnection?(connectionId: string): Promise<ConnectionRecord>
   replaceConnectionCredential?(connectionId: string, key: string): Promise<ConnectionRecord>
   deleteConnection?(connectionId: string): Promise<void>
-  startChatGptOAuth?(label: string): Promise<ChatGptOAuthTransaction>
+  startChatGptOAuth?(): Promise<ChatGptOAuthTransaction>
   getChatGptOAuth?(transactionId: string): Promise<ChatGptOAuthTransaction>
   cancelChatGptOAuth?(transactionId: string): Promise<void>
 }
@@ -359,6 +354,18 @@ export const createApiClient = (
 
     async getWorkflow(workflowId) {
       return get(`/api/workflows/${encodeURIComponent(workflowId)}`, WorkflowSchema)
+    },
+
+    async updateWorkflow(workflowId, workflow) {
+      return request(
+        `/api/workflows/${encodeURIComponent(WorkflowIdSchema.parse(workflowId))}`,
+        {
+          body: JSON.stringify(WorkflowSchema.parse(workflow)),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'PUT',
+        },
+        WorkflowSchema,
+      )
     },
 
     async startRun(input) {
@@ -492,13 +499,13 @@ export const createApiClient = (
         method: 'DELETE',
       })
     },
-    async startChatGptOAuth(label) {
+    async startChatGptOAuth() {
       return request(
         '/api/connections/chatgpt/oauth',
         {
           method: 'POST',
           headers: { accept: 'application/json', 'content-type': 'application/json' },
-          body: JSON.stringify({ label }),
+          body: JSON.stringify({}),
         },
         ChatGptOAuthTransactionSchema,
       )

@@ -826,6 +826,100 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       `)
     },
   }),
+  Object.freeze({
+    version: 14,
+    name: 'persist_inference_model_catalog',
+    up(database: Database) {
+      database.exec(`
+        ALTER TABLE connection_catalog
+          ADD COLUMN models_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(models_json));
+      `)
+
+      const chatGptModels = [
+        {
+          id: 'gpt-5.4',
+          name: 'GPT-5.4',
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        },
+        {
+          id: 'gpt-5.4-mini',
+          name: 'GPT-5.4 mini',
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        },
+        {
+          id: 'gpt-5.5',
+          name: 'GPT-5.5',
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+        },
+        {
+          id: 'gpt-5.6-luna',
+          name: 'GPT-5.6 Luna',
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        },
+        {
+          id: 'gpt-5.6-sol',
+          name: 'GPT-5.6 Sol',
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        },
+        {
+          id: 'gpt-5.6-terra',
+          name: 'GPT-5.6 Terra',
+          thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
+        },
+      ]
+      const openRouterModels = chatGptModels.map((model) => ({
+        ...model,
+        id: `openai/${model.id}`,
+      }))
+      const update = database.prepare(
+        'UPDATE connection_catalog SET models_json = ? WHERE type = ?',
+      )
+      update.run(JSON.stringify(openRouterModels), 'openrouter')
+      update.run(JSON.stringify(chatGptModels), 'chatgpt-subscription')
+    },
+  }),
+  Object.freeze({
+    version: 15,
+    name: 'enforce_one_connection_per_type',
+    up(database: Database) {
+      database.exec(`
+        CREATE UNIQUE INDEX connections_one_per_type
+          ON connections (type);
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 16,
+    name: 'link_connectors_to_skills',
+    up(database: Database) {
+      database.exec(`
+        ALTER TABLE connection_catalog ADD COLUMN skill_id TEXT;
+        UPDATE connection_catalog
+          SET skill_id = 'slopify-gitlab-connector'
+          WHERE type = 'gitlab';
+        UPDATE connection_catalog
+          SET skill_id = 'slopify-clickup-connector'
+          WHERE type = 'clickup';
+        CREATE UNIQUE INDEX connection_catalog_by_skill
+          ON connection_catalog (skill_id)
+          WHERE skill_id IS NOT NULL;
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 17,
+    name: 'rename_connector_skills',
+    up(database: Database) {
+      database.exec(`
+        UPDATE connection_catalog
+          SET skill_id = 'gitlab-connector'
+          WHERE type = 'gitlab';
+        UPDATE connection_catalog
+          SET skill_id = 'clickup-connector'
+          WHERE type = 'clickup';
+      `)
+    },
+  }),
 ])
 
 interface AppliedMigration {

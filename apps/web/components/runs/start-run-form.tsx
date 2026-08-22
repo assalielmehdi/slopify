@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
+import { displayRunId } from '@/lib/run-id'
 
 const defaultClient = createApiClient()
 
@@ -70,7 +71,7 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
                   <p>{state.error.message}</p>
                   {state.error.activeRunId === undefined ? null : (
                     <Link href={`/runs/${state.error.activeRunId}`}>
-                      Open active run {state.error.activeRunId}
+                      Open active run {displayRunId(state.error.activeRunId)}
                     </Link>
                   )}
                 </AlertDescription>
@@ -96,7 +97,7 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
                 <AlertTitle>Run started</AlertTitle>
                 <AlertDescription>
                   <Link href={`/runs/${state.startedRun.runId}`}>
-                    Open run {state.startedRun.runId}
+                    Open run {displayRunId(state.startedRun.runId)}
                   </Link>
                 </AlertDescription>
               </Alert>

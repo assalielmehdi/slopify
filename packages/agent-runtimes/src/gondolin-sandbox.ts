@@ -1,4 +1,4 @@
-import { dirname, isAbsolute } from 'node:path'
+import { basename, dirname, isAbsolute } from 'node:path'
 
 import {
   BASE64URL_ALPHABET,
@@ -88,8 +88,12 @@ export interface AgentSandboxFactory {
   create(input: CreateAgentSandboxInput): Promise<AgentSandbox>
 }
 
-const environmentName = (type: string, connectionId: string): string =>
-  `SLOPIFY_${type}_${connectionId}`.replaceAll(/[^A-Za-z0-9_]/gu, '_').toUpperCase()
+const environmentName = (type: string): string =>
+  type === 'gitlab'
+    ? 'GITLAB_TOKEN'
+    : `SLOPIFY_${type}`.replaceAll(/[^A-Za-z0-9_]/gu, '_').toUpperCase()
+
+const GUEST_PATH = '/opt/slopify/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin'
 
 const createGuestTools = (vm: AgentSandboxVm): readonly ToolDefinition[] => {
   const read = {
@@ -106,7 +110,9 @@ const createGuestTools = (vm: AgentSandboxVm): readonly ToolDefinition[] => {
     defineTool(createReadToolDefinition('/workspace', { operations: read })),
     defineTool(
       createBashToolDefinition('/workspace', {
+        commandPrefix: `export PATH=${GUEST_PATH}`,
         exposeSessionEnvironment: false,
+        spawnHook: ({ command, cwd }) => ({ command, cwd, env: {} }),
         operations: {
           async exec(command, cwd, options) {
             const environment = Object.fromEntries(
@@ -151,11 +157,14 @@ const createGuestTools = (vm: AgentSandboxVm): readonly ToolDefinition[] => {
 
 export const createGondolinAgentSandboxFactory = (
   options: Readonly<{
+    glabHostPath: string
     createVm?: (options: VMOptions) => Promise<AgentSandboxVm>
-  }> = {},
+  }>,
 ): AgentSandboxFactory => ({
   async create(input) {
     const parsed = SandboxInputSchema.parse(input)
+    if (!isAbsolute(options.glabHostPath) || basename(options.glabHostPath) !== 'glab')
+      throw new TypeError('Guest glab path must be an absolute glab binary path')
     const repositoryIds = parsed.worktrees.map(({ repositoryId }) => repositoryId)
     const skillIds = parsed.skills.map(({ skillId }) => skillId)
     const connectorIds = parsed.connectors.map(({ connectionId }) => connectionId)
@@ -177,10 +186,11 @@ export const createGondolinAgentSandboxFactory = (
         `/skills/${skillId}`,
         new ReadonlyProvider(new RealFSProvider(hostPath)),
       ]),
+      ['/opt/slopify/bin', new ReadonlyProvider(new RealFSProvider(dirname(options.glabHostPath)))],
     ])
     const secrets = Object.fromEntries(
       parsed.connectors.map((connector) => [
-        environmentName(connector.type, connector.connectionId),
+        environmentName(connector.type),
         {
           value: connector.secret,
           hosts: connector.allowedHosts,
@@ -198,11 +208,21 @@ export const createGondolinAgentSandboxFactory = (
       replaceSecretsInQuery: false,
       blockInternalRanges: true,
     })
+    const gitlab = parsed.connectors.find(({ type }) => type === 'gitlab')
+    const environment = {
+      ...network.env,
+      PATH: GUEST_PATH,
+      GLAB_CHECK_UPDATE: 'false',
+      GLAB_SEND_TELEMETRY: 'false',
+      GLAB_SHOW_WHATS_NEW: 'false',
+      GLAB_CONFIG_DIR: '/tmp/glab',
+      ...(gitlab === undefined ? {} : { GITLAB_HOST: gitlab.allowedHosts[0] }),
+    }
     const createVm: (vmOptions: VMOptions) => Promise<AgentSandboxVm> =
       options.createVm ?? (async (vmOptions) => VM.create(vmOptions) as unknown as AgentSandboxVm)
     const vm = await createVm({
       httpHooks: network.httpHooks,
-      env: network.env,
+      env: environment,
       vfs: { mounts },
       memory: '1G',
       cpus: 2,
@@ -213,8 +233,8 @@ export const createGondolinAgentSandboxFactory = (
       sandboxId: vm.id,
       workspaceRoot: '/workspace' as const,
       tools: createGuestTools(vm),
-      skills: Object.freeze(
-        parsed.skills.map((skill) => ({
+      skills: Object.freeze([
+        ...parsed.skills.map((skill) => ({
           name: skill.name,
           description: skill.description,
           filePath: `/skills/${skill.skillId}/SKILL.md`,
@@ -228,7 +248,7 @@ export const createGondolinAgentSandboxFactory = (
           },
           disableModelInvocation: false,
         })),
-      ),
+      ]),
       async close() {
         if (closed) return
         closed = true

@@ -1,9 +1,20 @@
 'use client'
 
 import type { Project } from '@slopify/contracts'
-import { FolderGit2Icon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { FolderGit2Icon, Trash2Icon, XIcon } from 'lucide-react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from 'react'
 
+import { CatalogToolbar } from '@/components/settings/catalog-toolbar'
+import { CatalogCardSkeleton } from '@/components/settings/catalog-card-skeleton'
+import { CatalogCardTags } from '@/components/settings/catalog-card-tags'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -66,18 +77,15 @@ function ProjectTile({ onSelect, project }: Readonly<{ onSelect: () => void; pro
       aria-label={`${project.name}, ${statusLabel(project.availability)}`}
       onClick={onSelect}
       className={cn(
-        'h-[140px] w-full flex-col items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow,opacity] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input',
+        'h-auto min-h-[140px] w-full flex-col items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow,opacity] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input',
         project.availability !== 'AVAILABLE' && 'bg-muted/20 opacity-60',
       )}
     >
       <span className="flex min-h-0 flex-1 items-start gap-3.5 p-4">
         <ProjectIcon />
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex items-start justify-between gap-2">
-            <span className="truncate text-[14px]/5 font-semibold tracking-[-0.01em] text-foreground">
-              {project.name}
-            </span>
-            <ProjectStatus project={project} />
+        <span className="flex min-w-0 flex-1 self-stretch flex-col gap-1">
+          <span className="truncate text-[14px]/5 font-semibold tracking-[-0.01em] text-foreground">
+            {project.name}
           </span>
           <span className="text-[12px]/4 font-medium text-muted-foreground">
             Local Git repository
@@ -85,6 +93,9 @@ function ProjectTile({ onSelect, project }: Readonly<{ onSelect: () => void; pro
           <span className="mt-1 truncate font-mono text-[12px]/5 font-normal text-muted-foreground">
             {project.repositoryPath}
           </span>
+          <CatalogCardTags>
+            <ProjectStatus project={project} />
+          </CatalogCardTags>
         </span>
       </span>
     </Button>
@@ -102,6 +113,7 @@ export function ProjectSettings({
   const [deleting, setDeleting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [confirmationPath, setConfirmationPath] = useState('')
+  const [searchQuery, setSearchQuery] = useState('')
   const [closingProject, setClosingProject] = useState<Project>()
   const [loading, setLoading] = useState(true)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -110,6 +122,15 @@ export function ProjectSettings({
   const selectedProject =
     projects.find(({ projectId }) => projectId === selection) ??
     (closingProject?.projectId === selection ? closingProject : undefined)
+  const visibleProjects = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase()
+    if (query === '') return projects
+    return projects.filter(
+      ({ name, repositoryPath }) =>
+        name.toLocaleLowerCase().includes(query) ||
+        repositoryPath.toLocaleLowerCase().includes(query),
+    )
+  }, [projects, searchQuery])
 
   const closePanel = useCallback(() => {
     if (panelOpenFrameRef.current !== undefined) {
@@ -243,11 +264,13 @@ export function ProjectSettings({
 
   return (
     <section aria-label="Projects" className="w-full px-6 pt-6 pb-10 sm:pb-12">
-      <div className="mb-3 flex justify-end">
-        <Button type="button" size="sm" onClick={() => openPanel('add')}>
-          <PlusIcon aria-hidden="true" /> Add project
-        </Button>
-      </div>
+      <CatalogToolbar
+        singular="project"
+        plural="projects"
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        onAdd={() => openPanel('add')}
+      />
 
       {error === undefined ? null : (
         <Alert variant="destructive" className="mb-3">
@@ -256,28 +279,35 @@ export function ProjectSettings({
         </Alert>
       )}
 
-      <div
-        data-testid="project-grid"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
-      >
-        {projects.map((project) => (
-          <ProjectTile
-            key={project.projectId}
-            project={project}
-            onSelect={() => openPanel(project.projectId)}
-          />
-        ))}
-      </div>
-
       {loading ? (
-        <p role="status" className="py-10 text-center text-sm text-muted-foreground">
-          Loading projects…
-        </p>
-      ) : projects.length === 0 && error === undefined ? (
+        <CatalogCardSkeleton label="projects" />
+      ) : (
+        <div
+          data-testid="project-grid"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
+        >
+          {visibleProjects.map((project) => (
+            <ProjectTile
+              key={project.projectId}
+              project={project}
+              onSelect={() => openPanel(project.projectId)}
+            />
+          ))}
+        </div>
+      )}
+
+      {loading ? null : projects.length === 0 && error === undefined ? (
         <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
           <p className="text-[14px]/5 font-semibold">No projects yet</p>
           <p className="mt-1 text-[13px]/5 text-muted-foreground">
             Add a local Git repository to make it available to workflows.
+          </p>
+        </div>
+      ) : visibleProjects.length === 0 && error === undefined ? (
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
+          <p className="text-[14px]/5 font-semibold">No matching projects</p>
+          <p className="mt-1 text-[13px]/5 text-muted-foreground">
+            Try a different name or repository path.
           </p>
         </div>
       ) : null}
@@ -288,7 +318,7 @@ export function ProjectSettings({
           data-testid="project-panel-shell"
           data-open={isPanelOpen}
           aria-hidden={!isPanelOpen}
-          className="provider-floating-panel-shell fixed inset-y-3 right-3 z-30 w-[min(34rem,calc(100%-1.5rem))]"
+          className="provider-floating-panel-shell fixed inset-y-3 right-3 left-3 z-30 w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
           style={
             {
               '--panel-open-dur': '350ms',

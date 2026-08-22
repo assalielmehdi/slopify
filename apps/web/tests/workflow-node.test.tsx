@@ -1,11 +1,19 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
-import { WorkflowNodeContent } from '../components/workflow/workflow-node'
+vi.mock('@xyflow/react', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@xyflow/react')>()
+  return {
+    ...actual,
+    Handle: ({ type }: { type: string }) => <span data-testid={`${type}-handle`} />,
+  }
+})
+
+import { WorkflowNode, WorkflowNodeContent } from '../components/workflow/workflow-node'
 
 const workflow = createPredefinedV1Workflow({
   createdAt: '2026-08-18T12:00:00Z',
@@ -28,6 +36,7 @@ describe('WorkflowNode', () => {
         data={{
           domainNode: node,
           isStart: true,
+          isEnd: true,
           recentRunStatus: 'RUNNING',
         }}
         selected
@@ -36,6 +45,7 @@ describe('WorkflowNode', () => {
 
     expect(screen.getByText('Agent')).toBeTruthy()
     expect(screen.getByText('Start')).toBeTruthy()
+    expect(screen.getByText('End')).toBeTruthy()
     expect(screen.getByText('Running')).toBeTruthy()
     expect(screen.getByText('Selected')).toBeTruthy()
     expect(screen.getByText('Who are you?')).toBeTruthy()
@@ -56,6 +66,7 @@ describe('WorkflowNode', () => {
           data={{
             domainNode: node,
             isStart: false,
+            isEnd: true,
             recentRunStatus: status,
           }}
           selected={false}
@@ -68,4 +79,28 @@ describe('WorkflowNode', () => {
       expect(card?.className).toContain(backgroundClass)
     },
   )
+
+  it('hides the incoming handle on start and the outgoing handle on end', () => {
+    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (node === undefined || node.type !== 'agent') throw new Error('Expected agent node')
+
+    const startProps = {
+      data: { domainNode: node, isStart: true, isEnd: false },
+      selected: false,
+      isConnectable: true,
+    } as unknown as Parameters<typeof WorkflowNode>[0]
+    const view = render(<WorkflowNode {...startProps} />)
+
+    expect(screen.queryByTestId('target-handle')).toBeNull()
+    expect(screen.getByTestId('source-handle')).toBeTruthy()
+
+    const endProps = {
+      data: { domainNode: node, isStart: false, isEnd: true },
+      selected: false,
+      isConnectable: true,
+    } as unknown as Parameters<typeof WorkflowNode>[0]
+    view.rerender(<WorkflowNode {...endProps} />)
+    expect(screen.getByTestId('target-handle')).toBeTruthy()
+    expect(screen.queryByTestId('source-handle')).toBeNull()
+  })
 })

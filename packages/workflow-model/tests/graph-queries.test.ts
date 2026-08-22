@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 
 import {
   WorkflowSchema,
+  createPredefinedV1Workflow,
   getIncomingEdges,
   getOutgoingEdges,
   getReachableNodeIds,
   hasDirectedCycle,
   inspectWorkflowGraph,
+  isLinearAgentWorkflow,
 } from '../src/index.js'
 
 const workflow = WorkflowSchema.parse({
@@ -84,5 +86,44 @@ describe('workflow graph queries', () => {
     expect(inspection.nodes.every(Object.isFrozen)).toBe(true)
     expect(inspection.nodes.every((node) => Object.isFrozen(node.incomingEdges))).toBe(true)
     expect(inspection.nodes.every((node) => Object.isFrozen(node.outgoingEdges))).toBe(true)
+  })
+
+  it('recognizes only one connected agent chain as a linear workflow', () => {
+    const single = createPredefinedV1Workflow({
+      createdAt: '2026-08-22T12:00:00Z',
+      agentDefaults: { provider: 'test', model: 'test', thinkingLevel: 'low' },
+    })
+    const firstAgent = single.nodes[0]
+    if (firstAgent?.type !== 'agent') throw new Error('Expected an agent fixture')
+    const chain = WorkflowSchema.parse({
+      ...single,
+      nodes: [firstAgent, { ...firstAgent, id: 'second-agent', name: 'Second agent' }],
+      edges: [
+        {
+          sourceNodeId: firstAgent.id,
+          targetNodeId: 'second-agent',
+          outcome: 'completed',
+          label: 'Completed',
+        },
+      ],
+    })
+    const branch = WorkflowSchema.parse({
+      ...chain,
+      nodes: [...chain.nodes, { ...firstAgent, id: 'third-agent', name: 'Third agent' }],
+      edges: [
+        ...chain.edges,
+        {
+          sourceNodeId: firstAgent.id,
+          targetNodeId: 'third-agent',
+          outcome: 'completed',
+          label: 'Completed',
+        },
+      ],
+    })
+
+    expect(isLinearAgentWorkflow(single)).toBe(true)
+    expect(isLinearAgentWorkflow(chain)).toBe(true)
+    expect(isLinearAgentWorkflow(branch)).toBe(false)
+    expect(isLinearAgentWorkflow(workflow)).toBe(false)
   })
 })

@@ -62,6 +62,7 @@ ENV GLAB_CHECK_UPDATE=false
 ENV GLAB_CONFIG_DIR=/var/lib/workbench/glab
 ENV GLAB_SEND_TELEMETRY=false
 ENV GLAB_SHOW_WHATS_NEW=false
+ENV SLOPIFY_GUEST_GLAB_PATH=/usr/local/bin/glab
 
 COPY --from=dependencies /usr/local/bin/glab /usr/local/bin/glab
 COPY --from=builder --chown=bun:bun /app ./

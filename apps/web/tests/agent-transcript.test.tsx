@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { AgentTraceEventSchema, type AgentTraceEvent } from '@slopify/contracts'
@@ -22,8 +22,8 @@ const traceEvent = (
 afterEach(cleanup)
 
 describe('AgentTranscript', () => {
-  it('renders reasoning and complete tool input, progress, and output from the trace', () => {
-    render(
+  it('renders only reasoning, completed tool calls, and the final result as separate bubbles', () => {
+    const { container } = render(
       <AgentTranscript
         prompt="Implement the requested change."
         result={undefined}
@@ -45,21 +45,182 @@ describe('AgentTranscript', () => {
             status: 'succeeded',
             content: 'Read 42 lines',
           }),
-          traceEvent(5, 'AGENT_MESSAGE', { content: 'The implementation is complete.' }),
+          traceEvent(5, 'AGENT_MESSAGE', { content: 'Intermediate assistant text.' }),
+          traceEvent(6, 'AGENT_RESULT', {
+            result: {
+              outcome: 'completed',
+              summary: 'The implementation is complete.',
+              data: {},
+              artifacts: [],
+              evidence: [],
+            },
+            usage: {
+              inputTokens: 10,
+              outputTokens: 20,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            },
+            durationMs: 1_250,
+          }),
         ]}
       />,
     )
 
-    expect(screen.getByText('Model reasoning')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: 'Model reasoning' }))
-    expect(screen.getByText('I should inspect the source first.')).toBeTruthy()
+    const reasoning = screen.getByText('I should inspect the source first.')
+    expect(reasoning.closest('[data-message-kind="reasoning"]')).toBeTruthy()
+    expect(screen.getByText('Reasoning')).toBeTruthy()
+    const toolCall = screen.getByText('read_file').closest('[data-message-kind="tool"]')
+    expect(toolCall).toBeTruthy()
+    expect(toolCall?.getAttribute('data-variant')).toBe('muted')
+    expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
+    expect(screen.queryByText(/apps\/web\/app\/page.tsx/)).toBeNull()
+    expect(screen.queryByText('Reading 42 lines')).toBeNull()
+    expect(screen.queryByText('Read 42 lines')).toBeNull()
+    const response = screen.getByText('The implementation is complete.')
+    expect(response.closest('[data-message-kind="result"]')).toBeTruthy()
+    expect(screen.queryByText('Intermediate assistant text.')).toBeNull()
+    expect(container.querySelectorAll('[data-message-kind]')).toHaveLength(3)
+  })
+
+  it('renders Markdown in prompt and results while reasoning remains plain text', () => {
+    const { container } = render(
+      <AgentTranscript
+        prompt="Read the **task** and visit [ClickUp](https://app.clickup.com)."
+        result={undefined}
+        streaming={false}
+        events={[
+          traceEvent(1, 'AGENT_REASONING', {
+            content: '**Planning JSON retrieval** with `curl`',
+          }),
+          traceEvent(2, 'AGENT_REASONING', {
+            content: '**Planning comprehensive retrieval**',
+          }),
+          traceEvent(3, 'AGENT_RESULT', {
+            result: {
+              outcome: 'completed',
+              summary: 'Successfully read **RVMP-90**.\n\n- Status: in progress',
+              data: {},
+              artifacts: [],
+              evidence: [],
+            },
+            usage: {
+              inputTokens: 10,
+              outputTokens: 20,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            },
+            durationMs: 1_250,
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('task').tagName).toBe('STRONG')
+    expect(screen.getByRole('link', { name: 'ClickUp' }).getAttribute('href')).toBe(
+      'https://app.clickup.com',
+    )
+    const firstReasoningParagraph = screen
+      .getByText('Planning JSON retrieval with curl')
+      .closest('p')
+    const secondReasoningParagraph = screen
+      .getByText('Planning comprehensive retrieval')
+      .closest('p')
+    expect(firstReasoningParagraph).not.toBe(secondReasoningParagraph)
+    expect(container.querySelectorAll('[data-message-kind="reasoning"]')).toHaveLength(2)
+    for (const reasoning of container.querySelectorAll('[data-message-kind="reasoning"]')) {
+      expect(reasoning.getAttribute('data-variant')).toBe('muted')
+    }
+    expect(firstReasoningParagraph?.querySelector('strong, em, code, a, ul, ol')).toBeNull()
+    expect(secondReasoningParagraph?.querySelector('strong, em, code, a, ul, ol')).toBeNull()
+    expect(screen.getByText('RVMP-90').tagName).toBe('STRONG')
+    expect(container.querySelectorAll('li')).toHaveLength(1)
+  })
+
+  it('does not show a tool until its execution has completed', () => {
+    const { rerender } = render(
+      <AgentTranscript
+        prompt="Implement the requested change."
+        result={undefined}
+        streaming
+        events={[
+          traceEvent(1, 'AGENT_TOOL_STARTED', {
+            toolCallId: 'tool-01',
+            toolName: 'read_file',
+            input: { path: 'apps/web/app/page.tsx' },
+          }),
+          traceEvent(2, 'AGENT_TOOL_UPDATED', {
+            toolCallId: 'tool-01',
+            content: 'Reading 42 lines',
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
+
+    rerender(
+      <AgentTranscript
+        prompt="Implement the requested change."
+        result={undefined}
+        streaming
+        events={[
+          traceEvent(1, 'AGENT_TOOL_STARTED', {
+            toolCallId: 'tool-01',
+            toolName: 'read_file',
+            input: { path: 'apps/web/app/page.tsx' },
+          }),
+          traceEvent(2, 'AGENT_TOOL_UPDATED', {
+            toolCallId: 'tool-01',
+            content: 'Reading 42 lines',
+          }),
+          traceEvent(3, 'AGENT_TOOL_COMPLETED', {
+            toolCallId: 'tool-01',
+            toolName: 'read_file',
+            status: 'succeeded',
+            content: 'Read 42 lines',
+          }),
+        ]}
+      />,
+    )
+
     expect(screen.getByText('read_file')).toBeTruthy()
-    fireEvent.click(screen.getByRole('button', { name: /read_file/ }))
-    expect(screen.getByText(/apps\/web\/app\/page.tsx/)).toBeTruthy()
-    expect(screen.getByText('Reading 42 lines')).toBeTruthy()
-    expect(screen.getByText('Read 42 lines')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
+  })
+
+  it('omits session bookkeeping and renders the terminal summary as agent text', () => {
+    render(
+      <AgentTranscript
+        prompt="Implement the requested change."
+        result={undefined}
+        streaming={false}
+        events={[
+          traceEvent(1, 'AGENT_STARTED', {}),
+          traceEvent(2, 'AGENT_SESSION_IDENTIFIED', { sessionId: 'session-01' }),
+          traceEvent(3, 'AGENT_RESULT', {
+            result: {
+              outcome: 'completed',
+              summary: 'The implementation is complete.',
+              data: {},
+              artifacts: [],
+              evidence: [],
+            },
+            usage: {
+              inputTokens: 10,
+              outputTokens: 20,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+            },
+            durationMs: 1_250,
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.queryByText('Agent started')).toBeNull()
+    expect(screen.queryByText('Session ready')).toBeNull()
     expect(screen.getByText('The implementation is complete.')).toBeTruthy()
-    expect(screen.getByText('Agent message updated')).toBeTruthy()
+    expect(screen.queryByText('Completed in 1.3 s')).toBeNull()
+    expect(screen.queryByText('Recorded trace')).toBeNull()
   })
 
   it('shows a truthful empty state when no trace or result was recorded', () => {

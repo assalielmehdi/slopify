@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
+import { chmod, mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -15,10 +15,15 @@ const createHostTree = async () => {
   roots.push(root)
   const worktree = join(root, 'worktree')
   const skill = join(root, 'skill')
+  const tools = join(root, 'tools')
   await mkdir(worktree)
   await mkdir(skill)
+  await mkdir(tools)
   await writeFile(join(skill, 'SKILL.md'), 'instructions')
-  return { root, worktree, skill }
+  const glab = join(tools, 'glab')
+  await writeFile(glab, '#!/bin/sh\necho glab\n')
+  await chmod(glab, 0o555)
+  return { root, worktree, skill, tools, glab }
 }
 
 const vmFixture = () => {
@@ -47,17 +52,25 @@ const vmFixture = () => {
 
 describe('Gondolin agent sandbox', () => {
   it('creates an isolated VM without host mounts for a repository-free agent', async () => {
+    const host = await createHostTree()
     const fixture = vmFixture()
     const createVm = vi.fn(async () => fixture.vm)
 
-    const sandbox = await createGondolinAgentSandboxFactory({ createVm }).create({
+    const sandbox = await createGondolinAgentSandboxFactory({
+      createVm,
+      glabHostPath: host.glab,
+    }).create({
       executionId: 'execution-01',
       worktrees: [],
       skills: [],
       connectors: [],
     })
 
-    expect(Object.keys(createVm.mock.calls[0]?.[0].vfs?.mounts ?? {})).toEqual(['/workspace'])
+    expect(Object.keys(createVm.mock.calls[0]?.[0].vfs?.mounts ?? {})).toEqual([
+      '/workspace',
+      '/opt/slopify/bin',
+    ])
+    expect(createVm.mock.calls[0]?.[0].env).not.toHaveProperty('GITLAB_TOKEN')
     await sandbox.close()
   })
 
@@ -65,7 +78,7 @@ describe('Gondolin agent sandbox', () => {
     const host = await createHostTree()
     const fixture = vmFixture()
     const createVm = vi.fn(async () => fixture.vm)
-    const factory = createGondolinAgentSandboxFactory({ createVm })
+    const factory = createGondolinAgentSandboxFactory({ createVm, glabHostPath: host.glab })
 
     const sandbox = await factory.create({
       executionId: 'execution-01',
@@ -93,12 +106,18 @@ describe('Gondolin agent sandbox', () => {
     expect(Object.keys(options?.vfs?.mounts ?? {})).toEqual([
       '/workspace/api',
       '/skills/gitlab-delivery',
+      '/opt/slopify/bin',
     ])
     expect(options?.vfs?.mounts?.['/workspace/api']?.readonly).toBe(false)
     expect(options?.vfs?.mounts?.['/skills/gitlab-delivery']?.readonly).toBe(true)
     expect(options?.env).toEqual(
-      expect.objectContaining({ SLOPIFY_GITLAB_GITLAB_PRIMARY: expect.any(String) }),
+      expect.objectContaining({
+        GITLAB_HOST: 'gitlab.com',
+        GITLAB_TOKEN: expect.any(String),
+        PATH: expect.stringContaining('/opt/slopify/bin'),
+      }),
     )
+    expect(options?.env).not.toHaveProperty('SLOPIFY_GITLAB')
     expect(JSON.stringify(options)).not.toContain('glpat-secret')
     expect(sandbox.skills).toEqual([
       expect.objectContaining({
@@ -110,11 +129,41 @@ describe('Gondolin agent sandbox', () => {
     expect(fixture.vm.close).toHaveBeenCalledOnce()
   })
 
+  it('does not synthesize a hidden skill for a granted connector', async () => {
+    const host = await createHostTree()
+    const fixture = vmFixture()
+    const createVm = vi.fn(async () => fixture.vm)
+
+    const sandbox = await createGondolinAgentSandboxFactory({
+      createVm,
+      glabHostPath: host.glab,
+    }).create({
+      executionId: 'execution-01',
+      worktrees: [],
+      skills: [],
+      connectors: [
+        {
+          connectionId: 'clickup-default',
+          type: 'clickup',
+          authority: 'ClickUp API access',
+          secret: 'clickup-secret',
+          allowedHosts: ['api.clickup.com'],
+        },
+      ],
+    })
+
+    const options = createVm.mock.calls[0]?.[0]
+    expect(Object.keys(options?.vfs?.mounts ?? {})).toEqual(['/workspace', '/opt/slopify/bin'])
+    expect(JSON.stringify(options)).not.toContain('clickup-secret')
+    expect(sandbox.skills).toEqual([])
+  })
+
   it('routes read, write, edit, and bash through guest operations', async () => {
     const host = await createHostTree()
     const fixture = vmFixture()
     const sandbox = await createGondolinAgentSandboxFactory({
       createVm: async () => fixture.vm,
+      glabHostPath: host.glab,
     }).create({
       executionId: 'execution-01',
       worktrees: [{ repositoryId: 'api', hostPath: host.worktree }],
@@ -147,8 +196,8 @@ describe('Gondolin agent sandbox', () => {
     expect(fixture.fs.mkdir).toHaveBeenCalledWith('/workspace/api', { recursive: true })
     expect(fixture.fs.writeFile).toHaveBeenCalledWith('/workspace/api/new.txt', 'new')
     expect(fixture.exec).toHaveBeenCalledWith(
-      'git status --short',
-      expect.objectContaining({ cwd: '/workspace' }),
+      'export PATH=/opt/slopify/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\ngit status --short',
+      expect.not.objectContaining({ env: expect.anything() }),
     )
   })
 
@@ -157,7 +206,7 @@ describe('Gondolin agent sandbox', () => {
     const first = vmFixture()
     const second = vmFixture()
     const createVm = vi.fn().mockResolvedValueOnce(first.vm).mockResolvedValueOnce(second.vm)
-    const factory = createGondolinAgentSandboxFactory({ createVm })
+    const factory = createGondolinAgentSandboxFactory({ createVm, glabHostPath: host.glab })
     const input = {
       worktrees: [{ repositoryId: 'api', hostPath: host.worktree }],
       skills: [],

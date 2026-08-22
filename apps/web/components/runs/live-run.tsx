@@ -7,22 +7,32 @@ import type { AgentTrace, NodeExecutionStatus, RunEvent, RunStatus } from '@slop
 import type { AgentNode } from '@slopify/workflow-model'
 
 import { RunNodePanel } from '@/components/runs/run-node-panel'
-import { formatDuration, formatTimestamp, RunStatusBadge } from '@/components/runs/run-status'
+import {
+  formatDuration,
+  formatTimestamp,
+  NodeStatusBadge,
+  RunStatusBadge,
+} from '@/components/runs/run-status'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { createApiClient, type ApiClient, type RunDetailResponse } from '@/lib/api-client'
+import {
+  createApiClient,
+  type ApiClient,
+  type ConnectionCatalogResponse,
+  type RunDetailResponse,
+} from '@/lib/api-client'
 import {
   connectRunEventStream,
   reconcileRunEvents,
   runEventStreamUrl,
   type RunEventConnector,
 } from '@/lib/event-stream'
+import { displayRunId } from '@/lib/run-id'
 
 type LiveRunClient = Pick<ApiClient, 'cancelRun' | 'getRun'> &
-  Partial<Pick<ApiClient, 'getAgentTrace'>>
+  Partial<Pick<ApiClient, 'getAgentTrace' | 'listConnections'>>
 type NodeExecution = RunDetailResponse['nodeExecutions'][number]
 
 const defaultClient = createApiClient()
@@ -92,6 +102,52 @@ const prefersReducedMotion = () =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
+const connectionNameFrom = (
+  connections: ConnectionCatalogResponse | undefined,
+  category: 'connector' | 'inference',
+  identifier: string,
+): string | undefined => {
+  if (connections === undefined) return undefined
+
+  const configured = connections.connections.find(({ connectionId }) => connectionId === identifier)
+  const type = configured?.type ?? identifier
+  return connections.catalog
+    .filter((entry) => entry.category === category)
+    .sort((left, right) => right.type.length - left.type.length)
+    .find(({ type: catalogType }) => type === catalogType || type.startsWith(`${catalogType}-`))
+    ?.name
+}
+
+const providerNameFrom = (
+  connections: ConnectionCatalogResponse | undefined,
+  node: AgentNode,
+  trace: AgentTrace | undefined,
+): string | undefined => {
+  const identifiers = [
+    trace?.header.configuration.connectionId,
+    node.job.inference.connectionId,
+    trace?.header.configuration.provider,
+  ].filter((value): value is string => value !== undefined)
+
+  for (const identifier of identifiers) {
+    const name = connectionNameFrom(connections, 'inference', identifier)
+    if (name !== undefined) return name
+  }
+
+  return undefined
+}
+
+const connectorNamesFrom = (
+  connections: ConnectionCatalogResponse | undefined,
+  node: AgentNode,
+): Readonly<Record<string, string>> =>
+  Object.fromEntries(
+    node.job.connectorIds.flatMap((connectionId) => {
+      const name = connectionNameFrom(connections, 'connector', connectionId)
+      return name === undefined ? [] : [[connectionId, name]]
+    }),
+  )
+
 function ElapsedTime({
   completedAt,
   running,
@@ -127,7 +183,6 @@ export function LiveRun({
   const snapshotSequence = useRef(0)
   const closeConnection = useRef<(() => void) | undefined>(undefined)
   const refreshSnapshot = useRef<() => Promise<void>>(async () => undefined)
-  const panelRef = useRef<HTMLDivElement>(null)
   const panelInvokerRef = useRef<HTMLElement | null>(null)
   const panelOpenFrameRef = useRef<number | undefined>(undefined)
   const [detail, setDetail] = useState<RunDetailResponse>()
@@ -143,6 +198,7 @@ export function LiveRun({
   const [trace, setTrace] = useState<AgentTrace>()
   const [traceLoading, setTraceLoading] = useState(false)
   const [traceError, setTraceError] = useState<string>()
+  const [connections, setConnections] = useState<ConnectionCatalogResponse>()
 
   const closePanel = useCallback((restoreFocus = false) => {
     if (panelOpenFrameRef.current !== undefined) {
@@ -193,6 +249,7 @@ export function LiveRun({
     setTrace(undefined)
     setTraceLoading(false)
     setTraceError(undefined)
+    setConnections(undefined)
     let active = true
     let disconnected = false
 
@@ -295,6 +352,16 @@ export function LiveRun({
         setStreamStatus('Reconnecting')
       }
     }
+    const loadConnections = async () => {
+      if (client.listConnections === undefined) return
+      try {
+        const next = await client.listConnections()
+        if (active) setConnections(next)
+      } catch {
+        // Run inspection remains available when connection settings cannot be loaded.
+      }
+    }
+    void loadConnections()
     void start()
 
     return () => {
@@ -304,28 +371,6 @@ export function LiveRun({
       closeConnection.current = undefined
     }
   }, [client, connect, runId])
-
-  useEffect(() => {
-    if (!isPanelOpen) return
-
-    const handleOutsidePointerDown = (event: PointerEvent) => {
-      if (panelRef.current?.contains(event.target as Node)) return
-      closePanel(false)
-    }
-
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      event.preventDefault()
-      closePanel(true)
-    }
-
-    document.addEventListener('pointerdown', handleOutsidePointerDown)
-    document.addEventListener('keydown', handleKeyDown)
-    return () => {
-      document.removeEventListener('pointerdown', handleOutsidePointerDown)
-      document.removeEventListener('keydown', handleKeyDown)
-    }
-  }, [closePanel, isPanelOpen])
 
   useEffect(
     () => () => {
@@ -392,7 +437,8 @@ export function LiveRun({
     }
   }, [client, isPanelOpen, runId, traceExecution])
 
-  if (loading) return <p className="text-xs text-muted-foreground">Loading run {runId}…</p>
+  if (loading)
+    return <p className="text-xs text-muted-foreground">Loading run {displayRunId(runId)}…</p>
   if (detail === undefined) {
     return (
       <Alert variant="destructive">
@@ -423,6 +469,16 @@ export function LiveRun({
     selectedNode === undefined
       ? undefined
       : latestExecutions(detail.nodeExecutions).get(selectedNode.id)
+  const selectedDurationMs =
+    selectedExecution?.durationMs ??
+    (selectedExecution?.startedAt === null ||
+    selectedExecution?.startedAt === undefined ||
+    selectedExecution.completedAt === null
+      ? undefined
+      : Math.max(
+          0,
+          Date.parse(selectedExecution.completedAt) - Date.parse(selectedExecution.startedAt),
+        ))
 
   const cancel = async () => {
     if (!cancellable || cancelling) return
@@ -454,45 +510,6 @@ export function LiveRun({
 
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden p-6">
-      <Card size="sm" className="shrink-0" aria-label="Run summary">
-        <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-4">
-          <div className="min-w-0 flex-1">
-            <p className="text-xs/4 font-medium text-muted-foreground">Run ID</p>
-            <h1 className="mt-1 truncate font-mono text-[18px]/6 font-semibold tracking-[-0.01em]">
-              {detail.run.runId}
-            </h1>
-          </div>
-          <div>
-            <p className="text-xs/4 font-medium text-muted-foreground">Status</p>
-            <div className="mt-1">
-              <RunStatusBadge status={status} />
-            </div>
-          </div>
-          <div>
-            <p className="text-xs/4 font-medium text-muted-foreground">Started</p>
-            <p className="mt-1 font-medium tabular-nums">{formatTimestamp(detail.run.startedAt)}</p>
-          </div>
-          <div>
-            <p className="text-xs/4 font-medium text-muted-foreground">Duration</p>
-            <p className="mt-1 font-medium tabular-nums">
-              <ElapsedTime
-                completedAt={detail.run.completedAt}
-                running={status === 'RUNNING'}
-                startedAt={detail.run.startedAt}
-              />
-            </p>
-          </div>
-          {cancellable || cancelling ? (
-            <Button variant="destructive" disabled={cancelling} onClick={() => void cancel()}>
-              {cancelling ? 'Cancelling…' : 'Cancel run'}
-            </Button>
-          ) : null}
-          <Badge className="sr-only" aria-live="polite">
-            {streamStatus}
-          </Badge>
-        </CardContent>
-      </Card>
-
       {streamError === undefined ? null : (
         <Alert variant="destructive" className="shrink-0">
           <AlertTitle>Live updates delayed</AlertTitle>
@@ -506,7 +523,37 @@ export function LiveRun({
         </Alert>
       )}
 
-      <div className="min-h-0 flex-1">
+      <div className="relative min-h-0 flex-1">
+        <p
+          aria-label="Run timing"
+          className="pointer-events-none absolute top-3 left-3 z-10 text-xs/4 text-muted-foreground tabular-nums"
+        >
+          Started {formatTimestamp(detail.run.startedAt)} · Took{' '}
+          <ElapsedTime
+            completedAt={detail.run.completedAt}
+            running={status === 'RUNNING'}
+            startedAt={detail.run.startedAt}
+          />
+        </p>
+        <div
+          aria-label="Run status"
+          className="absolute top-3 right-3 z-10 flex items-center gap-2"
+        >
+          <RunStatusBadge status={status} />
+          {cancellable || cancelling ? (
+            <Button
+              size="sm"
+              variant="destructive"
+              disabled={cancelling}
+              onClick={() => void cancel()}
+            >
+              {cancelling ? 'Cancelling…' : 'Cancel run'}
+            </Button>
+          ) : null}
+        </div>
+        <Badge className="sr-only" aria-live="polite">
+          {streamStatus}
+        </Badge>
         <WorkflowCanvas
           workflow={detail.run.workflowSnapshot}
           selectedNodeId={selectedNodeId ?? currentAgentId ?? agentNodes[0]?.id}
@@ -517,7 +564,6 @@ export function LiveRun({
 
       {selectedNode === undefined ? null : (
         <div
-          ref={panelRef}
           data-testid="run-node-panel-shell"
           data-open={isPanelOpen}
           className="provider-floating-panel-shell absolute inset-y-3 right-3 z-30 w-[min(34rem,calc(100%-1.5rem))]"
@@ -547,15 +593,24 @@ export function LiveRun({
             className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
           >
             <header className="relative shrink-0 border-b border-border p-6 pr-14">
-              <h2
-                id="run-node-panel-title"
-                className="text-[18px]/6 font-semibold tracking-[-0.01em]"
+              <div className="flex flex-wrap items-center gap-2">
+                <h2
+                  id="run-node-panel-title"
+                  className="text-[18px]/6 font-semibold tracking-[-0.01em]"
+                >
+                  {selectedNode.name}
+                </h2>
+                <NodeStatusBadge status={statuses[selectedNode.id] ?? 'PENDING'} />
+              </div>
+              <div
+                aria-label="Execution summary"
+                className="mt-2 overflow-x-auto text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
               >
-                {selectedNode.name}
-              </h2>
-              <p className="mt-1 break-all font-mono text-xs/4 text-muted-foreground">
-                {selectedNode.id}
-              </p>
+                Started {formatTimestamp(selectedExecution?.startedAt ?? null)} - Took{' '}
+                {selectedDurationMs === undefined
+                  ? 'Not recorded'
+                  : formatDuration(selectedDurationMs)}
+              </div>
               <Button
                 type="button"
                 variant="ghost"
@@ -568,8 +623,10 @@ export function LiveRun({
               </Button>
             </header>
             <RunNodePanel
+              connectorNames={connectorNamesFrom(connections, selectedNode)}
               execution={selectedExecution}
               node={selectedNode}
+              providerName={providerNameFrom(connections, selectedNode, trace)}
               status={statuses[selectedNode.id] ?? 'PENDING'}
               trace={trace}
               traceError={traceError}

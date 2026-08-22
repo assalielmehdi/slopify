@@ -41,6 +41,6 @@ describe('accessible route metadata', () => {
     expect(projectsMetadata.title).toBe('Projects')
     await expect(
       generateRunMetadata({ params: Promise.resolve({ runId: 'run-42' }) }),
-    ).resolves.toMatchObject({ title: 'Run run-42' })
+    ).resolves.toMatchObject({ title: 'Run 42' })
   })
 })

@@ -241,10 +241,15 @@ describe('Pi SDK executor', () => {
     expect(events.map(({ type }) => type)).toEqual([
       'AGENT_STARTED',
       'AGENT_SESSION_IDENTIFIED',
+      'PI_EVENT',
       'AGENT_MESSAGE',
+      'PI_EVENT',
       'AGENT_REASONING',
+      'PI_EVENT',
       'AGENT_TOOL_STARTED',
+      'PI_EVENT',
       'AGENT_TOOL_UPDATED',
+      'PI_EVENT',
       'AGENT_TOOL_COMPLETED',
       'AGENT_RESULT',
     ])
@@ -308,6 +313,12 @@ describe('Pi SDK executor', () => {
 
     await expect(executor.cancel(input.executionId)).resolves.toEqual({ status: 'cancelled' })
     await expect(observation).resolves.toMatchObject({
+      value: {
+        type: 'PI_EVENT',
+        data: { event: { type: 'tool_execution_end', toolCallId: 'tool-01' } },
+      },
+    })
+    await expect(iterator.next()).resolves.toMatchObject({
       value: {
         type: 'AGENT_TOOL_COMPLETED',
         data: { toolCallId: 'tool-01', status: 'failed', content: 'Command aborted' },

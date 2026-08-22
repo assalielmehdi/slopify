@@ -64,4 +64,11 @@ describe('SQLite connection repository', () => {
     repository.delete(RECORD.connectionId)
     expect(repository.get(RECORD.connectionId)).toBeUndefined()
   })
+
+  it('enforces one connection record per supported type', () => {
+    const { repository } = fixture()
+    repository.save(RECORD)
+
+    expect(() => repository.save({ ...RECORD, connectionId: 'gitlab-secondary' })).toThrow()
+  })
 })

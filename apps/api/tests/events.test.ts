@@ -113,6 +113,7 @@ describe('run event SSE API', () => {
         skillSnapshotsRoot: '/skill-snapshots',
         credentialPath: '/credentials.json',
         tracesRoot: '/traces',
+        guestToolsRoot: '/guest-tools',
         shutdownGracePeriodMs: 10_000,
       },
     })

@@ -1,15 +1,17 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RunsPage from '../app/runs/page'
-import { RunHistory } from '../components/runs/run-history'
+import { formatRunHistoryTimestamp, RunHistory } from '../components/runs/run-history'
+import { formatTimestamp } from '../components/runs/run-status'
 import { createApiClient, type ApiClient, type RunHistoryPage } from '../lib/api-client'
 
 const runSummary = {
-  runId: 'run-newest',
-  workflowId: 'delivery-workflow',
+  runId: RunIdSchema.parse('run-newest'),
+  workflowId: WorkflowIdSchema.parse('delivery-workflow'),
   status: 'SUCCEEDED',
   createdAt: '2026-08-20T11:00:00Z',
   startedAt: '2026-08-20T11:00:01Z',
@@ -17,7 +19,10 @@ const runSummary = {
   durationMs: 120_000,
 } as const
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  vi.useRealTimers()
+})
 
 describe('run history API client', () => {
   it('loads a validated page without changing the server order', async () => {
@@ -45,6 +50,62 @@ describe('run history API client', () => {
 })
 
 describe('run history page', () => {
+  it('uses relative started times only for runs from the viewer current day', () => {
+    const now = new Date('2026-08-22T18:30:00Z')
+
+    expect(formatRunHistoryTimestamp('2026-08-22T18:29:42Z', now)).toBe('18 seconds ago')
+    expect(formatRunHistoryTimestamp('2026-08-22T18:10:00Z', now)).toBe('20 minutes ago')
+    expect(formatRunHistoryTimestamp('2026-08-22T16:30:00Z', now)).toBe('2 hours ago')
+    expect(formatRunHistoryTimestamp('2026-08-21T12:00:00Z', now)).toBe(
+      formatTimestamp('2026-08-21T12:00:00Z'),
+    )
+    expect(formatRunHistoryTimestamp(null, now)).toBe('Not recorded')
+  })
+
+  it('makes the exact started date and time accessible from the relative value', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-08-22T18:30:00Z'))
+    const listRuns = vi.fn<ApiClient['listRuns']>(async () => ({
+      data: [{ ...runSummary, startedAt: '2026-08-22T16:30:00Z' }],
+      pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+    }))
+
+    render(<RunHistory client={{ listRuns }} page={1} />)
+
+    const relativeTime = await screen.findByText('2 hours ago')
+    expect(relativeTime.tagName).toBe('TIME')
+    expect(relativeTime.getAttribute('datetime')).toBe('2026-08-22T16:30:00Z')
+    expect(relativeTime.getAttribute('tabindex')).toBe('0')
+    expect(relativeTime.getAttribute('aria-label')).toBe(
+      `Started ${formatTimestamp('2026-08-22T16:30:00Z')}`,
+    )
+  })
+
+  it('shows a table skeleton while run history is loading', async () => {
+    let resolve: ((value: RunHistoryPage) => void) | undefined
+    const listRuns = vi.fn(
+      () =>
+        new Promise<RunHistoryPage>((next) => {
+          resolve = next
+        }),
+    )
+    render(<RunHistory client={{ listRuns }} page={1} />)
+
+    const loading = screen.getByRole('status', { name: 'Loading run history' })
+    expect(within(loading).getByRole('table', { name: 'Loading workflow runs' })).toBeTruthy()
+    expect(within(loading).getAllByTestId('run-row-skeleton')).toHaveLength(8)
+
+    await act(async () =>
+      resolve?.({
+        data: [],
+        pagination: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 },
+      }),
+    )
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Loading run history' })).toBeNull(),
+    )
+  })
+
   it('normalizes URL pagination before crossing the client boundary', async () => {
     const valid = await RunsPage({
       searchParams: Promise.resolve({
@@ -133,15 +194,30 @@ describe('run history page', () => {
     )
     render(<RunHistory client={{ listRuns }} page={1} />)
 
-    await screen.findByRole('link', { name: 'Open run run-newest' })
+    await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Sort by Run ID ascending' }))
     expect(
       screen.getAllByRole('link', { name: /^Open run/ }).map((link) => link.textContent),
-    ).toEqual(['a-run', 'run-newest'])
+    ).toEqual(['a-run', 'newest'])
 
     for (const column of ['Started', 'Duration', 'Status']) {
       fireEvent.click(screen.getByRole('button', { name: new RegExp(`Sort by ${column}`) }))
     }
+  })
+
+  it('hides the run prefix throughout the UI while preserving the full link target', async () => {
+    const listRuns = vi.fn<ApiClient['listRuns']>(
+      async () =>
+        ({
+          data: [runSummary],
+          pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+        }) as unknown as RunHistoryPage,
+    )
+    render(<RunHistory client={{ listRuns }} page={1} />)
+
+    const link = await screen.findByRole('link', { name: 'Open run newest' })
+    expect(link.textContent).toBe('newest')
+    expect(link.getAttribute('href')).toBe('/runs/run-newest')
   })
 
   it('applies typed filters, reports counts, and removes them from toolbar chips', async () => {
@@ -154,7 +230,7 @@ describe('run history page', () => {
     )
     render(<RunHistory client={{ listRuns }} page={1} />)
 
-    await screen.findByRole('link', { name: 'Open run run-newest' })
+    await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
 
     const attributeSearch = await screen.findByRole('textbox', {
@@ -245,7 +321,7 @@ describe('run history page', () => {
     )
     render(<RunHistory client={{ listRuns }} page={1} />)
 
-    await screen.findByRole('link', { name: 'Open run run-newest' })
+    await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Run ID' }))
     fireEvent.change(screen.getByRole('textbox', { name: 'Run ID contains' }), {
@@ -316,7 +392,7 @@ describe('run history page', () => {
     )
     render(<RunHistory client={{ listRuns }} page={1} />)
 
-    await screen.findByRole('link', { name: 'Open run run-newest' })
+    await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Status' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Failed' }))

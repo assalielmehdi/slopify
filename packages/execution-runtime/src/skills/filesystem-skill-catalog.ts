@@ -14,7 +14,6 @@ import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'nod
 
 import {
   SkillCatalogError,
-  type CreateSkillInput,
   type SkillCatalog,
   type SkillFile,
   type SkillRecord,
@@ -203,9 +202,6 @@ const replaceTree = async (
   }
 }
 
-const skillMarkdown = (input: CreateSkillInput): string =>
-  `---\nname: ${input.name}\ndescription: ${input.description}\n---\n\n${input.instructions.trim()}\n`
-
 export const createFilesystemSkillCatalog = (options: Readonly<{ root: string }>): SkillCatalog => {
   const root = resolve(options.root)
   const initialize = () => mkdir(root, { recursive: true })
@@ -226,20 +222,17 @@ export const createFilesystemSkillCatalog = (options: Readonly<{ root: string }>
     },
     async create(input) {
       await initialize()
-      const skillId = validateSkillId(input.skillId)
-      if (
-        input.name !== skillId ||
-        input.description.trim() === '' ||
-        input.instructions.trim() === ''
-      )
+      const frontmatter = parseFrontmatter(input.markdown)
+      if (frontmatter.issues.length > 0 || frontmatter.name === undefined)
         throw new SkillCatalogError('SKILL_INVALID')
+      const skillId = validateSkillId(frontmatter.name)
       try {
         await stat(join(root, skillId))
         throw new SkillCatalogError('SKILL_CONFLICT')
       } catch (cause) {
         if (cause instanceof SkillCatalogError) throw cause
       }
-      await replaceTree(root, skillId, { 'SKILL.md': skillMarkdown(input), ...input.files }, false)
+      await replaceTree(root, skillId, { 'SKILL.md': input.markdown }, false)
       return readSkill(root, skillId)
     },
     async update(skillIdInput, input: UpdateSkillInput) {

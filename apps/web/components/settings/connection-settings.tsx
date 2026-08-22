@@ -1,16 +1,29 @@
 'use client'
 
-import { ExternalLinkIcon, RefreshCwIcon, Trash2Icon, XIcon } from 'lucide-react'
+import {
+  ArrowLeftIcon,
+  BookOpenIcon,
+  CpuIcon,
+  ExternalLinkIcon,
+  PlugIcon,
+  RefreshCwIcon,
+  Trash2Icon,
+  XIcon,
+} from 'lucide-react'
 import type { ConnectionCatalogEntry } from '@slopify/contracts'
+import Link from 'next/link'
 import type { ComponentType, CSSProperties, SVGProps } from 'react'
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react'
 
+import { CatalogToolbar } from '@/components/settings/catalog-toolbar'
+import { CatalogCardSkeleton } from '@/components/settings/catalog-card-skeleton'
+import { CatalogCardTags } from '@/components/settings/catalog-card-tags'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Field, FieldDescription, FieldGroup, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Separator } from '@/components/ui/separator'
+import { toast } from '@/components/ui/toast'
 import {
   createApiClient,
   type ApiClient,
@@ -30,11 +43,16 @@ type ConnectionClient = Required<
     | 'deleteConnection'
     | 'startChatGptOAuth'
     | 'getChatGptOAuth'
+    | 'cancelChatGptOAuth'
   >
 >
 
 type ConnectionType = ConnectionRecord['type']
 type CatalogKind = 'all' | 'providers' | 'connectors'
+type PanelSelection =
+  | Readonly<{ mode: 'add' }>
+  | Readonly<{ mode: 'configure'; type: ConnectionType }>
+  | Readonly<{ mode: 'manage'; type: ConnectionType }>
 
 function prefersReducedMotion() {
   return (
@@ -224,17 +242,14 @@ function ConnectionTile({
       type="button"
       variant="ghost"
       aria-label={`${definition.name}, ${statusLabel(connection)}`}
-      className="h-[140px] w-full flex-col items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input"
+      className="h-auto min-h-[140px] w-full flex-col items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input"
       onClick={onSelect}
     >
       <span className="flex min-h-0 flex-1 items-start gap-3.5 p-4">
         <ConnectionIcon definition={definition} />
-        <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className="flex items-start justify-between gap-2">
-            <span className="text-[14px]/5 font-semibold tracking-[-0.01em] text-foreground">
-              {definition.name}
-            </span>
-            <ConnectionStatus connection={connection} />
+        <span className="flex min-w-0 flex-1 self-stretch flex-col gap-1">
+          <span className="text-[14px]/5 font-semibold tracking-[-0.01em] text-foreground">
+            {definition.name}
           </span>
           <span className="text-[12px]/4 font-medium text-muted-foreground">
             {definition.eyebrow}
@@ -242,6 +257,9 @@ function ConnectionTile({
           <span className="mt-1 line-clamp-3 text-[13px]/5 font-normal text-muted-foreground">
             {definition.summary}
           </span>
+          <CatalogCardTags>
+            <ConnectionStatus connection={connection} />
+          </CatalogCardTags>
         </span>
       </span>
     </Button>
@@ -250,40 +268,73 @@ function ConnectionTile({
 
 export function ConnectionSettings({
   client = defaultClient as ConnectionClient,
+  initialConnectionId,
   kind = 'all',
-}: Readonly<{ client?: ConnectionClient; kind?: CatalogKind }>) {
+}: Readonly<{ client?: ConnectionClient; initialConnectionId?: string; kind?: CatalogKind }>) {
   const [catalogEntries, setCatalogEntries] = useState<readonly ConnectionCatalogEntry[]>([])
   const [connections, setConnections] = useState<readonly ConnectionRecord[]>([])
   const [oauth, setOauth] = useState<ChatGptOAuthTransaction>()
   const [error, setError] = useState<string>()
-  const [selectedType, setSelectedType] = useState<ConnectionType>()
+  const [selection, setSelection] = useState<PanelSelection>()
+  const [searchQuery, setSearchQuery] = useState('')
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [replacing, setReplacing] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmationName, setConfirmationName] = useState('')
+  const [loading, setLoading] = useState(true)
   const panelRef = useRef<HTMLDivElement>(null)
+  const confirmationInputRef = useRef<HTMLInputElement>(null)
   const panelOpenFrameRef = useRef<number | undefined>(undefined)
+  const initialSelectionAppliedRef = useRef(false)
   const catalog = visibleCatalog(catalogEntries, kind)
-  const selected = catalog.find((definition) => definition.type === selectedType)
+  const selected = catalog.find(
+    (definition) =>
+      selection !== undefined && 'type' in selection && definition.type === selection.type,
+  )
+  const configuredCatalog = catalog.filter(
+    (definition) => connectionFor(connections, definition.type) !== undefined,
+  )
+  const availableCatalog = catalog.filter(
+    (definition) => connectionFor(connections, definition.type) === undefined,
+  )
+  const visibleEntries = useMemo(() => {
+    const query = searchQuery.trim().toLocaleLowerCase()
+    if (query === '') return configuredCatalog
+    return configuredCatalog.filter(({ eyebrow, name, summary }) =>
+      [eyebrow, name, summary].some((value) => value.toLocaleLowerCase().includes(query)),
+    )
+  }, [configuredCatalog, searchQuery])
   const selectedConnection =
     selected === undefined ? undefined : connectionFor(connections, selected.type)
 
-  const closePanel = useCallback(() => {
+  const hidePanel = useCallback(() => {
     if (panelOpenFrameRef.current !== undefined) {
       window.cancelAnimationFrame(panelOpenFrameRef.current)
       panelOpenFrameRef.current = undefined
     }
     setIsPanelOpen(false)
     setReplacing(false)
+    setConfirmingDelete(false)
+    setConfirmationName('')
+    setOauth(undefined)
     if (prefersReducedMotion()) {
-      setSelectedType(undefined)
+      setSelection(undefined)
     }
   }, [])
 
-  const openPanel = useCallback((type: ConnectionType) => {
+  const closePanel = useCallback(() => {
+    if (oauth?.status === 'PENDING') void client.cancelChatGptOAuth(oauth.id)
+    hidePanel()
+  }, [client, hidePanel, oauth])
+
+  const openPanel = useCallback((nextSelection: PanelSelection) => {
     if (panelOpenFrameRef.current !== undefined) {
       window.cancelAnimationFrame(panelOpenFrameRef.current)
     }
-    setSelectedType(type)
+    setSelection(nextSelection)
     setReplacing(false)
+    setConfirmingDelete(false)
+    setConfirmationName('')
 
     if (prefersReducedMotion()) {
       setIsPanelOpen(true)
@@ -309,15 +360,26 @@ export function ConnectionSettings({
     } catch (cause) {
       setCatalogEntries([])
       setConnections([])
-      setSelectedType(undefined)
+      setSelection(undefined)
       setIsPanelOpen(false)
       setError(cause instanceof Error ? cause.message : 'Connections could not be loaded.')
+    } finally {
+      setLoading(false)
     }
   }
 
   useEffect(() => {
     void load()
   }, [client])
+
+  useEffect(() => {
+    if (loading || initialSelectionAppliedRef.current) return
+    initialSelectionAppliedRef.current = true
+    const connection = connections.find(({ connectionId }) => connectionId === initialConnectionId)
+    if (connection !== undefined && catalog.some(({ type }) => type === connection.type)) {
+      openPanel({ mode: 'manage', type: connection.type })
+    }
+  }, [catalog, connections, initialConnectionId, loading, openPanel])
 
   useEffect(
     () => () => {
@@ -341,15 +403,35 @@ export function ConnectionSettings({
   }, [closePanel, isPanelOpen])
 
   useEffect(() => {
+    if (confirmingDelete) confirmationInputRef.current?.focus()
+  }, [confirmingDelete])
+
+  useEffect(() => {
     if (oauth?.status !== 'PENDING') return
     const timer = window.setInterval(() => {
-      void client.getChatGptOAuth(oauth.id).then((next) => {
-        setOauth(next)
-        if (next.status === 'CONNECTED') void load()
-      })
+      void client
+        .getChatGptOAuth(oauth.id)
+        .then((next) => {
+          setOauth(next)
+          if (next.status === 'CONNECTED') {
+            void load().then(() => {
+              toast.add({
+                title: 'Provider added',
+                description: 'ChatGPT is ready to use in workflow agents.',
+                type: 'success',
+              })
+              hidePanel()
+            })
+          }
+        })
+        .catch((cause: unknown) => {
+          setError(
+            cause instanceof Error ? cause.message : 'Authentication status could not be loaded.',
+          )
+        })
     }, 1_000)
     return () => window.clearInterval(timer)
-  }, [client, oauth])
+  }, [client, hidePanel, oauth])
 
   const upsert = (record: ConnectionRecord) => {
     setConnections((current) => [
@@ -366,14 +448,18 @@ export function ConnectionSettings({
     const key = String(new FormData(form).get('credential'))
     try {
       const record = await client.connect({
-        connectionId: definition.type,
         type: definition.type,
-        label: definition.name,
         configuration: {},
         credential: { type: 'api_key', key },
       })
       upsert(record)
       form.reset()
+      toast.add({
+        title: `${definition.category === 'inference' ? 'Provider' : 'Connector'} added`,
+        description: `${definition.name} is ready to use in workflow agents.`,
+        type: 'success',
+      })
+      closePanel()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Connection validation failed.')
     }
@@ -382,7 +468,7 @@ export function ConnectionSettings({
   const startChatGpt = async (definition: ConnectionCatalogEntry) => {
     setError(undefined)
     try {
-      setOauth(await client.startChatGptOAuth(definition.name))
+      setOauth(await client.startChatGptOAuth())
     } catch (cause) {
       setError(
         cause instanceof Error ? cause.message : `${definition.name} connection could not start.`,
@@ -417,6 +503,7 @@ export function ConnectionSettings({
   }
 
   const disconnect = async (connection: ConnectionRecord) => {
+    if (confirmationName !== connection.label) return
     setError(undefined)
     try {
       await client.deleteConnection(connection.connectionId)
@@ -424,6 +511,12 @@ export function ConnectionSettings({
         current.filter((candidate) => candidate.connectionId !== connection.connectionId),
       )
       setReplacing(false)
+      toast.add({
+        title: `${connection.category === 'inference' ? 'Provider' : 'Connector'} deleted`,
+        description: `${connection.label} was removed from Slopify. You can add it again later.`,
+        type: 'success',
+      })
+      closePanel()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Connection could not be disconnected.')
     }
@@ -431,37 +524,74 @@ export function ConnectionSettings({
 
   const title =
     kind === 'providers' ? 'Providers' : kind === 'connectors' ? 'Connectors' : 'Connections'
+  const singular =
+    kind === 'providers' ? 'provider' : kind === 'connectors' ? 'connector' : 'connection'
+  const panelTitle =
+    selection?.mode === 'add'
+      ? `Add ${singular}`
+      : selection?.mode === 'configure' && selected !== undefined
+        ? selected.name
+        : selected?.name
+  const AddIcon = kind === 'connectors' ? PlugIcon : CpuIcon
 
   return (
     <section aria-label={title} className={catalogSectionClassName}>
-      {error === undefined ? null : (
+      <CatalogToolbar
+        singular={singular}
+        plural={title.toLocaleLowerCase()}
+        query={searchQuery}
+        onQueryChange={setSearchQuery}
+        onAdd={() => openPanel({ mode: 'add' })}
+      />
+
+      {error === undefined || selection !== undefined ? null : (
         <Alert variant="destructive" className="mb-3">
           <AlertTitle>Connection unavailable</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <div
-        data-testid="connection-grid"
-        className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
-      >
-        {catalog.map((definition) => (
-          <ConnectionTile
-            key={definition.type}
-            definition={definition}
-            connection={connectionFor(connections, definition.type)}
-            onSelect={() => openPanel(definition.type)}
-          />
-        ))}
-      </div>
+      {loading ? (
+        <CatalogCardSkeleton label={title.toLocaleLowerCase()} />
+      ) : (
+        <div
+          data-testid="connection-grid"
+          className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
+        >
+          {visibleEntries.map((definition) => (
+            <ConnectionTile
+              key={definition.type}
+              definition={definition}
+              connection={connectionFor(connections, definition.type)}
+              onSelect={() => openPanel({ mode: 'manage', type: definition.type })}
+            />
+          ))}
+        </div>
+      )}
 
-      {selected === undefined ? null : (
+      {!loading && configuredCatalog.length === 0 && error === undefined ? (
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
+          <p className="text-[14px]/5 font-semibold">No {title.toLocaleLowerCase()} configured</p>
+          <p className="mt-1 text-[13px]/5 text-muted-foreground">
+            Add a supported {singular} to make it available to workflow agents.
+          </p>
+        </div>
+      ) : configuredCatalog.length > 0 && visibleEntries.length === 0 && error === undefined ? (
+        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
+          <p className="text-[14px]/5 font-semibold">No matching {title.toLocaleLowerCase()}</p>
+          <p className="mt-1 text-[13px]/5 text-muted-foreground">
+            Try a different name or description.
+          </p>
+        </div>
+      ) : null}
+
+      {panelTitle === undefined ? null : (
         <div
           ref={panelRef}
           data-testid="connection-panel-shell"
           data-open={isPanelOpen}
           aria-hidden={!isPanelOpen}
-          className="provider-floating-panel-shell absolute inset-y-3 right-3 z-30 w-[min(34rem,calc(100%-1.5rem))]"
+          className="provider-floating-panel-shell fixed top-[4.25rem] right-3 bottom-3 left-3 z-30 w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
           style={
             {
               '--panel-open-dur': '350ms',
@@ -475,7 +605,7 @@ export function ConnectionSettings({
               event.propertyName === 'translate' &&
               !isPanelOpen
             ) {
-              setSelectedType(undefined)
+              setSelection(undefined)
             }
           }}
         >
@@ -487,21 +617,47 @@ export function ConnectionSettings({
             data-open={isPanelOpen}
             className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
           >
-            <header className="relative shrink-0 border-b border-border p-6 pr-14">
+            <header className="relative shrink-0 p-6 pr-14">
               <div className="flex items-center gap-3">
-                <ConnectionIcon definition={selected} />
+                {selection?.mode === 'configure' ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={`Back to available ${title.toLocaleLowerCase()}`}
+                    onClick={() => {
+                      if (oauth?.status === 'PENDING') void client.cancelChatGptOAuth(oauth.id)
+                      setSelection({ mode: 'add' })
+                      setOauth(undefined)
+                      setError(undefined)
+                    }}
+                  >
+                    <ArrowLeftIcon aria-hidden="true" />
+                  </Button>
+                ) : null}
+                {selected === undefined ? (
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
+                    <AddIcon aria-hidden="true" className="size-5" strokeWidth={1.8} />
+                  </span>
+                ) : (
+                  <ConnectionIcon definition={selected} />
+                )}
                 <div className="min-w-0">
                   <h2
                     id="connection-panel-title"
                     className="text-[18px]/6 font-semibold tracking-[-0.01em]"
                   >
-                    {selected.name}
+                    {panelTitle}
                   </h2>
-                  <p className="text-[12px]/4 text-muted-foreground">{selected.eyebrow}</p>
+                  <p className="text-[12px]/4 text-muted-foreground">
+                    {selected?.eyebrow ?? `Configure a new ${singular}`}
+                  </p>
                 </div>
-                <div className="ml-auto">
-                  <ConnectionStatus connection={selectedConnection} />
-                </div>
+                {selection?.mode !== 'manage' || selectedConnection === undefined ? null : (
+                  <div className="ml-auto">
+                    <ConnectionStatus connection={selectedConnection} />
+                  </div>
+                )}
               </div>
               <Button
                 type="button"
@@ -515,148 +671,285 @@ export function ConnectionSettings({
               </Button>
             </header>
 
-            <div className="grid min-h-0 gap-6 overflow-y-auto p-6">
-              <section className="grid gap-2">
-                <h2 className="text-[14px]/5 font-semibold">Overview</h2>
-                <p className="max-w-[66ch] text-[14px]/6 text-muted-foreground">
-                  {selected.description}
-                </p>
-              </section>
-
-              <Separator />
-
-              <section className="grid gap-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="text-[14px]/5 font-semibold">Setup</h2>
-                  {selected.resourceHref === undefined ? null : (
-                    <a
-                      className={buttonVariants({ size: 'sm', variant: 'outline' })}
-                      href={selected.resourceHref}
-                      target="_blank"
-                      rel="noreferrer"
-                    >
-                      {selected.resourceLabel}
-                      <ExternalLinkIcon aria-hidden="true" />
-                    </a>
-                  )}
-                </div>
-                <ol className="grid list-decimal gap-2.5 pl-5 text-[14px]/6 text-muted-foreground">
-                  {selected.setup.map((step) => (
-                    <li key={step}>{step}</li>
-                  ))}
-                </ol>
-              </section>
-
-              <section className="rounded-lg border border-border bg-background p-4">
-                <h2 className="text-[14px]/5 font-semibold">Access</h2>
-                <p className="mt-1.5 text-[14px]/6 text-muted-foreground">{selected.access}</p>
-              </section>
-
-              <Separator />
-
-              {selectedConnection === undefined ? (
-                selected.type === 'chatgpt-subscription' ? (
-                  <section className="grid gap-3">
-                    <h2 className="text-[14px]/5 font-semibold">Connect {selected.name}</h2>
-                    <Button onClick={() => void startChatGpt(selected)}>
-                      Connect {selected.name}
-                    </Button>
-                    {oauth?.status === 'PENDING' && oauth.authorizationUrl !== undefined ? (
-                      <a
-                        className={buttonVariants({ variant: 'outline' })}
-                        href={oauth.authorizationUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        Continue with {selected.name}
-                        <ExternalLinkIcon aria-hidden="true" />
-                      </a>
-                    ) : null}
-                    {oauth === undefined ? null : (
-                      <p role="status" className="text-xs text-muted-foreground">
-                        {oauth.status === 'FAILED' ? oauth.message : oauth.status}
-                      </p>
-                    )}
-                  </section>
-                ) : (
-                  <form className="grid gap-4" onSubmit={(event) => void connect(event, selected)}>
-                    <FieldGroup>
-                      <Field>
-                        <FieldLabel htmlFor={`${selected.type}-credential`}>
-                          {selected.credentialLabel}
-                        </FieldLabel>
-                        <Input
-                          id={`${selected.type}-credential`}
-                          name="credential"
-                          type="password"
-                          autoComplete="new-password"
-                          required
-                        />
-                        {selected.credentialDescription === undefined ? null : (
-                          <FieldDescription>{selected.credentialDescription}</FieldDescription>
-                        )}
-                      </Field>
-                      <Button type="submit">Connect {selected.name}</Button>
-                    </FieldGroup>
-                  </form>
-                )
-              ) : (
+            <div
+              data-testid="connection-panel-content"
+              className="flex min-h-0 flex-1 flex-col gap-8 overflow-y-auto p-6 pt-2"
+            >
+              {error === undefined ? null : (
+                <Alert variant="destructive">
+                  <AlertTitle>Connection unavailable</AlertTitle>
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+              {selection?.mode === 'add' ? (
                 <section className="grid gap-4">
                   <div>
-                    <h2 className="text-[14px]/5 font-semibold">Connection</h2>
-                    <p className="text-xs text-muted-foreground">
-                      Last validated {new Date(selectedConnection.validatedAt).toLocaleString()}.
+                    <h3 className="text-[14px]/5 font-semibold">Choose a supported {singular}</h3>
+                    <p className="mt-1 text-[13px]/5 text-muted-foreground">
+                      Only {title.toLocaleLowerCase()} that are not configured yet are shown.
                     </p>
                   </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void revalidate(selectedConnection)}
-                    >
-                      <RefreshCwIcon aria-hidden="true" />
-                      Revalidate
-                    </Button>
-                    {selected.type === 'chatgpt-subscription' ? null : (
-                      <Button size="sm" variant="outline" onClick={() => setReplacing(true)}>
-                        Replace credential
-                      </Button>
-                    )}
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      onClick={() => void disconnect(selectedConnection)}
-                    >
-                      <Trash2Icon aria-hidden="true" />
-                      Disconnect {selected.name}
-                    </Button>
-                  </div>
-                  {replacing ? (
-                    <form
-                      className="grid gap-3 rounded-md border p-3"
-                      onSubmit={(event) => void replaceCredential(event, selectedConnection)}
-                    >
-                      <Field>
-                        <FieldLabel htmlFor={`${selected.type}-replacement`}>
-                          {selected.replacementLabel}
-                        </FieldLabel>
-                        <Input
-                          id={`${selected.type}-replacement`}
-                          name="replacement"
-                          type="password"
-                          autoComplete="new-password"
-                          required
-                        />
-                      </Field>
-                      <div className="flex flex-wrap gap-2">
-                        <Button type="submit">Validate replacement</Button>
-                        <Button type="button" variant="ghost" onClick={() => setReplacing(false)}>
-                          Cancel
+                  {availableCatalog.length === 0 ? (
+                    <div className="rounded-lg border border-dashed border-border px-5 py-8 text-center">
+                      <p className="text-[14px]/5 font-medium">
+                        All supported {title.toLocaleLowerCase()} are configured
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="grid gap-2">
+                      {availableCatalog.map((definition) => (
+                        <Button
+                          key={definition.type}
+                          type="button"
+                          variant="ghost"
+                          aria-label={`Configure ${definition.name}`}
+                          className="h-auto w-full justify-start gap-3 rounded-lg border border-border bg-background p-3 text-left whitespace-normal shadow-[var(--shadow-raised)] hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)]"
+                          onClick={() => {
+                            setSelection({ mode: 'configure', type: definition.type })
+                            setError(undefined)
+                          }}
+                        >
+                          <ConnectionIcon definition={definition} />
+                          <span className="min-w-0">
+                            <span className="block text-[14px]/5 font-semibold">
+                              {definition.name}
+                            </span>
+                            <span className="block text-[13px]/5 font-normal text-muted-foreground">
+                              {definition.summary}
+                            </span>
+                          </span>
                         </Button>
-                      </div>
-                    </form>
-                  ) : null}
+                      ))}
+                    </div>
+                  )}
                 </section>
+              ) : selected === undefined ? null : (
+                <>
+                  <section className="grid gap-2">
+                    <h2 className="text-[14px]/5 font-semibold">Overview</h2>
+                    <p className="max-w-[66ch] text-[14px]/6 text-muted-foreground">
+                      {selected.description}
+                    </p>
+                  </section>
+
+                  <section className="grid gap-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h2 className="text-[14px]/5 font-semibold">Setup</h2>
+                      {selected.resourceHref === undefined ? null : (
+                        <a
+                          className={buttonVariants({ size: 'sm', variant: 'outline' })}
+                          href={selected.resourceHref}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          {selected.resourceLabel}
+                          <ExternalLinkIcon aria-hidden="true" />
+                        </a>
+                      )}
+                    </div>
+                    <ol className="grid list-decimal gap-2.5 pl-5 text-[14px]/6 text-muted-foreground">
+                      {selected.setup.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  </section>
+
+                  <section className="grid gap-2">
+                    <h2 className="text-[14px]/5 font-semibold">Access</h2>
+                    <p className="text-[14px]/6 text-muted-foreground">{selected.access}</p>
+                  </section>
+
+                  {selected.category !== 'connector' || selected.skillId === undefined ? null : (
+                    <section className="grid gap-2">
+                      <h2 className="text-[14px]/5 font-semibold">Agent skill</h2>
+                      <p className="text-[14px]/6 text-muted-foreground">
+                        This connector is paired with a built-in skill that teaches agents how to
+                        use its credential safely.
+                      </p>
+                      <Link
+                        href={`/skills?skill=${encodeURIComponent(selected.skillId)}`}
+                        className={cn(
+                          buttonVariants({ size: 'sm', variant: 'outline' }),
+                          'justify-self-end',
+                        )}
+                      >
+                        <BookOpenIcon aria-hidden="true" />
+                        View skill
+                      </Link>
+                    </section>
+                  )}
+
+                  {selection?.mode === 'configure' ? (
+                    selected.type === 'chatgpt-subscription' ? (
+                      <section className="grid gap-3">
+                        <h2 className="text-[14px]/5 font-semibold">Connect {selected.name}</h2>
+                        {oauth?.status === 'PENDING' && oauth.authorizationUrl !== undefined ? (
+                          <a
+                            className={cn(
+                              buttonVariants({ variant: 'outline' }),
+                              'justify-self-end',
+                            )}
+                            href={oauth.authorizationUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            Continue with {selected.name}
+                            <ExternalLinkIcon aria-hidden="true" />
+                          </a>
+                        ) : null}
+                        {oauth === undefined ? null : (
+                          <p role="status" className="text-xs text-muted-foreground">
+                            {oauth.status === 'FAILED' ? oauth.message : oauth.status}
+                          </p>
+                        )}
+                        <Button
+                          className="justify-self-end"
+                          onClick={() => void startChatGpt(selected)}
+                        >
+                          Connect {selected.name}
+                        </Button>
+                      </section>
+                    ) : (
+                      <form
+                        className="grid gap-4"
+                        onSubmit={(event) => void connect(event, selected)}
+                      >
+                        <FieldGroup className="gap-4">
+                          <Field>
+                            <FieldLabel htmlFor={`${selected.type}-credential`}>
+                              {selected.credentialLabel}
+                            </FieldLabel>
+                            <Input
+                              id={`${selected.type}-credential`}
+                              name="credential"
+                              type="password"
+                              autoComplete="new-password"
+                              required
+                            />
+                            {selected.credentialDescription === undefined ? null : (
+                              <FieldDescription>{selected.credentialDescription}</FieldDescription>
+                            )}
+                          </Field>
+                          <Button type="submit" className="self-end">
+                            Connect {selected.name}
+                          </Button>
+                        </FieldGroup>
+                      </form>
+                    )
+                  ) : selectedConnection === undefined ? null : (
+                    <>
+                      <section className="grid gap-3">
+                        <div>
+                          <h2 className="text-[14px]/5 font-semibold">Connection</h2>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            Last validated{' '}
+                            {new Date(selectedConnection.validatedAt).toLocaleString()}.
+                          </p>
+                        </div>
+                        {replacing ? (
+                          <form
+                            className="grid gap-3"
+                            onSubmit={(event) => void replaceCredential(event, selectedConnection)}
+                          >
+                            <Field>
+                              <FieldLabel htmlFor={`${selected.type}-replacement`}>
+                                {selected.replacementLabel}
+                              </FieldLabel>
+                              <Input
+                                id={`${selected.type}-replacement`}
+                                name="replacement"
+                                type="password"
+                                autoComplete="new-password"
+                                required
+                              />
+                            </Field>
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                onClick={() => setReplacing(false)}
+                              >
+                                Cancel
+                              </Button>
+                              <Button type="submit">Validate replacement</Button>
+                            </div>
+                          </form>
+                        ) : null}
+                      </section>
+
+                      <form
+                        data-testid="connection-panel-actions"
+                        className="flex items-center justify-end gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          if (!confirmingDelete) {
+                            setConfirmingDelete(true)
+                            return
+                          }
+                          void disconnect(selectedConnection)
+                        }}
+                      >
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => void revalidate(selectedConnection)}
+                        >
+                          <RefreshCwIcon aria-hidden="true" />
+                          Revalidate
+                        </Button>
+                        {selected.type === 'chatgpt-subscription' ? null : (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setReplacing(true)}
+                          >
+                            Replace credential
+                          </Button>
+                        )}
+                        <div
+                          aria-hidden={!confirmingDelete}
+                          className={cn(
+                            't-resize min-w-0 shrink-0 overflow-hidden',
+                            confirmingDelete ? 'w-56' : 'w-0',
+                          )}
+                        >
+                          <Input
+                            ref={confirmationInputRef}
+                            aria-label={`Type ${selectedConnection.label} to confirm`}
+                            aria-describedby={`${selected.type}-delete-confirmation-hint`}
+                            aria-invalid={
+                              confirmationName.length > 0 &&
+                              confirmationName !== selectedConnection.label
+                            }
+                            autoComplete="off"
+                            disabled={!confirmingDelete}
+                            placeholder={`Enter ${selectedConnection.label}`}
+                            tabIndex={confirmingDelete ? 0 : -1}
+                            value={confirmationName}
+                            onChange={(event) => setConfirmationName(event.target.value)}
+                          />
+                        </div>
+                        <span id={`${selected.type}-delete-confirmation-hint`} className="sr-only">
+                          Enter the {singular} name exactly to enable deletion.
+                        </span>
+                        <Button
+                          type="submit"
+                          size="sm"
+                          variant="destructive"
+                          className="min-w-32"
+                          disabled={
+                            confirmingDelete && confirmationName !== selectedConnection.label
+                          }
+                        >
+                          <Trash2Icon aria-hidden="true" />
+                          {confirmingDelete ? 'Confirm' : `Delete ${singular}`}
+                        </Button>
+                      </form>
+                    </>
+                  )}
+                </>
               )}
             </div>
           </aside>

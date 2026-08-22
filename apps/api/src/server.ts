@@ -4,9 +4,9 @@ import { join, resolve } from 'node:path'
 import {
   createBunChildAgentExecutor,
   createChatGptOAuthService,
+  ensureGuestGlabBinary,
   getBunAgentWorkerScriptPath,
 } from '@slopify/agent-runtimes'
-import { DEFAULT_CHATGPT_CONNECTION_ID } from '@slopify/contracts'
 import {
   createProcessRunner,
   createAgentJobRunner,
@@ -25,6 +25,7 @@ import {
   createFileCredentialStore,
   createFilesystemSkillCatalog,
   createFilesystemSkillSnapshotStore,
+  initializeBuiltInConnectorSkills,
   createFilesystemAgentTraceStore,
   createGitLabConnectionDriver,
   createOpenRouterConnectionDriver,
@@ -48,6 +49,7 @@ import {
 import {
   PREDEFINED_V1_WORKFLOW_ID,
   WorkflowSchema,
+  createPredefinedV1DraftWorkflow,
   createPredefinedV1Workflow,
 } from '@slopify/workflow-model'
 import type { Hono } from 'hono'
@@ -78,6 +80,8 @@ export interface ApiServerConfiguration {
   readonly skillSnapshotsRoot: string
   readonly credentialPath: string
   readonly tracesRoot: string
+  readonly guestToolsRoot: string
+  readonly guestGlabSourcePath?: string
   readonly shutdownGracePeriodMs: number
 }
 
@@ -108,37 +112,36 @@ export const ensurePredefinedWorkflow = (
   workflows: Pick<WorkflowRepository, 'get' | 'save'>,
 ): void => {
   const existing = workflows.get(PREDEFINED_V1_WORKFLOW_ID)
+  const seedTimestamp = '2026-08-20T23:30:00.000Z'
+  const legacySeed = createPredefinedV1Workflow({
+    createdAt: seedTimestamp,
+    agentDefaults: {
+      provider: 'chatgpt-subscription',
+      model: 'gpt-5.4',
+      thinkingLevel: 'medium',
+    },
+  })
+  const legacyZeroTransitionSeed = WorkflowSchema.parse({
+    ...legacySeed,
+    maxTransitions: 0,
+  })
   const isLegacySeed =
-    existing?.name === 'Who are you?' &&
-    existing.nodes.length === 2 &&
-    existing.nodes.some(({ id, type }) => id === 'identify-agent' && type === 'agent') &&
-    existing.nodes.some(({ id, type }) => id === 'succeeded' && type === 'terminal') &&
-    existing.edges.length === 1 &&
-    existing.edges[0]?.sourceNodeId === 'identify-agent' &&
-    existing.edges[0].targetNodeId === 'succeeded'
+    existing !== undefined &&
+    [legacySeed, legacyZeroTransitionSeed].some(
+      (candidate) => JSON.stringify(existing) === JSON.stringify(candidate),
+    )
 
   if (existing !== undefined && !isLegacySeed) return
 
-  workflows.save(
-    createPredefinedV1Workflow({
-      createdAt: '2026-08-20T23:30:00.000Z',
-      agentDefaults: {
-        provider: 'chatgpt-subscription',
-        model: 'gpt-5.4',
-        thinkingLevel: 'medium',
-      },
-    }),
-  )
+  workflows.save(createPredefinedV1DraftWorkflow({ createdAt: seedTimestamp }))
 }
 
 export const connectDefaultChatGpt = (
   connect: ConnectionService['connect'],
-  input: Readonly<{ label: string; credential: Extract<Credential, { type: 'oauth' }> }>,
+  input: Readonly<{ credential: Extract<Credential, { type: 'oauth' }> }>,
 ) =>
   connect({
-    connectionId: DEFAULT_CHATGPT_CONNECTION_ID,
     type: 'chatgpt-subscription',
-    label: input.label,
     configuration: { provider: 'openai-codex' },
     credential: input.credential,
   })
@@ -197,6 +200,10 @@ export const resolveApiServerConfiguration = (
     ),
     credentialPath: resolve(environment.CREDENTIAL_PATH ?? join(stateRoot, 'credentials.json')),
     tracesRoot: resolve(join(stateRoot, 'traces')),
+    guestToolsRoot: resolve(join(stateRoot, 'guest-tools')),
+    ...(environment.SLOPIFY_GUEST_GLAB_PATH === undefined
+      ? {}
+      : { guestGlabSourcePath: resolve(environment.SLOPIFY_GUEST_GLAB_PATH) }),
     shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
   }
 }
@@ -231,9 +238,14 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const eventStore = createEventStore(database)
   const credentials = createFileCredentialStore({ path: configuration.credentialPath })
   const connectionCatalog = createConnectionCatalogRepository(database)
+  initializeBuiltInConnectorSkills({
+    root: configuration.skillsRoot,
+    catalog: connectionCatalog.list(),
+  })
   const connections = createConnectionService({
     connections: createConnectionRepository(database),
     credentials,
+    catalog: connectionCatalog,
     drivers: [
       createGitLabConnectionDriver(),
       createClickUpConnectionDriver(),
@@ -274,7 +286,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       const inference = connections.get(parsedNode.job.inference.connectionId)
       if (inference.status !== 'CONNECTED' || inference.category !== 'inference')
         throw new Error('Inference connection is unavailable')
-      const snapshots = await Promise.all(
+      const selectedSnapshots = await Promise.all(
         parsedNode.job.skillSnapshotRefs.map(async (reference) => {
           const snapshot = await skillSnapshots.get(reference.digest)
           if (snapshot === undefined) throw new Error('Skill snapshot is unavailable')
@@ -288,6 +300,25 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       )
       const connectorRecords = parsedNode.job.connectorIds.map((connectionId) =>
         connections.get(connectionId),
+      )
+      const connectorSnapshots = await Promise.all(
+        connectorRecords.map(async (connection) => {
+          const definition = connectionCatalog.list().find(({ type }) => type === connection.type)
+          if (definition?.skillId === undefined) throw new Error('Connector skill is unavailable')
+          const skill = await skills.get(definition.skillId)
+          if (!skill.valid) throw new Error('Connector skill is invalid')
+          const snapshot = await skillSnapshots.capture(skill)
+          return {
+            skillId: skill.skillId,
+            name: skill.name,
+            description: skill.description,
+            hostPath: snapshot.path,
+          }
+        }),
+      )
+      const snapshots = [...selectedSnapshots, ...connectorSnapshots].filter(
+        (snapshot, index, all) =>
+          all.findIndex(({ skillId }) => skillId === snapshot.skillId) === index,
       )
       const connectorsForVm = connectorRecords.map((connection) => {
         if (
@@ -316,6 +347,12 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       return {
         outputSchemaRef: parsedNode.result.schemaRef,
         inferenceConnectionId: inference.connectionId,
+        glabHostPath: await ensureGuestGlabBinary({
+          root: configuration.guestToolsRoot,
+          ...(configuration.guestGlabSourcePath === undefined
+            ? {}
+            : { sourcePath: configuration.guestGlabSourcePath }),
+        }),
         resourceBundle: {
           bundleId: input.resourceBundleId,
           applicationVersion: '1',
@@ -387,9 +424,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     app: createApiApp({
       cancellation,
       chatGptOAuth: createChatGptOAuthService({
-        async connect({ label, credential }) {
+        async connect({ credential }) {
           const connection = await connectDefaultChatGpt(connections.connect, {
-            label,
             credential,
           })
           return connection.connectionId
@@ -406,6 +442,18 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       skills,
       workflows: createWorkflowService({
         workflows: workflowRepository,
+        skills,
+        skillSnapshots,
+        connectorSkillIds(connectorIds) {
+          return connectorIds.map((connectionId) => {
+            const connection = connections.get(connectionId)
+            const skillId = connectionCatalog
+              .list()
+              .find(({ type }) => type === connection.type)?.skillId
+            if (skillId === undefined) throw new Error('Connector skill is unavailable')
+            return skillId
+          })
+        },
       }),
     }),
     configuration,

@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
+import { createPredefinedV1Workflow } from '@slopify/workflow-model'
+
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
@@ -20,7 +22,7 @@ const database = {
 }
 
 describe('API server configuration', () => {
-  it('seeds the source-controlled V1 workflow exactly once', () => {
+  it('seeds one empty workflow draft exactly once', () => {
     const save = vi.fn()
     const workflows = {
       save,
@@ -33,60 +35,63 @@ describe('API server configuration', () => {
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowId: 'delivery-workflow',
-        startNodeId: 'identify-agent',
+        startNodeId: null,
+        nodes: [],
+        edges: [],
       }),
     )
-    expect(save.mock.calls[0]?.[0].nodes[0]).toMatchObject({
-      type: 'agent',
-      job: {
-        prompt: "Who are you? What's your name?",
-        inference: {
-          connectionId: 'chatgpt-subscription-default',
-          modelId: 'gpt-5.4',
-        },
-      },
-    })
 
     workflows.get.mockReturnValue(save.mock.calls[0]?.[0])
     ensurePredefinedWorkflow(workflows)
     expect(save).toHaveBeenCalledTimes(1)
   })
 
-  it('replaces only the legacy seeded workflow that still has synthetic nodes', () => {
+  it('migrates only the exact untouched legacy seed to the empty draft', () => {
     const save = vi.fn()
+    const legacy = createPredefinedV1Workflow({
+      createdAt: '2026-08-20T23:30:00.000Z',
+      agentDefaults: {
+        provider: 'chatgpt-subscription',
+        model: 'gpt-5.4',
+        thinkingLevel: 'medium',
+      },
+    })
     const workflows = {
       save,
-      get: vi.fn(() => ({
-        workflowId: 'delivery-workflow',
-        name: 'Who are you?',
-        nodes: [
-          { type: 'agent', id: 'identify-agent' },
-          { type: 'terminal', id: 'succeeded' },
-        ],
-        edges: [
-          {
-            sourceNodeId: 'identify-agent',
-            outcome: 'completed',
-            targetNodeId: 'succeeded',
-          },
-        ],
-      })),
+      get: vi.fn(() => legacy),
     }
 
     ensurePredefinedWorkflow(workflows)
 
     expect(save).toHaveBeenCalledTimes(1)
-    expect(save.mock.calls[0]?.[0].nodes).toEqual([
-      expect.objectContaining({ type: 'agent', id: 'identify-agent' }),
-    ])
+    expect(save.mock.calls[0]?.[0]).toMatchObject({ startNodeId: null, nodes: [], edges: [] })
   })
 
-  it('stores ChatGPT OAuth as the inference connection used by the default workflow', async () => {
-    const connect = vi.fn(async (input) => ({ connectionId: input.connectionId }))
+  it('never overwrites a user-edited workflow resembling the legacy seed', () => {
+    const save = vi.fn()
+    const legacy = createPredefinedV1Workflow({
+      createdAt: '2026-08-20T23:30:00.000Z',
+      agentDefaults: {
+        provider: 'chatgpt-subscription',
+        model: 'gpt-5.4',
+        thinkingLevel: 'medium',
+      },
+    })
+    const workflows = {
+      save,
+      get: vi.fn(() => ({ ...legacy, name: 'My edited workflow' })),
+    }
+
+    ensurePredefinedWorkflow(workflows)
+
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('stores ChatGPT OAuth under the server-owned catalog identity', async () => {
+    const connect = vi.fn(async () => ({ connectionId: 'chatgpt-subscription-default' }))
 
     await expect(
       connectDefaultChatGpt(connect, {
-        label: 'ChatGPT subscription',
         credential: {
           type: 'oauth',
           access: 'access-token',
@@ -97,10 +102,11 @@ describe('API server configuration', () => {
     ).resolves.toEqual({ connectionId: 'chatgpt-subscription-default' })
     expect(connect).toHaveBeenCalledWith(
       expect.objectContaining({
-        connectionId: 'chatgpt-subscription-default',
         type: 'chatgpt-subscription',
       }),
     )
+    expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('connectionId')
+    expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('label')
   })
 
   it('uses native owner-local state and accepts explicit host and port overrides', () => {
@@ -120,6 +126,7 @@ describe('API server configuration', () => {
       skillSnapshotsRoot: expect.any(String),
       credentialPath: expect.any(String),
       tracesRoot: expect.any(String),
+      guestToolsRoot: expect.any(String),
     })
     expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
       hostname: '127.0.0.1',
@@ -129,6 +136,7 @@ describe('API server configuration', () => {
       skillSnapshotsRoot: '/tmp/slopify-test/skill-snapshots',
       credentialPath: '/tmp/slopify-test/credentials.json',
       tracesRoot: '/tmp/slopify-test/traces',
+      guestToolsRoot: '/tmp/slopify-test/guest-tools',
     })
   })
 
@@ -168,6 +176,7 @@ describe('API server configuration', () => {
         skillSnapshotsRoot: '/skill-snapshots',
         credentialPath: '/credentials.json',
         tracesRoot: '/traces',
+        guestToolsRoot: '/guest-tools',
         shutdownGracePeriodMs: 10_000,
       },
       serve,

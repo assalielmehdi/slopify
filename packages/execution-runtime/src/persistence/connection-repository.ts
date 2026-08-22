@@ -60,6 +60,11 @@ export const createConnectionRepository = (database: WorkbenchDatabase): Connect
         ConnectionRow | undefined
       return row === undefined ? undefined : parseRow(row)
     },
+    getByType(type) {
+      const row = connection.prepare(`${select} WHERE type = ?`).get(type) as
+        ConnectionRow | undefined
+      return row === undefined ? undefined : parseRow(row)
+    },
     list() {
       return (
         connection.prepare(`${select} ORDER BY label, connection_id`).all() as ConnectionRow[]

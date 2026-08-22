@@ -31,7 +31,7 @@ import { registerDeletionRoutes } from './routes/deletions.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
-import { registerSkillRoutes } from './routes/skills.js'
+import { registerSkillRoutes, type BuiltInSkillPresentation } from './routes/skills.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
@@ -49,6 +49,7 @@ export interface CreateApiAppOptions {
   readonly skills?: SkillCatalog
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
+  readonly builtInSkillNames?: ReadonlyMap<string, string>
 }
 
 const errorBody = (input: {
@@ -93,7 +94,26 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.runs !== undefined)
     registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
-  if (options.skills !== undefined) registerSkillRoutes(app, options.skills)
+  if (options.skills !== undefined)
+    registerSkillRoutes(
+      app,
+      options.skills,
+      new Map<string, BuiltInSkillPresentation>([
+        ...(options.builtInSkillNames === undefined
+          ? []
+          : [...options.builtInSkillNames].map(
+              ([skillId, displayName]) =>
+                [skillId, { displayName, kind: 'built-in' as const }] as const,
+            )),
+        ...(options.connectionCatalog
+          ?.list()
+          .flatMap(({ skillId }) =>
+            skillId === undefined
+              ? []
+              : [[skillId, { displayName: skillId, kind: 'connector' as const }] as const],
+          ) ?? []),
+      ]),
+    )
   if (options.connections !== undefined && options.connectionCatalog !== undefined)
     registerConnectionRoutes(
       app,
@@ -124,22 +144,26 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       const status =
         error.code === 'SKILL_NOT_FOUND'
           ? 404
-          : error.code === 'SKILL_CONFLICT'
-            ? 409
-            : error.code === 'SKILL_LIMIT_EXCEEDED'
-              ? 413
-              : 400
+          : error.code === 'SKILL_READ_ONLY'
+            ? 403
+            : error.code === 'SKILL_CONFLICT'
+              ? 409
+              : error.code === 'SKILL_LIMIT_EXCEEDED'
+                ? 413
+                : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof ConnectionServiceError) {
       const status =
         error.code === 'CONNECTION_NOT_FOUND'
           ? 404
-          : error.code === 'CONNECTION_VALIDATION_FAILED'
-            ? 422
-            : error.code === 'CREDENTIAL_NOT_FOUND'
-              ? 409
-              : 400
+          : error.code === 'CONNECTION_ALREADY_EXISTS'
+            ? 409
+            : error.code === 'CONNECTION_VALIDATION_FAILED'
+              ? 422
+              : error.code === 'CREDENTIAL_NOT_FOUND'
+                ? 409
+                : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof CancellationServiceError) {
@@ -179,7 +203,14 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       )
     }
     if (error instanceof WorkflowServiceError) {
-      return context.json(errorBody({ code: error.code, message: error.message }), 404)
+      return context.json(
+        errorBody({ code: error.code, message: error.message }),
+        error.code === 'WORKFLOW_NOT_FOUND'
+          ? 404
+          : error.code === 'WORKFLOW_NOT_LINEAR'
+            ? 422
+            : 409,
+      )
     }
     if (error instanceof ProjectServiceError) {
       const status =

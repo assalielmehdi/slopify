@@ -17,8 +17,10 @@ export const writeAgentWorkflowFixture = async (
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { getBunAgentWorkerScriptPath } from 'file:///app/node_modules/@slopify/agent-runtimes/dist/index.js'
+import { createPredefinedV1Workflow } from 'file:///app/node_modules/@slopify/workflow-model/dist/index.js'
 import {
   createChatGptSubscriptionConnectionDriver,
+  createConnectionCatalogRepository,
   createConnectionRepository,
   createConnectionService,
   createFileCredentialStore,
@@ -34,11 +36,19 @@ try {
   const workflows = createWorkflowRepository(database)
   const workflow = workflows.get('delivery-workflow')
   if (workflow === undefined) throw new Error('predefined workflow is missing')
+  const configuredWorkflow = createPredefinedV1Workflow({
+    createdAt: workflow.createdAt,
+    agentDefaults: {
+      provider: 'chatgpt-subscription',
+      model: 'gpt-5.4',
+      thinkingLevel: 'medium',
+    },
+  })
   workflows.save({
-    ...workflow,
+    ...configuredWorkflow,
     updatedAt: new Date().toISOString(),
-    nodes: workflow.nodes.map((node) =>
-      node.type === 'agent' && node.id === workflow.startNodeId
+    nodes: configuredWorkflow.nodes.map((node) =>
+      node.type === 'agent' && node.id === configuredWorkflow.startNodeId
         ? {
             ...node,
             job: { ...node.job, prompt: 'Introduce yourself to {{audience}}.' },
@@ -49,15 +59,14 @@ try {
 
   const connections = createConnectionService({
     connections: createConnectionRepository(database),
+    catalog: createConnectionCatalogRepository(database),
     credentials: createFileCredentialStore({
       path: join(homedir(), '.slopify', 'credentials.json'),
     }),
     drivers: [createChatGptSubscriptionConnectionDriver()],
   })
   await connections.connect({
-    connectionId: 'chatgpt-subscription-default',
     type: 'chatgpt-subscription',
-    label: 'Container acceptance ChatGPT',
     configuration: { provider: 'openai-codex' },
     credential: {
       type: 'oauth',

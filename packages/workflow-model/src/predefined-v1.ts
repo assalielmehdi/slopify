@@ -1,9 +1,9 @@
-import { WorkflowSchema } from './schemas.js'
+import { DEFAULT_AGENT_TIMEOUT_SECONDS, WorkflowSchema } from './schemas.js'
 import type { Workflow } from './types.js'
 import { validateWorkflow } from './validate-workflow.js'
 
 export const PREDEFINED_V1_WORKFLOW_ID = 'delivery-workflow'
-export const PREDEFINED_V1_TRANSITION_LIMIT = 0
+export const PREDEFINED_V1_TRANSITION_LIMIT = 100
 export const PREDEFINED_V1_COMMAND_IDS = Object.freeze([] as string[])
 
 export interface PredefinedV1AgentDefaults {
@@ -15,6 +15,26 @@ export interface PredefinedV1AgentDefaults {
 export interface CreatePredefinedV1WorkflowInput {
   readonly createdAt: string
   readonly agentDefaults: PredefinedV1AgentDefaults
+}
+
+export interface CreatePredefinedV1DraftWorkflowInput {
+  readonly createdAt: string
+}
+
+export function createPredefinedV1DraftWorkflow(
+  input: CreatePredefinedV1DraftWorkflowInput,
+): Workflow {
+  return WorkflowSchema.parse({
+    workflowId: PREDEFINED_V1_WORKFLOW_ID,
+    name: 'Untitled workflow',
+    description: 'Add agents and connect them to build a workflow.',
+    startNodeId: null,
+    nodes: [],
+    edges: [],
+    maxTransitions: PREDEFINED_V1_TRANSITION_LIMIT,
+    createdAt: input.createdAt,
+    updatedAt: input.createdAt,
+  })
 }
 
 export function createPredefinedV1Workflow(input: CreatePredefinedV1WorkflowInput): Workflow {
@@ -29,7 +49,7 @@ export function createPredefinedV1Workflow(input: CreatePredefinedV1WorkflowInpu
         id: 'identify-agent',
         name: 'Who are you?',
         description: 'Ask the agent to identify itself.',
-        timeoutSeconds: 300,
+        timeoutSeconds: DEFAULT_AGENT_TIMEOUT_SECONDS,
         result: { schemaRef: 'json:any-v1' },
         sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
         job: {

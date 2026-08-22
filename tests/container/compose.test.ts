@@ -149,8 +149,8 @@ describe('two-service Compose acceptance', () => {
           workflows: [
             {
               workflowId: 'delivery-workflow',
-              startNodeId: 'identify-agent',
-              nodes: [{ id: 'identify-agent', type: 'agent', job: { kind: 'agent' } }],
+              startNodeId: null,
+              nodes: [],
               edges: [],
             },
           ],

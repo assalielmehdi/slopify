@@ -1,6 +1,7 @@
+import { fork } from 'node:child_process'
 import { chmod, mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import type { Credential, CredentialInfo, CredentialStore } from '@earendil-works/pi-ai'
@@ -27,6 +28,7 @@ export interface WorkerCredentialStore {
 export interface BunWorkerExecutionContext {
   readonly outputSchemaRef: string
   readonly inferenceConnectionId: string
+  readonly glabHostPath: string
   readonly resourceBundle: LoadedResourceBundle
   readonly skills: readonly Readonly<{
     skillId: string
@@ -62,56 +64,46 @@ export interface BunWorkerSpawner {
   spawn(input: BunWorkerSpawnInput): BunWorkerProcess
 }
 
-export const getBunAgentWorkerScriptPath = (): string =>
-  fileURLToPath(new URL('./bun-agent-worker.js', import.meta.url))
-
-interface BunSubprocess {
-  readonly pid: number
-  readonly exited: Promise<number>
-  send(message: unknown): void
-  kill(signal?: string): void
-  disconnect(): void
-}
-
-interface BunRuntime {
-  spawn(
-    command: readonly string[],
-    options: Readonly<{
-      cwd: string
-      env: Readonly<Record<string, string>>
-      serialization: 'json'
-      stdio: readonly ['ignore', 'ignore', 'ignore']
-      ipc(message: unknown): void
-      onExit(
-        process: BunSubprocess,
-        exitCode: number | null,
-        signalCode: string | null,
-        error?: Error,
-      ): void
-    }>,
-  ): BunSubprocess
+export const getBunAgentWorkerScriptPath = (): string => {
+  const moduleDirectory = dirname(fileURLToPath(import.meta.url))
+  return join(
+    basename(moduleDirectory) === 'src' ? join(moduleDirectory, '..', 'dist') : moduleDirectory,
+    'bun-agent-worker.js',
+  )
 }
 
 const createDefaultSpawner = (): BunWorkerSpawner => ({
   spawn(input) {
-    const bun = (globalThis as typeof globalThis & { Bun?: BunRuntime }).Bun
-    if (bun === undefined) throw new Error('Bun runtime is required for agent workers')
-    const child = bun.spawn([process.execPath, input.scriptPath], {
+    // Gondolin supports Node and its TLS MITM bridge resets guest HTTPS under Bun 1.4.
+    // Keep the Bun coordinator as the credential broker and isolate Gondolin in Node.
+    const child = fork(input.scriptPath, [], {
       cwd: input.cwd,
       env: input.environment,
       serialization: 'json',
-      stdio: ['ignore', 'ignore', 'ignore'],
-      ipc: input.onMessage,
-      onExit(_process, exitCode) {
-        input.onExit(exitCode ?? 1)
-      },
+      execPath: 'node',
+      execArgv: [],
+      stdio: ['ignore', 'ignore', 'ignore', 'ipc'],
+    })
+    child.on('message', input.onMessage)
+    const exited = new Promise<number>((resolve) => {
+      child.once('exit', (exitCode) => {
+        const code = exitCode ?? 1
+        input.onExit(code)
+        resolve(code)
+      })
     })
     return {
-      pid: child.pid,
-      exited: child.exited,
-      send: (message) => child.send(message),
-      kill: (signal) => child.kill(signal),
-      disconnect: () => child.disconnect(),
+      pid: child.pid ?? 0,
+      exited,
+      send: (message) => {
+        child.send(message as Parameters<typeof child.send>[0])
+      },
+      kill: (signal) => {
+        child.kill(signal)
+      },
+      disconnect: () => {
+        if (child.connected) child.disconnect()
+      },
     }
   },
 })

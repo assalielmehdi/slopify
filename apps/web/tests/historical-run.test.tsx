@@ -29,17 +29,26 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
 const workflow = createPredefinedV1Workflow({
   createdAt: '2026-07-01T10:00:00Z',
   agentDefaults: {
-    provider: 'historical-provider',
+    provider: 'chatgpt-subscription',
     model: 'historical-model',
     thinkingLevel: 'xhigh',
   },
 })
 
+const workflowWithConnectors = {
+  ...workflow,
+  nodes: workflow.nodes.map((node) =>
+    node.type === 'agent' && node.id === 'identify-agent'
+      ? { ...node, job: { ...node.job, connectorIds: ['clickup-default', 'gitlab-default'] } }
+      : node,
+  ),
+}
+
 const detail = {
   run: {
     runId: 'run-historical',
     workflowId: workflow.workflowId,
-    workflowSnapshot: workflow,
+    workflowSnapshot: workflowWithConnectors,
     variables: { task: 'PROJ-9' },
     missingVariables: [],
     status: 'SUCCEEDED',
@@ -91,7 +100,48 @@ afterEach(() => {
 describe('historical run', () => {
   it('uses the captured workflow and node configuration without opening a live stream', async () => {
     const connector: RunEventConnector = vi.fn()
-    const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
+    const client = {
+      getRun: vi.fn(async () => detail),
+      cancelRun: vi.fn(),
+      listConnections: vi.fn(async () => ({
+        catalog: [
+          {
+            type: 'chatgpt-subscription' as const,
+            category: 'inference' as const,
+            name: 'ChatGPT',
+            icon: 'chatgpt' as const,
+            eyebrow: 'Subscription provider',
+            summary: 'Use a ChatGPT subscription.',
+            description: 'Use ChatGPT through Pi.',
+            setup: ['Connect ChatGPT.'],
+            access: 'Inference only.',
+          },
+          {
+            type: 'clickup' as const,
+            category: 'connector' as const,
+            name: 'ClickUp',
+            icon: 'clickup' as const,
+            eyebrow: 'Work management',
+            summary: 'Use ClickUp.',
+            description: 'Connect ClickUp tasks.',
+            setup: ['Connect ClickUp.'],
+            access: 'Task access.',
+          },
+          {
+            type: 'gitlab' as const,
+            category: 'connector' as const,
+            name: 'GitLab',
+            icon: 'gitlab' as const,
+            eyebrow: 'Source control',
+            summary: 'Use GitLab.',
+            description: 'Connect GitLab projects.',
+            setup: ['Connect GitLab.'],
+            access: 'Repository access.',
+          },
+        ],
+        connections: [],
+      })),
+    }
 
     render(<LiveRun runId="run-historical" client={client} connect={connector} />)
 
@@ -100,9 +150,15 @@ describe('historical run', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Inspect captured agent' }))
 
     const panel = screen.getByRole('dialog', { name: 'Who are you?' })
-    expect(panel.textContent).toContain('historical-provider-default')
+    expect(await screen.findByText('ChatGPT')).toBeTruthy()
+    expect(panel.textContent).not.toContain('chatgpt-subscription-default')
     expect(panel.textContent).toContain('historical-model')
     expect(panel.textContent).toContain('xhigh')
+    expect(panel.textContent).toContain('ClickUp')
+    expect(panel.textContent).toContain('GitLab')
+    expect(panel.textContent).not.toContain('clickup-default')
+    expect(panel.textContent).not.toContain('gitlab-default')
+    expect(panel.textContent).toContain('Took 1m 0s')
     expect(panel.textContent).toContain('Captured response from July.')
   })
 })

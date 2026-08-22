@@ -79,6 +79,22 @@ const workflow = {
 }
 
 describe('workflow node contracts', () => {
+  it('fills app-owned runtime defaults for a newly authored agent', () => {
+    const parsed = AgentNodeSchema.parse({
+      type: 'agent',
+      id: 'new-agent',
+      name: 'New agent',
+      job: { kind: 'agent', prompt: 'Use {{ task }}.' },
+    })
+
+    expect(parsed).toMatchObject({
+      description: 'Workflow agent',
+      timeoutSeconds: 300,
+      result: { schemaRef: 'json:any-v1' },
+      sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
+    })
+  })
+
   it.each([
     ['agent', AgentNodeSchema, agentNode],
     ['command', CommandNodeSchema, commandNode],

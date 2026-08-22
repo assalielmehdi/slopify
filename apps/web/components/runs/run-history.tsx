@@ -11,9 +11,10 @@ import {
   type RunFilters,
 } from '@/components/runs/run-filters'
 import { RunStatusBadge, formatDuration, formatTimestamp } from '@/components/runs/run-status'
+import { displayRunId } from '@/lib/run-id'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button, buttonVariants } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
+import { RunTableSkeleton } from '@/components/runs/run-table-skeleton'
 import {
   Table,
   TableBody,
@@ -22,6 +23,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import {
   createApiClient,
@@ -44,6 +46,48 @@ const sortableColumns: readonly { key: SortKey; label: string }[] = [
   { key: 'durationMs', label: 'Duration' },
   { key: 'status', label: 'Status' },
 ]
+
+const sameLocalDay = (left: Date, right: Date): boolean =>
+  left.getFullYear() === right.getFullYear() &&
+  left.getMonth() === right.getMonth() &&
+  left.getDate() === right.getDate()
+
+export function formatRunHistoryTimestamp(timestamp: string | null, now = new Date()): string {
+  if (timestamp === null) return 'Not recorded'
+  const startedAt = new Date(timestamp)
+  const elapsedMs = now.getTime() - startedAt.getTime()
+  if (elapsedMs < 0 || !sameLocalDay(startedAt, now)) return formatTimestamp(timestamp)
+
+  const elapsedSeconds = Math.max(1, Math.floor(elapsedMs / 1_000))
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' })
+  if (elapsedSeconds < 60) return formatter.format(-elapsedSeconds, 'second')
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
+  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, 'minute')
+  return formatter.format(-Math.floor(elapsedMinutes / 60), 'hour')
+}
+
+function RunStartedAt({ timestamp }: Readonly<{ timestamp: string | null }>) {
+  if (timestamp === null) return <>Not recorded</>
+  const exact = formatTimestamp(timestamp)
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <time
+            aria-label={`Started ${exact}`}
+            className="tabular-nums"
+            dateTime={timestamp}
+            tabIndex={0}
+          />
+        }
+      >
+        {formatRunHistoryTimestamp(timestamp)}
+      </TooltipTrigger>
+      <TooltipContent>{exact}</TooltipContent>
+    </Tooltip>
+  )
+}
 
 const compareNullable = <T extends number | string>(left: T | null, right: T | null): number => {
   if (left === right) return 0
@@ -249,10 +293,7 @@ export function RunHistory({
           <AlertDescription>Retry after the local API is available.</AlertDescription>
         </Alert>
       ) : history === null ? (
-        <div aria-label="Loading run history" className="space-y-3 p-6">
-          <Skeleton className="h-10 w-full" />
-          <Skeleton className="h-48 w-full" />
-        </div>
+        <RunTableSkeleton />
       ) : history.data.length === 0 && activeFilterCount === 0 ? (
         <div className="border-b px-6 py-16 text-center">
           <p className="font-medium">No runs yet</p>
@@ -307,15 +348,17 @@ export function RunHistory({
                   <TableRow key={run.runId}>
                     <TableCell className="font-mono font-medium">
                       <Link
-                        aria-label={`Open run ${run.runId}`}
+                        aria-label={`Open run ${displayRunId(run.runId)}`}
                         className="underline-offset-4 hover:underline focus-visible:underline"
                         href={`/runs/${encodeURIComponent(run.runId)}`}
                         prefetch={false}
                       >
-                        {run.runId}
+                        {displayRunId(run.runId)}
                       </Link>
                     </TableCell>
-                    <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
+                    <TableCell>
+                      <RunStartedAt timestamp={run.startedAt} />
+                    </TableCell>
                     <TableCell>
                       {run.durationMs === null ? 'Not recorded' : formatDuration(run.durationMs)}
                     </TableCell>

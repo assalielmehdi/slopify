@@ -215,6 +215,22 @@ export const ConnectionTypeSchema = z.enum([
 
 export const ConnectionCategorySchema = z.enum(['connector', 'inference'])
 
+export const InferenceThinkingLevelSchema = z.enum([
+  'off',
+  'minimal',
+  'low',
+  'medium',
+  'high',
+  'xhigh',
+  'max',
+])
+
+export const InferenceModelOptionSchema = z.strictObject({
+  id: z.string().trim().min(1).max(256),
+  name: z.string().trim().min(1).max(128),
+  thinkingLevels: z.array(InferenceThinkingLevelSchema).min(1).max(7).readonly(),
+})
+
 export const ConnectionCatalogEntrySchema = z.strictObject({
   type: ConnectionTypeSchema,
   category: ConnectionCategorySchema,
@@ -230,6 +246,8 @@ export const ConnectionCatalogEntrySchema = z.strictObject({
   replacementLabel: z.string().trim().min(1).max(128).optional(),
   resourceHref: z.url().max(4_096).optional(),
   resourceLabel: z.string().trim().min(1).max(128).optional(),
+  skillId: z.string().trim().min(1).max(128).optional(),
+  models: z.array(InferenceModelOptionSchema).max(64).readonly().optional(),
 })
 
 export const ProjectAvailabilitySchema = z.enum(['AVAILABLE', 'MISSING', 'NOT_GIT_REPOSITORY'])
@@ -447,6 +465,7 @@ export const AgentTraceEventTypeSchema = z.enum([
   'AGENT_SESSION_IDENTIFIED',
   'AGENT_MESSAGE',
   'AGENT_REASONING',
+  'PI_EVENT',
   'AGENT_TOOL_STARTED',
   'AGENT_TOOL_UPDATED',
   'AGENT_TOOL_COMPLETED',
@@ -517,6 +536,8 @@ export type ProjectProfileCatalogResponse = z.infer<typeof ProjectProfileCatalog
 export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>
 export type ConnectionCategory = z.infer<typeof ConnectionCategorySchema>
+export type InferenceThinkingLevel = z.infer<typeof InferenceThinkingLevelSchema>
+export type InferenceModelOption = z.infer<typeof InferenceModelOptionSchema>
 export type ConnectionCatalogEntry = z.infer<typeof ConnectionCatalogEntrySchema>
 export type ProjectAvailability = z.infer<typeof ProjectAvailabilitySchema>
 export type Project = z.infer<typeof ProjectSchema>

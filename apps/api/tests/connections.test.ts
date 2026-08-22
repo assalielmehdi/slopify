@@ -40,6 +40,19 @@ const catalog: ConnectionCatalog = {
       resourceHref: 'https://gitlab.com/-/user_settings/personal_access_tokens',
       resourceLabel: 'Create a personal access token',
     },
+    {
+      type: 'chatgpt-subscription',
+      category: 'inference',
+      name: 'ChatGPT',
+      icon: 'chatgpt',
+      eyebrow: 'Subscription provider',
+      summary: 'Use a ChatGPT subscription.',
+      description: 'Connect ChatGPT.',
+      setup: ['Sign in.'],
+      access: 'Uses owner-local OAuth.',
+      resourceHref: 'https://chatgpt.com/',
+      resourceLabel: 'Open ChatGPT',
+    },
   ],
 }
 
@@ -48,8 +61,8 @@ const fixture = () => {
   const connections = createConnectionService({
     connections: createInMemoryConnectionRepository(),
     credentials,
+    catalog,
     drivers: [driver],
-    ids: () => 'gitlab-primary',
     now: () => '2026-08-20T00:00:00.000Z',
   })
   return {
@@ -76,7 +89,6 @@ describe('connections API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         type: 'gitlab',
-        label: 'Primary GitLab',
         configuration: { baseUrl: 'https://gitlab.com' },
         credential: { type: 'api_key', key: 'secret' },
       }),
@@ -85,14 +97,16 @@ describe('connections API', () => {
     expect(response.status).toBe(201)
     expect(body).not.toHaveProperty('credential')
     expect(JSON.stringify(body)).not.toContain('secret')
-    expect(await credentials.read('gitlab-primary')).toMatchObject({ key: 'secret' })
+    expect(body).toMatchObject({ connectionId: 'gitlab-default', label: 'GitLab' })
+    expect(await credentials.read('gitlab-default')).toMatchObject({ key: 'secret' })
+    const readback = await (await app.request('/api/connections')).text()
+    expect(readback).not.toContain('secret')
   })
 
   it('lists, revalidates, replaces credentials, and disconnects', async () => {
     const { app } = fixture()
     const input = {
       type: 'gitlab',
-      label: 'GitLab',
       configuration: {},
       credential: { type: 'api_key', key: 'secret' },
     }
@@ -103,11 +117,11 @@ describe('connections API', () => {
     })
     expect((await app.request('/api/connections')).status).toBe(200)
     expect(
-      (await app.request('/api/connections/gitlab-primary/revalidate', { method: 'POST' })).status,
+      (await app.request('/api/connections/gitlab-default/revalidate', { method: 'POST' })).status,
     ).toBe(200)
     expect(
       (
-        await app.request('/api/connections/gitlab-primary/credential', {
+        await app.request('/api/connections/gitlab-default/credential', {
           method: 'PUT',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ credential: { type: 'api_key', key: 'secret' } }),
@@ -115,7 +129,7 @@ describe('connections API', () => {
       ).status,
     ).toBe(200)
     expect(
-      (await app.request('/api/connections/gitlab-primary', { method: 'DELETE' })).status,
+      (await app.request('/api/connections/gitlab-default', { method: 'DELETE' })).status,
     ).toBe(204)
   })
 
@@ -126,7 +140,6 @@ describe('connections API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         type: 'gitlab',
-        label: 'GitLab',
         configuration: {},
         credential: { type: 'api_key', key: 'bad-secret' },
       }),
@@ -135,6 +148,40 @@ describe('connections API', () => {
     expect(response.status).toBe(422)
     expect(body).toContain('CONNECTION_VALIDATION_FAILED')
     expect(body).not.toContain('bad-secret')
+  })
+
+  it('rejects browser-selected connection identity fields and supports re-add after delete', async () => {
+    const { app } = fixture()
+    const rejected = await app.request('/api/connections', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        connectionId: 'chosen-id',
+        label: 'Chosen label',
+        type: 'gitlab',
+        configuration: {},
+        credential: { type: 'api_key', key: 'secret' },
+      }),
+    })
+    expect(rejected.status).toBe(400)
+
+    const input = {
+      type: 'gitlab',
+      configuration: {},
+      credential: { type: 'api_key', key: 'secret' },
+    }
+    const add = () =>
+      app.request('/api/connections', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(input),
+      })
+    expect((await add()).status).toBe(201)
+    expect((await add()).status).toBe(409)
+    expect(
+      (await app.request('/api/connections/gitlab-default', { method: 'DELETE' })).status,
+    ).toBe(204)
+    expect((await add()).status).toBe(201)
   })
 
   it('starts and polls ChatGPT subscription OAuth without returning tokens', async () => {
@@ -156,7 +203,7 @@ describe('connections API', () => {
     const start = await app.request('/api/connections/chatgpt/oauth', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ label: 'My ChatGPT' }),
+      body: JSON.stringify({}),
     })
     expect(start.status).toBe(202)
     expect(await start.json()).toEqual({ id: 'oauth-01', status: 'PENDING' })

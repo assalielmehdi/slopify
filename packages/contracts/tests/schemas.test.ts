@@ -4,6 +4,7 @@ import {
   ApiErrorSchema,
   ArtifactTypeSchema,
   CreateRunRequestSchema,
+  ConnectionCatalogEntrySchema,
   DeletionReceiptSchema,
   UndoDeletionResponseSchema,
   EvidenceSchema,
@@ -49,6 +50,43 @@ describe('branded identifiers', () => {
   it.each(['plan-node', 'review-2'])('accepts kebab-case node and outcome name %s', (value) => {
     expect(NodeIdSchema.parse(value)).toBe(value)
     expect(OutcomeNameSchema.parse(value)).toBe(value)
+  })
+})
+
+describe('connection catalog', () => {
+  it('constrains provider models and their supported thinking efforts', () => {
+    const entry = ConnectionCatalogEntrySchema.parse({
+      type: 'chatgpt-subscription',
+      category: 'inference',
+      name: 'ChatGPT',
+      icon: 'chatgpt',
+      eyebrow: 'Subscription provider',
+      summary: 'Use a ChatGPT subscription.',
+      description: 'Use ChatGPT through Pi.',
+      setup: ['Connect ChatGPT.'],
+      access: 'Inference only.',
+      models: [
+        {
+          id: 'gpt-5.6-luna',
+          name: 'GPT-5.6 Luna',
+          thinkingLevels: ['low', 'medium', 'high', 'max'],
+        },
+      ],
+    })
+
+    expect(entry.models).toEqual([
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        thinkingLevels: ['low', 'medium', 'high', 'max'],
+      },
+    ])
+    expect(
+      ConnectionCatalogEntrySchema.safeParse({
+        ...entry,
+        models: [{ ...entry.models[0], thinkingLevels: ['unsupported'] }],
+      }).success,
+    ).toBe(false)
   })
 })
 

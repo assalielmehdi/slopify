@@ -1,4 +1,5 @@
 import type { Credential, CredentialStore } from './credential-store.js'
+import type { ConnectionCatalog } from './connection-catalog.js'
 
 export type ConnectionType = 'gitlab' | 'clickup' | 'openrouter' | 'chatgpt-subscription'
 export type ConnectionCategory = 'connector' | 'inference'
@@ -19,6 +20,7 @@ export interface ConnectionRecord {
 
 export interface ConnectionRepository {
   get(connectionId: string): ConnectionRecord | undefined
+  getByType(type: ConnectionType): ConnectionRecord | undefined
   list(): readonly ConnectionRecord[]
   save(connection: ConnectionRecord): void
   delete(connectionId: string): void
@@ -38,8 +40,10 @@ export interface ConnectionDriver {
 }
 
 export type ConnectionServiceErrorCode =
+  | 'CONNECTION_ALREADY_EXISTS'
   | 'CONNECTION_DRIVER_NOT_FOUND'
   | 'CONNECTION_NOT_FOUND'
+  | 'CONNECTION_TYPE_UNSUPPORTED'
   | 'CONNECTION_VALIDATION_FAILED'
   | 'CREDENTIAL_NOT_FOUND'
 
@@ -54,9 +58,7 @@ export class ConnectionServiceError extends Error {
 }
 
 export interface ConnectInput {
-  readonly connectionId?: string
   readonly type: ConnectionType
-  readonly label: string
   readonly configuration: unknown
   readonly credential: Credential
 }
@@ -76,6 +78,9 @@ export const createInMemoryConnectionRepository = (): ConnectionRepository => {
     get(connectionId) {
       return records.get(connectionId)
     },
+    getByType(type) {
+      return [...records.values()].find((record) => record.type === type)
+    },
     list() {
       return Object.freeze(
         [...records.values()].sort((left, right) => left.label.localeCompare(right.label)),
@@ -94,16 +99,20 @@ export const createConnectionService = (
   options: Readonly<{
     connections: ConnectionRepository
     credentials: CredentialStore
+    catalog: ConnectionCatalog
     drivers: readonly ConnectionDriver[]
-    ids?: () => string
     now?: () => string
   }>,
 ): ConnectionService => {
   const drivers = new Map(options.drivers.map((driver) => [driver.type, driver]))
   if (drivers.size !== options.drivers.length)
     throw new TypeError('Connection driver types must be unique')
-  const ids = options.ids ?? (() => crypto.randomUUID())
   const now = options.now ?? (() => new Date().toISOString())
+  const catalogEntryFor = (type: ConnectionType) => {
+    const entry = options.catalog.list().find((candidate) => candidate.type === type)
+    if (entry === undefined) throw new ConnectionServiceError('CONNECTION_TYPE_UNSUPPORTED')
+    return entry
+  }
   const driverFor = (type: ConnectionType) => {
     const driver = drivers.get(type)
     if (driver === undefined) throw new ConnectionServiceError('CONNECTION_DRIVER_NOT_FOUND')
@@ -137,26 +146,30 @@ export const createConnectionService = (
     list: () => options.connections.list(),
     get,
     async connect(input) {
+      const entry = catalogEntryFor(input.type)
       const driver = driverFor(input.type)
+      if (entry.category !== driver.category)
+        throw new ConnectionServiceError('CONNECTION_TYPE_UNSUPPORTED')
+      if (options.connections.getByType(input.type) !== undefined)
+        throw new ConnectionServiceError('CONNECTION_ALREADY_EXISTS')
       const metadata = await validate(driver, {
         configuration: input.configuration,
         credential: input.credential,
       })
       const timestamp = now()
-      const connectionId = input.connectionId ?? ids()
-      const existing = options.connections.get(connectionId)
+      const connectionId = `${entry.type}-default`
       return saveCredentialAndRecord(
         Object.freeze({
           connectionId,
           type: driver.type,
           category: driver.category,
-          label: input.label.trim(),
+          label: entry.name,
           authority: driver.authority,
           configuration: structuredClone(input.configuration),
           metadata: structuredClone(metadata),
           status: 'CONNECTED' as const,
           validatedAt: timestamp,
-          createdAt: existing?.createdAt ?? timestamp,
+          createdAt: timestamp,
           updatedAt: timestamp,
         }),
         input.credential,

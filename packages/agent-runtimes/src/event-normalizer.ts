@@ -1,7 +1,6 @@
 import type { AgentExecutionEvent } from './contract.js'
 import type { EventRedactor, RedactionStream } from './redaction.js'
 
-const IDENTIFIER = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u
 const MAX_CONTENT_LENGTH = 1_000_000
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
@@ -11,6 +10,7 @@ type ObservableAgentEvent = Extract<
     type:
       | 'AGENT_MESSAGE'
       | 'AGENT_REASONING'
+      | 'PI_EVENT'
       | 'AGENT_TOOL_STARTED'
       | 'AGENT_TOOL_UPDATED'
       | 'AGENT_TOOL_COMPLETED'
@@ -35,8 +35,35 @@ export interface CreatePiEventNormalizerOptions {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-const isIdentifier = (value: unknown): value is string =>
-  typeof value === 'string' && value.length <= 128 && IDENTIFIER.test(value)
+const isToolCallId = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 512
+
+const isToolName = (value: unknown): value is string =>
+  typeof value === 'string' && value.length > 0 && value.length <= 128
+
+const capturedPiEvent = (
+  event: Record<string, unknown>,
+  redactor: EventRedactor,
+): NormalizedPiEvent => {
+  try {
+    const serialized = JSON.stringify(event)
+    if (serialized === undefined) throw new Error('Pi event is not JSON serializable')
+    return {
+      type: 'PI_EVENT',
+      data: { event: JSON.parse(redactor.redact(serialized)) as JsonValue },
+    }
+  } catch {
+    return {
+      type: 'PI_EVENT',
+      data: {
+        event: {
+          type: typeof event.type === 'string' ? redactor.redact(event.type) : 'unknown',
+          captureError: 'Pi event payload could not be serialized',
+        },
+      },
+    }
+  }
+}
 
 const boundedContent = (content: string): string | undefined => {
   const bounded = content.slice(0, MAX_CONTENT_LENGTH)
@@ -93,30 +120,31 @@ export const createPiEventNormalizer = (
 
   return {
     normalize(event) {
-      try {
-        if (!isRecord(event) || typeof event.type !== 'string') return []
+      if (!isRecord(event) || typeof event.type !== 'string') return []
+      const captured = capturedPiEvent(event, options.redactor)
 
+      try {
         switch (event.type) {
           case 'message_update': {
-            if (!isRecord(event.assistantMessageEvent)) return []
+            if (!isRecord(event.assistantMessageEvent)) return [captured]
             const assistantEvent = event.assistantMessageEvent
             if (assistantEvent.type === 'text_delta' && typeof assistantEvent.delta === 'string') {
-              return messageEvent(assistantText.push(assistantEvent.delta))
+              return [captured, ...messageEvent(assistantText.push(assistantEvent.delta))]
             }
             switch (assistantEvent.type) {
               case 'text_end':
                 resetAssistantText()
-                return []
+                return [captured]
               case 'thinking_start':
                 resetReasoningText()
-                return []
+                return [captured]
               case 'thinking_delta':
                 return typeof assistantEvent.delta === 'string'
-                  ? reasoningEvent(reasoningText.push(assistantEvent.delta))
-                  : []
+                  ? [captured, ...reasoningEvent(reasoningText.push(assistantEvent.delta))]
+                  : [captured]
               case 'thinking_end':
                 resetReasoningText()
-                return []
+                return [captured]
               case 'start':
               case 'text_start':
               case 'toolcall_start':
@@ -125,18 +153,19 @@ export const createPiEventNormalizer = (
               case 'done':
               case 'error':
               default:
-                return []
+                return [captured]
             }
           }
 
           case 'tool_execution_start': {
-            if (!isIdentifier(event.toolCallId) || !isIdentifier(event.toolName)) return []
+            if (!isToolCallId(event.toolCallId) || !isToolName(event.toolName)) return [captured]
             toolStreams.get(event.toolCallId)?.redaction.finish()
             toolStreams.set(event.toolCallId, {
               observedContent: '',
               redaction: options.redactor.createStream(),
             })
             return [
+              captured,
               {
                 type: 'AGENT_TOOL_STARTED',
                 data: {
@@ -149,7 +178,7 @@ export const createPiEventNormalizer = (
           }
 
           case 'tool_execution_update': {
-            if (!isIdentifier(event.toolCallId)) return []
+            if (!isToolCallId(event.toolCallId)) return [captured]
             const visibleContent = visibleToolContent(event.partialResult)
             const toolStream = toolStreams.get(event.toolCallId) ?? {
               observedContent: '',
@@ -164,8 +193,9 @@ export const createPiEventNormalizer = (
             toolStreams.set(event.toolCallId, toolStream)
             const content = boundedContent(toolStream.redaction.push(contentDelta))
             return content === undefined
-              ? []
+              ? [captured]
               : [
+                  captured,
                   {
                     type: 'AGENT_TOOL_UPDATED',
                     data: { toolCallId: event.toolCallId, content },
@@ -174,7 +204,7 @@ export const createPiEventNormalizer = (
           }
 
           case 'tool_execution_end': {
-            if (!isIdentifier(event.toolCallId) || !isIdentifier(event.toolName)) return []
+            if (!isToolCallId(event.toolCallId) || !isToolName(event.toolName)) return [captured]
             toolStreams.get(event.toolCallId)?.redaction.finish()
             toolStreams.delete(event.toolCallId)
             const isError = event.isError === true
@@ -182,6 +212,7 @@ export const createPiEventNormalizer = (
               boundedContent(options.redactor.redact(visibleToolContent(event.result))) ??
               (isError ? 'Tool failed' : 'Tool completed')
             return [
+              captured,
               {
                 type: 'AGENT_TOOL_COMPLETED',
                 data: {
@@ -197,12 +228,12 @@ export const createPiEventNormalizer = (
           case 'message_start':
             resetAssistantText()
             resetReasoningText()
-            return []
+            return [captured]
 
           case 'message_end':
             resetAssistantText()
             resetReasoningText()
-            return []
+            return [captured]
 
           case 'agent_start':
           case 'agent_end':
@@ -222,10 +253,10 @@ export const createPiEventNormalizer = (
           case 'summarization_retry_finished':
           case 'bash_execution_update':
           default:
-            return []
+            return [captured]
         }
       } catch {
-        return []
+        return [captured]
       }
     },
     finish() {

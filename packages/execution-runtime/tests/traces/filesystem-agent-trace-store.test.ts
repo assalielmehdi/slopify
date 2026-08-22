@@ -116,6 +116,48 @@ describe('filesystem agent trace store', () => {
     ).resolves.toMatchObject({ complete: true, events: [{ type: 'AGENT_FAILED' }] })
   })
 
+  it('writes the complete redacted Pi SDK event payload to JSONL', async () => {
+    const { root, store } = createStore()
+    await store.start(header)
+    const sdkEvent = {
+      type: 'tool_execution_start',
+      toolCallId: 'call_JkP9a|fc_72ZQ',
+      toolName: 'bash',
+      args: { command: 'pwd' },
+    }
+    await store.append(header, {
+      executionId: 'node-execution-01',
+      runId: 'run-01',
+      nodeId: 'identify-agent',
+      timestamp: '2026-08-22T10:00:02.000Z',
+      type: 'PI_EVENT',
+      data: { event: sdkEvent },
+    })
+
+    const tracePath = join(
+      root,
+      'runs',
+      'run-01',
+      'executions',
+      'node-execution-01',
+      'attempt-01.jsonl',
+    )
+    const records = readFileSync(tracePath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Record<string, unknown>)
+
+    expect(records[1]).toEqual({
+      kind: 'event',
+      event: {
+        sequence: 1,
+        timestamp: '2026-08-22T10:00:02.000Z',
+        type: 'PI_EVENT',
+        data: { event: sdkEvent },
+      },
+    })
+  })
+
   it('rejects identifiers that could escape the configured root', async () => {
     const { store } = createStore()
 

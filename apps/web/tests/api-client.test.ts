@@ -119,6 +119,81 @@ describe('API client', () => {
     })
   })
 
+  it('configures and deletes a canonical connection without sending a client-owned ID or label', async () => {
+    const record = {
+      connectionId: 'gitlab-default',
+      type: 'gitlab' as const,
+      category: 'connector' as const,
+      label: 'GitLab',
+      authority: 'Read and write GitLab resources available to the connected user.',
+      configuration: {},
+      metadata: { identity: { username: 'operator' } },
+      status: 'CONNECTED' as const,
+      validatedAt: '2026-08-22T10:00:00Z',
+      createdAt: '2026-08-22T10:00:00Z',
+      updatedAt: '2026-08-22T10:00:00Z',
+    }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(record, { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(
+      client.connect?.({
+        type: 'gitlab',
+        configuration: {},
+        credential: { type: 'api_key', key: 'secret-pat' },
+      }),
+    ).resolves.toEqual(record)
+    await expect(client.deleteConnection?.('gitlab-default')).resolves.toBeUndefined()
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/connections', {
+      body: JSON.stringify({
+        type: 'gitlab',
+        configuration: {},
+        credential: { type: 'api_key', key: 'secret-pat' },
+      }),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/connections/gitlab-default', {
+      method: 'DELETE',
+    })
+  })
+
+  it('starts, polls, and cancels ChatGPT subscription authentication', async () => {
+    const pending = {
+      id: 'oauth-01',
+      status: 'PENDING' as const,
+      authorizationUrl: 'https://auth.openai.com/authorize',
+    }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(pending, { status: 202 }))
+      .mockResolvedValueOnce(Response.json(pending))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.startChatGptOAuth?.()).resolves.toEqual(pending)
+    await expect(client.getChatGptOAuth?.('oauth-01')).resolves.toEqual(pending)
+    await expect(client.cancelChatGptOAuth?.('oauth-01')).resolves.toBeUndefined()
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/connections/chatgpt/oauth', {
+      body: JSON.stringify({}),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      2,
+      '/api/connections/chatgpt/oauth/oauth-01',
+      { headers: { accept: 'application/json' }, method: 'GET' },
+    )
+    expect(fetchImplementation).toHaveBeenNthCalledWith(
+      3,
+      '/api/connections/chatgpt/oauth/oauth-01',
+      { method: 'DELETE' },
+    )
+  })
+
   it('lists, adds, deletes, and restores local Git projects through the same-origin API', async () => {
     const project = ProjectSchema.parse({
       projectId: 'project-01',
@@ -196,6 +271,25 @@ describe('API client', () => {
     expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/delivery-workflow', {
       headers: { accept: 'application/json' },
       method: 'GET',
+    })
+  })
+
+  it('updates a full workflow and parses the canonical response', async () => {
+    const workflow = createPredefinedV1Workflow({
+      createdAt: '2026-08-18T12:00:00Z',
+      agentDefaults: { provider: 'chatgpt', model: 'gpt-5.5', thinkingLevel: 'high' },
+    })
+    const canonical = { ...workflow, updatedAt: '2026-08-22T12:00:00.000Z' }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(canonical))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.updateWorkflow(workflow.workflowId, workflow)).resolves.toEqual(canonical)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows/delivery-workflow', {
+      body: JSON.stringify(workflow),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'PUT',
     })
   })
 

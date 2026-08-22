@@ -11,6 +11,9 @@ const createNormalizer = () =>
   })
 
 describe('Pi event normalizer', () => {
+  const applicationEvents = <T extends { readonly type: string }>(events: readonly T[]): T[] =>
+    events.filter(({ type }) => type !== 'PI_EVENT')
+
   it('preserves visible assistant text and reasoning in order', () => {
     const normalizer = createNormalizer()
 
@@ -37,7 +40,7 @@ describe('Pi event normalizer', () => {
       assistantMessageEvent: { type: 'text_end', content: `Visible ${secret}. Done.` },
     })
 
-    expect([...first, ...thinking, ...second, ...ended]).toEqual([
+    expect(applicationEvents([...first, ...thinking, ...second, ...ended])).toEqual([
       { type: 'AGENT_MESSAGE', data: { content: 'Visible [REDACTED]. ' } },
       { type: 'AGENT_REASONING', data: { content: 'Hidden reasoning with [REDACTED]' } },
       { type: 'AGENT_MESSAGE', data: { content: 'Done.' } },
@@ -76,7 +79,7 @@ describe('Pi event normalizer', () => {
       }),
     ]
 
-    expect(events).toEqual([
+    expect(applicationEvents(events)).toEqual([
       {
         type: 'AGENT_TOOL_STARTED',
         data: {
@@ -100,20 +103,22 @@ describe('Pi event normalizer', () => {
       },
     ])
     expect(JSON.stringify(events)).not.toContain(secret)
-    expect(JSON.stringify(events)).not.toContain('details')
+    expect(JSON.stringify(events)).toContain('details')
   })
 
   it('maps failed empty tool results to a bounded visible completion', () => {
     const normalizer = createNormalizer()
 
     expect(
-      normalizer.normalize({
-        type: 'tool_execution_end',
-        toolCallId: 'tool-02',
-        toolName: 'read',
-        result: { content: [{ type: 'image', data: secret, mimeType: 'image/png' }] },
-        isError: true,
-      }),
+      applicationEvents(
+        normalizer.normalize({
+          type: 'tool_execution_end',
+          toolCallId: 'tool-02',
+          toolName: 'read',
+          result: { content: [{ type: 'image', data: secret, mimeType: 'image/png' }] },
+          isError: true,
+        }),
+      ),
     ).toEqual([
       {
         type: 'AGENT_TOOL_COMPLETED',
@@ -149,7 +154,7 @@ describe('Pi event normalizer', () => {
       partialResult: { content: [{ type: 'text', text: 'secret done' }] },
     })
 
-    expect([...first, ...second]).toEqual([
+    expect(applicationEvents([...first, ...second])).toEqual([
       {
         type: 'AGENT_TOOL_UPDATED',
         data: { toolCallId: 'tool-03', content: 'output ' },
@@ -162,41 +167,111 @@ describe('Pi event normalizer', () => {
   })
 
   it.each([
-    'agent_start',
-    'agent_end',
-    'agent_settled',
-    'turn_start',
-    'turn_end',
-    'message_start',
-    'message_end',
-    'queue_update',
-    'compaction_start',
-    'compaction_end',
-    'entry_appended',
-    'session_info_changed',
-    'thinking_level_changed',
-    'auto_retry_start',
-    'auto_retry_end',
-    'summarization_retry_scheduled',
-    'summarization_retry_attempt_start',
-    'summarization_retry_finished',
-    'bash_execution_update',
-  ])('intentionally emits no application event for %s', (type) => {
-    expect(createNormalizer().normalize({ type })).toEqual([])
+    { type: 'agent_start' },
+    { type: 'agent_end', messages: [], willRetry: false },
+    { type: 'agent_settled' },
+    { type: 'turn_start' },
+    { type: 'turn_end', message: { role: 'assistant', content: [] }, toolResults: [] },
+    { type: 'message_start', message: { role: 'assistant', content: [] } },
+    { type: 'message_update', assistantMessageEvent: { type: 'start' } },
+    { type: 'message_end', message: { role: 'assistant', content: [] } },
+    { type: 'tool_execution_start', toolCallId: 'call_ABC|fc_XYZ', toolName: 'bash', args: {} },
+    {
+      type: 'tool_execution_update',
+      toolCallId: 'call_ABC|fc_XYZ',
+      toolName: 'bash',
+      args: {},
+      partialResult: { content: [] },
+    },
+    {
+      type: 'tool_execution_end',
+      toolCallId: 'call_ABC|fc_XYZ',
+      toolName: 'bash',
+      result: { content: [] },
+      isError: false,
+    },
+    { type: 'queue_update', steering: [], followUp: [] },
+    { type: 'compaction_start', reason: 'threshold' },
+    { type: 'compaction_end', reason: 'threshold', aborted: false, willRetry: false },
+    { type: 'entry_appended', entry: { type: 'label', label: 'checkpoint' } },
+    { type: 'session_info_changed', name: 'Inspection' },
+    { type: 'thinking_level_changed', level: 'medium' },
+    { type: 'auto_retry_start', attempt: 1, maxAttempts: 3, delayMs: 100, errorMessage: 'retry' },
+    { type: 'auto_retry_end', success: true, attempt: 1 },
+    {
+      type: 'summarization_retry_scheduled',
+      attempt: 1,
+      maxAttempts: 3,
+      delayMs: 100,
+      errorMessage: 'retry',
+    },
+    { type: 'summarization_retry_attempt_start', source: 'branchSummary' },
+    { type: 'summarization_retry_finished' },
+    { type: 'bash_execution_update', id: 'bash-01', delta: 'output' },
+  ])('faithfully captures the Pi $type event', (sdkEvent) => {
+    expect(createNormalizer().normalize(sdkEvent)).toContainEqual({
+      type: 'PI_EVENT',
+      data: { event: sdkEvent },
+    })
   })
 
-  it('drops malformed, unknown, and invalid-identifier events at the untrusted boundary', () => {
+  it('accepts provider-generated tool call identifiers without losing derived tool events', () => {
+    const sdkEvent = {
+      type: 'tool_execution_start',
+      toolCallId: 'call_JkP9a|fc_72ZQ',
+      toolName: 'bash',
+      args: { command: 'pwd' },
+    }
+
+    expect(createNormalizer().normalize(sdkEvent)).toEqual([
+      { type: 'PI_EVENT', data: { event: sdkEvent } },
+      {
+        type: 'AGENT_TOOL_STARTED',
+        data: {
+          toolCallId: 'call_JkP9a|fc_72ZQ',
+          toolName: 'bash',
+          input: { command: 'pwd' },
+        },
+      },
+    ])
+  })
+
+  it.each([
+    { type: 'start' },
+    { type: 'text_start', contentIndex: 0 },
+    { type: 'text_delta', contentIndex: 0, delta: 'answer' },
+    { type: 'text_end', contentIndex: 0, content: 'answer' },
+    { type: 'thinking_start', contentIndex: 0 },
+    { type: 'thinking_delta', contentIndex: 0, delta: 'reasoning' },
+    { type: 'thinking_end', contentIndex: 0, content: 'reasoning' },
+    { type: 'toolcall_start', contentIndex: 0 },
+    { type: 'toolcall_delta', contentIndex: 0, delta: '{"path":"/"}' },
+    {
+      type: 'toolcall_end',
+      contentIndex: 0,
+      toolCall: { type: 'toolCall', id: 'call_01|fc_01', name: 'read', arguments: {} },
+    },
+    { type: 'done', reason: 'stop' },
+    { type: 'error', reason: 'error' },
+  ])('faithfully captures the Pi assistant message $type event', (assistantMessageEvent) => {
+    const sdkEvent = { type: 'message_update', assistantMessageEvent }
+
+    expect(createNormalizer().normalize(sdkEvent)).toContainEqual({
+      type: 'PI_EVENT',
+      data: { event: sdkEvent },
+    })
+  })
+
+  it('drops non-events but preserves unknown future Pi events without leaking credentials', () => {
     const normalizer = createNormalizer()
 
     expect(normalizer.normalize(null)).toEqual([])
-    expect(normalizer.normalize({ type: 'future_event', credential: secret })).toEqual([])
-    expect(
-      normalizer.normalize({
-        type: 'tool_execution_start',
-        toolCallId: '../unsafe',
-        toolName: 'bash',
-      }),
-    ).toEqual([])
+    expect(normalizer.normalize({ type: 'future_event', credential: secret })).toEqual([
+      {
+        type: 'PI_EVENT',
+        data: { event: { type: 'future_event', credential: '[REDACTED]' } },
+      },
+    ])
   })
 
   it('drops hostile third-party event objects without throwing', () => {
@@ -208,7 +283,17 @@ describe('Pi event normalizer', () => {
       },
     }
 
-    expect(createNormalizer().normalize(event)).toEqual([])
+    expect(createNormalizer().normalize(event)).toEqual([
+      {
+        type: 'PI_EVENT',
+        data: {
+          event: {
+            type: 'tool_execution_update',
+            captureError: 'Pi event payload could not be serialized',
+          },
+        },
+      },
+    ])
   })
 
   it('bounds one observable tool payload to the application contract limit', () => {
@@ -220,10 +305,10 @@ describe('Pi event normalizer', () => {
       isError: false,
     })
 
-    expect(events).toHaveLength(1)
-    expect(events[0]?.data).toMatchObject({ content: expect.any(String) })
-    if (events[0]?.type === 'AGENT_TOOL_COMPLETED') {
-      expect(events[0].data.content).toHaveLength(1_000_000)
+    const applicationEvent = applicationEvents(events)[0]
+    expect(applicationEvent?.data).toMatchObject({ content: expect.any(String) })
+    if (applicationEvent?.type === 'AGENT_TOOL_COMPLETED') {
+      expect(applicationEvent.data.content).toHaveLength(1_000_000)
     }
   })
 })

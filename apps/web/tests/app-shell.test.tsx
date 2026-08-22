@@ -80,12 +80,11 @@ describe('AppShell', () => {
     expect(screen.getByRole('link', { name: 'Preferences' }).getAttribute('href')).toBe(
       '/preferences',
     )
-    expect(within(breadcrumb).getByRole('link', { name: 'Workflows' }).getAttribute('href')).toBe(
+    expect(within(breadcrumb).getByRole('link', { name: 'Workflow' }).getAttribute('href')).toBe(
       '/',
     )
-    expect(
-      within(breadcrumb).getByRole('link', { name: 'Who are you?' }).getAttribute('href'),
-    ).toBe('/')
+    expect(within(breadcrumb).getByRole('link', { name: 'Editor' }).getAttribute('href')).toBe('/')
+    expect(screen.getByRole('main').className).not.toContain('p-6')
     expect(screen.getByText('Workflow graph')).toBeTruthy()
     expect(screen.queryByText('Local operator')).toBeNull()
   })
@@ -137,7 +136,7 @@ describe('AppShell', () => {
   it.each([
     ['/runs', 'Runs', ['Runs']],
     ['/runs/new', 'Runs', ['Runs', 'New run']],
-    ['/runs/run-123', 'Runs', ['Runs', 'Run detail']],
+    ['/runs/run-123', 'Runs', ['Runs', '123']],
     ['/providers', 'Providers', ['Providers']],
     ['/connectors', 'Connectors', ['Connectors']],
     ['/skills', 'Skills', ['Skills']],
@@ -174,7 +173,7 @@ describe('AppShell', () => {
     ).toEqual(crumbs)
   })
 
-  it.each(['/providers', '/connectors', '/projects', '/runs', '/runs/run-123'])(
+  it.each(['/providers', '/connectors', '/skills', '/projects', '/runs', '/runs/run-123'])(
     'does not add shell padding around the full-width route %s',
     (pathname) => {
       navigation.pathname = pathname

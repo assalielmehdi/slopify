@@ -1,15 +1,18 @@
 import type { NodeExecutionStatus } from '@slopify/contracts'
 import type { AgentNode } from '@slopify/workflow-model'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { BotIcon } from 'lucide-react'
+import { BotIcon, PlusIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export interface WorkflowNodeData extends Record<string, unknown> {
   readonly domainNode: AgentNode
   readonly isStart: boolean
+  readonly isEnd: boolean
   readonly recentRunStatus?: NodeExecutionStatus
+  readonly onAddAgent?: (() => void) | undefined
 }
 
 export type WorkflowCanvasNode = Node<WorkflowNodeData, 'workflow'>
@@ -49,6 +52,7 @@ export function WorkflowNodeContent({
           Agent
         </Badge>
         {data.isStart ? <Badge variant="secondary">Start</Badge> : null}
+        {data.isEnd ? <Badge variant="secondary">End</Badge> : null}
         {status === undefined ? null : <Badge variant="outline">{statusLabels[status]}</Badge>}
         {selected ? <Badge>Selected</Badge> : null}
       </div>
@@ -60,12 +64,46 @@ export function WorkflowNodeContent({
   )
 }
 
-export function WorkflowNode({ data, selected }: NodeProps<WorkflowCanvasNode>) {
+export function WorkflowNode({ data, selected, isConnectable }: NodeProps<WorkflowCanvasNode>) {
   return (
-    <>
-      <Handle type="target" position={Position.Top} isConnectable={false} />
+    <div className="group/node relative">
+      {data.isStart ? null : (
+        <Handle
+          type="target"
+          position={Position.Top}
+          isConnectable={isConnectable}
+          aria-label={`Connect into ${data.domainNode.name}`}
+        />
+      )}
       <WorkflowNodeContent data={data} selected={selected} />
-      <Handle type="source" position={Position.Bottom} isConnectable={false} />
-    </>
+      {data.isEnd ? null : (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          isConnectable={isConnectable}
+          aria-label={`Connect from ${data.domainNode.name}`}
+        />
+      )}
+      {data.onAddAgent === undefined ? null : (
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="outline"
+          aria-label={`Add agent after ${data.domainNode.name}`}
+          title={`Add agent after ${data.domainNode.name}`}
+          className={cn(
+            'nodrag nopan absolute top-full left-1/2 z-10 mt-2 translate-x-3 bg-background opacity-0 shadow-[var(--shadow-raised)] transition-[opacity,background-color,box-shadow,transform] group-hover/node:opacity-100 group-focus-within/node:opacity-100 hover:shadow-[var(--shadow-raised-hover)]',
+            selected && 'opacity-100',
+          )}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation()
+            data.onAddAgent?.()
+          }}
+        >
+          <PlusIcon aria-hidden="true" />
+        </Button>
+      )}
+    </div>
   )
 }

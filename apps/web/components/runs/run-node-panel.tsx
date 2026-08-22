@@ -2,12 +2,10 @@ import type { AgentTrace, NodeExecutionStatus } from '@slopify/contracts'
 import type { AgentNode } from '@slopify/workflow-model'
 
 import { AgentTranscript } from '@/components/runs/agent-transcript'
-import { NodeStatusBadge, formatDuration, formatTimestamp } from '@/components/runs/run-status'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 
 interface NodeExecutionSnapshot {
   readonly attemptId: string | null
@@ -22,8 +20,10 @@ interface NodeExecutionSnapshot {
 }
 
 export interface RunNodePanelProps {
+  readonly connectorNames: Readonly<Record<string, string>>
   readonly execution: NodeExecutionSnapshot | undefined
   readonly node: AgentNode
+  readonly providerName: string | undefined
   readonly status: NodeExecutionStatus
   readonly trace: AgentTrace | undefined
   readonly traceError: string | undefined
@@ -34,20 +34,55 @@ function DefinitionList({
   items,
 }: Readonly<{ items: readonly (readonly [label: string, value: string])[] }>) {
   return (
-    <dl className="grid grid-cols-1 gap-x-4 gap-y-2 text-sm/5 sm:grid-cols-[auto_minmax(0,1fr)]">
+    <dl className="grid grid-cols-3 gap-4">
       {items.map(([label, value]) => (
-        <div className="contents" key={label}>
-          <dt className="text-muted-foreground">{label}</dt>
-          <dd className="min-w-0 break-all font-mono text-xs/5 sm:text-right">{value}</dd>
+        <div className="min-w-0" key={label}>
+          <dt className="text-xs/4 text-muted-foreground">{label}</dt>
+          <dd className="mt-1 truncate font-mono text-xs/5 font-medium" title={value}>
+            {value}
+          </dd>
         </div>
       ))}
     </dl>
   )
 }
 
+function CapabilityRow({
+  empty,
+  label,
+  links,
+}: Readonly<{
+  empty: string
+  label: string
+  links: readonly Readonly<{ href: string; id: string; label: string }>[]
+}>) {
+  return (
+    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3">
+      <p className="pt-0.5 text-xs/4 font-medium text-muted-foreground">{label}</p>
+      {links.length === 0 ? (
+        <p className="text-sm/5 text-muted-foreground">{empty}</p>
+      ) : (
+        <div className="flex flex-wrap gap-1.5">
+          {links.map((link) => (
+            <Badge
+              key={link.id}
+              variant="outline"
+              render={<a href={link.href} aria-label={link.label} />}
+            >
+              {link.label}
+            </Badge>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function RunNodePanel({
+  connectorNames,
   execution,
   node,
+  providerName,
   status,
   trace,
   traceError,
@@ -55,135 +90,74 @@ export function RunNodePanel({
 }: RunNodePanelProps) {
   const runtimeConfiguration = trace?.header.configuration
   return (
-    <div className="grid min-h-0 flex-1 content-start gap-6 overflow-y-auto p-4 sm:p-6">
-      <section className="grid gap-3" aria-labelledby="run-node-execution-title">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h3 id="run-node-execution-title" className="text-sm/5 font-semibold">
-            Execution
-          </h3>
-          <NodeStatusBadge status={status} />
-        </div>
-        <DefinitionList
-          items={[
-            ['Started', formatTimestamp(execution?.startedAt ?? null)],
-            ['Completed', formatTimestamp(execution?.completedAt ?? null)],
-            [
-              'Duration',
-              execution?.durationMs === null || execution?.durationMs === undefined
-                ? 'Not recorded'
-                : formatDuration(execution.durationMs),
-            ],
-            ['Outcome', execution?.outcome ?? 'Not recorded'],
-            ['Execution ID', execution?.nodeExecutionId ?? 'Not admitted'],
-          ]}
-        />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="grid shrink-0 content-start gap-8 p-6">
         {execution?.errorMessage === null || execution?.errorMessage === undefined ? null : (
-          <Card size="sm" className="border-destructive/30 bg-destructive/10">
-            <CardHeader>
-              <CardTitle className="text-destructive">
-                {execution.errorCode ?? 'Execution failed'}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="text-destructive">{execution.errorMessage}</CardContent>
-          </Card>
+          <Alert variant="destructive">
+            <AlertTitle>{execution.errorCode ?? 'Execution failed'}</AlertTitle>
+            <AlertDescription>{execution.errorMessage}</AlertDescription>
+          </Alert>
         )}
-      </section>
+
+        <section className="grid" aria-label="Configuration">
+          <DefinitionList
+            items={[
+              [
+                'Provider',
+                providerName ?? runtimeConfiguration?.provider ?? node.job.inference.connectionId,
+              ],
+              ['Model', runtimeConfiguration?.model ?? node.job.inference.modelId],
+              ['Thinking', runtimeConfiguration?.thinkingLevel ?? node.job.inference.thinkingLevel],
+            ]}
+          />
+        </section>
+
+        <section className="grid gap-3" aria-label="Available capabilities">
+          <CapabilityRow
+            label="Skills"
+            empty="No skills available."
+            links={node.job.skillSnapshotRefs.map((skill) => ({
+              id: skill.skillId,
+              label: skill.name,
+              href: `/skills?skill=${encodeURIComponent(skill.skillId)}`,
+            }))}
+          />
+          <CapabilityRow
+            label="Connectors"
+            empty="No connectors available."
+            links={node.job.connectorIds.map((connectionId) => ({
+              id: connectionId,
+              label: connectorNames[connectionId] ?? connectionId,
+              href: `/connectors?connection=${encodeURIComponent(connectionId)}`,
+            }))}
+          />
+        </section>
+      </div>
 
       <Separator />
-      <section className="grid gap-3" aria-labelledby="run-node-transcript-title">
-        <div>
-          <h3 id="run-node-transcript-title" className="text-sm/5 font-semibold">
-            Agent trace
-          </h3>
-          <p className="mt-1 text-xs/4 text-muted-foreground">
-            Messages, model-emitted reasoning, and tool activity recorded during this execution.
-          </p>
-        </div>
+
+      <section className="flex min-h-0 flex-1 flex-col" aria-label="Exchange">
         {traceLoading && trace === undefined ? (
-          <div className="grid gap-3 rounded-lg border p-4" aria-label="Loading agent trace">
+          <div className="grid gap-3 p-6" aria-label="Loading agent exchange">
             <Skeleton className="h-4 w-28" />
             <Skeleton className="h-20 w-full" />
             <Skeleton className="h-24 w-full" />
           </div>
         ) : traceError !== undefined && trace === undefined ? (
-          <Alert variant="destructive">
-            <AlertTitle>Trace unavailable</AlertTitle>
-            <AlertDescription>{traceError}</AlertDescription>
-          </Alert>
+          <div className="p-6">
+            <Alert variant="destructive">
+              <AlertTitle>Exchange unavailable</AlertTitle>
+              <AlertDescription>{traceError}</AlertDescription>
+            </Alert>
+          </div>
         ) : (
-          <div className="flex min-h-96 flex-col">
-            <AgentTranscript
-              events={trace?.events ?? []}
-              prompt={runtimeConfiguration?.renderedPrompt ?? node.job.prompt}
-              result={execution?.output}
-              streaming={status === 'RUNNING' && trace?.complete !== true}
-            />
-          </div>
-        )}
-      </section>
-
-      <Separator />
-
-      <section className="grid gap-3" aria-labelledby="run-node-configuration-title">
-        <div className="flex flex-wrap items-center gap-2">
-          <h3 id="run-node-configuration-title" className="text-sm/5 font-semibold">
-            Captured configuration
-          </h3>
-          <Badge variant="outline">Agent job</Badge>
-        </div>
-
-        <div className="grid gap-4">
-          <DefinitionList
-            items={[
-              ['Provider', runtimeConfiguration?.provider ?? 'Not recorded'],
-              ['Connection', runtimeConfiguration?.connectionId ?? node.job.inference.connectionId],
-              ['Model', runtimeConfiguration?.model ?? node.job.inference.modelId],
-              ['Thinking', runtimeConfiguration?.thinkingLevel ?? node.job.inference.thinkingLevel],
-              ['Permission', runtimeConfiguration?.permissionProfile ?? 'Not recorded'],
-              ['Sandbox profile', node.sandbox.profileId],
-              ['Sandbox image', node.sandbox.imageId],
-              ['Result schema', node.result.schemaRef],
-              ['Timeout', `${runtimeConfiguration?.timeoutSeconds ?? node.timeoutSeconds} seconds`],
-            ]}
+          <AgentTranscript
+            events={trace?.events ?? []}
+            prompt={runtimeConfiguration?.renderedPrompt ?? node.job.prompt}
+            result={execution?.output}
+            streaming={status === 'RUNNING' && trace?.complete !== true}
           />
-          <div className="grid gap-2 rounded-md border p-3">
-            <p className="text-xs/4 font-medium">Prompt snapshot</p>
-            <p className="whitespace-pre-wrap text-sm/5 text-muted-foreground">
-              {runtimeConfiguration?.renderedPrompt ?? node.job.prompt}
-            </p>
-          </div>
-          <div className="grid gap-2">
-            <p className="text-xs/4 font-medium text-muted-foreground">Skill snapshots</p>
-            {node.job.skillSnapshotRefs.length === 0 ? (
-              <p className="text-sm/5 text-muted-foreground">No skills captured.</p>
-            ) : (
-              <ul className="grid gap-2">
-                {node.job.skillSnapshotRefs.map((skill) => (
-                  <li className="rounded-md border bg-background p-3" key={skill.snapshotId}>
-                    <p className="font-medium">{skill.name}</p>
-                    <p className="mt-1 font-mono text-xs/4 text-muted-foreground">
-                      {skill.skillId} · {skill.snapshotId}
-                    </p>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <div className="grid gap-2">
-            <p className="text-xs/4 font-medium text-muted-foreground">Connectors</p>
-            <div className="flex flex-wrap gap-2">
-              {node.job.connectorIds.length === 0 ? (
-                <span className="text-sm/5 text-muted-foreground">No connectors captured.</span>
-              ) : (
-                node.job.connectorIds.map((connectorId) => (
-                  <Badge key={connectorId} variant="outline" className="font-mono">
-                    {connectorId}
-                  </Badge>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+        )}
       </section>
     </div>
   )

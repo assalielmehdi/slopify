@@ -151,6 +151,9 @@ const eventBase = {
   timestamp: z.iso.datetime({ offset: true }),
 }
 
+const toolCallId = z.string().min(1).max(512)
+const toolName = z.string().min(1).max(128)
+
 const AgentStartedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_STARTED'),
@@ -175,12 +178,18 @@ const AgentReasoningEventSchema = z.strictObject({
   data: z.strictObject({ content }),
 })
 
+const PiEventSchema = z.strictObject({
+  ...eventBase,
+  type: z.literal('PI_EVENT'),
+  data: z.strictObject({ event: z.json() }),
+})
+
 const AgentToolStartedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_TOOL_STARTED'),
   data: z.strictObject({
-    toolCallId: identifier,
-    toolName: identifier,
+    toolCallId,
+    toolName,
     input: z.json().optional(),
   }),
 })
@@ -188,15 +197,15 @@ const AgentToolStartedEventSchema = z.strictObject({
 const AgentToolUpdatedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_TOOL_UPDATED'),
-  data: z.strictObject({ toolCallId: identifier, content }),
+  data: z.strictObject({ toolCallId, content }),
 })
 
 const AgentToolCompletedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_TOOL_COMPLETED'),
   data: z.strictObject({
-    toolCallId: identifier,
-    toolName: identifier,
+    toolCallId,
+    toolName,
     status: z.enum(['succeeded', 'failed']),
     content,
   }),
@@ -236,6 +245,7 @@ export const AgentExecutionEventSchema = z.discriminatedUnion('type', [
   AgentSessionIdentifiedEventSchema,
   AgentMessageEventSchema,
   AgentReasoningEventSchema,
+  PiEventSchema,
   AgentToolStartedEventSchema,
   AgentToolUpdatedEventSchema,
   AgentToolCompletedEventSchema,
