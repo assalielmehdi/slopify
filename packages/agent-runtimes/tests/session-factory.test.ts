@@ -240,7 +240,7 @@ describe('Pi session factory', () => {
     expect(createAgentSessionMock).not.toHaveBeenCalled()
   })
 
-  it('uses only the Gondolin-backed tools and revision-pinned skills when sandboxed', async () => {
+  it('uses only the Gondolin-backed tools and snapshot-pinned skills when sandboxed', async () => {
     createAgentSessionMock.mockResolvedValue({
       session: createSdkSession('session-sandboxed'),
       extensionsResult: {},

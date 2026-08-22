@@ -3,14 +3,13 @@ import { describe, expect, it } from 'vitest'
 import {
   PREDEFINED_V1_COMMAND_IDS,
   PREDEFINED_V1_TRANSITION_LIMIT,
-  createPredefinedV1Revision,
+  createPredefinedV1Workflow,
   getReachableNodeIds,
   hasDirectedCycle,
   validateWorkflow,
 } from '../src/index.js'
 
-const revision = createPredefinedV1Revision({
-  revisionId: 'revision-02',
+const workflow = createPredefinedV1Workflow({
   createdAt: '2026-08-20T20:00:00Z',
   agentDefaults: {
     provider: 'openrouter',
@@ -22,7 +21,7 @@ const revision = createPredefinedV1Revision({
 describe('predefined V1 workflow', () => {
   it('defines one minimal agent job that asks the agent who it is', () => {
     expect(PREDEFINED_V1_COMMAND_IDS).toEqual([])
-    expect(revision).toMatchObject({
+    expect(workflow).toMatchObject({
       name: 'Who are you?',
       description: 'Run one agent and ask it to identify itself.',
       startNodeId: 'identify-agent',
@@ -48,28 +47,20 @@ describe('predefined V1 workflow', () => {
             connectorIds: [],
           },
         },
-        { type: 'terminal', id: 'succeeded', name: 'Succeeded', terminalStatus: 'SUCCEEDED' },
       ],
-      edges: [
-        {
-          sourceNodeId: 'identify-agent',
-          outcome: 'completed',
-          targetNodeId: 'succeeded',
-          label: 'Answered',
-        },
-      ],
+      edges: [],
     })
   })
 
   it('is valid, acyclic, and fully reachable', () => {
-    const result = validateWorkflow(revision, {
+    const result = validateWorkflow(workflow, {
       registeredCommandIds: new Set(PREDEFINED_V1_COMMAND_IDS),
     })
 
     expect(result.valid).toBe(true)
     expect(result.findings).toEqual([])
-    expect(PREDEFINED_V1_TRANSITION_LIMIT).toBe(2)
-    expect(hasDirectedCycle(revision)).toBe(false)
-    expect(getReachableNodeIds(revision)).toEqual(['identify-agent', 'succeeded'])
+    expect(PREDEFINED_V1_TRANSITION_LIMIT).toBe(0)
+    expect(hasDirectedCycle(workflow)).toBe(false)
+    expect(getReachableNodeIds(workflow)).toEqual(['identify-agent'])
   })
 })

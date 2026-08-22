@@ -1,5 +1,3 @@
-import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
-
 import {
   AgentExecutionIdSchema,
   AgentExecutionInputSchema,
@@ -7,7 +5,7 @@ import {
   type AgentExecutor,
 } from '@loop/agent-runtimes'
 import { RunIdSchema } from '@loop/contracts'
-import { getDeclaredOutcomes, WorkflowRevisionSchema } from '@loop/workflow-model'
+import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@loop/workflow-model'
 import { z } from 'zod'
 
 import type { RunRepository } from '../persistence/run-repository.js'
@@ -38,23 +36,6 @@ export const createAgentResultSchemaRegistry = (
   }
 }
 
-const commonParent = (paths: readonly string[]): string | undefined => {
-  const candidates = paths.map((path) => resolve(path))
-  if (candidates.length === 0) return undefined
-  let parent = dirname(candidates[0] as string)
-  while (
-    candidates.some((path) => {
-      const child = relative(parent, path)
-      return child === '' || child === '..' || child.startsWith(`..${sep}`) || isAbsolute(child)
-    })
-  ) {
-    const next = dirname(parent)
-    if (next === parent) return undefined
-    parent = next
-  }
-  return parent
-}
-
 const failed = (code: string, message: string) => ({
   status: 'failed' as const,
   code,
@@ -65,7 +46,7 @@ const failed = (code: string, message: string) => ({
 export const createAgentJobRunner = (
   options: Readonly<{
     agent: AgentExecutor
-    runs: Pick<RunRepository, 'get' | 'listWorkspaces'>
+    runs: Pick<RunRepository, 'get'>
     resultSchemas: AgentResultSchemaRegistry
     resolveInference(connectionId: string): AgentInferenceResolution | undefined
   }>,
@@ -73,22 +54,19 @@ export const createAgentJobRunner = (
   async run(input, publishProgress) {
     const run = options.runs.get(RunIdSchema.parse(input.runId))
     if (run === undefined) return failed('RUN_NOT_FOUND', 'Run was not found')
-    const workflow = WorkflowRevisionSchema.safeParse(run.effectiveConfiguration)
+    const workflow = WorkflowSchema.safeParse(run.workflowSnapshot)
     if (!workflow.success) return failed('WORKFLOW_INVALID', 'Effective workflow is invalid')
     const node = workflow.data.nodes.find(({ id }) => id === input.nodeId)
     if (node?.type !== 'agent') return failed('AGENT_JOB_NOT_FOUND', 'Agent job was not found')
     const inference = options.resolveInference(node.job.inference.connectionId)
     if (inference === undefined)
       return failed('INFERENCE_CONNECTION_UNAVAILABLE', 'Inference connection is unavailable')
-    const workspaces = options.runs.listWorkspaces(run.runId)
-    const rootPath =
-      commonParent(workspaces.map(({ worktreePath }) => worktreePath)) ?? resolve('/')
-    const declaredOutcomes = getDeclaredOutcomes(workflow.data, node.id)
-    if (declaredOutcomes.length === 0)
-      return failed('WORKFLOW_INVALID', 'Agent job has no routable outcome')
+    const routableOutcomes = getDeclaredOutcomes(workflow.data, node.id)
+    const declaredOutcomes =
+      routableOutcomes.length === 0 ? (['completed'] as const) : routableOutcomes
     let renderedPrompt: string
     try {
-      renderedPrompt = `${node.job.prompt}\n\nRun input:\n${JSON.stringify(run.taskSnapshot, null, 2)}\n\nExecution contract:\nYou must finish by calling complete_node exactly once.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and arrays for artifacts and evidence.`
+      renderedPrompt = `${renderPromptVariables(node.job.prompt, run.variables)}\n\nExecution contract:\nYou must finish by calling complete_node exactly once.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and arrays for artifacts and evidence.`
       z.string().min(1).max(1_000_000).parse(renderedPrompt)
     } catch {
       return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')
@@ -98,12 +76,8 @@ export const createAgentJobRunner = (
       runId: run.runId,
       nodeId: node.id,
       workspace: {
-        rootPath,
-        repositories: workspaces.map((workspace) => ({
-          repositoryId: workspace.repositoryId,
-          path: workspace.worktreePath,
-          access: 'workspace-write' as const,
-        })),
+        rootPath: '/',
+        repositories: [],
       },
       provider: inference.provider,
       model: node.job.inference.modelId,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  WorkflowRevisionSchema,
+  WorkflowSchema,
   getIncomingEdges,
   getOutgoingEdges,
   getReachableNodeIds,
@@ -9,9 +9,8 @@ import {
   inspectWorkflowGraph,
 } from '../src/index.js'
 
-const workflow = WorkflowRevisionSchema.parse({
+const workflow = WorkflowSchema.parse({
   workflowId: 'delivery-workflow',
-  revisionId: 'revision-01',
   name: 'Delivery workflow',
   description: 'Deliver one approved task.',
   startNodeId: 'start',
@@ -42,6 +41,7 @@ const workflow = WorkflowRevisionSchema.parse({
   ],
   maxTransitions: 24,
   createdAt: '2026-08-18T20:00:00Z',
+  updatedAt: '2026-08-18T20:00:00Z',
 })
 
 describe('workflow graph queries', () => {
@@ -57,9 +57,8 @@ describe('workflow graph queries', () => {
   it('detects a directed cycle without rejecting it', () => {
     expect(hasDirectedCycle(workflow)).toBe(true)
 
-    const acyclic = WorkflowRevisionSchema.parse({
+    const acyclic = WorkflowSchema.parse({
       ...workflow,
-      revisionId: 'revision-02',
       edges: workflow.edges.filter((edge) => edge.outcome !== 'retry'),
     })
     expect(hasDirectedCycle(acyclic)).toBe(false)

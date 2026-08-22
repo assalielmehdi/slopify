@@ -3,6 +3,7 @@ import type BetterSqlite3 from 'better-sqlite3'
 export interface Migration {
   readonly version: number
   readonly name: string
+  readonly foreignKeysDisabled?: boolean
   readonly up: (database: BetterSqlite3.Database) => void
 }
 
@@ -528,7 +529,7 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
           'openrouter',
           'Inference provider',
           'Run agents across models available through OpenRouter.',
-          'Use one OpenRouter API key to make its model catalog available to Slopify agent profiles.',
+          'Use one OpenRouter API key to make its model catalog available to workflow agent jobs.',
           JSON.stringify([
             'Create a key in OpenRouter settings.',
             'Optionally set a spending limit for the key.',
@@ -566,6 +567,237 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       ] as const
 
       for (const entry of entries) insert.run(...entry)
+    },
+  }),
+  Object.freeze({
+    version: 9,
+    name: 'persist_local_git_projects',
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        CREATE TABLE projects (
+          project_id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          repository_path TEXT NOT NULL UNIQUE,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 10,
+    name: 'update_openrouter_description',
+    up(database: BetterSqlite3.Database) {
+      database
+        .prepare("UPDATE connection_catalog SET description = ? WHERE type = 'openrouter'")
+        .run(
+          'Use one OpenRouter API key to make its model catalog available to workflow agent jobs.',
+        )
+    },
+  }),
+  Object.freeze({
+    version: 11,
+    name: 'replace_workflow_revisions_with_run_snapshots',
+    foreignKeysDisabled: true,
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        ALTER TABLE workflows ADD COLUMN description TEXT NOT NULL DEFAULT '';
+        ALTER TABLE workflows
+          ADD COLUMN definition_json TEXT NOT NULL DEFAULT '{}'
+          CHECK (json_valid(definition_json));
+        ALTER TABLE workflows ADD COLUMN updated_at TEXT NOT NULL DEFAULT '';
+
+        CREATE TEMP TABLE latest_workflow_definitions AS
+        SELECT workflow_id, definition_json, created_at
+        FROM workflow_revisions AS candidate
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM workflow_revisions AS newer
+          WHERE newer.workflow_id = candidate.workflow_id
+            AND (
+              newer.created_at > candidate.created_at
+              OR (
+                newer.created_at = candidate.created_at
+                AND newer.revision_id > candidate.revision_id
+              )
+            )
+        );
+
+        UPDATE workflows
+        SET
+          name = COALESCE(
+            json_extract(
+              (SELECT definition_json FROM latest_workflow_definitions
+               WHERE workflow_id = workflows.workflow_id),
+              '$.name'
+            ),
+            name
+          ),
+          description = COALESCE(
+            json_extract(
+              (SELECT definition_json FROM latest_workflow_definitions
+               WHERE workflow_id = workflows.workflow_id),
+              '$.description'
+            ),
+            ''
+          ),
+          definition_json = json_set(
+            json_remove(
+              COALESCE(
+                (SELECT definition_json FROM latest_workflow_definitions
+                 WHERE workflow_id = workflows.workflow_id),
+                '{}'
+              ),
+              '$.revisionId',
+              '$.parentRevisionId'
+            ),
+            '$.createdAt',
+            created_at,
+            '$.updatedAt',
+            COALESCE(
+              (SELECT created_at FROM latest_workflow_definitions
+               WHERE workflow_id = workflows.workflow_id),
+              created_at
+            )
+          ),
+          updated_at = COALESCE(
+            (SELECT created_at FROM latest_workflow_definitions
+             WHERE workflow_id = workflows.workflow_id),
+            created_at
+          );
+
+        DROP TABLE latest_workflow_definitions;
+
+        PRAGMA legacy_alter_table = ON;
+        ALTER TABLE runs RENAME TO runs_with_revisions;
+
+        CREATE TABLE runs (
+          run_id TEXT PRIMARY KEY,
+          workflow_id TEXT NOT NULL,
+          profile_snapshot_id TEXT NOT NULL,
+          task_reference TEXT NOT NULL,
+          task_snapshot_json TEXT NOT NULL CHECK (json_valid(task_snapshot_json)),
+          workflow_snapshot_json TEXT NOT NULL CHECK (json_valid(workflow_snapshot_json)),
+          status TEXT NOT NULL CHECK (
+            status IN ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'INTERRUPTED')
+          ),
+          current_node_id TEXT,
+          transition_count INTEGER NOT NULL DEFAULT 0 CHECK (transition_count >= 0),
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          notes TEXT CHECK (notes IS NULL OR length(trim(notes)) BETWEEN 1 AND 2000),
+          UNIQUE (run_id, profile_snapshot_id),
+          FOREIGN KEY (workflow_id) REFERENCES workflows (workflow_id),
+          FOREIGN KEY (profile_snapshot_id)
+            REFERENCES project_profile_snapshots (snapshot_id)
+        ) STRICT;
+
+        INSERT INTO runs (
+          run_id, workflow_id, profile_snapshot_id, task_reference, notes,
+          task_snapshot_json, workflow_snapshot_json, status, current_node_id,
+          transition_count, created_at, started_at, completed_at
+        )
+        SELECT
+          run_id, workflow_id, profile_snapshot_id, task_reference, notes,
+          task_snapshot_json,
+          json_set(
+            json_remove(
+              effective_configuration_json,
+              '$.revisionId',
+              '$.parentRevisionId'
+            ),
+            '$.updatedAt',
+            COALESCE(json_extract(effective_configuration_json, '$.createdAt'), created_at)
+          ),
+          status, current_node_id, transition_count, created_at, started_at, completed_at
+        FROM runs_with_revisions;
+
+        DROP TABLE runs_with_revisions;
+        CREATE INDEX runs_by_created_at ON runs (created_at DESC, run_id DESC);
+        PRAGMA legacy_alter_table = OFF;
+
+        UPDATE run_events
+        SET data_json = json_remove(data_json, '$.revisionId')
+        WHERE event_type = 'RUN_STARTED';
+
+        DROP TRIGGER workflow_revisions_no_update;
+        DROP TRIGGER workflow_revisions_no_delete;
+        DROP TABLE workflow_revisions;
+      `)
+    },
+  }),
+  Object.freeze({
+    version: 12,
+    name: 'persist_run_variables',
+    foreignKeysDisabled: true,
+    up(database: BetterSqlite3.Database) {
+      database.exec(`
+        PRAGMA legacy_alter_table = ON;
+        ALTER TABLE runs RENAME TO runs_with_task_inputs;
+
+        CREATE TABLE runs (
+          run_id TEXT PRIMARY KEY,
+          workflow_id TEXT NOT NULL,
+          variables_json TEXT NOT NULL CHECK (json_valid(variables_json)),
+          missing_variables_json TEXT NOT NULL CHECK (json_valid(missing_variables_json)),
+          workflow_snapshot_json TEXT NOT NULL CHECK (json_valid(workflow_snapshot_json)),
+          status TEXT NOT NULL CHECK (
+            status IN ('PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED', 'INTERRUPTED')
+          ),
+          current_node_id TEXT,
+          transition_count INTEGER NOT NULL DEFAULT 0 CHECK (transition_count >= 0),
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          completed_at TEXT,
+          profile_snapshot_id TEXT,
+          task_reference TEXT,
+          task_snapshot_json TEXT CHECK (
+            task_snapshot_json IS NULL OR json_valid(task_snapshot_json)
+          ),
+          notes TEXT CHECK (notes IS NULL OR length(trim(notes)) BETWEEN 1 AND 2000),
+          UNIQUE (run_id, profile_snapshot_id),
+          FOREIGN KEY (workflow_id) REFERENCES workflows (workflow_id),
+          FOREIGN KEY (profile_snapshot_id)
+            REFERENCES project_profile_snapshots (snapshot_id)
+        ) STRICT;
+
+        INSERT INTO runs (
+          run_id, workflow_id, variables_json, missing_variables_json,
+          workflow_snapshot_json, status, current_node_id, transition_count,
+          created_at, started_at, completed_at, profile_snapshot_id,
+          task_reference, task_snapshot_json, notes
+        )
+        SELECT
+          run_id,
+          workflow_id,
+          CASE
+            WHEN length(trim(task_reference)) > 0
+              THEN json_object('taskReference', task_reference)
+            ELSE json('{}')
+          END,
+          json('[]'),
+          workflow_snapshot_json,
+          status,
+          current_node_id,
+          transition_count,
+          created_at,
+          started_at,
+          completed_at,
+          profile_snapshot_id,
+          task_reference,
+          task_snapshot_json,
+          notes
+        FROM runs_with_task_inputs;
+
+        DROP TABLE runs_with_task_inputs;
+        CREATE INDEX runs_by_created_at ON runs (created_at DESC, run_id DESC);
+        PRAGMA legacy_alter_table = OFF;
+
+        UPDATE run_events
+        SET data_json = json_remove(data_json, '$.profileId', '$.taskReference')
+        WHERE event_type = 'RUN_STARTED';
+      `)
     },
   }),
 ])
@@ -617,16 +849,26 @@ export const applyMigrations = (
       continue
     }
 
-    const migrate = database.transaction(() => {
-      migration.up(database)
-      database
-        .prepare(
-          `INSERT INTO schema_migrations (version, name, applied_at)
-           VALUES (?, ?, ?)`,
-        )
-        .run(migration.version, migration.name, new Date().toISOString())
-    })
+    const foreignKeysDisabled = migration.foreignKeysDisabled === true
+    if (foreignKeysDisabled) database.pragma('foreign_keys = OFF')
+    try {
+      const migrate = database.transaction(() => {
+        migration.up(database)
+        if (foreignKeysDisabled) {
+          const violations = database.pragma('foreign_key_check') as unknown[]
+          if (violations.length > 0) throw new Error('Migration introduced foreign-key violations')
+        }
+        database
+          .prepare(
+            `INSERT INTO schema_migrations (version, name, applied_at)
+             VALUES (?, ?, ?)`,
+          )
+          .run(migration.version, migration.name, new Date().toISOString())
+      })
 
-    migrate.immediate()
+      migrate.immediate()
+    } finally {
+      if (foreignKeysDisabled) database.pragma('foreign_keys = ON')
+    }
   }
 }

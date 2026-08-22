@@ -1,30 +1,18 @@
 'use client'
 
-import Link from 'next/link'
-import { useEffect, useRef, useState } from 'react'
+import { XIcon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
 
 import type { NodeExecutionStatus, RunEvent, RunStatus } from '@loop/contracts'
+import type { AgentNode } from '@loop/workflow-model'
 
-import { AgentTranscript } from '@/components/runs/agent-transcript'
-import { RunEventStream } from '@/components/runs/run-event-stream'
-import {
-  formatDuration,
-  formatTimestamp,
-  NodeStatusBadge,
-  RunStatusBadge,
-} from '@/components/runs/run-status'
+import { RunNodePanel } from '@/components/runs/run-node-panel'
+import { formatDuration, formatTimestamp, RunStatusBadge } from '@/components/runs/run-status'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from '@/components/ui/sheet'
+import { Card, CardContent } from '@/components/ui/card'
 import { createApiClient, type ApiClient, type RunDetailResponse } from '@/lib/api-client'
 import {
   connectRunEventStream,
@@ -82,7 +70,9 @@ const nodeStatusesFrom = (
   events: readonly RunEvent[],
 ): Readonly<Record<string, NodeExecutionStatus>> => {
   const statuses: Record<string, NodeExecutionStatus> = Object.fromEntries(
-    detail.workflowRevision.nodes.map((node) => [node.id, 'PENDING' as const]),
+    detail.run.workflowSnapshot.nodes
+      .filter(({ type }) => type === 'agent')
+      .map((node) => [node.id, 'PENDING' as const]),
   )
   for (const execution of latestExecutions(detail.nodeExecutions).values()) {
     statuses[execution.nodeId] = execution.status
@@ -97,32 +87,9 @@ const nodeStatusesFrom = (
   return statuses
 }
 
-const safeWebUrl = (value: unknown): string | undefined => {
-  if (typeof value !== 'string') return undefined
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' || url.protocol === 'http:' ? url.href : undefined
-  } catch {
-    return undefined
-  }
-}
-
-const urlsFromJson = (value: unknown, urls = new Set<string>()): readonly string[] => {
-  const url = safeWebUrl(value)
-  if (url !== undefined) urls.add(url)
-  else if (Array.isArray(value)) {
-    for (const item of value) urlsFromJson(item, urls)
-  } else if (typeof value === 'object' && value !== null) {
-    for (const item of Object.values(value)) urlsFromJson(item, urls)
-  }
-  return [...urls]
-}
-
-const objectString = (value: unknown, key: string): string | undefined => {
-  if (typeof value !== 'object' || value === null || !(key in value)) return undefined
-  const candidate = value[key as keyof typeof value]
-  return typeof candidate === 'string' ? candidate : undefined
-}
+const prefersReducedMotion = () =>
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
 function ElapsedTime({
   completedAt,
@@ -130,6 +97,7 @@ function ElapsedTime({
   startedAt,
 }: Readonly<{ completedAt: string | null; running: boolean; startedAt: string | null }>) {
   const [now, setNow] = useState(() => Date.now())
+
   useEffect(() => {
     if (!running) return
     const timer = window.setInterval(() => setNow(Date.now()), 1_000)
@@ -139,198 +107,6 @@ function ElapsedTime({
   if (startedAt === null) return <>Not started</>
   const end = completedAt === null ? now : Date.parse(completedAt)
   return <>{formatDuration(Math.max(0, end - Date.parse(startedAt)))}</>
-}
-
-function NodeProgress({
-  detail,
-  statuses,
-}: Readonly<{
-  detail: RunDetailResponse
-  statuses: Readonly<Record<string, NodeExecutionStatus>>
-}>) {
-  const executions = latestExecutions(detail.nodeExecutions)
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Node progress</CardTitle>
-        <CardDescription>
-          Latest execution state for every node in the pinned revision.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {detail.workflowRevision.nodes.map((node) => {
-          const execution = executions.get(node.id)
-          const status = statuses[node.id] ?? 'PENDING'
-          return (
-            <article className="space-y-2 border p-3" key={node.id}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h3 className="font-medium">{node.name}</h3>
-                <NodeStatusBadge status={status} />
-              </div>
-              <p className="font-mono text-muted-foreground">{node.id}</p>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-2">
-                <dt>Attempt</dt>
-                <dd className="font-mono">{execution?.attemptId ?? 'Not scheduled'}</dd>
-                <dt>Started</dt>
-                <dd>{formatTimestamp(execution?.startedAt ?? null)}</dd>
-                <dt>Ended</dt>
-                <dd>{formatTimestamp(execution?.completedAt ?? null)}</dd>
-                <dt>Duration</dt>
-                <dd>
-                  {execution?.durationMs === null || execution?.durationMs === undefined
-                    ? 'Not recorded'
-                    : formatDuration(execution.durationMs)}
-                </dd>
-                <dt>Outcome</dt>
-                <dd>{execution?.outcome ?? 'Not recorded'}</dd>
-              </dl>
-              {execution?.errorMessage === null || execution?.errorMessage === undefined ? null : (
-                <p className="text-destructive">
-                  {execution.errorCode}: {execution.errorMessage}
-                </p>
-              )}
-            </article>
-          )
-        })}
-      </CardContent>
-    </Card>
-  )
-}
-
-function RepositoryEvidence({ detail }: Readonly<{ detail: RunDetailResponse }>) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Repository selection and delivery</CardTitle>
-        <CardDescription>
-          Ordered candidates, server-recorded selection rationale, isolated worktrees, checks,
-          reviews, branches, and delivery evidence.
-          <span className="mt-1 block">
-            A created merge request does not confirm pipeline success, approval, merge, deployment,
-            or release.
-          </span>
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="grid gap-3 lg:grid-cols-2">
-        {detail.profileSnapshot.repositories.map((repository) => {
-          const selected = detail.repositorySelection?.selected.find(
-            ({ repositoryId }) => repositoryId === repository.repositoryId,
-          )
-          const excluded = detail.repositorySelection?.excluded.find(
-            ({ repositoryId }) => repositoryId === repository.repositoryId,
-          )
-          const workspace = detail.workspaces.find(
-            ({ repositoryId }) => repositoryId === repository.repositoryId,
-          )
-          const delivery = detail.deliveryEvidence.find(
-            ({ repositoryId }) => repositoryId === repository.repositoryId,
-          )
-          const mergeRequestUrl = safeWebUrl(delivery?.mergeRequestUrl)
-          return (
-            <article className="space-y-3 border p-3" key={repository.repositoryId}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h3 className="font-medium">{repository.displayName}</h3>
-                  <p className="font-mono text-muted-foreground">{repository.repositoryId}</p>
-                </div>
-                <Badge variant={selected === undefined ? 'outline' : 'secondary'}>
-                  {selected !== undefined
-                    ? 'Selected'
-                    : excluded !== undefined
-                      ? 'Excluded'
-                      : 'Candidate'}
-                </Badge>
-              </div>
-              <p>{repository.purpose}</p>
-              <p>
-                <span className="font-medium">Selection rationale:</span>{' '}
-                {selected?.rationale ?? excluded?.rationale ?? 'Selection pending'}
-              </p>
-              {selected === undefined ? null : (
-                <p>
-                  <span className="font-medium">Responsibility:</span> {selected.responsibility}
-                </p>
-              )}
-              <dl className="grid grid-cols-[auto_1fr] gap-x-2 break-all">
-                <dt>Repository</dt>
-                <dd>{repository.repositoryPath}</dd>
-                <dt>Configured target</dt>
-                <dd>{repository.targetBranch}</dd>
-                <dt>Worktree</dt>
-                <dd>{workspace?.worktreePath ?? 'Not created'}</dd>
-                <dt>Remote</dt>
-                <dd>{workspace?.remote ?? repository.remote}</dd>
-                <dt>Source branch</dt>
-                <dd>{workspace?.sourceBranch ?? 'Not created'}</dd>
-                <dt>Target branch</dt>
-                <dd>{workspace?.targetBranch ?? repository.targetBranch}</dd>
-                <dt>Base SHA</dt>
-                <dd>{workspace?.baseSha ?? 'Not recorded'}</dd>
-                <dt>Delivery status</dt>
-                <dd>{delivery?.status.replaceAll('_', ' ') ?? 'Not recorded'}</dd>
-                <dt>GitLab project</dt>
-                <dd>{delivery?.gitlabProject ?? repository.gitlabProject}</dd>
-                <dt>Merge request</dt>
-                <dd>
-                  {delivery?.mergeRequestIid === null || delivery?.mergeRequestIid === undefined
-                    ? 'Not recorded'
-                    : `!${delivery.mergeRequestIid}`}
-                </dd>
-                <dt>Head SHA</dt>
-                <dd>{delivery?.headSha ?? 'Not recorded'}</dd>
-              </dl>
-              {delivery === undefined ? null : (
-                <div>
-                  <p className="font-medium">Verification and review evidence</p>
-                  <pre className="mt-1 overflow-x-auto border bg-muted/50 p-2 whitespace-pre-wrap">
-                    {JSON.stringify(delivery.evidence, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {mergeRequestUrl === undefined ? null : (
-                <Link href={mergeRequestUrl} target="_blank" rel="noreferrer">
-                  Created merge request !{delivery?.mergeRequestIid}
-                </Link>
-              )}
-            </article>
-          )
-        })}
-      </CardContent>
-    </Card>
-  )
-}
-
-function Artifacts({ detail }: Readonly<{ detail: RunDetailResponse }>) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Artifacts</CardTitle>
-        <CardDescription>Local artifact content and published references.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {detail.artifacts.length === 0 ? (
-          <p className="text-muted-foreground">No artifacts recorded yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {detail.artifacts.map((artifact) => (
-              <article className="space-y-2 border p-3" key={artifact.artifactId}>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{artifact.artifactType.replaceAll('_', ' ')}</Badge>
-                  <span className="font-mono">{artifact.artifactId}</span>
-                </div>
-                <pre className="overflow-x-auto whitespace-pre-wrap">{artifact.content}</pre>
-                {urlsFromJson(artifact.metadata).map((url, index) => (
-                  <Link className="mr-3" href={url} key={url} target="_blank" rel="noreferrer">
-                    Artifact link {index + 1}
-                  </Link>
-                ))}
-              </article>
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  )
 }
 
 export interface LiveRunProps {
@@ -350,6 +126,8 @@ export function LiveRun({
   const snapshotSequence = useRef(0)
   const closeConnection = useRef<(() => void) | undefined>(undefined)
   const refreshSnapshot = useRef<() => Promise<void>>(async () => undefined)
+  const panelRef = useRef<HTMLDivElement>(null)
+  const panelOpenFrameRef = useRef<number | undefined>(undefined)
   const [detail, setDetail] = useState<RunDetailResponse>()
   const [events, setEvents] = useState<readonly RunEvent[]>([])
   const [loading, setLoading] = useState(true)
@@ -359,6 +137,37 @@ export function LiveRun({
   const [cancelling, setCancelling] = useState(false)
   const [cancelError, setCancelError] = useState<string>()
   const [selectedNodeId, setSelectedNodeId] = useState<string>()
+  const [isPanelOpen, setIsPanelOpen] = useState(false)
+
+  const closePanel = useCallback(() => {
+    if (panelOpenFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(panelOpenFrameRef.current)
+      panelOpenFrameRef.current = undefined
+    }
+    setIsPanelOpen(false)
+    if (prefersReducedMotion()) setSelectedNodeId(undefined)
+  }, [])
+
+  const openPanel = useCallback((nodeId: string) => {
+    if (panelOpenFrameRef.current !== undefined) {
+      window.cancelAnimationFrame(panelOpenFrameRef.current)
+    }
+    setSelectedNodeId(nodeId)
+
+    if (prefersReducedMotion()) {
+      setIsPanelOpen(true)
+      panelOpenFrameRef.current = undefined
+      return
+    }
+
+    setIsPanelOpen(false)
+    panelOpenFrameRef.current = window.requestAnimationFrame(() => {
+      panelOpenFrameRef.current = window.requestAnimationFrame(() => {
+        setIsPanelOpen(true)
+        panelOpenFrameRef.current = undefined
+      })
+    })
+  }, [])
 
   useEffect(() => {
     mounted.current = true
@@ -372,6 +181,7 @@ export function LiveRun({
     setStreamError(undefined)
     setStreamStatus('Connecting')
     setSelectedNodeId(undefined)
+    setIsPanelOpen(false)
     let active = true
     let disconnected = false
 
@@ -484,6 +294,27 @@ export function LiveRun({
     }
   }, [client, connect, runId])
 
+  useEffect(() => {
+    if (!isPanelOpen) return
+
+    const handleOutsidePointerDown = (event: PointerEvent) => {
+      if (panelRef.current?.contains(event.target as Node)) return
+      closePanel()
+    }
+
+    document.addEventListener('pointerdown', handleOutsidePointerDown)
+    return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
+  }, [closePanel, isPanelOpen])
+
+  useEffect(
+    () => () => {
+      if (panelOpenFrameRef.current !== undefined) {
+        window.cancelAnimationFrame(panelOpenFrameRef.current)
+      }
+    },
+    [],
+  )
+
   if (loading) return <p className="text-xs text-muted-foreground">Loading run {runId}…</p>
   if (detail === undefined) {
     return (
@@ -496,32 +327,21 @@ export function LiveRun({
 
   const status = runStatusFrom(detail.run.status, events)
   const currentNodeId = currentNodeFrom(detail, status, events)
-  const currentNode = detail.workflowRevision.nodes.find(({ id }) => id === currentNodeId)
-  const stoppedExecution = [...detail.nodeExecutions]
-    .reverse()
-    .find(
-      ({ status: executionStatus }) =>
-        executionStatus === 'FAILED' || executionStatus === 'CANCELLED',
-    )
-  const stoppedNode = detail.workflowRevision.nodes.find(
-    ({ id }) => id === stoppedExecution?.nodeId,
-  )
   const statuses = nodeStatusesFrom(detail, events)
-  const selectedTransition = [...events]
-    .reverse()
-    .find(
-      (event): event is Extract<RunEvent, { type: 'EDGE_SELECTED' }> =>
-        event.type === 'EDGE_SELECTED',
-    )
   const cancellationRequested = events.some(({ type }) => type === 'RUN_CANCEL_REQUESTED')
   const cancellable =
     status === 'RUNNING' &&
     currentNodeId !== null &&
     statuses[currentNodeId] === 'RUNNING' &&
     !cancellationRequested
-  const taskTitle = objectString(detail.run.taskSnapshot, 'title') ?? detail.run.taskReference
-  const taskUrl = safeWebUrl(objectString(detail.run.taskSnapshot, 'url'))
-  const selectedNode = detail.workflowRevision.nodes.find(({ id }) => id === selectedNodeId)
+  const agentNodes = detail.run.workflowSnapshot.nodes.filter(
+    (node): node is AgentNode => node.type === 'agent',
+  )
+  const currentAgentId =
+    currentNodeId !== null && agentNodes.some(({ id }) => id === currentNodeId)
+      ? currentNodeId
+      : undefined
+  const selectedNode = agentNodes.find(({ id }) => id === selectedNodeId)
   const selectedExecution =
     selectedNode === undefined
       ? undefined
@@ -556,59 +376,27 @@ export function LiveRun({
   }
 
   return (
-    <section className="flex w-full flex-col gap-5">
-      <header className="flex flex-wrap items-start justify-between gap-4 rounded-lg border bg-card p-4">
-        <div className="min-w-0 space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="font-mono text-sm font-semibold">Run {detail.run.runId}</h2>
-            <RunStatusBadge status={status} />
-            <Badge variant="outline" aria-live="polite">
-              {streamStatus}
-            </Badge>
+    <section className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden p-6">
+      <Card size="sm" className="shrink-0" aria-label="Run summary">
+        <CardContent className="flex flex-wrap items-center gap-x-8 gap-y-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-xs/4 font-medium text-muted-foreground">Run ID</p>
+            <h1 className="mt-1 truncate font-mono text-[18px]/6 font-semibold tracking-[-0.01em]">
+              {detail.run.runId}
+            </h1>
           </div>
-          <p className="font-medium">{taskTitle}</p>
-          <p className="max-w-[90ch] text-sm/5 text-muted-foreground">
-            Pinned revision {detail.run.revisionId} · {detail.profileSnapshot.displayName} (
-            {detail.profileSnapshot.profileId}) · snapshot {detail.profileSnapshot.snapshotId} ·
-            Task{' '}
-            {taskUrl === undefined ? (
-              detail.run.taskReference
-            ) : (
-              <Link href={taskUrl} target="_blank" rel="noreferrer">
-                {detail.run.taskReference}
-              </Link>
-            )}
-          </p>
-        </div>
-        {cancellable || cancelling ? (
-          <Button variant="destructive" disabled={cancelling} onClick={() => void cancel()}>
-            {cancelling ? 'Cancelling…' : 'Cancel run'}
-          </Button>
-        ) : null}
-      </header>
-
-      {streamError === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Live updates delayed</AlertTitle>
-          <AlertDescription>{streamError}</AlertDescription>
-        </Alert>
-      )}
-      {cancelError === undefined ? null : (
-        <Alert variant="destructive">
-          <AlertTitle>Run not cancelled</AlertTitle>
-          <AlertDescription>{cancelError}</AlertDescription>
-        </Alert>
-      )}
-
-      <Card size="sm">
-        <CardContent className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <p className="sr-only">
-            {terminalStatuses.has(status)
-              ? 'Exact terminal snapshot; current configuration is not consulted.'
-              : 'Server-confirmed lifecycle and active transition.'}
-          </p>
           <div>
-            <p className="text-xs font-medium text-muted-foreground">Elapsed</p>
+            <p className="text-xs/4 font-medium text-muted-foreground">Status</p>
+            <div className="mt-1">
+              <RunStatusBadge status={status} />
+            </div>
+          </div>
+          <div>
+            <p className="text-xs/4 font-medium text-muted-foreground">Started</p>
+            <p className="mt-1 font-medium tabular-nums">{formatTimestamp(detail.run.startedAt)}</p>
+          </div>
+          <div>
+            <p className="text-xs/4 font-medium text-muted-foreground">Duration</p>
             <p className="mt-1 font-medium tabular-nums">
               <ElapsedTime
                 completedAt={detail.run.completedAt}
@@ -617,85 +405,99 @@ export function LiveRun({
               />
             </p>
           </div>
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">Current node</p>
-            <p className="mt-1 font-medium">Current node: {currentNode?.name ?? 'None'}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">Selected transition</p>
-            <p className="mt-1 font-medium">
-              Selected transition:{' '}
-              {selectedTransition === undefined
-                ? 'None'
-                : `${selectedTransition.data.outcome} → ${selectedTransition.data.targetNodeId}`}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">Started</p>
-            <p className="mt-1 font-medium tabular-nums">{formatTimestamp(detail.run.startedAt)}</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium text-muted-foreground">Stopped node</p>
-            <p className="mt-1 font-medium">
-              Stopped node:{' '}
-              {stoppedNode === undefined ? 'None' : `${stoppedNode.name} (${stoppedNode.id})`}
-            </p>
-          </div>
+          {cancellable || cancelling ? (
+            <Button variant="destructive" disabled={cancelling} onClick={() => void cancel()}>
+              {cancelling ? 'Cancelling…' : 'Cancel run'}
+            </Button>
+          ) : null}
+          <Badge className="sr-only" aria-live="polite">
+            {streamStatus}
+          </Badge>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>{detail.workflowRevision.name}</CardTitle>
-          <CardDescription>Pinned revision {detail.workflowRevision.revisionId}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <WorkflowCanvas
-            revision={detail.workflowRevision}
-            selectedNodeId={selectedNodeId ?? currentNodeId ?? detail.workflowRevision.startNodeId}
-            onNodeSelect={setSelectedNodeId}
-            recentRunStatuses={statuses}
-          />
-        </CardContent>
-      </Card>
+      {streamError === undefined ? null : (
+        <Alert variant="destructive" className="shrink-0">
+          <AlertTitle>Live updates delayed</AlertTitle>
+          <AlertDescription>{streamError}</AlertDescription>
+        </Alert>
+      )}
+      {cancelError === undefined ? null : (
+        <Alert variant="destructive" className="shrink-0">
+          <AlertTitle>Run not cancelled</AlertTitle>
+          <AlertDescription>{cancelError}</AlertDescription>
+        </Alert>
+      )}
 
-      <Sheet
-        open={selectedNode !== undefined}
-        onOpenChange={(open) => {
-          if (!open) setSelectedNodeId(undefined)
-        }}
-      >
-        {selectedNode === undefined ? null : (
-          <SheetContent
-            className="w-full sm:max-w-xl"
-            aria-label={`${selectedNode.name} transcript`}
+      <div className="min-h-0 flex-1">
+        <WorkflowCanvas
+          workflow={detail.run.workflowSnapshot}
+          selectedNodeId={selectedNodeId ?? currentAgentId ?? agentNodes[0]?.id}
+          onNodeSelect={openPanel}
+          recentRunStatuses={statuses}
+        />
+      </div>
+
+      {selectedNode === undefined ? null : (
+        <div
+          ref={panelRef}
+          data-testid="run-node-panel-shell"
+          data-open={isPanelOpen}
+          aria-hidden={!isPanelOpen}
+          className="provider-floating-panel-shell absolute inset-y-3 right-3 z-30 w-[min(34rem,calc(100%-1.5rem))]"
+          style={
+            {
+              '--panel-open-dur': '350ms',
+              '--panel-close-dur': '350ms',
+              '--panel-translate-y': '0px',
+            } as CSSProperties
+          }
+          onTransitionEnd={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              event.propertyName === 'translate' &&
+              !isPanelOpen
+            ) {
+              setSelectedNodeId(undefined)
+            }
+          }}
+        >
+          <aside
+            role="dialog"
+            aria-modal="false"
+            aria-labelledby="run-node-panel-title"
+            data-layout="floating"
+            data-open={isPanelOpen}
+            className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
           >
-            <SheetHeader className="border-b pr-12">
-              <SheetTitle>{selectedNode.name} transcript</SheetTitle>
-              <SheetDescription>
-                Prompt, reasoning, and response from this run&apos;s pinned agent execution.
-              </SheetDescription>
-            </SheetHeader>
-            {selectedNode.type === 'agent' ? (
-              <AgentTranscript
-                events={events}
-                node={selectedNode}
-                result={selectedExecution?.output}
-                streaming={statuses[selectedNode.id] === 'RUNNING'}
-              />
-            ) : (
-              <p className="p-4 text-muted-foreground">
-                This node does not produce an agent conversation.
-              </p>
-            )}
-          </SheetContent>
-        )}
-      </Sheet>
-
-      <NodeProgress detail={detail} statuses={statuses} />
-      <RepositoryEvidence detail={detail} />
-      <Artifacts detail={detail} />
-      <RunEventStream events={events} />
+            <header className="relative shrink-0 border-b border-border p-6 pr-14">
+              <h2
+                id="run-node-panel-title"
+                className="text-[18px]/6 font-semibold tracking-[-0.01em]"
+              >
+                {selectedNode.name}
+              </h2>
+              <p className="mt-1 font-mono text-xs/4 text-muted-foreground">{selectedNode.id}</p>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                aria-label="Close job details"
+                onClick={closePanel}
+                className="absolute top-3 right-3"
+              >
+                <XIcon aria-hidden="true" />
+              </Button>
+            </header>
+            <RunNodePanel
+              events={events}
+              execution={selectedExecution}
+              node={selectedNode}
+              status={statuses[selectedNode.id] ?? 'PENDING'}
+            />
+          </aside>
+        </div>
+      )}
     </section>
   )
 }

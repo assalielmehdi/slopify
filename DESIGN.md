@@ -3,10 +3,11 @@ name: Slopify
 colors:
   primary: '#1C1C1C'
   light:
-    background: '#F7F7F8'
+    background: '#FFFFFF'
     foreground: '#1C1C1C'
     surface: '#FFFFFF'
     surfaceForeground: '#1C1C1C'
+    sidebar: '#F7F7F8'
     muted: '#F1F1F3'
     mutedForeground: '#6A6B70'
     subtleForeground: '#55565A'
@@ -16,10 +17,11 @@ colors:
     selected: '#EAEAEC'
     focus: '#1C1C1C'
   dark:
-    background: '#111113'
+    background: '#171719'
     foreground: '#F1F1F2'
     surface: '#171719'
     surfaceForeground: '#F1F1F2'
+    sidebar: '#111113'
     muted: '#222225'
     mutedForeground: '#8E8F95'
     subtleForeground: '#B7B7BC'
@@ -85,6 +87,15 @@ rounded:
   md: 8px
   lg: 12px
   full: 9999px
+elevation:
+  light:
+    raised: '0 1px 2px rgb(24 24 27 / 3%)'
+    raisedHover: '0 2px 6px rgb(24 24 27 / 4%)'
+    overlay: '0 8px 24px rgb(24 24 27 / 7%), 0 1px 3px rgb(24 24 27 / 4%)'
+  dark:
+    raised: '0 1px 2px rgb(0 0 0 / 12%)'
+    raisedHover: '0 2px 6px rgb(0 0 0 / 14%)'
+    overlay: '0 8px 24px rgb(0 0 0 / 24%), 0 1px 3px rgb(0 0 0 / 16%)'
 components:
   controlSm:
     height: 32px
@@ -120,8 +131,9 @@ spacing, typography, component geometry, or interaction behavior.
 ## Colors
 
 Use semantic roles instead of literal colors in component code. Components consume
-`background`, `surface`, `foreground`, `mutedForeground`, `border`, `selected`, and
-signal roles. They do not select a gray because it happens to look right in one mode.
+`background`, `surface`, `sidebar`, `foreground`, `mutedForeground`, `border`,
+`selected`, and signal roles. They do not select a gray because it happens to look
+right in one mode.
 
 ### Neutral hierarchy
 
@@ -130,32 +142,40 @@ signal roles. They do not select a gray because it happens to look right in one 
 - `subtleForeground` is for ordinary navigation and secondary interface copy.
 - `mutedForeground` is for section labels, metadata, descriptions, placeholders, and
   nonessential context. It must remain readable; muted never means disabled.
-- `surface` is used by the sidebar, top navigation, panels, cards, menus, and dialogs.
-- `background` is the main work area and must remain visibly distinct from `surface`.
+- `sidebar` is the recessed navigation canvas, including the product title and collapse
+  control row.
+- `background` is the base work surface used by the breadcrumb bar and main area.
+- `surface` is used by cards, tables, forms, sheets, menus, and dialogs. Ordinary
+  content surfaces use the same color value as `background`; their boundaries come
+  from spacing, borders, and intentional elevation rather than a different fill.
 - `selected` identifies the current neutral selection without introducing an accent.
 - `border` and `sidebarBorder` define structure quietly. Prefer borders over shadows.
 
 ### Light mode
 
-Light mode uses white structural surfaces over a soft gray work area. Text uses warm,
-near-black gray rather than pure black. Selection and hover states are neutral gray.
+Light mode uses a soft gray recessed navigation canvas beside one white work surface.
+The breadcrumb bar, main area, cards, tables, forms, and sheets share that white base.
+Text uses warm, near-black gray rather than pure black. Selection and hover states are
+neutral gray.
 
-The left navigation and top breadcrumb bar use the same surface, foreground hierarchy,
-and border family. The main workspace uses `background` so the application shell is
-legible without heavy elevation.
+Do not recreate hierarchy by tinting ordinary content containers. Begin with spacing
+and typography, add a one-pixel boundary when grouping is otherwise unclear, and add
+the lowest suitable shadow only when a surface is meaningfully raised.
 
 ### Dark mode
 
 Dark mode is designed independently, not produced by inverting light mode.
 
-- Use deep charcoal for the work area and a slightly raised charcoal for structural
-  surfaces. Avoid pure black.
+- Use deep charcoal for the recessed sidebar and a slightly lighter charcoal for the
+  work surface and ordinary content. Avoid pure black.
 - Primary text is soft white rather than pure white. Secondary text is lighter than in
   light mode so it keeps equivalent perceived importance.
 - Borders must remain visible without becoming luminous outlines.
 - Hover and selected states become lighter neutral surfaces, never colored glows.
-- The sidebar and breadcrumb bar remain the same color; the main work area stays
-  distinct.
+- The breadcrumb bar, main work area, and ordinary content remain one surface. The
+  sidebar stays quieter and darker.
+- Dark shadows are less perceptible, so borders and the sidebar-to-work-surface value
+  difference must carry more of the separation.
 - Status colors use the dark signal palette and must be paired with text or an icon.
 
 Switching modes uses a 150ms color transition with no movement, scaling, or crossfade.
@@ -206,9 +226,18 @@ on narrow screens, but the current location remains visible.
 
 Depth is quiet and structural.
 
-- Use a one-pixel border as the default separator.
-- Use subtle shadows only for floating layers such as menus, dialogs, and drawers.
-- Do not stack border, heavy shadow, and contrasting background on the same surface.
+- Use whitespace and alignment before adding a visible container.
+- Use a one-pixel border as the default boundary for cards, tables, fields, and grouped
+  rows that still need explicit containment.
+- Use `raised` only for standalone cards, workflow nodes, and interactive catalog
+  tiles. It is a nearly imperceptible single-layer shadow; hover may increase it by one
+  restrained step.
+- Use `overlay` only for content floating above the page: drawers, sheets, menus,
+  popovers, and dialogs. It should register as depth without presenting a visibly dark
+  halo. Pair it with a crisp border, especially in dark mode.
+- Ordinary nested sections remain flat. Do not stack multiple raised materials or add
+  a shadow when spacing and a border already communicate the relationship.
+- Never combine a heavy shadow with a contrasting ordinary-content fill.
 - Do not use gradients, glass effects, or colored glows in the product shell.
 
 ## Shapes
@@ -226,7 +255,10 @@ text color of their role.
 
 ### Navigation shell
 
-- The sidebar and breadcrumb bar share `surface`; the workspace uses `background`.
+- The sidebar uses the recessed `sidebar` surface. The breadcrumb bar and workspace use
+  the base `background` surface.
+- The sidebar title row is part of the sidebar plane; do not detach the logo or collapse
+  control onto the work surface.
 - The product title and collapse control share one row when the sidebar is expanded.
 - The expand control moves to the breadcrumb bar when the sidebar is collapsed.
 - Section labels are visually quieter than navigation destinations.
@@ -245,6 +277,7 @@ text color of their role.
 - Let the top breadcrumb carry the page identity; begin content with the first category
   heading instead of repeating a page title.
 - Each category has a heading above one bordered `surface` containing one or more rows.
+  Its fill matches the work surface; a quiet raised shadow may reinforce the group.
 - A preference row pairs a concise name and description with its control. Stack the
   control below the copy when horizontal room is limited.
 - The initial category is `Interface`; its initial row is named `Theme`.
@@ -281,6 +314,8 @@ text color of their role.
   space without imposing an arbitrary three-column ceiling.
 - Grid cards and list rows share the same information order, status treatment, and
   whole-surface interaction. Do not add a secondary `View setup` action.
+- Resting tiles use the work-surface color, a one-pixel border, and `raised` elevation.
+  Hover strengthens the border and shadow without introducing a color accent.
 - The grid/list selector is an icon-only accessible radio group using the same moving
   neutral selection surface and motion rules as the Theme selector.
 - Provider and connector details open in a floating, non-modal right drawer contained
@@ -290,6 +325,82 @@ text color of their role.
   while preserving the underlying interaction, and reduced motion removes the travel.
 - Provider and connector brand marks may keep their identity colors; surrounding UI
   stays neutral and semantic.
+
+### Project catalog
+
+- Projects are local Git repositories identified by one canonical absolute path. The
+  add flow asks only for that path; the API validates that it exists and is the root of
+  a Git repository before persisting it.
+- Use the same grid/list selector, left-aligned responsive catalog, whole-surface tiles,
+  and contained floating drawer as Providers and Connectors.
+- Derive availability from the filesystem whenever Projects are listed or used. Never
+  remove a saved Project merely because its path is unavailable.
+- A missing Project remains in its original catalog position with a muted tile and the
+  explicit status `Can't find in file system`. Color or opacity alone is insufficient.
+
+### Workflow editor
+
+- A workflow screen presents the single current workflow graph. Do not expose revision
+  selectors, revision IDs, version ancestry, or publication controls.
+- V1 presents every workflow node as an agent. Do not expose code jobs or invent setup,
+  start, finalization, or terminal control nodes. One agent can be the entire workflow.
+- An empty workflow is a valid draft state. Give it a calm, actionable empty canvas,
+  but disable running it and explain that at least one agent is required.
+- Until editing is implemented, the graph remains read-only and the primary available
+  action is starting a new run. Do not imply that an edit can be saved when it cannot.
+- Let the graph fill the workspace remaining below the application header. Keep the
+  page itself fixed to the viewport; graph pan and zoom belong to the canvas.
+- Workflow nodes use the standard neutral card treatment. In a run snapshot, a node's
+  whole surface adopts the corresponding semantic success, danger, warning, or info
+  treatment while retaining an icon and explicit status label.
+
+### Run variables
+
+- Starting a run accepts an optional set of named values. Prepopulate rows for every
+  exact `{{ variable }}` placeholder referenced by captured agent prompts, and allow
+  the user to add arbitrary names beyond those references.
+- Values accept JSON scalars, objects, and arrays. When entered text is not valid JSON,
+  preserve it as a string rather than inventing a second input mode.
+- Missing referenced variables use a semantic warning, list the exact missing names,
+  and require a deliberate confirmation before the run is admitted. Editing variables
+  clears the prior confirmation.
+- Keep the warning and confirmation in the normal run-start flow. Do not hide them in a
+  modal, use danger styling, or imply that optional variables are schema validation
+  errors.
+
+### Run history
+
+- Run history is a ShadCN table with exactly four informational columns: Run ID,
+  Started, Duration, and Status.
+- Run IDs use monospace and remain directly navigable. Started time and duration use
+  stable, scan-friendly formatting.
+- Status is a compact ShadCN badge. Success is green, failure is red, active execution
+  is informational, and pending or cancelled states remain neutral or warning as
+  appropriate. Status color is always paired with its text label.
+- Do not include workflow versions, revisions, configuration columns, or secondary
+  filters that duplicate information available inside a run.
+
+### Run detail
+
+- A run is the immutable historical capture of its workflow and every job
+  configuration, variables, and missing-variable confirmation at admission. The detail
+  UI always renders that capture; it must never fetch the current workflow to
+  reconstruct historical state.
+- The top of the screen contains one wide ShadCN Card with the Run ID, Status, Started,
+  and Duration. A running run may keep a compact cancel action in this card.
+- The rest of the desktop screen is the read-only workflow canvas. Do not append legacy
+  progress, configuration, artifact, evidence, or event-stream sections beneath it.
+- Opening a job uses the same contained, non-modal floating right panel as provider and
+  connector details. It does not shift the graph, overlap the application header, add
+  a backdrop, trap focus, or block interaction with the canvas.
+- The panel shows the captured job type and configuration, skills, inference provider
+  and model, connectors, sandbox/result/timeout data, execution status and timing,
+  errors or output, and available agent transcript messages.
+- The panel enters from and exits toward the right over 350ms using the catalog drawer
+  easing. Clicking elsewhere begins its exit while allowing that underlying
+  interaction. Long panel content scrolls inside the panel; the run page does not.
+- The floating panel uses `overlay` elevation. Configuration blocks inside it remain
+  flat on the panel surface unless a semantic status requires a signal fill.
 
 ### Keyboard interaction
 
@@ -316,6 +427,9 @@ text color of their role.
 ### Do
 
 - Build hierarchy with spacing, typography, neutral contrast, and alignment.
+- Keep the breadcrumb, work area, and ordinary content on one base surface.
+- Use the recessed navigation surface only for the left application shell.
+- Choose the lowest border and elevation treatment that still makes grouping clear.
 - Validate every component in light and dark mode at the same time.
 - Keep chrome quieter than the user's workflow content.
 - Use semantic tokens so mode changes do not require component overrides.
@@ -330,5 +444,7 @@ text color of their role.
 - Do not lower secondary text contrast until it becomes decorative or unreadable.
 - Do not change layout, type scale, or information priority between color modes.
 - Do not use excessive rounding, floating cards, heavy shadows, or gradients.
+- Do not use different neutral fills merely to make every content group look like a
+  card.
 - Do not create a second theme path for future Preferences controls; all theme entry
   points must operate on the same semantic tokens and state.

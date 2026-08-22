@@ -52,7 +52,7 @@
 }
 
 :root {
-  --background: #f7f7f8;
+  --background: #ffffff;
   --foreground: #1c1c1c;
   --card: #ffffff;
   --card-foreground: #1c1c1c;
@@ -96,7 +96,10 @@
   --panel-translate-y: 100px;
   --panel-blur: 2px;
   --panel-ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --sidebar: #ffffff;
+  --shadow-raised: 0 1px 2px rgb(24 24 27 / 3%);
+  --shadow-raised-hover: 0 2px 6px rgb(24 24 27 / 4%);
+  --shadow-overlay: 0 8px 24px rgb(24 24 27 / 7%), 0 1px 3px rgb(24 24 27 / 4%);
+  --sidebar: #f7f7f8;
   --sidebar-foreground: #55565a;
   --sidebar-primary: #1c1c1c;
   --sidebar-primary-foreground: #fafafa;
@@ -107,7 +110,7 @@
 }
 
 .dark {
-  --background: #111113;
+  --background: #171719;
   --foreground: #f1f1f2;
   --card: #171719;
   --card-foreground: #f1f1f2;
@@ -137,7 +140,10 @@
   --tabs-text-active: #f1f1f2;
   --tabs-bar-bg: #222225;
   --tabs-pill-bg: #303034;
-  --sidebar: #171719;
+  --shadow-raised: 0 1px 2px rgb(0 0 0 / 12%);
+  --shadow-raised-hover: 0 2px 6px rgb(0 0 0 / 14%);
+  --shadow-overlay: 0 8px 24px rgb(0 0 0 / 24%), 0 1px 3px rgb(0 0 0 / 16%);
+  --sidebar: #111113;
   --sidebar-foreground: #b7b7bc;
   --sidebar-primary: #f1f1f2;
   --sidebar-primary-foreground: #171719;

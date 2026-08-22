@@ -3,350 +3,205 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  ProjectProfileCatalogResponseSchema,
-  ProjectProfileConfigurationSchema,
-  ProjectProfileReadinessSchema,
-  RevisionIdSchema,
-  RunIdSchema,
-  WorkflowIdSchema,
-} from '@loop/contracts'
+import { createPredefinedV1Workflow, type Workflow } from '@loop/workflow-model'
 
 import { StartRunForm } from '../components/runs/start-run-form'
-import {
-  ApiClientError,
-  type ApiClient,
-  type ClickUpTaskSnapshot,
-  type StartRunResponse,
-  type WorkflowCatalogEntry,
-} from '../lib/api-client'
+import { ApiClientError, type ApiClient, type StartRunResponse } from '../lib/api-client'
 
-const profile = ProjectProfileConfigurationSchema.parse({
-  profileId: 'local-profile',
-  displayName: 'Local delivery',
-  clickupWorkspaceId: 'workspace-01',
-  clickupListId: 'list-01',
-  clickupInReviewStatusId: 'in-review',
-  repositories: [
-    {
-      repositoryId: 'api',
-      displayName: 'API',
-      purpose: 'Backend services',
-      repositoryPath: '/workspace/api',
-      gitlabProject: 'group/api',
-      remote: 'origin',
-      targetBranch: 'main',
-      worktreeParent: '/workspace/.worktrees',
-      branchTemplate: 'ai/{task}-{run}',
-      executableChecks: [],
-      verificationCommands: [],
-      mergeRequestLabels: [],
-    },
-    {
-      repositoryId: 'web',
-      displayName: 'Web',
-      purpose: 'Operator workbench',
-      repositoryPath: '/workspace/web',
-      gitlabProject: 'group/web',
-      remote: 'origin',
-      targetBranch: 'develop',
-      worktreeParent: '/workspace/.worktrees',
-      branchTemplate: 'ai/{task}-{run}',
-      executableChecks: [],
-      verificationCommands: [],
-      mergeRequestLabels: [],
-    },
-  ],
+const baseWorkflow = createPredefinedV1Workflow({
+  createdAt: '2026-08-20T10:00:00Z',
+  agentDefaults: {
+    provider: 'test-provider',
+    model: 'test-model',
+    thinkingLevel: 'high',
+  },
 })
 
-const workflows: readonly WorkflowCatalogEntry[] = [
-  {
-    workflowId: WorkflowIdSchema.parse('delivery-workflow'),
-    name: 'Delivery workflow',
-    latestRevisionId: RevisionIdSchema.parse('revision-02'),
-    revisions: [
-      {
-        revisionId: RevisionIdSchema.parse('revision-02'),
-        parentRevisionId: RevisionIdSchema.parse('revision-01'),
-        createdAt: '2026-08-20T10:00:00Z',
-      },
-      {
-        revisionId: RevisionIdSchema.parse('revision-01'),
-        parentRevisionId: null,
-        createdAt: '2026-08-19T10:00:00Z',
-      },
-    ],
-  },
-]
+const workflow = {
+  ...baseWorkflow,
+  nodes: baseWorkflow.nodes.map((node) =>
+    node.type === 'agent'
+      ? {
+          ...node,
+          job: {
+            ...node.job,
+            prompt: 'Deliver {{ task }} in {{ iterations }} passes. Keep \\{{ escaped }} literal.',
+          },
+        }
+      : node,
+  ),
+} as Workflow
 
-const workflowId = WorkflowIdSchema.parse('delivery-workflow')
-const latestRevisionId = RevisionIdSchema.parse('revision-02')
-
-const task: ClickUpTaskSnapshot = {
-  taskId: '86abc123',
-  customTaskId: 'PROJ-42',
-  url: 'https://app.clickup.com/t/86abc123',
-  title: 'Resolve and confirm the task',
-  description: 'Keep repository selection inside the workflow.',
-  status: { id: 'status-1', name: 'in progress', type: 'custom' },
-  priority: { id: '2', name: 'high' },
-  comments: [],
-  resourceLinks: [],
-}
-
-const run: StartRunResponse = {
-  runId: RunIdSchema.parse('run-01'),
-  workflowId,
-  revisionId: latestRevisionId,
-  profileSnapshotId: 'profile-snapshot-01',
-  taskReference: task.taskId,
-  notes: 'Coordinate API and web delivery.',
-  taskSnapshot: JSON.parse(JSON.stringify(task)),
-  effectiveConfiguration: {},
+const startedRun = {
+  runId: 'run-01',
+  workflowId: workflow.workflowId,
+  workflowSnapshot: workflow,
+  variables: { task: 'Improve onboarding', iterations: 3 },
+  missingVariables: [],
   status: 'PENDING',
   currentNodeId: null,
   transitionCount: 0,
-  createdAt: '2026-08-20T10:05:00Z',
+  createdAt: '2026-08-20T10:00:00Z',
   startedAt: null,
   completedAt: null,
-}
+} as unknown as StartRunResponse
 
-const createClient = (ready = true) => {
-  const resolveClickUpTask = vi.fn<ApiClient['resolveClickUpTask']>(async () => task)
-  const startRun = vi.fn<ApiClient['startRun']>(async () => run)
-  const getProjectProfileReadiness = vi.fn<ApiClient['getProjectProfileReadiness']>(async () =>
-    ProjectProfileReadinessSchema.parse({
-      profileId: profile.profileId,
-      ready,
-      repositories: profile.repositories.map(({ repositoryId }) => ({
-        repositoryId,
-        ready,
-        findings: ready
-          ? []
-          : [{ category: 'filesystem', code: 'PATH_MISSING', message: 'Path is missing' }],
-      })),
-    }),
-  )
-  const client: ApiClient = {
-    getHealth: vi.fn(),
-    listProjectProfiles: vi.fn(async () =>
-      ProjectProfileCatalogResponseSchema.parse({
-        profiles: [profile],
-        runtime: { mode: 'container', root: '/workspace' },
-      }),
-    ),
-    createProjectProfile: vi.fn(),
-    updateProjectProfile: vi.fn(),
-    getProjectProfileReadiness,
-    getConnectorStatus: vi.fn(),
-    listWorkflows: vi.fn(async () => workflows),
-    getWorkflowRevision: vi.fn(),
-    createWorkflowRevision: vi.fn(),
-    resolveClickUpTask,
-    startRun,
-    listRuns: vi.fn(),
-    getRun: vi.fn(),
-    cancelRun: vi.fn(),
-  }
-  return { client, getProjectProfileReadiness, resolveClickUpTask, startRun }
-}
-
-const resolveAndConfirm = async () => {
-  fireEvent.change(await screen.findByLabelText('ClickUp task ID or URL'), {
-    target: { value: task.taskId },
-  })
-  fireEvent.click(screen.getByRole('button', { name: 'Resolve task' }))
-  expect(await screen.findByRole('heading', { name: task.title })).toBeTruthy()
-  fireEvent.click(
-    screen.getByLabelText(/confirm this task, revision, profile, candidates, and targets/i),
-  )
-}
+const createClient = (overrides: Partial<ApiClient> = {}) =>
+  ({
+    listWorkflows: vi.fn(async () => [workflow]),
+    startRun: vi.fn(async () => startedRun),
+    ...overrides,
+  }) as unknown as ApiClient
 
 afterEach(cleanup)
 
+const fillRequiredVariables = async () => {
+  fireEvent.change(await screen.findByLabelText('Variable value for task'), {
+    target: { value: 'Improve onboarding' },
+  })
+  fireEvent.change(screen.getByLabelText('Variable value for iterations'), {
+    target: { value: '3' },
+  })
+}
+
 describe('StartRunForm', () => {
-  it('loads the basic workflow and local run input from the default profile', async () => {
-    const defaultProfile = ProjectProfileConfigurationSchema.parse({
-      profileId: 'default-profile',
-      displayName: 'Default profile',
-      clickupWorkspaceId: 'not-required',
-      clickupListId: 'not-required',
-      clickupInReviewStatusId: 'not-required',
-      repositories: [],
-    })
-    const defaultTask: ClickUpTaskSnapshot = {
-      taskId: 'basic-agent-run',
-      customTaskId: null,
-      url: 'http://localhost:3000/runs/new',
-      title: 'Basic agent run',
-      description: 'Ask the agent who it is and what its name is.',
-      status: { id: null, name: 'ready', type: 'local' },
-      priority: null,
-      comments: [],
-      resourceLinks: [],
-    }
-    const { client, resolveClickUpTask, startRun } = createClient()
-    client.listProjectProfiles = vi.fn(async () =>
-      ProjectProfileCatalogResponseSchema.parse({
-        profiles: [defaultProfile],
-        runtime: { mode: 'native', root: '/workspace' },
-      }),
-    )
-    client.listWorkflows = vi.fn(async () => [
-      {
-        workflowId: WorkflowIdSchema.parse('delivery-workflow'),
-        name: 'Who are you?',
-        latestRevisionId: RevisionIdSchema.parse('revision-basic-agent-02'),
-        revisions: [
-          {
-            revisionId: RevisionIdSchema.parse('revision-basic-agent-02'),
-            parentRevisionId: null,
-            createdAt: '2026-08-20T23:00:00Z',
-          },
-        ],
-      },
-    ])
-    client.getProjectProfileReadiness = vi.fn(async () =>
-      ProjectProfileReadinessSchema.parse({
-        profileId: defaultProfile.profileId,
-        ready: true,
-        repositories: [],
-      }),
-    )
-    resolveClickUpTask.mockResolvedValue(defaultTask)
-    render(<StartRunForm client={client} />)
+  it('prelists prompt variables and removes delivery-specific run fields', async () => {
+    render(<StartRunForm client={createClient()} />)
 
-    expect(await screen.findByRole('heading', { name: 'Basic agent run' })).toBeTruthy()
-    expect((screen.getByLabelText('Project profile') as HTMLSelectElement).value).toBe(
-      'default-profile',
-    )
-    expect((screen.getByLabelText('Workflow revision') as HTMLSelectElement).value).toBe(
-      'revision-basic-agent-02',
-    )
-    expect(resolveClickUpTask).toHaveBeenCalledWith({
-      taskReference: 'basic-agent-run',
-      profileId: 'default-profile',
-    })
+    expect(await screen.findByLabelText('Workflow')).toBeTruthy()
+    expect(screen.getByDisplayValue('task')).toBeTruthy()
+    expect(screen.getByDisplayValue('iterations')).toBeTruthy()
+    expect(screen.queryByDisplayValue('escaped')).toBeNull()
+    expect(screen.queryByLabelText('Project profile')).toBeNull()
     expect(screen.queryByLabelText('ClickUp task ID or URL')).toBeNull()
-
-    fireEvent.click(screen.getByLabelText(/confirm this task/i))
-    fireEvent.submit(screen.getByRole('form', { name: 'Start a run' }))
-
-    await waitFor(() => expect(startRun).toHaveBeenCalledTimes(1))
-    expect(startRun).toHaveBeenCalledWith({
-      taskReference: 'basic-agent-run',
-      workflowId: 'delivery-workflow',
-      revisionId: 'revision-basic-agent-02',
-      profileId: 'default-profile',
-    })
+    expect(screen.queryByLabelText('Run notes')).toBeNull()
   })
 
-  it('defaults to the latest revision and gates start on a read-only confirmation', async () => {
-    const { client, resolveClickUpTask } = createClient()
-    render(<StartRunForm client={client} />)
+  it('submits JSON-compatible values and arbitrary variables', async () => {
+    const startRun = vi.fn(async () => startedRun)
+    render(<StartRunForm client={createClient({ startRun })} />)
+    await fillRequiredVariables()
 
-    expect(((await screen.findByLabelText('Workflow revision')) as HTMLSelectElement).value).toBe(
-      'revision-02',
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Variable name 3'), { target: { value: 'context' } })
+    fireEvent.change(screen.getByLabelText('Variable value for context'), {
+      target: { value: '{"owner":"delivery"}' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }))
+
+    await waitFor(() =>
+      expect(startRun).toHaveBeenCalledWith({
+        workflowId: workflow.workflowId,
+        variables: {
+          task: 'Improve onboarding',
+          iterations: 3,
+          context: { owner: 'delivery' },
+        },
+      }),
     )
-    expect((screen.getByLabelText('Project profile') as HTMLSelectElement).value).toBe(
-      profile.profileId,
+    expect(
+      (await screen.findByRole('link', { name: 'Open run run-01' })).getAttribute('href'),
+    ).toBe('/runs/run-01')
+  })
+
+  it('omits blank prompt-variable rows so the server can report them as missing', async () => {
+    const startRun = vi.fn<ApiClient['startRun']>().mockRejectedValueOnce(
+      new ApiClientError({
+        code: 'RUN_VARIABLES_MISSING',
+        message: 'Some prompt variables are missing.',
+        status: 409,
+        details: { missingVariables: ['task', 'iterations'] },
+      }),
     )
-    expect(
-      screen.getByRole('button', { name: 'Start confirmed run' }).hasAttribute('disabled'),
-    ).toBe(true)
-    expect(screen.queryByText(/repository-selection agent/i)).toBeNull()
+    render(<StartRunForm client={createClient({ startRun })} />)
 
-    await resolveAndConfirm()
+    fireEvent.click(await screen.findByRole('button', { name: 'Start run' }))
 
-    expect(resolveClickUpTask).toHaveBeenCalledWith({
-      taskReference: task.taskId,
-      profileId: profile.profileId,
-    })
-    expect(screen.getByText('API')).toBeTruthy()
-    expect(screen.getByText('Target main')).toBeTruthy()
-    expect(screen.getByText('Web')).toBeTruthy()
-    expect(screen.getByText('Target develop')).toBeTruthy()
-    expect(screen.getAllByRole('checkbox')).toHaveLength(1)
-    expect(
-      screen.getByRole('button', { name: 'Start confirmed run' }).hasAttribute('disabled'),
-    ).toBe(false)
+    await waitFor(() =>
+      expect(startRun).toHaveBeenCalledWith({
+        workflowId: workflow.workflowId,
+        variables: {},
+      }),
+    )
+    expect(await screen.findByText('Missing prompt variables')).toBeTruthy()
   })
 
-  it('invalidates confirmation when the selected revision changes', async () => {
-    const { client } = createClient()
-    render(<StartRunForm client={client} />)
-    await resolveAndConfirm()
+  it('allows arbitrary variable rows to be removed', async () => {
+    render(<StartRunForm client={createClient()} />)
+    await screen.findByLabelText('Workflow')
 
-    fireEvent.change(screen.getByLabelText('Workflow revision'), {
-      target: { value: 'revision-01' },
-    })
+    fireEvent.click(screen.getByRole('button', { name: 'Add variable' }))
+    fireEvent.change(screen.getByLabelText('Variable name 3'), { target: { value: 'temporary' } })
+    expect(screen.getByLabelText('Variable value for temporary')).toBeTruthy()
 
-    expect((screen.getByLabelText(/confirm this task/i) as HTMLInputElement).checked).toBe(false)
+    fireEvent.click(screen.getByRole('button', { name: 'Remove variable temporary' }))
+    expect(screen.queryByLabelText('Variable value for temporary')).toBeNull()
+  })
+
+  it('requires an explicit second action when the server reports missing variables', async () => {
+    const startRun = vi
+      .fn<ApiClient['startRun']>()
+      .mockRejectedValueOnce(
+        new ApiClientError({
+          code: 'RUN_VARIABLES_MISSING',
+          message: 'Some prompt variables are missing.',
+          status: 409,
+          details: { missingVariables: ['optional_context'] },
+        }),
+      )
+      .mockResolvedValueOnce(startedRun)
+    render(<StartRunForm client={createClient({ startRun })} />)
+    await fillRequiredVariables()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }))
+
+    expect(await screen.findByText('Missing prompt variables')).toBeTruthy()
     expect(
-      screen.getByRole('button', { name: 'Start confirmed run' }).hasAttribute('disabled'),
-    ).toBe(true)
-  })
-
-  it('keeps an unready profile server-confirmed and blocks submission', async () => {
-    const { client } = createClient(false)
-    render(<StartRunForm client={client} />)
-
-    fireEvent.change(await screen.findByLabelText('ClickUp task ID or URL'), {
-      target: { value: task.taskId },
-    })
-    fireEvent.click(screen.getByRole('button', { name: 'Resolve task' }))
-
-    expect(await screen.findByText('Project profile is not ready.')).toBeTruthy()
-    expect(screen.getByLabelText('Project profile').getAttribute('aria-invalid')).toBe('true')
-    expect(
-      screen.getByRole('button', { name: 'Start confirmed run' }).hasAttribute('disabled'),
-    ).toBe(true)
-  })
-
-  it('starts only from the confirmed state and links the server-confirmed run', async () => {
-    const { client, startRun } = createClient()
-    render(<StartRunForm client={client} />)
-    await resolveAndConfirm()
-    fireEvent.change(screen.getByLabelText('Run notes'), {
-      target: { value: 'Coordinate API and web delivery.' },
+      screen.getByText('Starting anyway substitutes an empty value for each missing variable.'),
+    ).toBeTruthy()
+    expect(screen.getByText('optional_context')).toBeTruthy()
+    expect(startRun).toHaveBeenCalledTimes(1)
+    expect(startRun).toHaveBeenLastCalledWith({
+      workflowId: workflow.workflowId,
+      variables: { task: 'Improve onboarding', iterations: 3 },
     })
 
-    fireEvent.submit(screen.getByRole('form', { name: 'Start a run' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Start without missing variables' }))
 
-    await waitFor(() => expect(startRun).toHaveBeenCalledTimes(1))
-    expect(startRun).toHaveBeenCalledWith({
-      taskReference: task.taskId,
-      workflowId: 'delivery-workflow',
-      revisionId: 'revision-02',
-      profileId: profile.profileId,
-      notes: 'Coordinate API and web delivery.',
+    await waitFor(() => expect(startRun).toHaveBeenCalledTimes(2))
+    expect(startRun).toHaveBeenLastCalledWith({
+      workflowId: workflow.workflowId,
+      variables: { task: 'Improve onboarding', iterations: 3 },
+      confirmMissingVariables: true,
     })
-    const link = await screen.findByRole('link', { name: 'Open run run-01' })
-    expect(link.getAttribute('href')).toBe('/runs/run-01')
   })
 
-  it('associates task-resolution errors with the task reference', async () => {
-    const { client } = createClient()
-    client.resolveClickUpTask = vi.fn(async () => {
+  it('resets missing-variable confirmation after an edit', async () => {
+    const startRun = vi.fn(async () => {
       throw new ApiClientError({
-        code: 'TASK_RESOLUTION_FAILED',
-        message: 'Task could not be resolved',
-        status: 422,
+        code: 'RUN_VARIABLES_MISSING',
+        message: 'Some prompt variables are missing.',
+        status: 409,
+        details: { missingVariables: ['optional_context'] },
       })
     })
-    render(<StartRunForm client={client} />)
-    const input = await screen.findByLabelText('ClickUp task ID or URL')
-    fireEvent.change(input, { target: { value: 'malformed-task' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Resolve task' }))
+    render(<StartRunForm client={createClient({ startRun })} />)
+    await fillRequiredVariables()
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }))
+    expect(
+      await screen.findByRole('button', { name: 'Start without missing variables' }),
+    ).toBeTruthy()
 
-    expect(await screen.findByText('Task could not be resolved')).toBeTruthy()
-    expect(input.getAttribute('aria-invalid')).toBe('true')
-    expect(input.getAttribute('aria-describedby')).toContain('task-reference-error')
+    fireEvent.change(screen.getByLabelText('Variable value for task'), {
+      target: { value: 'Refine navigation' },
+    })
+
+    expect(screen.queryByText('Missing prompt variables')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Start run' })).toBeTruthy()
   })
 
-  it('preserves the confirmed form and links the active run on conflict', async () => {
-    const { client } = createClient()
-    client.startRun = vi.fn(async () => {
+  it('links to the active run when the server rejects a competing start', async () => {
+    const startRun = vi.fn(async () => {
       throw new ApiClientError({
         code: 'RUN_ACTIVE',
         message: 'Another run is already active',
@@ -354,13 +209,15 @@ describe('StartRunForm', () => {
         details: { activeRunId: 'run-active-01' },
       })
     })
-    render(<StartRunForm client={client} />)
-    await resolveAndConfirm()
-    fireEvent.submit(screen.getByRole('form', { name: 'Start a run' }))
+    render(<StartRunForm client={createClient({ startRun })} />)
+    await fillRequiredVariables()
 
-    const link = await screen.findByRole('link', { name: 'Open active run run-active-01' })
-    expect(link.getAttribute('href')).toBe('/runs/run-active-01')
-    expect(screen.getByRole('heading', { name: task.title })).toBeTruthy()
-    expect((screen.getByLabelText(/confirm this task/i) as HTMLInputElement).checked).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: 'Start run' }))
+
+    expect(
+      (await screen.findByRole('link', { name: 'Open active run run-active-01' })).getAttribute(
+        'href',
+      ),
+    ).toBe('/runs/run-active-01')
   })
 })

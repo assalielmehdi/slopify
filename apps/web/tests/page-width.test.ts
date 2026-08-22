@@ -3,11 +3,9 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 const pageShellSources = [
-  'app/agent-profiles/page.tsx',
   'components/runs/live-run.tsx',
   'components/runs/run-history.tsx',
   'components/runs/start-run-form.tsx',
-  'components/settings/project-profile-settings.tsx',
   'components/skills/skills-manager.tsx',
 ] as const
 

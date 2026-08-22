@@ -42,6 +42,18 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('AppShell', () => {
+  it('uses a recessed navigation surface and one base work surface', () => {
+    const { container } = render(
+      <AppShell>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    expect(container.querySelector('aside')?.getAttribute('data-surface')).toBe('shell-muted')
+    expect(container.querySelector('header')?.getAttribute('data-surface')).toBe('base')
+    expect(screen.getByRole('main').getAttribute('data-surface')).toBe('base')
+  })
+
   it('renders the approved navigation hierarchy and clickable breadcrumbs', () => {
     render(
       <AppShell>
@@ -61,6 +73,7 @@ describe('AppShell', () => {
     expect(
       within(primaryNavigation).getByRole('link', { name: 'Providers' }).getAttribute('href'),
     ).toBe('/providers')
+    expect(within(primaryNavigation).queryByRole('link', { name: 'Agent profiles' })).toBeNull()
     expect(screen.getByRole('link', { name: 'Preferences' }).getAttribute('href')).toBe(
       '/preferences',
     )
@@ -68,7 +81,7 @@ describe('AppShell', () => {
       '/',
     )
     expect(
-      within(breadcrumb).getByRole('link', { name: 'Delivery workflow' }).getAttribute('href'),
+      within(breadcrumb).getByRole('link', { name: 'Who are you?' }).getAttribute('href'),
     ).toBe('/')
     expect(screen.getByText('Workflow graph')).toBeTruthy()
     expect(screen.queryByText('Local operator')).toBeNull()
@@ -125,8 +138,7 @@ describe('AppShell', () => {
     ['/providers', 'Providers', ['Providers']],
     ['/connectors', 'Connectors', ['Connectors']],
     ['/skills', 'Skills', ['Skills']],
-    ['/agent-profiles', 'Agent profiles', ['Agent profiles']],
-    ['/project-profiles', 'Project profiles', ['Project profiles']],
+    ['/projects', 'Projects', ['Projects']],
     ['/preferences', 'Preferences', ['Preferences']],
   ])('maps %s to the %s destination and breadcrumb', (pathname, linkName, crumbs) => {
     navigation.pathname = pathname
@@ -158,4 +170,22 @@ describe('AppShell', () => {
         .map((link) => link.textContent),
     ).toEqual(crumbs)
   })
+
+  it.each(['/providers', '/connectors', '/projects', '/runs/run-123'])(
+    'does not add shell padding around the catalog route %s',
+    (pathname) => {
+      navigation.pathname = pathname
+
+      render(
+        <AppShell>
+          <section className="w-full px-6 pt-6">Catalog</section>
+        </AppShell>,
+      )
+
+      const main = screen.getByRole('main')
+      expect(main.className).not.toContain('p-6')
+      expect(main.className).not.toContain('sm:p-8')
+      if (pathname.startsWith('/runs/')) expect(main.className).toContain('overflow-hidden')
+    },
+  )
 })

@@ -6,11 +6,7 @@ import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
   connectDefaultChatGpt,
-  createDefaultAwareTaskResolver,
-  createConfiguredTaskResolver,
-  ensureDefaultProfile,
   ensurePredefinedWorkflow,
-  resolveConnectorStatus,
   resolveApiServerConfiguration,
   startApiServer,
 } from '../src/server.js'
@@ -27,23 +23,22 @@ const database = {
 
 describe('API server configuration', () => {
   it('seeds the source-controlled V1 workflow exactly once', () => {
-    const addRevision = vi.fn()
+    const save = vi.fn()
     const workflows = {
-      addRevision,
-      getRevision: vi.fn(() => undefined),
+      save,
+      get: vi.fn(() => undefined),
     }
 
     ensurePredefinedWorkflow(workflows)
 
-    expect(addRevision).toHaveBeenCalledTimes(1)
-    expect(addRevision).toHaveBeenCalledWith(
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-basic-agent-02',
         startNodeId: 'identify-agent',
       }),
     )
-    expect(addRevision.mock.calls[0]?.[0].nodes[0]).toMatchObject({
+    expect(save.mock.calls[0]?.[0].nodes[0]).toMatchObject({
       type: 'agent',
       job: {
         prompt: "Who are you? What's your name?",
@@ -54,47 +49,38 @@ describe('API server configuration', () => {
       },
     })
 
-    workflows.getRevision.mockReturnValue(addRevision.mock.calls[0]?.[0])
+    workflows.get.mockReturnValue(save.mock.calls[0]?.[0])
     ensurePredefinedWorkflow(workflows)
-    expect(addRevision).toHaveBeenCalledTimes(1)
-  })
-
-  it('seeds one repository-free default profile', () => {
-    const save = vi.fn((profile) => profile)
-    const profiles = { get: vi.fn(() => undefined), save }
-
-    ensureDefaultProfile(profiles)
-
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith({
-      profileId: 'default-profile',
-      displayName: 'Default profile',
-      clickupWorkspaceId: 'not-required',
-      clickupListId: 'not-required',
-      clickupInReviewStatusId: 'not-required',
-      repositories: [],
-    })
-
-    profiles.get.mockReturnValue(save.mock.calls[0]?.[0])
-    ensureDefaultProfile(profiles)
     expect(save).toHaveBeenCalledTimes(1)
   })
 
-  it('resolves the basic run locally and delegates other tasks to ClickUp', async () => {
-    const resolve = vi.fn(async (taskReference) => ({ taskId: taskReference }))
-    const tasks = createDefaultAwareTaskResolver({ resolve })
+  it('replaces only the legacy seeded workflow that still has synthetic nodes', () => {
+    const save = vi.fn()
+    const workflows = {
+      save,
+      get: vi.fn(() => ({
+        workflowId: 'delivery-workflow',
+        name: 'Who are you?',
+        nodes: [
+          { type: 'agent', id: 'identify-agent' },
+          { type: 'terminal', id: 'succeeded' },
+        ],
+        edges: [
+          {
+            sourceNodeId: 'identify-agent',
+            outcome: 'completed',
+            targetNodeId: 'succeeded',
+          },
+        ],
+      })),
+    }
 
-    await expect(tasks.resolve('basic-agent-run')).resolves.toMatchObject({
-      taskId: 'basic-agent-run',
-      title: 'Basic agent run',
-      status: { name: 'ready' },
-    })
-    expect(resolve).not.toHaveBeenCalled()
+    ensurePredefinedWorkflow(workflows)
 
-    await expect(tasks.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })).resolves.toEqual({
-      taskId: 'CU-123',
-    })
-    expect(resolve).toHaveBeenCalledWith('CU-123', { clickupWorkspaceId: 'workspace-01' })
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save.mock.calls[0]?.[0].nodes).toEqual([
+      expect.objectContaining({ type: 'agent', id: 'identify-agent' }),
+    ])
   })
 
   it('stores ChatGPT OAuth as the inference connection used by the default workflow', async () => {
@@ -126,14 +112,12 @@ describe('API server configuration', () => {
         API_PORT: '4310',
         API_SHUTDOWN_GRACE_MS: '2500',
         DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
-        WORKSPACE_ROOT: '/custom/workspace',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
       port: 4310,
       shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
-      workspaceRoot: '/custom/workspace',
       skillsRoot: expect.any(String),
       skillSnapshotsRoot: expect.any(String),
       credentialPath: expect.any(String),
@@ -142,7 +126,6 @@ describe('API server configuration', () => {
       hostname: '127.0.0.1',
       port: 3001,
       databasePath: '/tmp/slopify-test/slopify.db',
-      workspaceRoot: '/tmp/slopify-test/workspaces',
       skillsRoot: '/tmp/slopify-test/skills',
       skillSnapshotsRoot: '/tmp/slopify-test/skill-snapshots',
       credentialPath: '/tmp/slopify-test/credentials.json',
@@ -175,7 +158,6 @@ describe('API server configuration', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
-        workspaceRoot: '/workspace',
         skillsRoot: '/skills',
         skillSnapshotsRoot: '/skill-snapshots',
         credentialPath: '/credentials.json',
@@ -190,80 +172,6 @@ describe('API server configuration', () => {
 
     await new Promise<void>((resolve, reject) => {
       server.close((error) => (error === undefined ? resolve() : reject(error)))
-    })
-  })
-
-  it('reduces connector credentials to non-secret readiness booleans', () => {
-    const status = resolveConnectorStatus({
-      list: () =>
-        [
-          { type: 'clickup', status: 'CONNECTED' },
-          { type: 'gitlab', status: 'INVALID' },
-          { type: 'openrouter', status: 'CONNECTED' },
-        ] as never,
-    })
-
-    expect(status).toEqual({ clickup: true, gitlab: false, modelProvider: true })
-    expect(JSON.stringify(status)).not.toContain('credential')
-  })
-
-  it('creates ClickUp task clients with profile-scoped workspace context', async () => {
-    const getTask = vi.fn(async (taskReference: string) => ({
-      taskId: '86abc123',
-      title: `Resolved ${taskReference}`,
-    }))
-    const createClient = vi.fn(() => ({ getTask }))
-    const resolver = createConfiguredTaskResolver(
-      { CLICKUP_API_TOKEN: 'clickup-secret' },
-      createClient,
-    )
-
-    const snapshot = await resolver.resolve('CU-123', {
-      clickupWorkspaceId: 'workspace-01',
-    })
-
-    expect(snapshot).toEqual({ taskId: '86abc123', title: 'Resolved CU-123' })
-    expect(createClient).toHaveBeenCalledWith({
-      token: 'clickup-secret',
-      workspaceId: 'workspace-01',
-    })
-    expect(getTask).toHaveBeenCalledWith('CU-123')
-    expect(JSON.stringify(snapshot)).not.toContain('clickup-secret')
-  })
-
-  it('forwards an explicit ClickUp base URL to an isolated provider boundary', async () => {
-    const getTask = vi.fn(async () => ({ taskId: '86abc123' }))
-    const createClient = vi.fn(() => ({ getTask }))
-    const resolver = createConfiguredTaskResolver(
-      {
-        CLICKUP_API_BASE_URL: 'http://127.0.0.1:4555/api/v2/',
-        CLICKUP_API_TOKEN: 'fake-clickup-secret',
-      },
-      createClient,
-    )
-
-    await resolver.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })
-
-    expect(createClient).toHaveBeenCalledWith({
-      baseUrl: 'http://127.0.0.1:4555/api/v2/',
-      token: 'fake-clickup-secret',
-      workspaceId: 'workspace-01',
-    })
-  })
-
-  it('treats a blank optional ClickUp base URL as the provider default', async () => {
-    const getTask = vi.fn(async () => ({ taskId: '86abc123' }))
-    const createClient = vi.fn(() => ({ getTask }))
-    const resolver = createConfiguredTaskResolver(
-      { CLICKUP_API_BASE_URL: '  ', CLICKUP_API_TOKEN: 'clickup-secret' },
-      createClient,
-    )
-
-    await resolver.resolve('CU-123', { clickupWorkspaceId: 'workspace-01' })
-
-    expect(createClient).toHaveBeenCalledWith({
-      token: 'clickup-secret',
-      workspaceId: 'workspace-01',
     })
   })
 })

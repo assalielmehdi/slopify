@@ -4,12 +4,11 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  BotIcon,
   BookOpenIcon,
-  BoxesIcon,
   ChevronRightIcon,
   CpuIcon,
   HistoryIcon,
+  FolderGit2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
   PlugIcon,
@@ -44,8 +43,7 @@ const navigationSections: readonly { label: string; items: readonly NavigationIt
       { href: '/providers', label: 'Providers', icon: CpuIcon },
       { href: '/connectors', label: 'Connectors', icon: PlugIcon },
       { href: '/skills', label: 'Skills', icon: BookOpenIcon },
-      { href: '/agent-profiles', label: 'Agent profiles', icon: BotIcon },
-      { href: '/project-profiles', label: 'Project profiles', icon: BoxesIcon },
+      { href: '/projects', label: 'Projects', icon: FolderGit2Icon },
     ],
   },
 ]
@@ -60,7 +58,7 @@ function getBreadcrumbs(pathname: string): readonly { href: string; label: strin
   if (pathname === '/') {
     return [
       { href: '/', label: 'Workflows' },
-      { href: '/', label: 'Delivery workflow' },
+      { href: '/', label: 'Who are you?' },
     ]
   }
   if (pathname === '/runs/new') {
@@ -128,7 +126,9 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   const { toggleTheme } = useThemePreference()
   const breadcrumbs = getBreadcrumbs(pathname)
   const isPreferences = pathname === '/preferences'
-  const usesOwnPageSpacing = pathname === '/providers' || isPreferences
+  const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
+  const usesOwnPageSpacing =
+    ['/providers', '/connectors', '/projects'].includes(pathname) || isPreferences || isRunDetail
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -157,6 +157,7 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <div className="flex h-svh overflow-hidden bg-background font-sans text-foreground transition-colors duration-150">
       <aside
+        data-surface="shell-muted"
         className={cn(
           'flex h-svh shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width,background-color,border-color] duration-150 ease-out',
           isCollapsed ? 'w-14' : 'w-64',
@@ -226,7 +227,7 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
                           isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-2',
                           isActive
                             ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                            : 'text-sidebar-foreground hover:bg-accent hover:text-foreground',
+                            : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                         )}
                       >
                         <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.8} />
@@ -256,7 +257,7 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
               isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-2',
               isPreferences
                 ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                : 'text-sidebar-foreground hover:bg-accent hover:text-foreground',
+                : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             )}
           >
             <Settings2Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.8} />
@@ -266,12 +267,15 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center border-b border-sidebar-border bg-sidebar px-5 transition-colors duration-150">
+        <header
+          data-surface="base"
+          className="flex h-14 shrink-0 items-center border-b border-border bg-background px-5 transition-colors duration-150"
+        >
           <div className="flex min-w-0 items-center gap-3">
             {isCollapsed && (
               <>
                 <NavigationToggle collapsed onToggle={() => setIsCollapsed(false)} />
-                <span aria-hidden="true" className="h-4 w-px bg-sidebar-border" />
+                <span aria-hidden="true" className="h-4 w-px bg-border" />
               </>
             )}
             <nav aria-label="Breadcrumb" className="min-w-0">
@@ -307,8 +311,10 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
         </header>
 
         <main
+          data-surface="base"
           className={cn(
-            'relative min-h-0 flex-1 overflow-auto bg-background transition-colors duration-150',
+            'relative min-h-0 flex-1 bg-background transition-colors duration-150',
+            isRunDetail ? 'overflow-hidden' : 'overflow-auto',
             !usesOwnPageSpacing && 'p-6 sm:p-8',
           )}
         >

@@ -15,7 +15,7 @@ import type {
   TerminalStatusSchema,
   WorkflowEdgeSchema,
   WorkflowNodeSchema,
-  WorkflowRevisionSchema,
+  WorkflowSchema,
   WorkspacePolicySchema,
 } from './schemas.js'
 
@@ -34,4 +34,4 @@ export type RouterNode = z.infer<typeof RouterNodeSchema>
 export type TerminalNode = z.infer<typeof TerminalNodeSchema>
 export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>
 export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>
-export type WorkflowRevision = z.infer<typeof WorkflowRevisionSchema>
+export type Workflow = z.infer<typeof WorkflowSchema>

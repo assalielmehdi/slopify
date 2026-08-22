@@ -44,9 +44,6 @@ importers:
       '@loop/agent-runtimes':
         specifier: workspace:*
         version: link:../../packages/agent-runtimes
-      '@loop/clickup-artifacts':
-        specifier: workspace:*
-        version: link:../../packages/clickup-artifacts
       '@loop/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -160,15 +157,6 @@ importers:
         specifier: 4.4.3
         version: 4.4.3
 
-  packages/clickup-artifacts:
-    dependencies:
-      '@loop/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
-
   packages/contracts:
     dependencies:
       zod:
@@ -199,21 +187,6 @@ importers:
       '@types/better-sqlite3':
         specifier: 9.6.0
         version: 9.6.0
-
-  packages/gitlab-delivery:
-    dependencies:
-      '@loop/clickup-artifacts':
-        specifier: workspace:*
-        version: link:../clickup-artifacts
-      '@loop/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@loop/execution-runtime':
-        specifier: workspace:*
-        version: link:../execution-runtime
-      zod:
-        specifier: 4.4.3
-        version: 4.4.3
 
   packages/workflow-model:
     dependencies:

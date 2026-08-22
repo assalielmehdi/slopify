@@ -140,24 +140,32 @@ describe('public API records', () => {
     ).toMatchObject({ profileId: 'default-profile', repositories: [] })
   })
 
-  it('accepts bounded optional run notes without changing the run identity contract', () => {
+  it('accepts workflow variables and rejects removed task and profile inputs', () => {
     expect(
       CreateRunRequestSchema.parse({
-        taskReference: 'CU-123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
-        notes: '  Coordinate the API and web changes.  ',
+        variables: {
+          objective: 'Coordinate the API and web changes.',
+          attempts: 2,
+          flags: ['focused'],
+        },
+        confirmMissingVariables: true,
       }),
-    ).toMatchObject({ notes: 'Coordinate the API and web changes.' })
+    ).toEqual({
+      workflowId: 'delivery-workflow',
+      variables: {
+        objective: 'Coordinate the API and web changes.',
+        attempts: 2,
+        flags: ['focused'],
+      },
+      confirmMissingVariables: true,
+    })
 
     expect(
       CreateRunRequestSchema.safeParse({
         taskReference: 'CU-123',
         workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
         profileId: 'local-profile',
-        notes: '   ',
       }).success,
     ).toBe(false)
   })
@@ -195,12 +203,7 @@ describe('run events', () => {
     {
       ...eventBase,
       type: 'RUN_STARTED',
-      data: {
-        workflowId: 'delivery-workflow',
-        revisionId: 'revision-01',
-        profileId: 'local-profile',
-        taskReference: 'CU-123',
-      },
+      data: { workflowId: 'delivery-workflow' },
     },
     { ...eventBase, type: 'RUN_STATUS_CHANGED', data: { from: 'PENDING', to: 'RUNNING' } },
     { ...eventBase, type: 'NODE_STARTED', nodeId: 'load-task', data: {} },

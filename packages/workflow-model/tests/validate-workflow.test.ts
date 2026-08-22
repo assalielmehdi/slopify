@@ -44,7 +44,6 @@ const terminalNode = {
 
 const validWorkflow = {
   workflowId: 'delivery-workflow',
-  revisionId: 'revision-01',
   name: 'Delivery workflow',
   description: 'Deliver one approved task.',
   startNodeId: 'start',
@@ -56,6 +55,7 @@ const validWorkflow = {
   ],
   maxTransitions: 24,
   createdAt: '2026-08-18T20:00:00Z',
+  updatedAt: '2026-08-18T20:00:00Z',
 }
 
 describe('validateWorkflow', () => {
@@ -92,16 +92,19 @@ describe('validateWorkflow', () => {
     )
   })
 
-  it('returns a field-addressable schema finding for a non-positive transition limit', () => {
+  it('accepts a zero transition limit for a workflow with no edges', () => {
     const result = validateWorkflow(
-      { ...validWorkflow, maxTransitions: 0 },
+      {
+        ...validWorkflow,
+        nodes: [agentNode],
+        edges: [],
+        maxTransitions: 0,
+      },
       { registeredCommandIds },
     )
 
-    expect(result.valid).toBe(false)
-    expect(result.findings).toContainEqual(
-      expect.objectContaining({ code: 'SCHEMA_INVALID', path: ['maxTransitions'] }),
-    )
+    expect(result.valid).toBe(true)
+    expect(result.findings).toEqual([])
   })
 
   it('reports duplicate node IDs and an ambiguous start', () => {
@@ -134,17 +137,43 @@ describe('validateWorkflow', () => {
     )
   })
 
-  it('reports a workflow without a terminal node', () => {
+  it('accepts a one-agent workflow and treats the leaf agent as completion', () => {
     const result = validateWorkflow(
-      { ...validWorkflow, nodes: [agentNode, commandNode] },
+      { ...validWorkflow, nodes: [agentNode], edges: [], maxTransitions: 0 },
       {
         registeredCommandIds,
       },
     )
 
+    expect(result.valid).toBe(true)
+    expect(result.findings).toEqual([])
+  })
+
+  it('accepts an empty draft workflow with no start node', () => {
+    const result = validateWorkflow(
+      {
+        ...validWorkflow,
+        startNodeId: null,
+        nodes: [],
+        edges: [],
+        maxTransitions: 0,
+      },
+      { registeredCommandIds },
+    )
+
+    expect(result.valid).toBe(true)
+    expect(result.findings).toEqual([])
+  })
+
+  it('requires a start node when a workflow contains jobs', () => {
+    const result = validateWorkflow(
+      { ...validWorkflow, startNodeId: null, nodes: [agentNode], edges: [], maxTransitions: 0 },
+      { registeredCommandIds },
+    )
+
     expect(result.valid).toBe(false)
     expect(result.findings).toContainEqual(
-      expect.objectContaining({ code: 'TERMINAL_NODE_MISSING', path: ['nodes'] }),
+      expect.objectContaining({ code: 'START_NODE_REQUIRED', path: ['startNodeId'] }),
     )
   })
 

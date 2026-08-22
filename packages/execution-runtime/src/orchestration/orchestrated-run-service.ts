@@ -1,4 +1,4 @@
-import { WorkflowRevisionSchema } from '@loop/workflow-model'
+import { WorkflowSchema } from '@loop/workflow-model'
 
 import type { RunService } from '../services/run-service.js'
 import type { WorkflowCoordinator } from './workflow-coordinator.js'
@@ -14,11 +14,10 @@ export const createOrchestratedRunService = (
     const run = await options.runs.create(input)
     options.coordinator.start({
       runId: run.runId,
-      workflow: WorkflowRevisionSchema.parse(run.effectiveConfiguration),
+      workflow: WorkflowSchema.parse(run.workflowSnapshot),
     })
     return options.runs.get(run.runId)?.run ?? run
   },
   get: (runId) => options.runs.get(runId),
   list: (input) => options.runs.list(input),
-  getNodeSource: (runId, nodeId) => options.runs.getNodeSource(runId, nodeId),
 })

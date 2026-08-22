@@ -1,9 +1,9 @@
-import { WorkflowRevisionSchema } from './schemas.js'
-import type { WorkflowRevision } from './types.js'
+import { WorkflowSchema } from './schemas.js'
+import type { Workflow } from './types.js'
 import { validateWorkflow } from './validate-workflow.js'
 
 export const PREDEFINED_V1_WORKFLOW_ID = 'delivery-workflow'
-export const PREDEFINED_V1_TRANSITION_LIMIT = 2
+export const PREDEFINED_V1_TRANSITION_LIMIT = 0
 export const PREDEFINED_V1_COMMAND_IDS = Object.freeze([] as string[])
 
 export interface PredefinedV1AgentDefaults {
@@ -12,18 +12,14 @@ export interface PredefinedV1AgentDefaults {
   readonly thinkingLevel: string
 }
 
-export interface CreatePredefinedV1RevisionInput {
-  readonly revisionId: string
+export interface CreatePredefinedV1WorkflowInput {
   readonly createdAt: string
   readonly agentDefaults: PredefinedV1AgentDefaults
 }
 
-export function createPredefinedV1Revision(
-  input: CreatePredefinedV1RevisionInput,
-): WorkflowRevision {
-  const revision = WorkflowRevisionSchema.parse({
+export function createPredefinedV1Workflow(input: CreatePredefinedV1WorkflowInput): Workflow {
+  const workflow = WorkflowSchema.parse({
     workflowId: PREDEFINED_V1_WORKFLOW_ID,
-    revisionId: input.revisionId,
     name: 'Who are you?',
     description: 'Run one agent and ask it to identify itself.',
     startNodeId: 'identify-agent',
@@ -48,20 +44,13 @@ export function createPredefinedV1Revision(
           connectorIds: [],
         },
       },
-      { type: 'terminal', id: 'succeeded', name: 'Succeeded', terminalStatus: 'SUCCEEDED' },
     ],
-    edges: [
-      {
-        sourceNodeId: 'identify-agent',
-        outcome: 'completed',
-        targetNodeId: 'succeeded',
-        label: 'Answered',
-      },
-    ],
+    edges: [],
     maxTransitions: PREDEFINED_V1_TRANSITION_LIMIT,
     createdAt: input.createdAt,
+    updatedAt: input.createdAt,
   })
-  const validation = validateWorkflow(revision, {
+  const validation = validateWorkflow(workflow, {
     registeredCommandIds: new Set(PREDEFINED_V1_COMMAND_IDS),
   })
   if (!validation.valid) throw new Error('The source-controlled V1 workflow is invalid.')

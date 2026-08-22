@@ -2,17 +2,28 @@
 
 ## Product
 
-Slopify is a native, local AI delivery workbench. Users define immutable workflow
-graphs, configure agent jobs and their capabilities, and run them against isolated Git
-worktrees. V1 implements agent jobs; code jobs are intentionally deferred.
+Slopify is a native, local agent orchestration workbench. Users define directed graphs
+of agents, configure their prompts and capabilities, and run them with optional
+variables. V1 exposes only agent jobs. Code-job schemas and APIs remain reserved for
+future compatibility, but code jobs are not executable or visible in the UI.
 
 ## Architecture invariants
 
 - The codebase follows hexagonal architecture. Domain and application code depend on
   ports and application-owned types; infrastructure adapters depend inward. Wire
   concrete adapters only in the API composition root.
-- Workflow revisions are immutable and runs stay pinned to one revision. Agent jobs are
-  strict definitions embedded in revisions. Routing outcomes come from graph edges.
+- A workflow has one current mutable definition; Slopify has no user-facing or internal
+  workflow revision model. Every run captures an immutable copy of the full workflow
+  graph and each job configuration at admission. Execution and historical inspection
+  always use that run snapshot, never the current workflow. Routing outcomes come from
+  the captured graph edges.
+- Workflows may contain zero or more agent nodes. An empty workflow is a valid draft but
+  is not runnable. Agent nodes may be graph leaves; Slopify does not add synthetic
+  setup, start, finalization, or terminal nodes. A successful leaf completes its branch.
+- Run variables are arbitrary JSON values captured with the run. Slopify interpolates
+  exact `{{ variable }}` placeholders in captured agent prompts before invoking Pi. If
+  referenced variables are missing, admission requires explicit confirmation and the
+  missing names remain part of the run's immutable evidence.
 - Only the coordinator interprets workflow topology, readiness, joins, transitions, and
   terminal state. Workers and job runners are graph-neutral.
 - Execution is durable and asynchronous:
@@ -22,10 +33,12 @@ worktrees. V1 implements agent jobs; code jobs are intentionally deferred.
   remain idempotent. `run_events` is append-only audit history, never a queue.
 - Each agent execution receives a fresh trusted Bun child process, Pi session, and
   private Gondolin VM. Agent-accessible filesystem, shell, process, and network effects
-  must run inside the VM. Run worktrees are mounted read/write; pinned skill snapshots
-  are mounted read-only. `complete_node` is the only routable agent result.
-- Skills provide instructions, not authority. Connector grants, mounted worktrees,
-  installed tools, and default-deny VM policy define authority.
+  must run inside the VM. The default workspace is an empty in-memory filesystem;
+  pinned skill snapshots are mounted read-only. `complete_node` is the only routable
+  agent result.
+- Skills provide instructions, not authority. Connector grants, installed tools, and
+  default-deny VM policy define authority. GitLab and ClickUp are generic connector
+  capabilities; Slopify has no built-in task-loading or delivery/finalization path.
 - Raw credentials belong only to the owner-only Slopify credential file. Never persist
   them in SQLite or workflow JSON, expose them to browsers, prompts, events, logs, or
   worktrees, or mount them into VMs. Connector access uses execution-scoped mediated
@@ -33,20 +46,19 @@ worktrees. V1 implements agent jobs; code jobs are intentionally deferred.
 - SQLite owns workflow, run, connection metadata, the supported connection catalog,
   queue, and audit state. The API is the browser's only source for provider and
   connector catalog data; the frontend must not hardcode a parallel catalog. The live
-  Skills catalog is filesystem-backed; published revisions use immutable,
+  Skills catalog is filesystem-backed; run-captured workflows reference immutable,
   content-addressed skill snapshots.
 
 ## Code map
 
 - `apps/api`: Hono HTTP adapters and the composition root (`src/server.ts`).
 - `apps/web`: Next.js UI and API proxy.
-- `packages/workflow-model`: strict workflow/job schemas, graph rules, and revisions.
+- `packages/workflow-model`: strict workflow/job schemas and graph rules.
 - `packages/execution-runtime`: use cases, ports, coordinator, worker, persistence,
   connections, Skills, and job runners.
 - `packages/agent-runtimes`: Bun child supervision, Pi SDK integration, Gondolin, and
   ChatGPT OAuth.
 - `packages/contracts`: shared application contracts.
-- `packages/gitlab-delivery` and `packages/clickup-artifacts`: service-specific adapters.
 
 ## Frontend
 

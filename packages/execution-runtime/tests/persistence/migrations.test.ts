@@ -5,7 +5,11 @@ import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { openDatabase, type WorkbenchDatabase } from '../../src/index.js'
-import { applyMigrations, type Migration } from '../../src/persistence/migrations.js'
+import {
+  EXECUTION_RUNTIME_MIGRATIONS,
+  applyMigrations,
+  type Migration,
+} from '../../src/persistence/migrations.js'
 
 const openedDatabases: WorkbenchDatabase[] = []
 const rawDatabases: Database.Database[] = []
@@ -55,7 +59,175 @@ describe('forward-only migrations', () => {
       { version: 6, name: 'persist_workflow_coordinator_state' },
       { version: 7, name: 'persist_node_attempt_identity' },
       { version: 8, name: 'persist_connection_catalog' },
+      { version: 9, name: 'persist_local_git_projects' },
+      { version: 10, name: 'update_openrouter_description' },
+      { version: 11, name: 'replace_workflow_revisions_with_run_snapshots' },
+      { version: 12, name: 'persist_run_variables' },
     ])
+
+    expect(
+      raw
+        .prepare("SELECT description FROM connection_catalog WHERE type = 'openrouter'")
+        .pluck()
+        .get(),
+    ).toBe('Use one OpenRouter API key to make its model catalog available to workflow agent jobs.')
+  })
+
+  it('migrates a populated v10 database to one current workflow and immutable run snapshots', () => {
+    const raw = new Database(createDatabasePath())
+    rawDatabases.push(raw)
+    raw.pragma('foreign_keys = ON')
+    applyMigrations(raw, EXECUTION_RUNTIME_MIGRATIONS.slice(0, 10))
+    const createdAt = '2026-08-18T20:00:00Z'
+    const updatedAt = '2026-08-18T21:00:00Z'
+    const workflow = (name: string, revisionId: string, timestamp: string) => ({
+      workflowId: 'delivery-workflow',
+      revisionId,
+      name,
+      description: `${name} description`,
+      startNodeId: 'agent',
+      nodes: [
+        {
+          type: 'agent',
+          id: 'agent',
+          name: 'Agent',
+          description: 'Run the agent.',
+          timeoutSeconds: 60,
+          result: { schemaRef: 'json:any-v1' },
+          sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
+          job: {
+            kind: 'agent',
+            prompt: 'Run.',
+            skillSnapshotRefs: [],
+            inference: {
+              connectionId: 'openrouter-default',
+              modelId: 'openai/gpt-5.4',
+              thinkingLevel: 'medium',
+            },
+            connectorIds: [],
+          },
+        },
+        { type: 'terminal', id: 'done', name: 'Done', terminalStatus: 'SUCCEEDED' },
+      ],
+      edges: [{ sourceNodeId: 'agent', outcome: 'completed', targetNodeId: 'done', label: 'Done' }],
+      maxTransitions: 2,
+      createdAt: timestamp,
+    })
+    const first = workflow('Initial workflow', 'revision-01', createdAt)
+    const latest = workflow('Current workflow', 'revision-02', updatedAt)
+
+    raw
+      .prepare('INSERT INTO workflows (workflow_id, name, created_at) VALUES (?, ?, ?)')
+      .run('delivery-workflow', first.name, createdAt)
+    const insertRevision = raw.prepare(`
+      INSERT INTO workflow_revisions (
+        revision_id, workflow_id, parent_revision_id, name, definition_json, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `)
+    insertRevision.run(
+      'revision-01',
+      'delivery-workflow',
+      null,
+      first.name,
+      JSON.stringify(first),
+      createdAt,
+    )
+    insertRevision.run(
+      'revision-02',
+      'delivery-workflow',
+      'revision-01',
+      latest.name,
+      JSON.stringify(latest),
+      updatedAt,
+    )
+    raw.exec(`
+      INSERT INTO project_profiles (
+        profile_id, display_name, clickup_workspace_id, clickup_list_id,
+        clickup_in_review_status_id, created_at, updated_at
+      ) VALUES (
+        'profile-01', 'Local', 'workspace-01', 'list-01', 'review', '${createdAt}', '${createdAt}'
+      );
+      INSERT INTO project_profile_snapshots (
+        snapshot_id, profile_id, display_name, clickup_workspace_id,
+        clickup_list_id, clickup_in_review_status_id, created_at
+      ) VALUES (
+        'snapshot-01', 'profile-01', 'Local', 'workspace-01', 'list-01', 'review', '${createdAt}'
+      );
+    `)
+    raw
+      .prepare(
+        `
+        INSERT INTO runs (
+          run_id, workflow_id, revision_id, profile_snapshot_id, task_reference,
+          task_snapshot_json, effective_configuration_json, status, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, 'SUCCEEDED', ?)
+      `,
+      )
+      .run(
+        'run-01',
+        'delivery-workflow',
+        'revision-01',
+        'snapshot-01',
+        'TASK-1',
+        '{}',
+        JSON.stringify(first),
+        createdAt,
+      )
+    raw
+      .prepare(
+        `
+        INSERT INTO run_events (run_id, sequence, event_type, data_json, created_at)
+        VALUES (?, 1, 'RUN_STARTED', ?, ?)
+      `,
+      )
+      .run(
+        'run-01',
+        JSON.stringify({
+          workflowId: 'delivery-workflow',
+          revisionId: 'revision-01',
+          profileId: 'profile-01',
+          taskReference: 'TASK-1',
+        }),
+        createdAt,
+      )
+
+    applyMigrations(raw)
+
+    const storedWorkflow = JSON.parse(
+      String(raw.prepare('SELECT definition_json FROM workflows').pluck().get()),
+    ) as Record<string, unknown>
+    const storedSnapshot = JSON.parse(
+      String(raw.prepare('SELECT workflow_snapshot_json FROM runs').pluck().get()),
+    ) as Record<string, unknown>
+    const started = JSON.parse(
+      String(raw.prepare('SELECT data_json FROM run_events').pluck().get()),
+    ) as Record<string, unknown>
+    const variables = JSON.parse(
+      String(raw.prepare('SELECT variables_json FROM runs').pluck().get()),
+    ) as Record<string, unknown>
+    const missingVariables = JSON.parse(
+      String(raw.prepare('SELECT missing_variables_json FROM runs').pluck().get()),
+    ) as unknown
+    expect(storedWorkflow).toMatchObject({
+      workflowId: 'delivery-workflow',
+      name: 'Current workflow',
+      createdAt,
+      updatedAt,
+    })
+    expect(storedWorkflow).not.toHaveProperty('revisionId')
+    expect(storedSnapshot).toMatchObject({
+      name: 'Initial workflow',
+      createdAt,
+      updatedAt: createdAt,
+    })
+    expect(storedSnapshot).not.toHaveProperty('revisionId')
+    expect(variables).toEqual({ taskReference: 'TASK-1' })
+    expect(missingVariables).toEqual([])
+    expect(started).toEqual({ workflowId: 'delivery-workflow' })
+    expect(
+      raw.prepare("SELECT name FROM sqlite_master WHERE name = 'workflow_revisions'").get(),
+    ).toBeUndefined()
+    expect(raw.pragma('foreign_key_check')).toEqual([])
   })
 
   it('rolls back a failed migration without recording its version', () => {

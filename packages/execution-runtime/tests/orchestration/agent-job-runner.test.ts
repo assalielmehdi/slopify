@@ -5,41 +5,42 @@ import {
   type AgentExecutionInput,
   type AgentExecutor,
 } from '@loop/agent-runtimes'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
+import { createPredefinedV1Workflow, WorkflowSchema } from '@loop/workflow-model'
 import { z } from 'zod'
 
 import { createAgentJobRunner, createAgentResultSchemaRegistry } from '../../src/index.js'
 import { TEST_RUN_ID, createPersistenceFixture, createRun } from '../persistence/test-fixture.js'
 
+const createAgentWorkflow = (prompt: string, schemaRef = 'json:any-v1') => {
+  const workflow = createPredefinedV1Workflow({
+    createdAt: '2026-08-20T12:00:00.000Z',
+    agentDefaults: {
+      provider: 'test-provider',
+      model: 'test-model',
+      thinkingLevel: 'medium',
+    },
+  })
+  return WorkflowSchema.parse({
+    ...workflow,
+    nodes: workflow.nodes.map((node) =>
+      node.type === 'agent'
+        ? {
+            ...node,
+            result: { schemaRef },
+            job: { ...node.job, prompt },
+          }
+        : node,
+    ),
+  })
+}
+
 describe('agent job runner', () => {
-  it('builds one execution from the immutable job definition and every run worktree', async () => {
+  it('builds one execution from the immutable job definition and run variables', async () => {
     const fixture = createPersistenceFixture()
     try {
-      createRun(fixture, fixture.revision)
-      fixture.runs.selectRepositories({
-        runId: TEST_RUN_ID,
-        selectedAt: '2026-08-20T12:00:00.000Z',
-        selection: {
-          selected: [
-            { repositoryId: 'api', rationale: 'API changes', responsibility: 'Backend' },
-            { repositoryId: 'web', rationale: 'UI changes', responsibility: 'Frontend' },
-          ],
-          excluded: [{ repositoryId: 'docs', rationale: 'No docs work' }],
-        },
-      })
-      for (const repositoryId of ['api', 'web'] as const) {
-        fixture.runs.recordWorkspace({
-          runId: TEST_RUN_ID,
-          repositoryId,
-          repositoryPath: `/sources/${repositoryId}`,
-          worktreePath: `/runs/run-01/${repositoryId}`,
-          remote: 'origin',
-          targetBranch: 'main',
-          sourceBranch: `work/${repositoryId}`,
-          baseSha: 'a'.repeat(40),
-          createdAt: '2026-08-20T12:00:00.000Z',
-        })
-      }
+      const workflow = createAgentWorkflow('Plan {{ task }}', 'workflow-output/execution-plan-v1')
+      fixture.workflows.save(workflow)
+      createRun(fixture, workflow)
       let received: AgentExecutionInput | undefined
       const agent: AgentExecutor = {
         execute(input) {
@@ -61,7 +62,7 @@ describe('agent job runner', () => {
               type: 'AGENT_RESULT',
               data: {
                 result: {
-                  outcome: 'ready',
+                  outcome: 'completed',
                   summary: 'Plan complete',
                   data: { plan: ['api', 'web'] },
                   artifacts: [],
@@ -97,13 +98,13 @@ describe('agent job runner', () => {
             runId: TEST_RUN_ID,
             nodeExecutionId: 'node-execution-plan',
             attemptId: 'attempt-plan',
-            nodeId: 'plan',
+            nodeId: 'identify-agent',
           },
           progress,
         ),
       ).resolves.toMatchObject({
         status: 'succeeded',
-        outcome: 'ready',
+        outcome: 'completed',
         output: {
           summary: 'Plan complete',
           data: { plan: ['api', 'web'] },
@@ -114,21 +115,18 @@ describe('agent job runner', () => {
       expect(received).toMatchObject({
         executionId: 'node-execution-plan',
         runId: TEST_RUN_ID,
-        nodeId: 'plan',
+        nodeId: 'identify-agent',
         provider: 'test-provider',
         model: 'test-model',
         thinkingLevel: 'medium',
         permissionProfile: 'workspace-write',
         workspace: {
-          rootPath: '/runs/run-01',
-          repositories: [
-            { repositoryId: 'api', path: '/runs/run-01/api', access: 'workspace-write' },
-            { repositoryId: 'web', path: '/runs/run-01/web', access: 'workspace-write' },
-          ],
+          rootPath: '/',
+          repositories: [],
         },
       })
-      expect(received?.renderedPrompt).toContain('Plan the approved task')
-      expect(received?.renderedPrompt).toContain('Implement persistence')
+      expect(received?.renderedPrompt).toContain('Plan Implement persistence')
+      expect(received?.renderedPrompt).not.toContain('{{ task }}')
       expect(progress).toHaveBeenCalledWith({ eventType: 'AGENT_STARTED', data: {} })
     } finally {
       fixture.cleanup()
@@ -138,7 +136,9 @@ describe('agent job runner', () => {
   it('fails before spawning when inference access is unavailable', async () => {
     const fixture = createPersistenceFixture()
     try {
-      createRun(fixture, fixture.revision)
+      const workflow = createAgentWorkflow('Identify yourself')
+      fixture.workflows.save(workflow)
+      createRun(fixture, workflow)
       const agent: AgentExecutor = {
         execute: vi.fn(),
         cancel: vi.fn(async () => ({ status: 'cancelled' })),
@@ -158,7 +158,7 @@ describe('agent job runner', () => {
             runId: TEST_RUN_ID,
             nodeExecutionId: 'node-execution-plan',
             attemptId: 'attempt-plan',
-            nodeId: 'plan',
+            nodeId: 'identify-agent',
           },
           async () => undefined,
         ),
@@ -172,8 +172,7 @@ describe('agent job runner', () => {
   it('runs a repository-free agent in an empty private workspace', async () => {
     const fixture = createPersistenceFixture()
     try {
-      const revision = createPredefinedV1Revision({
-        revisionId: 'revision-basic-agent',
+      const workflow = createPredefinedV1Workflow({
         createdAt: '2026-08-20T12:00:00.000Z',
         agentDefaults: {
           provider: 'test-provider',
@@ -181,8 +180,8 @@ describe('agent job runner', () => {
           thinkingLevel: 'medium',
         },
       })
-      fixture.workflows.addRevision(revision)
-      createRun(fixture, revision)
+      fixture.workflows.save(workflow)
+      createRun(fixture, workflow)
       let received: AgentExecutionInput | undefined
       const agent: AgentExecutor = {
         execute(input) {
@@ -246,29 +245,9 @@ describe('agent job runner', () => {
   it('rejects result data that does not satisfy the declared schema', async () => {
     const fixture = createPersistenceFixture()
     try {
-      createRun(fixture, fixture.revision)
-      fixture.runs.selectRepositories({
-        runId: TEST_RUN_ID,
-        selectedAt: '2026-08-20T12:00:00.000Z',
-        selection: {
-          selected: [{ repositoryId: 'api', rationale: 'API changes', responsibility: 'Backend' }],
-          excluded: [
-            { repositoryId: 'web', rationale: 'No UI changes' },
-            { repositoryId: 'docs', rationale: 'No docs changes' },
-          ],
-        },
-      })
-      fixture.runs.recordWorkspace({
-        runId: TEST_RUN_ID,
-        repositoryId: 'api',
-        repositoryPath: '/sources/api',
-        worktreePath: '/runs/run-01/api',
-        remote: 'origin',
-        targetBranch: 'main',
-        sourceBranch: 'work/api',
-        baseSha: 'a'.repeat(40),
-        createdAt: '2026-08-20T12:00:00.000Z',
-      })
+      const workflow = createAgentWorkflow('Plan {{ task }}', 'workflow-output/execution-plan-v1')
+      fixture.workflows.save(workflow)
+      createRun(fixture, workflow)
       const agent: AgentExecutor = {
         execute(input) {
           return (async function* () {
@@ -280,7 +259,7 @@ describe('agent job runner', () => {
               type: 'AGENT_RESULT',
               data: {
                 result: {
-                  outcome: 'ready',
+                  outcome: 'completed',
                   summary: 'Invalid plan',
                   data: { plan: 'not-an-array' },
                   artifacts: [],
@@ -314,7 +293,7 @@ describe('agent job runner', () => {
             runId: TEST_RUN_ID,
             nodeExecutionId: 'node-execution-plan',
             attemptId: 'attempt-plan',
-            nodeId: 'plan',
+            nodeId: 'identify-agent',
           },
           async () => undefined,
         ),

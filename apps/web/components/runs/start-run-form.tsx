@@ -3,7 +3,6 @@
 import Link from 'next/link'
 
 import { RunConfigurationFields } from '@/components/runs/run-configuration-fields'
-import { TaskConfirmation } from '@/components/runs/task-confirmation'
 import { useStartRun } from '@/components/runs/use-start-run'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -30,14 +29,10 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
           <AlertTitle>Run configuration unavailable</AlertTitle>
           <AlertDescription>{state.error.message}</AlertDescription>
         </Alert>
-      ) : state.catalog === undefined ||
-        state.catalog.profiles.length === 0 ||
-        state.workflows.length === 0 ? (
+      ) : state.workflows.length === 0 ? (
         <Alert variant="destructive">
           <AlertTitle>Run configuration incomplete</AlertTitle>
-          <AlertDescription>
-            A valid workflow revision and project profile are required.
-          </AlertDescription>
+          <AlertDescription>A workflow is required before a run can start.</AlertDescription>
         </Alert>
       ) : (
         <form
@@ -45,53 +40,23 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
           className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]"
           onSubmit={(event) => {
             event.preventDefault()
-            void state.start()
+            void state.start(state.missingVariables.length > 0)
           }}
         >
-          <div className="grid gap-6">
-            <Card>
-              <CardContent>
-                <RunConfigurationFields
-                  catalog={state.catalog}
-                  notes={state.notes}
-                  onNotesChange={state.setNotes}
-                  onProfileChange={(profileId) => void state.selectProfile(profileId)}
-                  onResolveTask={() => void state.resolveTask()}
-                  onRevisionChange={state.changeRevision}
-                  onTaskReferenceChange={state.changeTaskReference}
-                  onWorkflowChange={state.changeWorkflow}
-                  profileError={state.profileError}
-                  profileId={state.profileId}
-                  readinessPending={state.readinessPending}
-                  resolving={state.resolving}
-                  revisionError={
-                    state.error?.scope === 'revision' ? state.error.message : undefined
-                  }
-                  revisionId={state.revisionId}
-                  selectedWorkflow={state.selectedWorkflow}
-                  taskError={state.error?.scope === 'task' ? state.error.message : undefined}
-                  taskReference={state.taskReference}
-                  taskLocked={state.usesDefaultTask}
-                  workflowId={state.workflowId}
-                  workflows={state.workflows}
-                />
-              </CardContent>
-            </Card>
-
-            {state.task === undefined ||
-            state.selectedProfile === undefined ||
-            state.selectedWorkflow === undefined ? null : (
-              <TaskConfirmation
-                confirmed={state.confirmed}
-                onConfirmedChange={state.setConfirmed}
-                profile={state.selectedProfile}
-                profileReady={state.readiness?.ready === true}
-                revisionId={state.revisionId}
-                task={state.task}
-                workflowName={state.selectedWorkflow.name}
+          <Card>
+            <CardContent>
+              <RunConfigurationFields
+                onAddVariable={state.addVariable}
+                onRemoveVariable={state.removeVariable}
+                onVariableKeyChange={(id, key) => state.changeVariable(id, 'key', key)}
+                onVariableValueChange={(id, value) => state.changeVariable(id, 'value', value)}
+                onWorkflowChange={state.changeWorkflow}
+                rows={state.rows}
+                workflowId={state.workflowId}
+                workflows={state.workflows}
               />
-            )}
-          </div>
+            </CardContent>
+          </Card>
 
           <aside className="grid gap-4 xl:sticky xl:top-20">
             {state.error?.scope === 'start' ? (
@@ -112,6 +77,20 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
               </Alert>
             ) : null}
 
+            {state.missingVariables.length === 0 ? null : (
+              <Alert className="border-status-warning/35 bg-status-warning/10">
+                <AlertTitle>Missing prompt variables</AlertTitle>
+                <AlertDescription>
+                  <p>Starting anyway substitutes an empty value for each missing variable.</p>
+                  <ul className="mt-2 list-inside list-disc font-mono text-xs/4">
+                    {state.missingVariables.map((variable) => (
+                      <li key={variable}>{variable}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
             {state.startedRun === undefined ? null : (
               <Alert>
                 <AlertTitle>Run started</AlertTitle>
@@ -126,10 +105,19 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
             <Card>
               <CardContent className="grid gap-3">
                 <p className="text-sm/5 text-muted-foreground">
-                  The selected revision and profile are snapshotted when the run starts.
+                  The selected workflow and variables are snapshotted when the run starts.
                 </p>
+                {state.runnable ? null : (
+                  <p className="text-sm/5 text-status-warning">
+                    This workflow has no agent jobs and cannot be run.
+                  </p>
+                )}
                 <Button className="w-full" disabled={!state.canStart} type="submit">
-                  {state.starting ? 'Starting…' : 'Start confirmed run'}
+                  {state.starting
+                    ? 'Starting…'
+                    : state.missingVariables.length > 0
+                      ? 'Start without missing variables'
+                      : 'Start run'}
                 </Button>
               </CardContent>
             </Card>

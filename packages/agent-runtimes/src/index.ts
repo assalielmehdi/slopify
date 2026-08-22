@@ -52,16 +52,6 @@ export {
   type WorkspaceResourceRepository,
 } from './resource-loader.js'
 export {
-  PromptRendererError,
-  renderAgentPrompt,
-  type PromptRendererErrorCode,
-  type RenderAgentPromptInput,
-  type RenderedAgentPrompt,
-  type RenderedPromptRepository,
-  type RenderedPromptWorkspace,
-  type RenderedReviewRepository,
-} from './prompt-renderer.js'
-export {
   createEnvironmentModelCredentialSource,
   ModelRuntimeError,
   type CreateEnvironmentModelCredentialSourceOptions,

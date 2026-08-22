@@ -161,8 +161,8 @@ export function SkillsManager({
           </CardContent>
         </Card>
       ) : null}
-      <div className="grid min-h-[34rem] overflow-hidden rounded-lg border bg-card lg:grid-cols-[17rem_minmax(0,1fr)]">
-        <Card className="rounded-none border-0 border-r py-4">
+      <div className="grid min-h-[34rem] overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-raised)] lg:grid-cols-[17rem_minmax(0,1fr)]">
+        <Card className="rounded-none border-0 border-r py-4 shadow-none">
           <CardHeader>
             <CardTitle>Available skills</CardTitle>
             <CardDescription>
@@ -188,13 +188,13 @@ export function SkillsManager({
           </CardContent>
         </Card>
         {selected === undefined ? (
-          <Card className="rounded-none border-0">
+          <Card className="rounded-none border-0 shadow-none">
             <CardContent className="pt-6 text-sm text-muted-foreground">
               No skill selected.
             </CardContent>
           </Card>
         ) : (
-          <Card className="rounded-none border-0">
+          <Card className="rounded-none border-0 shadow-none">
             <CardHeader className="flex-row items-start justify-between gap-4">
               <div>
                 <CardTitle>{selected.name}</CardTitle>
@@ -207,7 +207,7 @@ export function SkillsManager({
             <CardContent className="grid gap-4 md:grid-cols-[14rem_minmax(0,1fr)]">
               <nav
                 aria-label="Skill files"
-                className="grid content-start gap-1 rounded-md border bg-muted/25 p-2"
+                className="grid content-start gap-1 rounded-md border bg-background p-2"
               >
                 {selected.files.map((file) => (
                   <Button
@@ -232,7 +232,7 @@ export function SkillsManager({
                 </div>
                 <Textarea
                   aria-label="Raw skill file"
-                  className="min-h-96 bg-muted/20 font-mono text-sm/6"
+                  className="min-h-96 bg-background font-mono text-sm/6"
                   value={draft}
                   onChange={(event) => setDraft(event.currentTarget.value)}
                 />

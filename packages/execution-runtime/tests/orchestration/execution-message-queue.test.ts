@@ -32,11 +32,11 @@ const queueFactories: readonly [string, () => ExecutionMessageQueue][] = [
       databases.push(database)
       const timestamp = '2026-08-20T10:00:00.000Z'
       getDatabaseHandle(database).exec(`
-        INSERT INTO workflows (workflow_id, name, created_at)
-        VALUES ('workflow-01', 'Workflow', '${timestamp}');
-        INSERT INTO workflow_revisions (
-          revision_id, workflow_id, name, definition_json, created_at
-        ) VALUES ('revision-01', 'workflow-01', 'Revision', '{}', '${timestamp}');
+        INSERT INTO workflows (
+          workflow_id, name, description, definition_json, created_at, updated_at
+        ) VALUES (
+          'workflow-01', 'Workflow', 'Queue fixture', '{}', '${timestamp}', '${timestamp}'
+        );
         INSERT INTO project_profiles (
           profile_id, display_name, clickup_workspace_id, clickup_list_id,
           clickup_in_review_status_id, created_at, updated_at
@@ -52,11 +52,12 @@ const queueFactories: readonly [string, () => ExecutionMessageQueue][] = [
           'list-01', 'review', '${timestamp}'
         );
         INSERT INTO runs (
-          run_id, workflow_id, revision_id, profile_snapshot_id, task_reference,
-          task_snapshot_json, effective_configuration_json, status, created_at
+          run_id, workflow_id, profile_snapshot_id, task_reference,
+          task_snapshot_json, workflow_snapshot_json, variables_json,
+          missing_variables_json, status, created_at
         ) VALUES (
-          'run-01', 'workflow-01', 'revision-01', 'snapshot-01', 'TASK-1',
-          '{}', '{}', 'PENDING', '${timestamp}'
+          'run-01', 'workflow-01', 'snapshot-01', 'TASK-1',
+          '{}', '{}', '{}', '[]', 'PENDING', '${timestamp}'
         );
       `)
       return createSqliteExecutionMessageQueue(database)

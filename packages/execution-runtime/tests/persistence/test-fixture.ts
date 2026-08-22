@@ -1,13 +1,8 @@
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import {
-  ProjectProfileIdSchema,
-  RevisionIdSchema,
-  RunIdSchema,
-  WorkflowIdSchema,
-} from '@loop/contracts'
-import type { WorkflowRevision } from '@loop/workflow-model'
+import { ProjectProfileIdSchema, RunIdSchema, WorkflowIdSchema } from '@loop/contracts'
+import { createPredefinedV1Workflow, type Workflow } from '@loop/workflow-model'
 
 import {
   createEventStore,
@@ -16,11 +11,8 @@ import {
   createWorkflowRepository,
   openDatabase,
 } from '../../src/index.js'
-import { createDeliveryWorkflowTestRevision } from '../fixtures/delivery-workflow.js'
-
 export const TEST_TIMESTAMP = '2026-08-18T20:00:00Z'
 export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('delivery-workflow')
-export const TEST_REVISION_ID = RevisionIdSchema.parse('revision-01')
 export const TEST_PROFILE_ID = ProjectProfileIdSchema.parse('profile-01')
 export const TEST_RUN_ID = RunIdSchema.parse('run-01')
 
@@ -76,7 +68,7 @@ export const TEST_PROFILE = {
   ],
 } as const
 
-export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
+export const createPersistenceFixture = (workflowInput?: Workflow) => {
   const directory = join(tmpdir(), `slopify-repositories-${crypto.randomUUID()}`)
   const path = join(directory, 'state', 'workbench.sqlite')
   const database = openDatabase({ path })
@@ -84,10 +76,9 @@ export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
   const profiles = createProfileRepository(database)
   const runs = createRunRepository(database)
   const events = createEventStore(database)
-  const revision =
-    revisionInput ??
-    createDeliveryWorkflowTestRevision({
-      revisionId: TEST_REVISION_ID,
+  const workflow =
+    workflowInput ??
+    createPredefinedV1Workflow({
       createdAt: TEST_TIMESTAMP,
       agentDefaults: {
         provider: 'test-provider',
@@ -96,7 +87,7 @@ export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
       },
     })
 
-  workflows.addRevision(revision)
+  workflows.save(workflow)
   profiles.save(TEST_PROFILE, TEST_TIMESTAMP)
   const snapshot = profiles.createSnapshot({
     snapshotId: 'snapshot-01',
@@ -114,7 +105,7 @@ export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
     events,
     path,
     profiles,
-    revision,
+    workflow,
     runs,
     snapshot,
     workflows,
@@ -124,15 +115,19 @@ export const createPersistenceFixture = (revisionInput?: WorkflowRevision) => {
 
 export const createRun = (
   fixture: ReturnType<typeof createPersistenceFixture>,
-  effectiveConfiguration: unknown = { transitionLimit: 24 },
+  workflowSnapshot: Workflow = fixture.workflow,
+  variables: Readonly<Record<string, string>> = { task: 'Implement persistence' },
 ) =>
   fixture.runs.create({
     runId: TEST_RUN_ID,
     workflowId: TEST_WORKFLOW_ID,
-    revisionId: TEST_REVISION_ID,
-    profileSnapshotId: fixture.snapshot.snapshotId,
-    taskReference: 'TASK-1',
-    taskSnapshot: { id: 'TASK-1', name: 'Implement persistence' },
-    effectiveConfiguration,
+    workflowSnapshot,
+    variables,
+    missingVariables: [],
     createdAt: TEST_TIMESTAMP,
+    legacy: {
+      profileSnapshotId: fixture.snapshot.snapshotId,
+      taskReference: 'TASK-1',
+      taskSnapshot: { id: 'TASK-1', name: 'Implement persistence' },
+    },
   })

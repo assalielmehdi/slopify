@@ -1,10 +1,5 @@
 FROM node:24.18.0-bookworm-slim@sha256:6f7b03f7c2c8e2e784dcf9295400527b9b1270fd37b7e9a7285cf83b6951452d AS dependencies
 
-ARG TARGETARCH
-ARG GLAB_VERSION=1.114.0
-ARG GLAB_SHA256_AMD64=00e892a80d586a1e8b8fdc035321923db99dce0caa3b0c4fd72c5337ffdb1c48
-ARG GLAB_SHA256_ARM64=d34d7ddb96ce5e5f3423d7e8053cb14c36bd93984e4b96320f7e20a341b83498
-
 ENV COREPACK_HOME=/opt/corepack
 
 WORKDIR /app
@@ -12,7 +7,6 @@ WORKDIR /app
 RUN apt-get update \
   && apt-get install --yes --no-install-recommends \
     ca-certificates=20250419~deb12u1 \
-    curl=7.88.1-10+deb12u15 \
     g++=4:12.2.0-3 \
     make=4.3-4.1 \
     python3=3.11.2-1+b1 \
@@ -20,20 +14,6 @@ RUN apt-get update \
 
 RUN corepack enable \
   && corepack prepare pnpm@11.22.0 --activate
-
-RUN case "$TARGETARCH" in \
-      amd64) glab_checksum="$GLAB_SHA256_AMD64" ;; \
-      arm64) glab_checksum="$GLAB_SHA256_ARM64" ;; \
-      *) echo "Unsupported architecture: $TARGETARCH" >&2; exit 1 ;; \
-    esac \
-  && glab_archive="glab_${GLAB_VERSION}_linux_${TARGETARCH}.tar.gz" \
-  && curl --fail --location --silent --show-error \
-    "https://gitlab.com/gitlab-org/cli/-/releases/v${GLAB_VERSION}/downloads/${glab_archive}" \
-    --output "/tmp/${glab_archive}" \
-  && printf '%s  %s\n' "$glab_checksum" "/tmp/${glab_archive}" | sha256sum --check --strict \
-  && tar --extract --gzip --file "/tmp/${glab_archive}" \
-    --directory /usr/local/bin --strip-components=1 bin/glab \
-  && rm "/tmp/${glab_archive}"
 
 COPY . .
 
@@ -70,13 +50,7 @@ RUN apt-get update \
   && rm -rf /var/lib/apt/lists/* \
   && install --directory --owner=node --group=node /var/lib/workbench /workspace
 
-ENV GLAB_CHECK_UPDATE=false
-ENV GLAB_CONFIG_DIR=/var/lib/workbench/glab
-ENV GLAB_SEND_TELEMETRY=false
-ENV GLAB_SHOW_WHATS_NEW=false
-
 COPY --from=dependencies /opt/corepack /opt/corepack
-COPY --from=dependencies /usr/local/bin/glab /usr/local/bin/glab
 COPY --from=builder --chown=node:node /prod/api ./
 
 RUN corepack enable \

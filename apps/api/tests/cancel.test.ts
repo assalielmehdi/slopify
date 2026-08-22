@@ -5,12 +5,9 @@ import {
   createCancellationService,
   createRunService,
   type ActiveRunExecution,
-  type ReadinessService,
-  type RunTaskResolver,
 } from '@loop/execution-runtime'
+import { createPredefinedV1Workflow } from '@loop/workflow-model'
 import {
-  TEST_PROFILE_ID,
-  TEST_REVISION_ID,
   TEST_WORKFLOW_ID,
   createPersistenceFixture,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
@@ -23,33 +20,23 @@ afterEach(() => {
 })
 
 const createFixture = () => {
-  const fixture = createPersistenceFixture()
-  fixtures.push(fixture)
-  const readiness: ReadinessService = {
-    connectorStatus: () => ({ clickup: true, gitlab: true, modelProvider: true }),
-    check: async () => ({
-      profileId: TEST_PROFILE_ID,
-      ready: true,
-      repositories: fixture.snapshot.repositories.map(({ repositoryId }) => ({
-        repositoryId,
-        ready: true,
-        findings: [],
-      })),
+  const fixture = createPersistenceFixture(
+    createPredefinedV1Workflow({
+      createdAt: '2026-08-18T23:30:00Z',
+      agentDefaults: {
+        provider: 'test-provider',
+        model: 'test-model',
+        thinkingLevel: 'medium',
+      },
     }),
-  }
-  const tasks: RunTaskResolver = {
-    resolve: async (taskReference) => ({ id: taskReference }),
-  }
+  )
+  fixtures.push(fixture)
   const runs = createRunService({
     events: fixture.events,
-    profiles: fixture.profiles,
-    readiness,
     runs: fixture.runs,
-    tasks,
     workflows: fixture.workflows,
     now: () => '2026-08-18T23:30:00Z',
     createRunId: () => 'run-api-cancel-1',
-    createProfileSnapshotId: () => 'snapshot-api-cancel-1',
   })
   let activeExecution: ActiveRunExecution | undefined
   const cancellation = createCancellationService({
@@ -66,7 +53,7 @@ const createFixture = () => {
       activeExecution = {
         runId: RunIdSchema.parse('run-api-cancel-1'),
         nodeExecutionId: 'node-execution-api-cancel-1',
-        nodeId: NodeIdSchema.parse('load-clickup-task'),
+        nodeId: NodeIdSchema.parse('identify-agent'),
         cancel,
       }
     },
@@ -74,10 +61,7 @@ const createFixture = () => {
 }
 
 const createBody = {
-  taskReference: 'TASK-1',
   workflowId: TEST_WORKFLOW_ID,
-  revisionId: TEST_REVISION_ID,
-  profileId: TEST_PROFILE_ID,
 }
 
 const startRun = async (fixture: ReturnType<typeof createFixture>): Promise<void> => {
@@ -96,7 +80,7 @@ const startRun = async (fixture: ReturnType<typeof createFixture>): Promise<void
   fixture.fixture.runs.startNode({
     runId,
     nodeExecutionId: 'node-execution-api-cancel-1',
-    nodeId: 'load-clickup-task',
+    nodeId: 'identify-agent',
     inputReferences: [],
     timestamp: '2026-08-18T23:30:02Z',
   })

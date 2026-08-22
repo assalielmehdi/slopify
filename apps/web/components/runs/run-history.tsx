@@ -8,8 +8,6 @@ import { RunStatusBadge, formatDuration, formatTimestamp } from '@/components/ru
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Field, FieldLabel } from '@/components/ui/field'
-import { NativeSelect, NativeSelectOption } from '@/components/ui/native-select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -31,23 +29,11 @@ const PAGE_SIZE = 20
 const defaultClient = createApiClient()
 
 type RunHistoryClient = Pick<ApiClient, 'listRuns'>
-type StatusFilter = 'ALL' | RunHistoryEntry['status']
-type SortKey = 'runId' | 'revisionId' | 'startedAt' | 'durationMs' | 'status'
+type SortKey = 'runId' | 'startedAt' | 'durationMs' | 'status'
 type SortDirection = 'ascending' | 'descending'
-
-const statusFilters: readonly StatusFilter[] = [
-  'ALL',
-  'PENDING',
-  'RUNNING',
-  'SUCCEEDED',
-  'FAILED',
-  'CANCELLED',
-  'INTERRUPTED',
-]
 
 const sortableColumns: readonly { key: SortKey; label: string }[] = [
   { key: 'runId', label: 'Run ID' },
-  { key: 'revisionId', label: 'Revision' },
   { key: 'startedAt', label: 'Started' },
   { key: 'durationMs', label: 'Duration' },
   { key: 'status', label: 'Status' },
@@ -153,8 +139,6 @@ export function RunHistory({
 }: Readonly<{ page: number; client?: RunHistoryClient }>) {
   const [history, setHistory] = useState<RunHistoryPage | null>(null)
   const [failed, setFailed] = useState(false)
-  const [status, setStatus] = useState<StatusFilter>('ALL')
-  const [revision, setRevision] = useState('ALL')
   const [sortKey, setSortKey] = useState<SortKey>('startedAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('descending')
 
@@ -177,23 +161,13 @@ export function RunHistory({
     }
   }, [client, page])
 
-  const revisions = useMemo(
-    () => [...new Set(history?.data.map((run) => run.revisionId) ?? [])].sort(),
-    [history],
-  )
   const visibleRuns = useMemo(() => {
-    const filtered =
-      history?.data.filter(
-        (run) =>
-          (status === 'ALL' || run.status === status) &&
-          (revision === 'ALL' || run.revisionId === revision),
-      ) ?? []
     const direction = sortDirection === 'ascending' ? 1 : -1
-    return [...filtered].sort((left, right) => {
+    return [...(history?.data ?? [])].sort((left, right) => {
       const comparison = compareRuns(left, right, sortKey)
       return comparison === 0 ? left.runId.localeCompare(right.runId) : comparison * direction
     })
-  }, [history, revision, sortDirection, sortKey, status])
+  }, [history, sortDirection, sortKey])
 
   const sortBy = (nextKey: SortKey) => {
     if (nextKey === sortKey) {
@@ -205,47 +179,7 @@ export function RunHistory({
   }
 
   return (
-    <section aria-label="Runs" className="w-full space-y-4">
-      <div
-        role="search"
-        aria-label="Run filters"
-        className="flex flex-wrap gap-3 rounded-lg border bg-card p-4"
-      >
-        <Field className="w-48">
-          <FieldLabel htmlFor="run-status-filter">Run status</FieldLabel>
-          <NativeSelect
-            className="w-full"
-            id="run-status-filter"
-            value={status}
-            onChange={(event) => setStatus(event.target.value as StatusFilter)}
-          >
-            {statusFilters.map((value) => (
-              <NativeSelectOption key={value} value={value}>
-                {value === 'ALL'
-                  ? 'All statuses'
-                  : `${value.charAt(0)}${value.slice(1).toLowerCase()}`}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </Field>
-        <Field className="w-56">
-          <FieldLabel htmlFor="run-revision-filter">Workflow revision</FieldLabel>
-          <NativeSelect
-            className="w-full"
-            id="run-revision-filter"
-            value={revision}
-            onChange={(event) => setRevision(event.target.value)}
-          >
-            <NativeSelectOption value="ALL">All revisions</NativeSelectOption>
-            {revisions.map((value) => (
-              <NativeSelectOption key={value} value={value}>
-                {value}
-              </NativeSelectOption>
-            ))}
-          </NativeSelect>
-        </Field>
-      </div>
-
+    <section aria-label="Runs" className="w-full">
       {failed ? (
         <Alert variant="destructive">
           <AlertTitle>Run history unavailable</AlertTitle>
@@ -266,7 +200,7 @@ export function RunHistory({
           </CardContent>
         </Card>
       ) : (
-        <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="overflow-hidden rounded-lg border bg-card shadow-[var(--shadow-raised)]">
           <Table aria-label="Workflow runs">
             <TableHeader>
               <TableRow>
@@ -282,39 +216,30 @@ export function RunHistory({
               </TableRow>
             </TableHeader>
             <TableBody>
-              {visibleRuns.length === 0 ? (
-                <TableRow>
-                  <TableCell className="h-24 text-center text-muted-foreground" colSpan={5}>
-                    No runs match these filters.
+              {visibleRuns.map((run) => (
+                <TableRow key={run.runId}>
+                  <TableCell className="font-mono font-medium">
+                    <Link
+                      aria-label={`Open run ${run.runId}`}
+                      className="underline-offset-4 hover:underline focus-visible:underline"
+                      href={`/runs/${encodeURIComponent(run.runId)}`}
+                      prefetch={false}
+                    >
+                      {run.runId}
+                    </Link>
+                  </TableCell>
+                  <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
+                  <TableCell>
+                    {run.durationMs === null ? 'Not recorded' : formatDuration(run.durationMs)}
+                  </TableCell>
+                  <TableCell>
+                    <RunStatusBadge status={run.status} />
                   </TableCell>
                 </TableRow>
-              ) : (
-                visibleRuns.map((run) => (
-                  <TableRow key={run.runId}>
-                    <TableCell className="font-mono font-medium">
-                      <Link
-                        aria-label={`Open run ${run.runId}`}
-                        className="underline-offset-4 hover:underline focus-visible:underline"
-                        href={`/runs/${encodeURIComponent(run.runId)}`}
-                        prefetch={false}
-                      >
-                        {run.runId}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="font-mono">{run.revisionId}</TableCell>
-                    <TableCell>{formatTimestamp(run.startedAt)}</TableCell>
-                    <TableCell>
-                      {run.durationMs === null ? 'Not recorded' : formatDuration(run.durationMs)}
-                    </TableCell>
-                    <TableCell>
-                      <RunStatusBadge status={run.status} />
-                    </TableCell>
-                  </TableRow>
-                ))
-              )}
+              ))}
             </TableBody>
           </Table>
-          <div className="border-t bg-muted/25 px-4 py-3">
+          <div className="border-t bg-background px-4 py-3">
             <HistoryPagination history={history} />
           </div>
         </div>

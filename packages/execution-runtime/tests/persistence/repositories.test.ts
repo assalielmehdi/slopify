@@ -17,19 +17,19 @@ afterEach(() => {
 })
 
 describe('workflow and profile repositories', () => {
-  it('round-trips immutable workflow revisions', () => {
+  it('saves and replaces the current workflow', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
 
-    expect(
-      fixture.workflows.getRevision({
-        workflowId: fixture.revision.workflowId,
-        revisionId: fixture.revision.revisionId,
-      }),
-    ).toEqual(fixture.revision)
-    expect(() => fixture.workflows.addRevision(fixture.revision)).toThrowError(
-      expect.objectContaining({ code: 'PERSISTENCE_CONFLICT' }),
-    )
+    const updated = {
+      ...fixture.workflow,
+      name: 'Updated workflow',
+      updatedAt: '2026-08-18T21:00:00Z',
+    }
+    fixture.workflows.save(updated)
+
+    expect(fixture.workflows.get(fixture.workflow.workflowId)).toEqual(updated)
+    expect(fixture.workflows.list()).toEqual([updated])
   })
 
   it('keeps a profile snapshot unchanged and in its original canonical order', () => {
@@ -59,20 +59,14 @@ describe('run repository transactions', () => {
   it('stores exact run snapshots independently from caller mutation', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
-    const effectiveConfiguration = {
-      provider: 'test-provider',
-      nodes: { plan: { model: 'test-model' } },
-    }
+    const workflowSnapshot = { ...fixture.workflow, name: 'Snapshot workflow' }
 
-    createRun(fixture, effectiveConfiguration)
-    effectiveConfiguration.nodes.plan.model = 'mutated-after-create'
+    createRun(fixture, workflowSnapshot)
+    workflowSnapshot.name = 'mutated-after-create'
 
     expect(fixture.runs.get(TEST_RUN_ID)).toMatchObject({
       taskSnapshot: { id: 'TASK-1', name: 'Implement persistence' },
-      effectiveConfiguration: {
-        provider: 'test-provider',
-        nodes: { plan: { model: 'test-model' } },
-      },
+      workflowSnapshot: { name: 'Snapshot workflow' },
       status: 'PENDING',
     })
   })

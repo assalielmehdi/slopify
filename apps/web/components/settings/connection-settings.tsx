@@ -242,7 +242,7 @@ function ConnectionTile({
       variant="ghost"
       aria-label={`${definition.name}, ${statusLabel(connection)}`}
       className={cn(
-        'w-full items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-none transition-[background-color,border-color] duration-150 hover:border-input hover:bg-accent/45 focus-visible:border-input',
+        'w-full items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input',
         view === 'grid' ? 'h-[140px] flex-col' : 'min-h-24 flex-col',
       )}
       onClick={onSelect}
@@ -526,7 +526,7 @@ export function ConnectionSettings({
             aria-labelledby="connection-panel-title"
             data-layout="floating"
             data-open={isPanelOpen}
-            className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-2xl"
+            className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
           >
             <header className="relative shrink-0 border-b border-border p-6 pr-14">
               <div className="flex items-center gap-3">
@@ -588,7 +588,7 @@ export function ConnectionSettings({
                 </ol>
               </section>
 
-              <section className="rounded-lg border border-border bg-muted/40 p-4">
+              <section className="rounded-lg border border-border bg-background p-4">
                 <h2 className="text-[14px]/5 font-semibold">Access</h2>
                 <p className="mt-1.5 text-[14px]/6 text-muted-foreground">{selected.access}</p>
               </section>

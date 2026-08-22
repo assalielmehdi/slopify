@@ -18,7 +18,7 @@ export function PreferencesScreen() {
         <h2 id="interface-group-title" className="mb-3 text-[14px]/5 font-semibold">
           Interface
         </h2>
-        <div className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground">
+        <div className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-[var(--shadow-raised)]">
           <div className="flex flex-col items-start gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <h3 id="theme-preference-label" className="text-[14px]/5 font-medium">

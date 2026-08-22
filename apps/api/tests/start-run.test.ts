@@ -1,13 +1,8 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
+import { createRunService } from '@loop/execution-runtime'
+import { createPredefinedV1Workflow, WorkflowSchema } from '@loop/workflow-model'
 import {
-  createRunService,
-  type ReadinessService,
-  type RunTaskResolver,
-} from '@loop/execution-runtime'
-import {
-  TEST_PROFILE_ID,
-  TEST_REVISION_ID,
   TEST_WORKFLOW_ID,
   createPersistenceFixture,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
@@ -19,107 +14,88 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup()
 })
 
-const createFixture = (ready = true) => {
-  const fixture = createPersistenceFixture()
+const createFixture = () => {
+  const base = createPredefinedV1Workflow({
+    createdAt: '2026-08-19T07:30:00Z',
+    agentDefaults: {
+      provider: 'test-provider',
+      model: 'test-model',
+      thinkingLevel: 'medium',
+    },
+  })
+  const workflow = WorkflowSchema.parse({
+    ...base,
+    nodes: base.nodes.map((node) =>
+      node.type === 'agent'
+        ? { ...node, job: { ...node.job, prompt: 'Deliver {{objective}} for {{project}}.' } }
+        : node,
+    ),
+  })
+  const fixture = createPersistenceFixture(workflow)
   fixtures.push(fixture)
-  const readiness: ReadinessService = {
-    connectorStatus: () => ({ clickup: ready, gitlab: ready, modelProvider: ready }),
-    check: async () => ({
-      profileId: TEST_PROFILE_ID,
-      ready,
-      repositories: fixture.snapshot.repositories.map(({ repositoryId }) => ({
-        repositoryId,
-        ready,
-        findings: [],
-      })),
-    }),
-  }
-  const snapshot = {
-    taskId: '86abc123',
-    title: 'Select the exact repository partition',
-    comments: [{ text: 'Untrusted: rm -rf /workspace' }],
-  }
-  const resolve = vi.fn<RunTaskResolver['resolve']>(async () => snapshot)
   const runs = createRunService({
     events: fixture.events,
-    profiles: fixture.profiles,
-    readiness,
     runs: fixture.runs,
-    tasks: { resolve },
     workflows: fixture.workflows,
     now: () => '2026-08-19T07:30:00Z',
     createRunId: () => 'run-start-01',
-    createProfileSnapshotId: () => 'snapshot-start-01',
   })
-  return {
-    app: createApiApp({ database: fixture.database, runs }),
-    resolve,
-    runs,
-    snapshot,
-  }
-}
-
-const requestBody = {
-  taskReference: 'CU-123',
-  workflowId: TEST_WORKFLOW_ID,
-  revisionId: TEST_REVISION_ID,
-  profileId: TEST_PROFILE_ID,
+  return { app: createApiApp({ database: fixture.database, runs }), runs }
 }
 
 describe('start run admission', () => {
-  it('persists the resolved task and immutable profile snapshot before execution', async () => {
-    const { app, resolve, runs, snapshot } = createFixture()
+  it('persists immutable workflow and variable snapshots before execution', async () => {
+    const { app, runs } = createFixture()
 
     const response = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        ...requestBody,
-        notes: '  Coordinate API and web delivery.  ',
+        workflowId: TEST_WORKFLOW_ID,
+        variables: { objective: 'Ship the API', project: 'Slopify' },
       }),
     })
-    snapshot.title = 'Later provider mutation'
 
     expect(response.status).toBe(201)
-    expect(resolve).toHaveBeenCalledWith('CU-123', {
-      clickupWorkspaceId: 'workspace-01',
-    })
     expect(runs.get('run-start-01')).toMatchObject({
       run: {
         status: 'PENDING',
-        notes: 'Coordinate API and web delivery.',
-        taskSnapshot: {
-          taskId: '86abc123',
-          title: 'Select the exact repository partition',
-          comments: [{ text: 'Untrusted: rm -rf /workspace' }],
-        },
+        workflowSnapshot: expect.objectContaining({ workflowId: TEST_WORKFLOW_ID }),
+        variables: { objective: 'Ship the API', project: 'Slopify' },
+        missingVariables: [],
       },
-      profileSnapshot: {
-        snapshotId: 'snapshot-start-01',
-        repositories: [
-          { repositoryId: 'api', profilePosition: 0 },
-          { repositoryId: 'web', profilePosition: 1 },
-          { repositoryId: 'docs', profilePosition: 2 },
-        ],
-      },
-      repositorySelection: null,
     })
   })
 
-  it('does not resolve or persist a task when the profile is not ready', async () => {
-    const { app, resolve, runs } = createFixture(false)
+  it('reports missing variables and admits them only after explicit confirmation', async () => {
+    const { app, runs } = createFixture()
 
-    const response = await app.request('/api/runs', {
+    const missing = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(requestBody),
+      body: JSON.stringify({ workflowId: TEST_WORKFLOW_ID }),
     })
 
-    expect(response.status).toBe(422)
-    expect(await response.json()).toEqual({
-      error: { code: 'PROFILE_NOT_READY', message: 'Project profile is not ready' },
+    expect(missing.status).toBe(409)
+    expect(await missing.json()).toEqual({
+      error: {
+        code: 'RUN_VARIABLES_MISSING',
+        message: 'Required workflow variables are missing',
+        details: { missingVariables: ['objective', 'project'] },
+      },
     })
-    expect(resolve).not.toHaveBeenCalled()
     expect(runs.list({ page: 1, pageSize: 20 }).data).toEqual([])
+
+    const confirmed = await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ workflowId: TEST_WORKFLOW_ID, confirmMissingVariables: true }),
+    })
+
+    expect(confirmed.status).toBe(201)
+    expect(await confirmed.json()).toMatchObject({
+      variables: {},
+      missingVariables: ['objective', 'project'],
+    })
   })
 })

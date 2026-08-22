@@ -1,10 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  AgentJobDefinitionSchema,
-  WorkflowRevisionSchema,
-  getDeclaredOutcomes,
-} from '../src/index.js'
+import { AgentJobDefinitionSchema, WorkflowSchema, getDeclaredOutcomes } from '../src/index.js'
 
 const agentJob = {
   kind: 'agent',
@@ -42,9 +38,8 @@ describe('workflow job architecture', () => {
   })
 
   it('persists job, result, and sandbox concerns without flattened agent fields', () => {
-    const revision = WorkflowRevisionSchema.parse({
+    const workflow = WorkflowSchema.parse({
       workflowId: 'workflow-1',
-      revisionId: 'revision-1',
       name: 'Workflow',
       description: 'A workflow.',
       startNodeId: 'agent-1',
@@ -74,13 +69,14 @@ describe('workflow job architecture', () => {
       ],
       maxTransitions: 4,
       createdAt: '2026-08-20T00:00:00.000Z',
+      updatedAt: '2026-08-20T00:00:00.000Z',
     })
 
-    expect(revision.nodes[0]).toMatchObject({ type: 'agent', job: agentJob })
-    expect(revision.nodes[0]).not.toHaveProperty('provider')
-    expect(revision.nodes[0]).not.toHaveProperty('promptTemplate')
-    expect(revision.nodes[0]).not.toHaveProperty('outcomes')
-    expect(getDeclaredOutcomes(revision, 'agent-1')).toEqual(['completed'])
+    expect(workflow.nodes[0]).toMatchObject({ type: 'agent', job: agentJob })
+    expect(workflow.nodes[0]).not.toHaveProperty('provider')
+    expect(workflow.nodes[0]).not.toHaveProperty('promptTemplate')
+    expect(workflow.nodes[0]).not.toHaveProperty('outcomes')
+    expect(getDeclaredOutcomes(workflow, 'agent-1')).toEqual(['completed'])
   })
 
   it('rejects unknown job kinds and duplicate grants', () => {

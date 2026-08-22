@@ -12,7 +12,7 @@ describe('coordinator cancellation service', () => {
   it('cancels queued attempts and persists the terminal run state', async () => {
     const fixture = createPersistenceFixture()
     try {
-      createRun(fixture, fixture.revision)
+      createRun(fixture, fixture.workflow)
       const queue = createSqliteExecutionMessageQueue(fixture.database)
       const coordinator = createWorkflowCoordinator({
         coordinatorId: 'coordinator-01',
@@ -20,7 +20,7 @@ describe('coordinator cancellation service', () => {
         state: createSqliteCoordinatorStateStore(fixture.database),
         now: () => '2026-08-20T12:00:00.000Z',
       })
-      coordinator.start({ runId: TEST_RUN_ID, workflow: fixture.revision })
+      coordinator.start({ runId: TEST_RUN_ID, workflow: fixture.workflow })
       const cancelRun = vi.fn(async () => ({ status: 'unconfirmed' as const }))
       const service = createCoordinatorCancellationService({
         runs: fixture.runs,

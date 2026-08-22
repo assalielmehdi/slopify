@@ -22,7 +22,6 @@ afterEach(() => {
 
 const workflow = {
   workflowId: 'workflow-01',
-  revisionId: 'revision-01',
   name: 'Workflow',
   description: 'One agent job.',
   startNodeId: 'agent',
@@ -47,11 +46,11 @@ const workflow = {
         connectorIds: [],
       },
     },
-    { type: 'terminal' as const, id: 'done', name: 'Done', terminalStatus: 'SUCCEEDED' as const },
   ],
-  edges: [{ sourceNodeId: 'agent', outcome: 'done', targetNodeId: 'done', label: 'Done' }],
-  maxTransitions: 4,
+  edges: [],
+  maxTransitions: 0,
   createdAt: '2026-08-20T10:00:00.000Z',
+  updatedAt: '2026-08-20T10:00:00.000Z',
 }
 
 describe('SQLite workflow coordinator', () => {
@@ -63,11 +62,12 @@ describe('SQLite workflow coordinator', () => {
     const connection = getDatabaseHandle(database)
     const timestamp = workflow.createdAt
     connection.exec(`
-      INSERT INTO workflows (workflow_id, name, created_at)
-      VALUES ('workflow-01', 'Workflow', '${timestamp}');
-      INSERT INTO workflow_revisions (
-        revision_id, workflow_id, name, definition_json, created_at
-      ) VALUES ('revision-01', 'workflow-01', 'Revision', '{}', '${timestamp}');
+      INSERT INTO workflows (
+        workflow_id, name, description, definition_json, created_at, updated_at
+      ) VALUES (
+        'workflow-01', 'Workflow', 'One agent job.',
+        '${JSON.stringify(workflow).replaceAll("'", "''")}', '${timestamp}', '${timestamp}'
+      );
       INSERT INTO project_profiles (
         profile_id, display_name, clickup_workspace_id, clickup_list_id,
         clickup_in_review_status_id, created_at, updated_at
@@ -83,11 +83,13 @@ describe('SQLite workflow coordinator', () => {
         'list-01', 'review', '${timestamp}'
       );
       INSERT INTO runs (
-        run_id, workflow_id, revision_id, profile_snapshot_id, task_reference,
-        task_snapshot_json, effective_configuration_json, status, created_at
+        run_id, workflow_id, profile_snapshot_id, task_reference,
+        task_snapshot_json, workflow_snapshot_json, variables_json,
+        missing_variables_json, status, created_at
       ) VALUES (
-        'run-01', 'workflow-01', 'revision-01', 'snapshot-01', 'TASK-1',
-        '{}', '${JSON.stringify(workflow).replaceAll("'", "''")}', 'PENDING', '${timestamp}'
+        'run-01', 'workflow-01', 'snapshot-01', 'TASK-1',
+        '{}', '${JSON.stringify(workflow).replaceAll("'", "''")}', '{}', '[]',
+        'PENDING', '${timestamp}'
       );
       INSERT INTO run_events (run_id, sequence, event_type, data_json, created_at)
       VALUES ('run-01', 1, 'RUN_STARTED', '{}', '${timestamp}');
@@ -115,7 +117,7 @@ describe('SQLite workflow coordinator', () => {
       attemptId: execution.attemptId,
       payload: {
         version: 1,
-        outcome: 'done',
+        outcome: 'completed',
         output: { summary: 'Done' },
         artifactIds: [],
         completedAt: timestamp,
@@ -127,7 +129,7 @@ describe('SQLite workflow coordinator', () => {
 
     expect(coordinator.runOnce()).toBe(true)
     expect(queue.get('success-01')).toMatchObject({ status: 'PROCESSED' })
-    expect(state.get('run-01')).toMatchObject({ status: 'SUCCEEDED', transitionCount: 1 })
+    expect(state.get('run-01')).toMatchObject({ status: 'SUCCEEDED', transitionCount: 0 })
     expect(
       connection.prepare('SELECT status FROM runs WHERE run_id = ?').pluck().get('run-01'),
     ).toBe('SUCCEEDED')

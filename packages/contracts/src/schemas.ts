@@ -33,11 +33,11 @@ const httpsUrl = z
   })
 
 export const WorkflowIdSchema = opaqueId.brand<'WorkflowId'>()
-export const RevisionIdSchema = opaqueId.brand<'RevisionId'>()
 export const RunIdSchema = opaqueId.brand<'RunId'>()
 export const NodeIdSchema = kebabCaseId.brand<'NodeId'>()
 export const ArtifactIdSchema = opaqueId.brand<'ArtifactId'>()
 export const ProjectProfileIdSchema = opaqueId.brand<'ProjectProfileId'>()
+export const ProjectIdSchema = opaqueId.brand<'ProjectId'>()
 export const RepositoryIdSchema = opaqueId.brand<'RepositoryId'>()
 export const OutcomeNameSchema = kebabCaseId.brand<'OutcomeName'>()
 
@@ -231,6 +231,25 @@ export const ConnectionCatalogEntrySchema = z.strictObject({
   resourceLabel: z.string().trim().min(1).max(128).optional(),
 })
 
+export const ProjectAvailabilitySchema = z.enum(['AVAILABLE', 'MISSING', 'NOT_GIT_REPOSITORY'])
+
+export const ProjectSchema = z.strictObject({
+  projectId: ProjectIdSchema,
+  name: z.string().trim().min(1).max(256),
+  repositoryPath: z.string().trim().min(1).max(4_096),
+  availability: ProjectAvailabilitySchema,
+  createdAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
+})
+
+export const AddProjectRequestSchema = z.strictObject({
+  repositoryPath: z.string().trim().min(1).max(4_096),
+})
+
+export const ProjectCatalogResponseSchema = z.strictObject({
+  projects: z.array(ProjectSchema).readonly(),
+})
+
 const ReadinessFindingSchema = z.strictObject({
   category: z.enum(['filesystem', 'git', 'tool', 'clickup', 'gitlab', 'model-provider']),
   code: errorCode,
@@ -250,16 +269,9 @@ export const ProjectProfileReadinessSchema = z.strictObject({
 })
 
 export const CreateRunRequestSchema = z.strictObject({
-  taskReference: z.string().trim().min(1).max(512),
   workflowId: WorkflowIdSchema,
-  revisionId: RevisionIdSchema,
-  profileId: ProjectProfileIdSchema,
-  notes: z.string().trim().min(1).max(2_000).optional(),
-})
-
-export const ResolveClickUpTaskRequestSchema = z.strictObject({
-  taskReference: z.string().trim().min(1).max(512),
-  profileId: ProjectProfileIdSchema,
+  variables: z.record(z.string().min(1).max(128), z.json()).optional(),
+  confirmMissingVariables: z.boolean().optional(),
 })
 
 export const CancelRunRequestSchema = z.strictObject({
@@ -285,9 +297,6 @@ const RunStartedEventSchema = runEventBase.extend({
   type: z.literal('RUN_STARTED'),
   data: z.strictObject({
     workflowId: WorkflowIdSchema,
-    revisionId: RevisionIdSchema,
-    profileId: ProjectProfileIdSchema,
-    taskReference: z.string().trim().min(1).max(512),
   }),
 })
 
@@ -377,7 +386,6 @@ export const RunEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type WorkflowId = z.infer<typeof WorkflowIdSchema>
-export type RevisionId = z.infer<typeof RevisionIdSchema>
 export type RunId = z.infer<typeof RunIdSchema>
 export type NodeId = z.infer<typeof NodeIdSchema>
 export type ArtifactId = z.infer<typeof ArtifactIdSchema>
@@ -409,9 +417,10 @@ export type ConnectorStatus = z.infer<typeof ConnectorStatusSchema>
 export type ConnectionType = z.infer<typeof ConnectionTypeSchema>
 export type ConnectionCategory = z.infer<typeof ConnectionCategorySchema>
 export type ConnectionCatalogEntry = z.infer<typeof ConnectionCatalogEntrySchema>
+export type ProjectAvailability = z.infer<typeof ProjectAvailabilitySchema>
+export type Project = z.infer<typeof ProjectSchema>
 export type ProjectProfileReadiness = z.infer<typeof ProjectProfileReadinessSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
-export type ResolveClickUpTaskRequest = z.infer<typeof ResolveClickUpTaskRequestSchema>
 export type CancelRunRequest = z.infer<typeof CancelRunRequestSchema>
 export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>
 export type RunEvent = z.infer<typeof RunEventSchema>

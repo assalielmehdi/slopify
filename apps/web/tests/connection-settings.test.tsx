@@ -57,7 +57,7 @@ const catalog = [
     eyebrow: 'Inference provider',
     summary: 'Run agents across models available through OpenRouter.',
     description:
-      'Use one OpenRouter API key to make its model catalog available to Slopify agent profiles.',
+      'Use one OpenRouter API key to make its model catalog available to workflow agent jobs.',
     setup: [
       'Create a key in OpenRouter settings.',
       'Optionally set a spending limit for the key.',

@@ -54,10 +54,6 @@ export const registerRunRoutes = (
     })
   }
 
-  app.get('/api/runs/:runId/nodes/:nodeId/source', (context) =>
-    context.json(runs.getNodeSource(context.req.param('runId'), context.req.param('nodeId')), 200),
-  )
-
   app.get('/api/runs/:runId', (context) => {
     const detail = runs.get(context.req.param('runId'))
     if (detail === undefined) {

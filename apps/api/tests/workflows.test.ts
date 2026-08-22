@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createWorkflowService } from '@loop/execution-runtime'
-import { createPredefinedV1Revision } from '@loop/workflow-model'
-import {
-  createPersistenceFixture,
-  createRun,
-} from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import { createPredefinedV1Workflow } from '@loop/workflow-model'
+import { createPersistenceFixture } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -16,8 +13,7 @@ afterEach(() => {
 
 const createFixture = () => {
   const fixture = createPersistenceFixture(
-    createPredefinedV1Revision({
-      revisionId: 'revision-01',
+    createPredefinedV1Workflow({
       createdAt: '2026-08-18T20:00:00Z',
       agentDefaults: {
         provider: 'test-provider',
@@ -27,114 +23,31 @@ const createFixture = () => {
     }),
   )
   fixtures.push(fixture)
-  const workflows = createWorkflowService({
-    workflows: fixture.workflows,
-    now: () => '2026-08-18T23:00:00Z',
-  })
+  const workflows = createWorkflowService({ workflows: fixture.workflows })
   return { fixture, app: createApiApp({ database: fixture.database, workflows }) }
 }
 
 describe('workflow API', () => {
-  it('lists revision summaries newest first and returns an exact immutable revision', async () => {
+  it('lists current workflows and returns one exact workflow', async () => {
     const { fixture, app } = createFixture()
 
     const listResponse = await app.request('/api/workflows')
-    const revisionResponse = await app.request(
-      `/api/workflows/${fixture.revision.workflowId}/revisions/${fixture.revision.revisionId}`,
-    )
+    const workflowResponse = await app.request(`/api/workflows/${fixture.workflow.workflowId}`)
 
     expect(listResponse.status).toBe(200)
-    expect(await listResponse.json()).toEqual({
-      workflows: [
-        {
-          workflowId: fixture.revision.workflowId,
-          name: fixture.revision.name,
-          latestRevisionId: fixture.revision.revisionId,
-          revisions: [
-            {
-              revisionId: fixture.revision.revisionId,
-              parentRevisionId: null,
-              createdAt: fixture.revision.createdAt,
-            },
-          ],
-        },
-      ],
-    })
-    expect(revisionResponse.status).toBe(200)
-    expect(await revisionResponse.json()).toEqual(fixture.revision)
+    expect(await listResponse.json()).toEqual({ workflows: [fixture.workflow] })
+    expect(workflowResponse.status).toBe(200)
+    expect(await workflowResponse.json()).toEqual(fixture.workflow)
   })
 
-  it('creates a validated derived revision without changing its parent', async () => {
-    const { fixture, app } = createFixture()
-    const existingRun = createRun(fixture)
+  it('returns the shared not-found envelope for an unknown workflow', async () => {
+    const { app } = createFixture()
 
-    const response = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        parentRevisionId: fixture.revision.revisionId,
-        revisionId: 'revision-02',
-        updates: [{ nodeId: 'identify-agent', changes: { modelId: 'test-model-v2' } }],
-      }),
-    })
-    const created = (await response.json()) as typeof fixture.revision
-    const parent = fixture.workflows.getRevision({
-      workflowId: fixture.revision.workflowId,
-      revisionId: fixture.revision.revisionId,
-    })
-    const unchangedRun = fixture.runs.get(existingRun.runId)
-
-    expect(response.status).toBe(201)
-    expect(created).toMatchObject({
-      workflowId: fixture.revision.workflowId,
-      revisionId: 'revision-02',
-      parentRevisionId: fixture.revision.revisionId,
-      createdAt: '2026-08-18T23:00:00Z',
-    })
-    expect(created.nodes.find(({ id }) => id === 'identify-agent')).toMatchObject({
-      type: 'agent',
-      job: { inference: { modelId: 'test-model-v2' } },
-    })
-    expect(parent).toEqual(fixture.revision)
-    expect(unchangedRun).toEqual(existingRun)
-  })
-
-  it('maps malformed and semantically invalid revision requests to stable errors', async () => {
-    const { fixture, app } = createFixture()
-
-    const malformed = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ parentRevisionId: fixture.revision.revisionId }),
-    })
-    const invalid = await app.request(`/api/workflows/${fixture.revision.workflowId}/revisions`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        parentRevisionId: fixture.revision.revisionId,
-        revisionId: 'revision-02',
-        updates: [{ nodeId: 'succeeded', changes: { modelId: 'not-allowed' } }],
-      }),
-    })
-
-    expect(malformed.status).toBe(400)
-    expect(await malformed.json()).toMatchObject({
-      error: { code: 'WORKFLOW_REQUEST_INVALID' },
-    })
-    expect(invalid.status).toBe(422)
-    expect(await invalid.json()).toMatchObject({ error: { code: 'REVISION_INVALID' } })
-  })
-
-  it('returns the shared not-found envelope for unknown revisions', async () => {
-    const { fixture, app } = createFixture()
-
-    const response = await app.request(
-      `/api/workflows/${fixture.revision.workflowId}/revisions/unknown`,
-    )
+    const response = await app.request('/api/workflows/unknown')
 
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({
-      error: { code: 'WORKFLOW_NOT_FOUND', message: 'Workflow revision was not found' },
+      error: { code: 'WORKFLOW_NOT_FOUND', message: 'Workflow was not found' },
     })
   })
 })

@@ -1,9 +1,4 @@
-import {
-  NodeIdSchema,
-  OutcomeNameSchema,
-  RevisionIdSchema,
-  WorkflowIdSchema,
-} from '@loop/contracts'
+import { NodeIdSchema, OutcomeNameSchema, WorkflowIdSchema } from '@loop/contracts'
 import { z } from 'zod'
 
 const RESOURCE_BUNDLE_ID_PATTERN = /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/
@@ -165,17 +160,16 @@ export const WorkflowEdgeSchema = z
   })
   .readonly()
 
-export const WorkflowRevisionSchema = z
+export const WorkflowSchema = z
   .strictObject({
     workflowId: WorkflowIdSchema,
-    revisionId: RevisionIdSchema,
     name: nonBlankString,
     description: nonBlankString,
-    startNodeId: NodeIdSchema,
-    nodes: z.array(WorkflowNodeSchema).min(1).readonly(),
+    startNodeId: NodeIdSchema.nullable(),
+    nodes: z.array(WorkflowNodeSchema).readonly(),
     edges: z.array(WorkflowEdgeSchema).readonly(),
-    maxTransitions: z.number().int().positive().safe(),
+    maxTransitions: z.number().int().nonnegative().safe(),
     createdAt: z.iso.datetime({ offset: true }),
-    parentRevisionId: RevisionIdSchema.optional(),
+    updatedAt: z.iso.datetime({ offset: true }),
   })
   .readonly()

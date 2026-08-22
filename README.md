@@ -1,7 +1,8 @@
 # Slopify
 
-Slopify is a native local workbench for defining and running isolated AI delivery
-workflows against Git repositories.
+Slopify is a native local workbench for defining and running directed graphs of AI
+agents. Each run captures its workflow, agent configurations, connector grants, and
+optional input variables so historical execution remains inspectable and reproducible.
 
 ## Requirements
 

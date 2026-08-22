@@ -70,7 +70,7 @@ describe('same-origin API proxy', () => {
 
     await POST(
       new Request('http://web:3000/api/runs', {
-        body: JSON.stringify({ taskReference: 'LOOP-40' }),
+        body: JSON.stringify({ workflowId: 'delivery-workflow', variables: { task: 'LOOP-40' } }),
         headers: { 'content-type': 'application/json' },
         method: 'POST',
       }),
@@ -81,7 +81,10 @@ describe('same-origin API proxy', () => {
     if (!(forwardedRequest instanceof Request)) throw new TypeError('Expected a Request')
     expect(forwardedRequest.method).toBe('POST')
     expect(forwardedRequest.headers.get('content-type')).toBe('application/json')
-    await expect(forwardedRequest.json()).resolves.toEqual({ taskReference: 'LOOP-40' })
+    await expect(forwardedRequest.json()).resolves.toEqual({
+      workflowId: 'delivery-workflow',
+      variables: { task: 'LOOP-40' },
+    })
   })
 
   it('maps the public API health path to the Hono health endpoint', async () => {
@@ -105,7 +108,7 @@ describe('same-origin API proxy', () => {
     )
 
     const response = await PUT(
-      new Request('http://web:3000/api/project-profiles/profile-01', {
+      new Request('http://web:3000/api/connections/connection-01/credential', {
         body: '{}',
         method: 'PUT',
       }),

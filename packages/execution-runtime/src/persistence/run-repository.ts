@@ -3,9 +3,7 @@ import {
   ArtifactTypeSchema,
   NodeIdSchema,
   OutcomeNameSchema,
-  ProjectProfileIdSchema,
   RepositoryIdSchema,
-  RevisionIdSchema,
   RunIdSchema,
   RunStatusSchema,
   WorkflowIdSchema,
@@ -16,6 +14,8 @@ import {
   type RunId,
   type RunStatus,
 } from '@loop/contracts'
+import { WorkflowSchema, type Workflow } from '@loop/workflow-model'
+import { z } from 'zod'
 
 import { appendEvent } from '../events/event-store.js'
 import type { WorkbenchDatabase } from './database.js'
@@ -26,12 +26,17 @@ import { parseJson, serializeJson, type JsonValue } from './json.js'
 export interface RunRecord {
   readonly runId: RunId
   readonly workflowId: string
-  readonly revisionId: string
+  readonly workflowSnapshot: Workflow
+  readonly variables: Readonly<Record<string, JsonValue>>
+  readonly missingVariables: readonly string[]
+  /** Legacy execution-only data retained while historical deterministic executors exist. */
   readonly profileSnapshotId: string
+  /** Legacy execution-only data retained while historical deterministic executors exist. */
   readonly taskReference: string
+  /** Legacy execution-only data retained while historical deterministic executors exist. */
   readonly notes: string | null
+  /** Legacy execution-only data retained while historical deterministic executors exist. */
   readonly taskSnapshot: JsonValue
-  readonly effectiveConfiguration: JsonValue
   readonly status: RunStatus
   readonly currentNodeId: string | null
   readonly transitionCount: number
@@ -43,13 +48,16 @@ export interface RunRecord {
 export interface CreateRunInput {
   readonly runId: string
   readonly workflowId: string
-  readonly revisionId: string
-  readonly profileSnapshotId: string
-  readonly taskReference: string
-  readonly notes?: string
-  readonly taskSnapshot: JsonValue
-  readonly effectiveConfiguration: JsonValue
+  readonly workflowSnapshot: Workflow
+  readonly variables: Readonly<Record<string, JsonValue>>
+  readonly missingVariables: readonly string[]
   readonly createdAt: string
+  readonly legacy?: Readonly<{
+    profileSnapshotId: string
+    taskReference: string
+    notes?: string
+    taskSnapshot: JsonValue
+  }>
 }
 
 export interface ListRunsInput {
@@ -322,12 +330,13 @@ export interface RunRepository {
 interface RunRow {
   readonly run_id: string
   readonly workflow_id: string
-  readonly revision_id: string
-  readonly profile_snapshot_id: string
-  readonly task_reference: string
+  readonly variables_json: string
+  readonly missing_variables_json: string
+  readonly profile_snapshot_id: string | null
+  readonly task_reference: string | null
   readonly notes: string | null
-  readonly task_snapshot_json: string
-  readonly effective_configuration_json: string
+  readonly task_snapshot_json: string | null
+  readonly workflow_snapshot_json: string
   readonly status: string
   readonly current_node_id: string | null
   readonly transition_count: number
@@ -445,12 +454,15 @@ const requireNonBlank = (value: string, field: string): string => {
 const mapRun = (row: RunRow): RunRecord => ({
   runId: RunIdSchema.parse(row.run_id),
   workflowId: WorkflowIdSchema.parse(row.workflow_id),
-  revisionId: RevisionIdSchema.parse(row.revision_id),
-  profileSnapshotId: row.profile_snapshot_id,
-  taskReference: row.task_reference,
+  workflowSnapshot: WorkflowSchema.parse(parseJson(row.workflow_snapshot_json)),
+  variables: z.record(z.string(), z.json()).parse(parseJson(row.variables_json)),
+  missingVariables: z
+    .array(z.string().min(1).max(128))
+    .parse(parseJson(row.missing_variables_json)),
+  profileSnapshotId: row.profile_snapshot_id ?? '',
+  taskReference: row.task_reference ?? '',
   notes: row.notes,
-  taskSnapshot: parseJson(row.task_snapshot_json),
-  effectiveConfiguration: parseJson(row.effective_configuration_json),
+  taskSnapshot: row.task_snapshot_json === null ? {} : parseJson(row.task_snapshot_json),
   status: RunStatusSchema.parse(row.status),
   currentNodeId: row.current_node_id,
   transitionCount: row.transition_count,
@@ -468,8 +480,9 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
     const runId = RunIdSchema.parse(runIdInput)
     const row = connection
       .prepare(
-        `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
-                task_reference, notes, task_snapshot_json, effective_configuration_json,
+        `SELECT run_id, workflow_id, variables_json, missing_variables_json,
+                profile_snapshot_id, task_reference, notes, task_snapshot_json,
+                workflow_snapshot_json,
                 status, current_node_id, transition_count, created_at,
                 started_at, completed_at
          FROM runs
@@ -482,8 +495,9 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
   const findActive = (): RunRecord | undefined => {
     const row = connection
       .prepare(
-        `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
-                task_reference, notes, task_snapshot_json, effective_configuration_json,
+        `SELECT run_id, workflow_id, variables_json, missing_variables_json,
+                profile_snapshot_id, task_reference, notes, task_snapshot_json,
+                workflow_snapshot_json,
                 status, current_node_id, transition_count, created_at,
                 started_at, completed_at
          FROM runs
@@ -542,61 +556,71 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
     create(input) {
       const runId = RunIdSchema.parse(input.runId)
       const workflowId = WorkflowIdSchema.parse(input.workflowId)
-      const revisionId = RevisionIdSchema.parse(input.revisionId)
-      requireNonBlank(input.profileSnapshotId, 'profileSnapshotId')
-      requireNonBlank(input.taskReference, 'taskReference')
-      const taskSnapshotJson = serializeJson(input.taskSnapshot, 'taskSnapshot')
-      const effectiveConfigurationJson = serializeJson(
-        input.effectiveConfiguration,
-        'effectiveConfiguration',
-      )
+      const workflowSnapshot = WorkflowSchema.parse(input.workflowSnapshot)
+      if (workflowSnapshot.workflowId !== workflowId) {
+        throw new PersistenceError({
+          code: 'PERSISTENCE_VALIDATION_FAILED',
+          message: 'Workflow snapshot does not match the run workflow',
+          details: { workflowId, snapshotWorkflowId: workflowSnapshot.workflowId },
+        })
+      }
+      const variables = z.record(z.string().min(1).max(128), z.json()).parse(input.variables)
+      const missingVariables = z.array(z.string().min(1).max(128)).parse(input.missingVariables)
+      const variablesJson = serializeJson(variables, 'variables')
+      const missingVariablesJson = serializeJson(missingVariables, 'missingVariables')
+      const workflowSnapshotJson = serializeJson(workflowSnapshot, 'workflowSnapshot')
+      if (input.legacy !== undefined) {
+        requireNonBlank(input.legacy.profileSnapshotId, 'legacy.profileSnapshotId')
+        requireNonBlank(input.legacy.taskReference, 'legacy.taskReference')
+      }
+      const taskSnapshotJson =
+        input.legacy === undefined
+          ? null
+          : serializeJson(input.legacy.taskSnapshot, 'legacy.taskSnapshot')
 
       try {
         connection
           .transaction(() => {
-            const snapshot = connection
-              .prepare(
-                `SELECT profile_id
-                 FROM project_profile_snapshots
-                 WHERE snapshot_id = ?`,
-              )
-              .get(input.profileSnapshotId) as ProfileSnapshotReferenceRow | undefined
-            if (snapshot?.profile_id === undefined) {
-              throw new PersistenceError({
-                code: 'PERSISTENCE_NOT_FOUND',
-                message: 'Project profile snapshot was not found',
-                details: { profileSnapshotId: input.profileSnapshotId },
-              })
+            if (input.legacy !== undefined) {
+              const snapshot = connection
+                .prepare(
+                  `SELECT profile_id
+                   FROM project_profile_snapshots
+                   WHERE snapshot_id = ?`,
+                )
+                .get(input.legacy.profileSnapshotId) as ProfileSnapshotReferenceRow | undefined
+              if (snapshot?.profile_id === undefined) {
+                throw new PersistenceError({
+                  code: 'PERSISTENCE_NOT_FOUND',
+                  message: 'Project profile snapshot was not found',
+                  details: { profileSnapshotId: input.legacy.profileSnapshotId },
+                })
+              }
             }
-
             connection
               .prepare(
                 `INSERT INTO runs (
-                   run_id, workflow_id, revision_id, profile_snapshot_id,
-                   task_reference, notes, task_snapshot_json, effective_configuration_json,
-                   status, created_at
-                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?)`,
+                   run_id, workflow_id, variables_json, missing_variables_json,
+                   workflow_snapshot_json, status, created_at, profile_snapshot_id,
+                   task_reference, task_snapshot_json, notes
+                 ) VALUES (?, ?, ?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)`,
               )
               .run(
                 runId,
                 workflowId,
-                revisionId,
-                input.profileSnapshotId,
-                input.taskReference,
-                input.notes ?? null,
-                taskSnapshotJson,
-                effectiveConfigurationJson,
+                variablesJson,
+                missingVariablesJson,
+                workflowSnapshotJson,
                 input.createdAt,
+                input.legacy?.profileSnapshotId ?? null,
+                input.legacy?.taskReference ?? null,
+                taskSnapshotJson,
+                input.legacy?.notes ?? null,
               )
             appendEvent(connection, runId, {
               type: 'RUN_STARTED',
               timestamp: input.createdAt,
-              data: {
-                workflowId,
-                revisionId,
-                profileId: ProjectProfileIdSchema.parse(snapshot.profile_id),
-                taskReference: input.taskReference,
-              },
+              data: { workflowId },
             })
           })
           .immediate()
@@ -641,8 +665,9 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       }
       const rows = connection
         .prepare(
-          `SELECT run_id, workflow_id, revision_id, profile_snapshot_id,
-                  task_reference, notes, task_snapshot_json, effective_configuration_json,
+          `SELECT run_id, workflow_id, variables_json, missing_variables_json,
+                  profile_snapshot_id, task_reference, notes, task_snapshot_json,
+                  workflow_snapshot_json,
                   status, current_node_id, transition_count, created_at,
                   started_at, completed_at
            FROM runs

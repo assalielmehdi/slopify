@@ -1,23 +1,28 @@
 import { describe, expect, it } from 'vitest'
 
+import { createPredefinedV1Workflow } from '@loop/workflow-model'
+
 import {
   createOrchestratedRunService,
   createRunService,
   createSqliteCoordinatorStateStore,
   createSqliteExecutionMessageQueue,
   createWorkflowCoordinator,
-  type ReadinessService,
 } from '../../src/index.js'
-import {
-  TEST_PROFILE_ID,
-  TEST_REVISION_ID,
-  TEST_WORKFLOW_ID,
-  createPersistenceFixture,
-} from '../persistence/test-fixture.js'
+import { TEST_WORKFLOW_ID, createPersistenceFixture } from '../persistence/test-fixture.js'
 
 describe('orchestrated run service', () => {
   it('starts the durable coordinator before returning the admitted run', async () => {
-    const fixture = createPersistenceFixture()
+    const fixture = createPersistenceFixture(
+      createPredefinedV1Workflow({
+        createdAt: '2026-08-20T12:00:00.000Z',
+        agentDefaults: {
+          provider: 'test-provider',
+          model: 'test-model',
+          thinkingLevel: 'medium',
+        },
+      }),
+    )
     try {
       const queue = createSqliteExecutionMessageQueue(fixture.database)
       const coordinator = createWorkflowCoordinator({
@@ -28,32 +33,21 @@ describe('orchestrated run service', () => {
       })
       const base = createRunService({
         events: fixture.events,
-        profiles: fixture.profiles,
-        readiness: {
-          check: async () => ({ ready: true, checks: [] }),
-        } as unknown as ReadinessService,
         runs: fixture.runs,
-        tasks: { resolve: async () => ({ taskId: 'TASK-1', title: 'Run me' }) },
         workflows: fixture.workflows,
         createRunId: () => 'run-orchestrated',
-        createProfileSnapshotId: () => 'snapshot-orchestrated',
         now: () => '2026-08-20T12:00:00.000Z',
       })
       const service = createOrchestratedRunService({ runs: base, coordinator })
 
-      const run = await service.create({
-        taskReference: 'TASK-1',
-        workflowId: TEST_WORKFLOW_ID,
-        revisionId: TEST_REVISION_ID,
-        profileId: TEST_PROFILE_ID,
-      })
+      const run = await service.create({ workflowId: TEST_WORKFLOW_ID })
 
       expect(run).toMatchObject({ runId: 'run-orchestrated', status: 'RUNNING' })
       expect(queue.list({ destination: 'WORKER' })).toEqual([
         expect.objectContaining({
           type: 'EXECUTE_JOB',
           runId: 'run-orchestrated',
-          payload: { version: 1, nodeId: fixture.revision.startNodeId, jobKind: 'command' },
+          payload: { version: 1, nodeId: fixture.workflow.startNodeId, jobKind: 'agent' },
         }),
       ])
       expect(service.get('run-orchestrated')?.events).toEqual(

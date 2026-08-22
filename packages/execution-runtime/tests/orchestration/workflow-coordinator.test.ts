@@ -29,7 +29,6 @@ const agent = (id: string) => ({
 
 const workflow = {
   workflowId: 'workflow-01',
-  revisionId: 'revision-01',
   name: 'Parallel workflow',
   description: 'Exercises fan-out and a deterministic join.',
   startNodeId: 'start',
@@ -49,11 +48,62 @@ const workflow = {
   ],
   maxTransitions: 8,
   createdAt: '2026-08-20T10:00:00.000Z',
+  updatedAt: '2026-08-20T10:00:00.000Z',
 }
 
 const timestamp = '2026-08-20T10:00:00.000Z'
 
 describe('workflow coordinator', () => {
+  it('completes a run when its leaf agent succeeds', () => {
+    const queue = createInMemoryExecutionMessageQueue()
+    const state = createInMemoryCoordinatorStateStore()
+    const coordinator = createWorkflowCoordinator({
+      coordinatorId: 'coordinator-01',
+      queue,
+      state,
+      now: () => timestamp,
+    })
+    coordinator.start({
+      runId: 'run-leaf',
+      workflow: {
+        ...workflow,
+        name: 'Leaf agent',
+        startNodeId: 'leaf',
+        nodes: [agent('leaf')],
+        edges: [],
+        maxTransitions: 0,
+      },
+    })
+    const leaf = state.get('run-leaf')?.executions[0]
+    if (leaf === undefined) throw new Error('leaf execution missing')
+    queue.enqueue({
+      id: 'success-leaf',
+      destination: 'COORDINATOR',
+      type: 'JOB_SUCCEEDED',
+      runId: 'run-leaf',
+      nodeExecutionId: leaf.nodeExecutionId,
+      attemptId: leaf.attemptId,
+      payload: {
+        version: 1,
+        outcome: 'completed',
+        output: {},
+        artifactIds: [],
+        completedAt: timestamp,
+        durationMs: 1,
+      },
+      availableAt: timestamp,
+      createdAt: timestamp,
+    })
+
+    coordinator.runOnce()
+
+    expect(state.get('run-leaf')).toMatchObject({
+      status: 'SUCCEEDED',
+      transitionCount: 0,
+      executions: [expect.objectContaining({ nodeId: 'leaf', status: 'SUCCEEDED' })],
+    })
+  })
+
   it('owns graph routing, schedules fan-out concurrently, and waits for every join input', () => {
     const queue = createInMemoryExecutionMessageQueue()
     const state = createInMemoryCoordinatorStateStore()

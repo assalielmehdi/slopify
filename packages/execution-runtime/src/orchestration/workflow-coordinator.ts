@@ -1,4 +1,4 @@
-import { WorkflowRevisionSchema, type WorkflowRevision } from '@loop/workflow-model'
+import { WorkflowSchema, type Workflow } from '@loop/workflow-model'
 import { z } from 'zod'
 
 import {
@@ -27,7 +27,7 @@ export interface CoordinatorNodeExecution {
 
 export interface CoordinatorRunState {
   readonly runId: string
-  readonly workflow: WorkflowRevision
+  readonly workflow: Workflow
   readonly status: CoordinatorRunStatus
   readonly transitionCount: number
   readonly executions: readonly CoordinatorNodeExecution[]
@@ -39,7 +39,7 @@ export interface CoordinatorRunState {
 
 export const CoordinatorRunStateSchema = z.strictObject({
   runId: z.string().trim().min(1).max(256),
-  workflow: WorkflowRevisionSchema,
+  workflow: WorkflowSchema,
   status: z.enum(['RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED']),
   transitionCount: z.number().int().nonnegative().safe(),
   executions: z.array(
@@ -110,13 +110,13 @@ export const createInMemoryCoordinatorStateStore = (): CoordinatorStateStore => 
 }
 
 export interface WorkflowCoordinator {
-  start(input: Readonly<{ runId: string; workflow: WorkflowRevision }>): CoordinatorRunState
+  start(input: Readonly<{ runId: string; workflow: Workflow }>): CoordinatorRunState
   runOnce(): boolean
   get(runId: string): CoordinatorRunState | undefined
   cancel(runId: string, reason: string): CoordinatorRunState
 }
 
-const jobKind = (node: WorkflowRevision['nodes'][number]): 'agent' | 'command' | 'router' => {
+const jobKind = (node: Workflow['nodes'][number]): 'agent' | 'command' | 'router' => {
   if (node.type === 'terminal') throw new TypeError('Terminal nodes are not jobs')
   return node.type
 }
@@ -169,7 +169,9 @@ export const createWorkflowCoordinator = (
 
   return {
     start(input) {
-      const workflow = WorkflowRevisionSchema.parse(input.workflow)
+      const workflow = WorkflowSchema.parse(input.workflow)
+      if (workflow.startNodeId === null)
+        throw new TypeError('Runnable workflow requires a start node')
       const timestamp = now()
       let state: CoordinatorRunState = {
         runId: input.runId,
@@ -306,7 +308,16 @@ export const createWorkflowCoordinator = (
           },
           payload.completedAt,
         )
-        const outgoing = next.workflow.edges.filter(
+        const candidateOutgoing = next.workflow.edges.filter(
+          (edge) => edge.sourceNodeId === execution.nodeId,
+        )
+        if (candidateOutgoing.length === 0) {
+          const completedNode = next.workflow.nodes.find(({ id }) => id === execution.nodeId)
+          return completedNode?.type === 'agent'
+            ? { ...next, status: 'SUCCEEDED' }
+            : { ...next, status: 'FAILED', failureCode: 'JOB_KIND_UNSUPPORTED' }
+        }
+        const outgoing = candidateOutgoing.filter(
           (edge) => edge.sourceNodeId === execution.nodeId && edge.outcome === payload.outcome,
         )
         if (outgoing.length === 0)
