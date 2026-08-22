@@ -116,7 +116,7 @@
   --sidebar-ring: #1c1c1c;
 }
 
-/* Tool-call disclosure: grid rows avoid measuring dynamic trace content. */
+/* Agent work disclosure: grid rows avoid measuring dynamic trace content. */
 .t-acc-panel {
   display: grid;
   grid-template-rows: 0fr;
@@ -147,7 +147,7 @@
 
 .t-acc-chevron {
   display: inline-flex;
-  transform: scaleY(1);
+  transform: rotate(0deg);
   transform-origin: center;
   transition: transform var(--acc-chevron) var(--acc-ease);
 }
@@ -157,7 +157,7 @@
 }
 
 .t-acc[data-open='true'] .t-acc-chevron {
-  transform: scaleY(-1);
+  transform: rotate(90deg);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { AgentTraceEventSchema, type AgentTraceEvent } from '@slopify/contracts'
@@ -14,7 +14,7 @@ const traceEvent = (
 ): AgentTraceEvent =>
   AgentTraceEventSchema.parse({
     sequence,
-    timestamp: `2026-08-22T10:00:0${sequence}.000Z`,
+    timestamp: `2026-08-22T10:00:${String(sequence).padStart(2, '0')}.000Z`,
     type,
     data,
   })
@@ -22,7 +22,7 @@ const traceEvent = (
 afterEach(cleanup)
 
 describe('AgentTranscript', () => {
-  it('renders only reasoning, completed tool calls, and the final result as separate bubbles', () => {
+  it('collapses work details by default, keeps the result visible, and groups adjacent tools', () => {
     const { container } = render(
       <AgentTranscript
         prompt="Implement the requested change."
@@ -46,7 +46,25 @@ describe('AgentTranscript', () => {
             content: 'Read 42 lines',
           }),
           traceEvent(5, 'AGENT_MESSAGE', { content: 'Intermediate assistant text.' }),
-          traceEvent(6, 'AGENT_RESULT', {
+          traceEvent(6, 'AGENT_TOOL_STARTED', {
+            toolCallId: 'tool-02',
+            toolName: 'bash',
+            input: { command: 'git status' },
+          }),
+          traceEvent(7, 'AGENT_TOOL_COMPLETED', {
+            toolCallId: 'tool-02',
+            toolName: 'bash',
+            status: 'failed',
+            content: 'Command failed',
+          }),
+          traceEvent(8, 'AGENT_REASONING', { content: 'I should inspect another file.' }),
+          traceEvent(9, 'AGENT_TOOL_COMPLETED', {
+            toolCallId: 'tool-03',
+            toolName: 'read_file',
+            status: 'succeeded',
+            content: 'Read another file',
+          }),
+          traceEvent(10, 'AGENT_RESULT', {
             result: {
               outcome: 'completed',
               summary: 'The implementation is complete.',
@@ -60,18 +78,29 @@ describe('AgentTranscript', () => {
               cacheReadTokens: 0,
               cacheWriteTokens: 0,
             },
-            durationMs: 1_250,
+            durationMs: 93_000,
           }),
         ]}
       />,
     )
 
+    const disclosure = screen.getByRole('button', { name: 'Worked for 1m 33s' })
+    expect(disclosure.getAttribute('aria-expanded')).toBe('false')
+    expect(screen.queryByText('I should inspect the source first.')).toBeNull()
+    expect(screen.queryByText('read_file and bash')).toBeNull()
+    expect(screen.getByText('The implementation is complete.')).toBeTruthy()
+
+    fireEvent.click(disclosure)
+
+    expect(disclosure.getAttribute('aria-expanded')).toBe('true')
     const reasoning = screen.getByText('I should inspect the source first.')
     expect(reasoning.closest('[data-message-kind="reasoning"]')).toBeTruthy()
-    expect(screen.getByText('Reasoning')).toBeTruthy()
-    const toolCall = screen.getByText('read_file').closest('[data-message-kind="tool"]')
-    expect(toolCall).toBeTruthy()
-    expect(toolCall?.getAttribute('data-variant')).toBe('muted')
+    expect(screen.getAllByText('Reasoning')).toHaveLength(2)
+    const toolGroups = container.querySelectorAll('[data-message-kind="tool-group"]')
+    expect(toolGroups).toHaveLength(2)
+    expect(screen.getByText('read_file and bash')).toBeTruthy()
+    expect(screen.getByText('1 failed')).toBeTruthy()
+    expect(screen.getAllByText('read_file')).toHaveLength(1)
     expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
     expect(screen.queryByText(/apps\/web\/app\/page.tsx/)).toBeNull()
     expect(screen.queryByText('Reading 42 lines')).toBeNull()
@@ -79,7 +108,7 @@ describe('AgentTranscript', () => {
     const response = screen.getByText('The implementation is complete.')
     expect(response.closest('[data-message-kind="result"]')).toBeTruthy()
     expect(screen.queryByText('Intermediate assistant text.')).toBeNull()
-    expect(container.querySelectorAll('[data-message-kind]')).toHaveLength(3)
+    expect(container.querySelectorAll('[data-message-kind]')).toHaveLength(5)
   })
 
   it('renders Markdown in prompt and results while reasoning remains plain text', () => {
@@ -119,6 +148,7 @@ describe('AgentTranscript', () => {
     expect(screen.getByRole('link', { name: 'ClickUp' }).getAttribute('href')).toBe(
       'https://app.clickup.com',
     )
+    fireEvent.click(screen.getByRole('button', { name: 'Worked for 1.3 s' }))
     const firstReasoningParagraph = screen
       .getByText('Planning JSON retrieval with curl')
       .closest('p')
@@ -183,6 +213,7 @@ describe('AgentTranscript', () => {
       />,
     )
 
+    fireEvent.click(screen.getByRole('button', { name: 'Work details' }))
     expect(screen.getByText('read_file')).toBeTruthy()
     expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
   })
@@ -219,7 +250,7 @@ describe('AgentTranscript', () => {
     expect(screen.queryByText('Agent started')).toBeNull()
     expect(screen.queryByText('Session ready')).toBeNull()
     expect(screen.getByText('The implementation is complete.')).toBeTruthy()
-    expect(screen.queryByText('Completed in 1.3 s')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Worked for 1.3 s' })).toBeTruthy()
     expect(screen.queryByText('Recorded trace')).toBeNull()
   })
 
