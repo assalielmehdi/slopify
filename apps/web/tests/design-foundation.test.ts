@@ -70,9 +70,9 @@ describe('the application design foundation', () => {
   })
 
   it.each([
-    'components/settings/connection-settings.tsx',
+    'components/workflow/agent-drawer.tsx',
     'components/settings/project-settings.tsx',
-    'components/runs/live-run.tsx',
+    'components/runs/run-node-details-dialog.tsx',
     'components/ui/sheet.tsx',
     'components/ui/toast.tsx',
   ])('%s uses the shared overlay elevation instead of an arbitrary heavy shadow', (path) => {
@@ -112,7 +112,7 @@ describe('the application design foundation', () => {
   })
 
   it('limits button animation to properties that communicate state', () => {
-    const button = source('components/ui/button.tsx')
+    const button = source('lib/button-variants.ts')
 
     expect(button).not.toContain('transition-all')
     expect(button).toContain(

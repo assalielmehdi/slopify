@@ -1,65 +1,89 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import type { ConnectionCatalogEntry } from '@slopify/contracts'
+import { useEffect, useReducer } from 'react'
 
+import type { HarnessDescriptor, Project } from '@slopify/contracts'
 import {
   AgentNodeSchema,
   WorkflowEdgeSchema,
-  isLinearAgentWorkflow,
-  validateWorkflow,
-  type AgentNode,
   type Workflow,
+  type WorkflowConfiguration,
   type WorkflowEdge,
 } from '@slopify/workflow-model'
 
+import { StartRunDrawer } from '@/components/runs/start-run-drawer'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
-import { StartRunDrawer } from '@/components/runs/start-run-drawer'
-import {
-  createApiClient,
-  type ApiClient,
-  type ConnectionRecord,
-  type SkillRecord,
-} from '@/lib/api-client'
+import { AgentDrawer } from '@/components/workflow/agent-drawer'
+import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
+import { WorkflowConfigDrawer } from '@/components/workflow/workflow-config-drawer'
+import { createAgentId, type AgentDrawerMode, type AgentFormValue } from '@/lib/agent-drawer'
+import { createApiClient, type ApiClient } from '@/lib/api-client'
 import { showUndoDeletionToast } from '@/lib/undo-deletion-toast'
-
-import {
-  AgentDrawer,
-  createAgentId,
-  type AgentDrawerMode,
-  type AgentFormValue,
-} from './agent-drawer'
-import { WorkflowCanvas } from './workflow-canvas'
+import { workflowRunDisabledReason } from '@/lib/workflow-run-readiness'
 
 type WorkflowEditorClient = Pick<
   ApiClient,
-  'getWorkflow' | 'listConnections' | 'listSkills' | 'listWorkflows' | 'startRun' | 'updateWorkflow'
+  'getWorkflow' | 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun' | 'updateWorkflow'
 >
 
 export interface WorkflowWorkbenchProps {
   readonly client?: WorkflowEditorClient
 }
 
+interface WorkflowWorkbenchState {
+  readonly workflow: Workflow | undefined
+  readonly selectedNodeId: string | undefined
+  readonly drawer: AgentDrawerMode | undefined
+  readonly runDrawerOpen: boolean
+  readonly configDrawerOpen: boolean
+  readonly draftSourceNodeId: string | undefined
+  readonly harnesses: readonly HarnessDescriptor[]
+  readonly projects: readonly Project[]
+  readonly loading: boolean
+  readonly saving: boolean
+  readonly error: string | undefined
+  readonly harnessError: string | undefined
+  readonly projectCatalogError: string | undefined
+  readonly saveError: string | undefined
+}
+
+type WorkflowWorkbenchUpdate =
+  | Partial<WorkflowWorkbenchState>
+  | ((state: WorkflowWorkbenchState) => Partial<WorkflowWorkbenchState>)
+
+const initialWorkflowWorkbenchState: WorkflowWorkbenchState = {
+  workflow: undefined,
+  selectedNodeId: undefined,
+  drawer: undefined,
+  runDrawerOpen: false,
+  configDrawerOpen: false,
+  draftSourceNodeId: undefined,
+  harnesses: [],
+  projects: [],
+  loading: true,
+  saving: false,
+  error: undefined,
+  harnessError: undefined,
+  projectCatalogError: undefined,
+  saveError: undefined,
+}
+
+const updateWorkflowWorkbench = (
+  state: WorkflowWorkbenchState,
+  update: WorkflowWorkbenchUpdate,
+): WorkflowWorkbenchState => ({
+  ...state,
+  ...(typeof update === 'function' ? update(state) : update),
+})
+
 const defaultClient = createApiClient()
 
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'The workflow could not be loaded'
 
-export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchProps) {
-  const [workflow, setWorkflow] = useState<Workflow>()
-  const [selectedNodeId, setSelectedNodeId] = useState<string>()
-  const [drawer, setDrawer] = useState<AgentDrawerMode>()
-  const [runDrawerOpen, setRunDrawerOpen] = useState(false)
-  const [draftSourceNodeId, setDraftSourceNodeId] = useState<string>()
-  const [connections, setConnections] = useState<readonly ConnectionRecord[]>([])
-  const [connectionCatalog, setConnectionCatalog] = useState<readonly ConnectionCatalogEntry[]>([])
-  const [skills, setSkills] = useState<readonly SkillRecord[]>([])
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string>()
-  const [catalogError, setCatalogError] = useState<string>()
-  const [saveError, setSaveError] = useState<string>()
+function useWorkflowWorkbench(client: WorkflowEditorClient) {
+  const [state, update] = useReducer(updateWorkflowWorkbench, initialWorkflowWorkbenchState)
 
   useEffect(() => {
     let active = true
@@ -70,27 +94,23 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
         const catalogEntry = workflows[0]
         if (catalogEntry === undefined) throw new Error('No workflows available')
 
-        const [current, nextSkills, connectionCatalog] = await Promise.all([
+        const [current, harnesses, projects] = await Promise.all([
           client.getWorkflow(catalogEntry.workflowId),
-          client.listSkills().catch((cause: unknown) => {
-            setCatalogError(errorMessage(cause))
-            return [] as const
+          client.listHarnesses().catch((cause: unknown) => {
+            if (active) update({ harnessError: errorMessage(cause) })
+            return [] as readonly HarnessDescriptor[]
           }),
-          client.listConnections().catch((cause: unknown) => {
-            setCatalogError(errorMessage(cause))
-            return { catalog: [], connections: [] } as const
+          client.listProjects().catch((cause: unknown) => {
+            if (active) update({ projectCatalogError: errorMessage(cause) })
+            return [] as const
           }),
         ])
         if (!active) return
-
-        setWorkflow(current)
-        setSkills(nextSkills)
-        setConnectionCatalog(connectionCatalog.catalog)
-        setConnections(connectionCatalog.connections)
+        update({ workflow: current, harnesses, projects })
       } catch (cause) {
-        if (active) setError(errorMessage(cause))
+        if (active) update({ error: errorMessage(cause) })
       } finally {
-        if (active) setLoading(false)
+        if (active) update({ loading: false })
       }
     }
 
@@ -100,87 +120,83 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
     }
   }, [client])
 
+  const { workflow } = state
   if (workflow === undefined) {
-    return (
-      <section className="flex h-full w-full flex-col" aria-busy={loading} aria-label="Editor">
-        {error === undefined ? (
-          <div role="status" aria-label="Loading workflow" className="h-full">
-            <Skeleton className="h-full min-h-136 w-full" />
-          </div>
-        ) : (
-          <Alert variant="destructive">
-            <AlertTitle>Workflow unavailable</AlertTitle>
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-      </section>
-    )
+    return { ready: false as const, error: state.error, loading: state.loading }
   }
 
-  const validation = validateWorkflow(workflow, { registeredCommandIds: new Set() })
-  const runnable =
-    validation.valid &&
-    isLinearAgentWorkflow(workflow) &&
-    workflow.nodes.length > 0 &&
-    workflow.nodes.every(({ type }) => type === 'agent')
+  const availableHarnesses = state.harnesses.filter(
+    ({ availability }) => availability === 'AVAILABLE',
+  )
+  const addAgentDisabledReason =
+    availableHarnesses.length > 0
+      ? undefined
+      : state.harnessError === undefined
+        ? state.harnesses[0] === undefined
+          ? 'Install a supported harness from Harnesses before adding an agent.'
+          : `${state.harnesses[0].name} is unavailable. Open Harnesses for installation instructions before adding an agent.`
+        : 'Harnesses could not be loaded. Open Harnesses and resolve discovery before adding an agent.'
+  const runDisabledReason = workflowRunDisabledReason({
+    workflow,
+    ...(state.harnessError === undefined ? { harnesses: state.harnesses } : {}),
+    ...(state.projectCatalogError === undefined ? { projects: state.projects } : {}),
+  })
+  const runnable = runDisabledReason === undefined
 
   const persist = async (next: Workflow) => {
-    setSaving(true)
-    setSaveError(undefined)
+    update({ saving: true, saveError: undefined })
     try {
       const saved = await client.updateWorkflow(workflow.workflowId, next)
-      setWorkflow(saved)
+      update({ workflow: saved })
       return saved
     } catch (cause) {
-      setSaveError(errorMessage(cause))
+      update({ saveError: errorMessage(cause) })
       return undefined
     } finally {
-      setSaving(false)
+      update({ saving: false })
     }
   }
 
   const selectNode = (nodeId: string) => {
-    setSelectedNodeId(nodeId)
-    const agent = workflow.nodes.find(
-      (node): node is AgentNode => node.type === 'agent' && node.id === nodeId,
-    )
-    if (agent !== undefined) {
-      setDraftSourceNodeId(undefined)
-      setDrawer({ kind: 'edit', agent })
-      setSaveError(undefined)
-    }
+    const agent = workflow.nodes.find((node) => node.id === nodeId)
+    update({
+      configDrawerOpen: false,
+      runDrawerOpen: false,
+      selectedNodeId: nodeId,
+      ...(agent === undefined
+        ? {}
+        : {
+            draftSourceNodeId: undefined,
+            drawer: { kind: 'edit', agent },
+            saveError: undefined,
+          }),
+    })
   }
 
   const saveAgent = async (value: AgentFormValue) => {
+    const editedAgentId = state.drawer?.kind === 'edit' ? state.drawer.agent.id : undefined
     const currentAgent =
-      drawer?.kind === 'edit'
-        ? workflow.nodes.find(
-            (node): node is AgentNode => node.type === 'agent' && node.id === drawer.agent.id,
-          )
-        : undefined
+      editedAgentId === undefined
+        ? undefined
+        : workflow.nodes.find((node) => node.id === editedAgentId)
     const agent = AgentNodeSchema.parse({
       ...(currentAgent ?? {}),
       type: 'agent',
       id: value.id,
       name: value.name,
-      job: {
-        kind: 'agent',
-        prompt: value.prompt,
-        inference: value.inference,
-        connectorIds: value.connectorIds,
-        skillSnapshotRefs: value.skillSnapshotRefs,
-      },
+      prompt: value.prompt,
+      harness: value.harness,
     })
-    const nextNodes =
+    const nodes =
       currentAgent === undefined
         ? [...workflow.nodes, agent]
         : workflow.nodes.map((node) => (node.id === currentAgent.id ? agent : node))
-    const nextEdges =
-      currentAgent === undefined && draftSourceNodeId !== undefined
+    const edges =
+      currentAgent === undefined && state.draftSourceNodeId !== undefined
         ? [
             ...workflow.edges,
             WorkflowEdgeSchema.parse({
-              sourceNodeId: draftSourceNodeId,
+              sourceNodeId: state.draftSourceNodeId,
               targetNodeId: agent.id,
               outcome: 'completed',
               label: 'Completed',
@@ -190,30 +206,27 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
     const saved = await persist({
       ...workflow,
       startNodeId: workflow.startNodeId ?? agent.id,
-      nodes: nextNodes,
-      edges: nextEdges,
+      nodes,
+      edges,
     })
-    if (saved !== undefined) {
-      setSelectedNodeId(agent.id)
-      setDraftSourceNodeId(undefined)
-      return true
-    }
-    return false
+    if (saved === undefined) return false
+    update({ selectedNodeId: agent.id, draftSourceNodeId: undefined })
+    return true
   }
 
+  const saveWorkflowConfiguration = async (configuration: WorkflowConfiguration) =>
+    (await persist({ ...workflow, configuration })) !== undefined
+
   const deleteAgent = async () => {
-    if (drawer?.kind !== 'edit') return false
-    const deletedAgent = workflow.nodes.find(
-      (node): node is AgentNode => node.type === 'agent' && node.id === drawer.agent.id,
-    )
+    if (state.drawer?.kind !== 'edit') return false
+    const deletedAgentId = state.drawer.agent.id
+    const deletedAgent = workflow.nodes.find((node) => node.id === deletedAgentId)
     if (deletedAgent === undefined) return false
 
     const previousWorkflow = workflow
-    const incomingEdge = workflow.edges.find((edge) => edge.targetNodeId === deletedAgent.id)
-    const outgoingEdge = workflow.edges.find((edge) => edge.sourceNodeId === deletedAgent.id)
     const remainingNodes = workflow.nodes.filter((node) => node.id !== deletedAgent.id)
     const remainingNodeIds = new Set(remainingNodes.map(({ id }) => id))
-    const nextStartNodeId =
+    const startNodeId =
       workflow.startNodeId !== deletedAgent.id
         ? workflow.startNodeId
         : (workflow.edges.find(
@@ -222,29 +235,14 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
           )?.targetNodeId ??
           remainingNodes[0]?.id ??
           null)
-    const remainingEdges = workflow.edges.filter(
+    const edges = workflow.edges.filter(
       (edge) => edge.sourceNodeId !== deletedAgent.id && edge.targetNodeId !== deletedAgent.id,
     )
-    const saved = await persist({
-      ...workflow,
-      startNodeId: nextStartNodeId,
-      nodes: remainingNodes,
-      edges:
-        incomingEdge === undefined || outgoingEdge === undefined
-          ? remainingEdges
-          : [
-              ...remainingEdges,
-              WorkflowEdgeSchema.parse({
-                sourceNodeId: incomingEdge.sourceNodeId,
-                targetNodeId: outgoingEdge.targetNodeId,
-                outcome: 'completed',
-                label: 'Completed',
-              }),
-            ],
-    })
-    if (saved === undefined) return false
+    if ((await persist({ ...workflow, startNodeId, nodes: remainingNodes, edges })) === undefined) {
+      return false
+    }
 
-    setSelectedNodeId(undefined)
+    update({ selectedNodeId: undefined })
     showUndoDeletionToast({
       receipt: { undoExpiresAt: new Date(Date.now() + 10_000).toISOString() },
       deletedTitle: 'Agent deleted',
@@ -253,7 +251,7 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
       restoredDescription: `${deletedAgent.name} is available in the workflow again.`,
       async onUndo() {
         const restored = await client.updateWorkflow(previousWorkflow.workflowId, previousWorkflow)
-        setWorkflow(restored)
+        update({ workflow: restored })
       },
     })
     return true
@@ -263,13 +261,12 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
     if (
       sourceNodeId === targetNodeId ||
       targetNodeId === workflow.startNodeId ||
-      workflow.edges.some((edge) => edge.sourceNodeId === sourceNodeId) ||
-      workflow.edges.some((edge) => edge.targetNodeId === targetNodeId) ||
       workflow.edges.some(
         (edge) => edge.sourceNodeId === sourceNodeId && edge.targetNodeId === targetNodeId,
       )
-    )
+    ) {
       return
+    }
     await persist({
       ...workflow,
       edges: [
@@ -292,14 +289,17 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
   }
 
   const draftNodeId =
-    draftSourceNodeId === undefined
+    state.draftSourceNodeId === undefined
       ? undefined
       : createAgentId('New agent', new Set(workflow.nodes.map(({ id }) => id)))
-  const draftSource = workflow.nodes.find(
-    (node): node is AgentNode => node.type === 'agent' && node.id === draftSourceNodeId,
-  )
+  const draftSource = workflow.nodes.find((node) => node.id === state.draftSourceNodeId)
+  const draftHarness =
+    draftSource === undefined
+      ? undefined
+      : (availableHarnesses.find(({ harnessId }) => harnessId === draftSource.harness.harnessId) ??
+        availableHarnesses[0])
   const canvasWorkflow =
-    draftNodeId === undefined || draftSource === undefined
+    draftNodeId === undefined || draftSource === undefined || draftHarness === undefined
       ? workflow
       : {
           ...workflow,
@@ -309,19 +309,17 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
               type: 'agent',
               id: draftNodeId,
               name: 'New agent',
-              job: {
-                kind: 'agent',
-                prompt: 'Configure this agent.',
-                inference: draftSource.job.inference,
-                connectorIds: [],
-                skillSnapshotRefs: [],
-              },
+              prompt: 'Configure this agent.',
+              harness:
+                draftHarness.harnessId === draftSource.harness.harnessId
+                  ? draftSource.harness
+                  : { harnessId: draftHarness.harnessId },
             }),
           ],
           edges: [
             ...workflow.edges,
             WorkflowEdgeSchema.parse({
-              sourceNodeId: draftSourceNodeId,
+              sourceNodeId: state.draftSourceNodeId,
               targetNodeId: draftNodeId,
               outcome: 'completed',
               label: 'Completed',
@@ -329,66 +327,130 @@ export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchP
           ],
         }
 
-  const openCreateDrawer = (sourceNodeId?: string) => {
-    if (
-      sourceNodeId !== undefined &&
-      workflow.edges.some((edge) => edge.sourceNodeId === sourceNodeId)
-    )
-      return
-    setRunDrawerOpen(false)
-    setDraftSourceNodeId(sourceNodeId)
-    setSelectedNodeId(
-      sourceNodeId === undefined
-        ? undefined
-        : createAgentId('New agent', new Set(workflow.nodes.map(({ id }) => id))),
-    )
-    setDrawer({ kind: 'create' })
-    setSaveError(undefined)
-  }
+  const closeAgentDrawer = () =>
+    update({ draftSourceNodeId: undefined, selectedNodeId: undefined, drawer: undefined })
 
-  const closeDrawer = () => {
-    setDraftSourceNodeId(undefined)
-    setSelectedNodeId(undefined)
-    setDrawer(undefined)
+  return {
+    ready: true as const,
+    ...state,
+    workflow,
+    canvasWorkflow,
+    addAgentDisabledReason,
+    runDisabledReason,
+    runnable,
+    selectNode,
+    saveAgent,
+    saveWorkflowConfiguration,
+    deleteAgent,
+    connectAgents,
+    deleteEdge,
+    closeAgentDrawer,
+    closeConfigDrawer: () => update({ configDrawerOpen: false }),
+    closeRunDrawer: () => update({ runDrawerOpen: false }),
+    openCreateDrawer: (sourceNodeId?: string) => {
+      if (addAgentDisabledReason !== undefined) return
+      update({
+        runDrawerOpen: false,
+        configDrawerOpen: false,
+        draftSourceNodeId: sourceNodeId,
+        selectedNodeId:
+          sourceNodeId === undefined
+            ? undefined
+            : createAgentId('New agent', new Set(workflow.nodes.map(({ id }) => id))),
+        drawer: { kind: 'create' },
+        saveError: undefined,
+      })
+    },
+    openRunDrawer: () => {
+      if (!runnable) return
+      update({
+        draftSourceNodeId: undefined,
+        selectedNodeId: undefined,
+        drawer: undefined,
+        configDrawerOpen: false,
+        runDrawerOpen: true,
+      })
+    },
+    openConfigDrawer: () =>
+      update({
+        draftSourceNodeId: undefined,
+        selectedNodeId: undefined,
+        drawer: undefined,
+        runDrawerOpen: false,
+        configDrawerOpen: true,
+        saveError: undefined,
+      }),
   }
+}
 
-  const openRunDrawer = () => {
-    closeDrawer()
-    setRunDrawerOpen(true)
+export function WorkflowWorkbench({ client = defaultClient }: WorkflowWorkbenchProps) {
+  const state = useWorkflowWorkbench(client)
+
+  if (!state.ready) {
+    return (
+      <section
+        aria-busy={state.loading}
+        aria-label="Editor"
+        className="flex h-full w-full flex-col"
+      >
+        {state.error === undefined ? (
+          <div aria-label="Loading workflow" className="h-full" role="status">
+            <Skeleton className="h-full min-h-136 w-full" />
+          </div>
+        ) : (
+          <Alert variant="destructive">
+            <AlertTitle>Workflow unavailable</AlertTitle>
+            <AlertDescription>{state.error}</AlertDescription>
+          </Alert>
+        )}
+      </section>
+    )
   }
 
   return (
-    <section className="relative h-full min-h-0 min-w-0" aria-label="Editor">
+    <section aria-label="Editor" className="relative h-full min-h-0 min-w-0">
       <WorkflowCanvas
-        workflow={canvasWorkflow}
-        selectedNodeId={selectedNodeId}
-        onNodeSelect={selectNode}
-        onAddAgent={openCreateDrawer}
-        onConnect={(source, target) => void connectAgents(source, target)}
-        onEdgeDelete={(edge) => void deleteEdge(edge)}
-        onRun={openRunDrawer}
-        runnable={runnable}
+        addAgentDisabledReason={state.addAgentDisabledReason}
+        onAddAgent={state.openCreateDrawer}
+        onConfigure={state.openConfigDrawer}
+        onConnect={(source, target) => void state.connectAgents(source, target)}
+        onEdgeDelete={(edge) => void state.deleteEdge(edge)}
+        onNodeSelect={state.selectNode}
+        onRun={state.openRunDrawer}
+        runDisabledReason={state.runDisabledReason}
+        runnable={state.runnable}
+        selectedNodeId={state.selectedNodeId}
+        workflow={state.canvasWorkflow}
       />
 
-      {drawer === undefined ? null : (
+      {state.drawer === undefined ? null : (
         <AgentDrawer
-          key={drawer.kind === 'create' ? 'create-agent' : `edit-${drawer.agent.id}`}
-          mode={drawer}
-          existingNodeIds={new Set(workflow.nodes.map(({ id }) => id))}
-          catalog={connectionCatalog}
-          connections={connections}
-          skills={skills}
-          catalogError={catalogError}
-          saveError={saveError}
-          saving={saving}
-          onDelete={deleteAgent}
-          onClose={closeDrawer}
-          onSubmit={saveAgent}
+          key={state.drawer.kind === 'create' ? 'create-agent' : `edit-${state.drawer.agent.id}`}
+          existingNodeIds={new Set(state.workflow.nodes.map(({ id }) => id))}
+          harnessError={state.harnessError}
+          harnesses={state.harnesses}
+          mode={state.drawer}
+          onClose={state.closeAgentDrawer}
+          onDelete={state.deleteAgent}
+          onSubmit={state.saveAgent}
+          saveError={state.saveError}
+          saving={state.saving}
         />
       )}
 
-      {runDrawerOpen ? (
-        <StartRunDrawer client={client} onClose={() => setRunDrawerOpen(false)} />
+      {state.configDrawerOpen ? (
+        <WorkflowConfigDrawer
+          configuration={state.workflow.configuration}
+          error={state.projectCatalogError ?? state.saveError}
+          onClose={state.closeConfigDrawer}
+          onSubmit={state.saveWorkflowConfiguration}
+          projects={state.projects}
+          saving={state.saving}
+        />
+      ) : null}
+
+      {state.runDrawerOpen ? (
+        <StartRunDrawer client={client} onClose={state.closeRunDrawer} />
       ) : null}
     </section>
   )

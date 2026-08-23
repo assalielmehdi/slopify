@@ -101,11 +101,6 @@ export const redactAgentNodeResult = (
     ...result,
     summary: redactor.redact(result.summary),
     data: redactUnknown(result.data, redactor),
-    artifacts: result.artifacts.map((artifact) => ({
-      ...artifact,
-      title: redactor.redact(artifact.title),
-      content: redactor.redact(artifact.content),
-    })),
     evidence: result.evidence.map((evidence) => ({
       ...evidence,
       value: redactor.redact(evidence.value),

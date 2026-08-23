@@ -3,11 +3,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { PersistenceError } from '../../src/index.js'
 import { getDatabaseHandle } from '../../src/persistence/database.js'
 import {
-  TEST_PROFILE,
   TEST_RUN_ID,
-  TEST_TIMESTAMP,
   createPersistenceFixture,
   createRun,
+  createTestAgentWorkflow,
 } from './test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -16,221 +15,166 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup()
 })
 
-describe('workflow and profile repositories', () => {
+describe('current repositories', () => {
   it('saves and replaces the current workflow', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
-
     const updated = {
       ...fixture.workflow,
       name: 'Updated workflow',
-      updatedAt: '2026-08-18T21:00:00Z',
+      updatedAt: '2026-08-23T12:01:00.000Z',
     }
+
     fixture.workflows.save(updated)
 
     expect(fixture.workflows.get(fixture.workflow.workflowId)).toEqual(updated)
     expect(fixture.workflows.list()).toEqual([updated])
   })
 
-  it('keeps a profile snapshot unchanged and in its original canonical order', () => {
+  it('persists current local projects by repository path', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
+    const project = {
+      projectId: 'project-api',
+      name: 'API',
+      repositoryPath: '/workspace/api',
+      createdAt: '2026-08-23T12:00:00.000Z',
+      updatedAt: '2026-08-23T12:00:00.000Z',
+    } as const
 
-    fixture.profiles.save(
-      {
-        ...TEST_PROFILE,
-        displayName: 'Changed profile',
-        repositories: [...TEST_PROFILE.repositories].reverse(),
-      },
-      '2026-08-18T21:00:00Z',
-    )
+    fixture.projects.add(project)
 
-    const snapshot = fixture.profiles.getSnapshot(fixture.snapshot.snapshotId)
-    expect(snapshot).toEqual(fixture.snapshot)
-    expect(snapshot?.repositories.map(({ repositoryId }) => repositoryId)).toEqual([
-      'api',
-      'web',
-      'docs',
-    ])
-  })
-})
-
-describe('run repository transactions', () => {
-  it('stores exact run snapshots independently from caller mutation', () => {
-    const fixture = createPersistenceFixture()
-    fixtures.push(fixture)
-    const workflowSnapshot = { ...fixture.workflow, name: 'Snapshot workflow' }
-
-    createRun(fixture, workflowSnapshot)
-    workflowSnapshot.name = 'mutated-after-create'
-
-    expect(fixture.runs.get(TEST_RUN_ID)).toMatchObject({
-      taskSnapshot: { id: 'TASK-1', name: 'Implement persistence' },
-      workflowSnapshot: { name: 'Snapshot workflow' },
-      status: 'PENDING',
-    })
+    expect(fixture.projects.get(project.projectId)).toEqual(project)
+    expect(fixture.projects.findByPath(project.repositoryPath)).toEqual(project)
+    expect(fixture.projects.list()).toEqual([project])
   })
 
-  it('rolls back a run state change when its event cannot be persisted', () => {
-    const fixture = createPersistenceFixture()
+  it('atomically stores immutable workflow, variable, and project snapshots', () => {
+    const workflow = createTestAgentWorkflow({
+      projectIds: ['project-api'],
+      variables: ['task'],
+      prompt: 'Implement {{ task }}.',
+    })
+    const fixture = createPersistenceFixture(workflow)
     fixtures.push(fixture)
-    createRun(fixture)
-    const connection = getDatabaseHandle(fixture.database)
-    connection.exec(`
-      CREATE TRIGGER reject_status_event
-      BEFORE INSERT ON run_events
-      WHEN NEW.event_type = 'RUN_STATUS_CHANGED'
-      BEGIN
-        SELECT RAISE(ABORT, 'planned event failure');
-      END;
-    `)
+    const mutableWorkflow = structuredClone(workflow)
+    const mutableVariables = { task: { title: 'Persistence cleanup' } }
 
-    expect(() =>
-      fixture.runs.changeStatus({
-        runId: TEST_RUN_ID,
-        expectedStatus: 'PENDING',
-        status: 'RUNNING',
-        timestamp: '2026-08-18T20:00:01Z',
-      }),
-    ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_WRITE_FAILED' }))
-
-    expect(fixture.runs.get(TEST_RUN_ID)?.status).toBe('PENDING')
-    expect(fixture.events.list({ runId: TEST_RUN_ID, limit: 20 }).events).toHaveLength(1)
-  })
-
-  it('stores selections and partial evidence in canonical profile order', () => {
-    const fixture = createPersistenceFixture()
-    fixtures.push(fixture)
-    createRun(fixture)
-
-    fixture.runs.selectRepositories({
+    fixture.runs.create({
       runId: TEST_RUN_ID,
-      selectedAt: '2026-08-18T20:00:02Z',
-      selection: {
-        selected: [
-          {
-            repositoryId: 'docs',
-            rationale: 'The runbook documents the endpoint',
-            responsibility: 'Update runbook',
-          },
-          {
-            repositoryId: 'api',
-            rationale: 'The endpoint is owned here',
-            responsibility: 'Implement endpoints',
-          },
-        ],
-        excluded: [{ repositoryId: 'web', rationale: 'No UI change is required' }],
-      },
-    })
-    fixture.runs.upsertDeliveryEvidence({
-      runId: TEST_RUN_ID,
-      repositoryId: 'docs',
-      status: 'FAILED',
-      evidence: { failure: 'push rejected' },
-      updatedAt: '2026-08-18T20:00:04Z',
-    })
-    fixture.runs.upsertDeliveryEvidence({
-      runId: TEST_RUN_ID,
-      repositoryId: 'api',
-      status: 'VERIFIED',
-      gitlabProject: 'group/api',
-      mergeRequestIid: 12,
-      mergeRequestUrl: 'https://gitlab.example/group/api/-/merge_requests/12',
-      sourceBranch: 'ai/task-1-run-01',
-      targetBranch: 'main',
-      headSha: '0123456789abcdef',
-      evidence: { verified: true },
-      updatedAt: '2026-08-18T20:00:03Z',
-    })
-
-    expect(fixture.runs.listSelections(TEST_RUN_ID)).toEqual([
-      {
-        repositoryId: 'api',
-        profilePosition: 0,
-        rationale: 'The endpoint is owned here',
-        responsibility: 'Implement endpoints',
-      },
-      {
-        repositoryId: 'docs',
-        profilePosition: 2,
-        rationale: 'The runbook documents the endpoint',
-        responsibility: 'Update runbook',
-      },
-    ])
-    expect(fixture.runs.getRepositorySelection(TEST_RUN_ID)).toEqual({
-      selected: [
+      workflowId: workflow.workflowId,
+      workflowSnapshot: mutableWorkflow,
+      variables: mutableVariables,
+      createdAt: workflow.createdAt,
+      projects: [
         {
-          repositoryId: 'api',
-          rationale: 'The endpoint is owned here',
-          responsibility: 'Implement endpoints',
-        },
-        {
-          repositoryId: 'docs',
-          rationale: 'The runbook documents the endpoint',
-          responsibility: 'Update runbook',
+          projectId: 'project-api',
+          name: 'API',
+          repositoryPath: '/workspace/api',
+          baseSha: 'a'.repeat(40),
+          sourceBranch: 'main',
         },
       ],
-      excluded: [{ repositoryId: 'web', rationale: 'No UI change is required' }],
     })
-    expect(
-      fixture.runs.listDeliveryEvidence(TEST_RUN_ID).map(({ repositoryId, status }) => ({
-        repositoryId,
-        status,
-      })),
-    ).toEqual([
-      { repositoryId: 'api', status: 'VERIFIED' },
-      { repositoryId: 'docs', status: 'FAILED' },
+    mutableWorkflow.name = 'Mutated'
+    mutableVariables.task.title = 'Mutated'
+
+    expect(fixture.runs.get(TEST_RUN_ID)).toMatchObject({
+      workflowSnapshot: { name: 'Test workflow' },
+      variables: { task: { title: 'Persistence cleanup' } },
+      status: 'PENDING',
+    })
+    expect(fixture.runs.listRunProjects(TEST_RUN_ID)).toMatchObject([
+      { projectId: 'project-api', isPrimary: true, baseSha: 'a'.repeat(40) },
+    ])
+    expect(fixture.events.list({ runId: TEST_RUN_ID, limit: 20 }).events).toMatchObject([
+      { type: 'RUN_STARTED', data: { workflowId: workflow.workflowId } },
     ])
   })
 
-  it('rejects a repository outside the immutable profile snapshot without partial writes', () => {
+  it('lists current runs with pagination and status filters', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
     createRun(fixture)
 
-    expect(() =>
-      fixture.runs.selectRepositories({
-        runId: TEST_RUN_ID,
-        selectedAt: TEST_TIMESTAMP,
-        selection: {
-          selected: [
-            {
-              repositoryId: 'api',
-              rationale: 'API change',
-              responsibility: 'Implement endpoints',
-            },
-            {
-              repositoryId: 'unknown',
-              rationale: 'Invalid candidate',
-              responsibility: 'Must fail',
-            },
-          ],
-          excluded: [
-            { repositoryId: 'web', rationale: 'No UI change' },
-            { repositoryId: 'docs', rationale: 'No documentation change' },
-          ],
-        },
-      }),
-    ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_VALIDATION_FAILED' }))
-    expect(fixture.runs.listSelections(TEST_RUN_ID)).toEqual([])
+    expect(fixture.runs.list({ page: 1, pageSize: 20 })).toMatchObject({
+      data: [{ runId: TEST_RUN_ID, status: 'PENDING' }],
+      pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+    })
+    expect(fixture.runs.list({ page: 1, pageSize: 20, statuses: ['SUCCEEDED'] }).data).toEqual([])
   })
 
-  it('uses stable persistence errors for state conflicts', () => {
+  it('lists only current node execution diagnostics with a required attempt id', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
     createRun(fixture)
+    getDatabaseHandle(fixture.database)
+      .prepare(
+        `INSERT INTO node_executions (
+           node_execution_id, run_id, node_id, execution_index, attempt_id,
+           status, output_json, outcome, started_at, completed_at, duration_ms
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        'node-execution-01',
+        TEST_RUN_ID,
+        'agent',
+        1,
+        'attempt-01',
+        'SUCCEEDED',
+        JSON.stringify({ summary: 'Done' }),
+        'completed',
+        '2026-08-23T12:00:00.000Z',
+        '2026-08-23T12:00:01.000Z',
+        1_000,
+      )
 
-    try {
-      fixture.runs.changeStatus({
+    expect(fixture.runs.listNodeExecutions(TEST_RUN_ID)).toEqual([
+      {
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'attempt-01',
+        nodeId: 'agent',
+        executionIndex: 1,
+        status: 'SUCCEEDED',
+        output: { summary: 'Done' },
+        outcome: 'completed',
+        errorCode: null,
+        errorMessage: null,
+        startedAt: '2026-08-23T12:00:00.000Z',
+        completedAt: '2026-08-23T12:00:01.000Z',
+        durationMs: 1_000,
+      },
+    ])
+    expect(() =>
+      getDatabaseHandle(fixture.database)
+        .prepare(
+          `INSERT INTO node_executions (
+             node_execution_id, run_id, node_id, execution_index, attempt_id, status
+           ) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run('node-execution-02', TEST_RUN_ID, 'agent', 2, '', 'PENDING'),
+    ).toThrow()
+  })
+
+  it('rolls back a run whose project evidence does not match the workflow', () => {
+    const workflow = createTestAgentWorkflow({ projectIds: ['project-api'] })
+    const fixture = createPersistenceFixture(workflow)
+    fixtures.push(fixture)
+
+    expect(() =>
+      fixture.runs.create({
         runId: TEST_RUN_ID,
-        expectedStatus: 'RUNNING',
-        status: 'FAILED',
-        timestamp: TEST_TIMESTAMP,
-      })
-      expect.unreachable('Expected a persistence conflict')
-    } catch (error) {
-      expect(error).toBeInstanceOf(PersistenceError)
-      expect(error).toMatchObject({ code: 'PERSISTENCE_CONFLICT' })
-    }
+        workflowId: workflow.workflowId,
+        workflowSnapshot: workflow,
+        variables: {},
+        createdAt: workflow.createdAt,
+        projects: [],
+      }),
+    ).toThrowError(
+      expect.objectContaining({
+        code: 'PERSISTENCE_VALIDATION_FAILED',
+      }) satisfies Partial<PersistenceError>,
+    )
+    expect(fixture.runs.get(TEST_RUN_ID)).toBeUndefined()
   })
 })

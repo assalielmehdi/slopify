@@ -74,9 +74,8 @@ describe('AppShell', () => {
       within(primaryNavigation).getByRole('link', { name: 'Editor' }).getAttribute('aria-current'),
     ).toBe('page')
     expect(
-      within(primaryNavigation).getByRole('link', { name: 'Providers' }).getAttribute('href'),
-    ).toBe('/providers')
-    expect(within(primaryNavigation).queryByRole('link', { name: 'Agent profiles' })).toBeNull()
+      within(primaryNavigation).getByRole('link', { name: 'Harnesses' }).getAttribute('href'),
+    ).toBe('/harnesses')
     expect(screen.getByRole('link', { name: 'Preferences' }).getAttribute('href')).toBe(
       '/preferences',
     )
@@ -86,7 +85,6 @@ describe('AppShell', () => {
     expect(within(breadcrumb).getByRole('link', { name: 'Editor' }).getAttribute('href')).toBe('/')
     expect(screen.getByRole('main').className).not.toContain('p-6')
     expect(screen.getByText('Workflow graph')).toBeTruthy()
-    expect(screen.queryByText('Local operator')).toBeNull()
   })
 
   it('places the collapse control in the title row and toggles with B outside inputs', () => {
@@ -137,9 +135,7 @@ describe('AppShell', () => {
     ['/runs', 'Runs', ['Runs']],
     ['/runs/new', 'Runs', ['Runs', 'New run']],
     ['/runs/run-123', 'Runs', ['Runs', '123']],
-    ['/providers', 'Providers', ['Providers']],
-    ['/connectors', 'Connectors', ['Connectors']],
-    ['/skills', 'Skills', ['Skills']],
+    ['/harnesses', 'Harnesses', ['Harnesses']],
     ['/projects', 'Projects', ['Projects']],
     ['/preferences', 'Preferences', ['Preferences']],
   ])('maps %s to the %s destination and breadcrumb', (pathname, linkName, crumbs) => {
@@ -173,7 +169,7 @@ describe('AppShell', () => {
     ).toEqual(crumbs)
   })
 
-  it.each(['/providers', '/connectors', '/skills', '/projects', '/runs', '/runs/run-123'])(
+  it.each(['/harnesses', '/projects', '/runs', '/runs/run-123'])(
     'does not add shell padding around the full-width route %s',
     (pathname) => {
       navigation.pathname = pathname

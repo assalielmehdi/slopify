@@ -2,40 +2,29 @@ import { describe, expect, it } from 'vitest'
 
 import {
   WorkflowSchema,
-  createPredefinedV1Workflow,
+  getDeclaredOutcomes,
   getIncomingEdges,
   getOutgoingEdges,
   getReachableNodeIds,
   hasDirectedCycle,
-  inspectWorkflowGraph,
-  isLinearAgentWorkflow,
 } from '../src/index.js'
 
+const agent = (id: string) => ({
+  type: 'agent',
+  id,
+  name: id,
+  prompt: `Complete ${id}.`,
+  harness: { harnessId: 'pi' },
+})
+
 const workflow = WorkflowSchema.parse({
-  workflowId: 'delivery-workflow',
-  name: 'Delivery workflow',
-  description: 'Deliver one approved task.',
+  schemaVersion: 1,
+  workflowId: 'workflow-01',
+  name: 'Workflow',
+  description: 'Coordinate agents.',
+  configuration: { projectIds: [], primaryProjectId: null, variables: [] },
   startNodeId: 'start',
-  nodes: [
-    {
-      type: 'command',
-      id: 'start',
-      name: 'Start',
-      description: 'Start the workflow.',
-      commandId: 'start-workflow',
-      outcomes: ['ready'],
-      timeoutSeconds: 30,
-    },
-    {
-      type: 'router',
-      id: 'review',
-      name: 'Review',
-      description: 'Route review results.',
-      inputField: 'review.result',
-      outcomes: ['clean', 'retry'],
-    },
-    { type: 'terminal', id: 'done', name: 'Done', terminalStatus: 'SUCCEEDED' },
-  ],
+  nodes: [agent('start'), agent('review'), agent('done')],
   edges: [
     { sourceNodeId: 'start', outcome: 'ready', targetNodeId: 'review', label: 'Ready' },
     { sourceNodeId: 'review', outcome: 'clean', targetNodeId: 'done', label: 'Clean' },
@@ -47,83 +36,22 @@ const workflow = WorkflowSchema.parse({
 })
 
 describe('workflow graph queries', () => {
-  it('returns incoming and outgoing edges in workflow order', () => {
+  it('returns graph relationships and outcomes in workflow order', () => {
     expect(getIncomingEdges(workflow, 'review')).toEqual([workflow.edges[0], workflow.edges[2]])
     expect(getOutgoingEdges(workflow, 'review')).toEqual([workflow.edges[1], workflow.edges[2]])
-  })
-
-  it('returns reachable node IDs in workflow order', () => {
+    expect(getDeclaredOutcomes(workflow, 'review')).toEqual(['clean', 'retry'])
     expect(getReachableNodeIds(workflow)).toEqual(['start', 'review', 'done'])
   })
 
-  it('detects a directed cycle without rejecting it', () => {
+  it('detects cycles without rejecting them', () => {
     expect(hasDirectedCycle(workflow)).toBe(true)
-
-    const acyclic = WorkflowSchema.parse({
-      ...workflow,
-      edges: workflow.edges.filter((edge) => edge.outcome !== 'retry'),
-    })
-    expect(hasDirectedCycle(acyclic)).toBe(false)
-  })
-
-  it('builds frozen display-ready node relationships', () => {
-    const inspection = inspectWorkflowGraph(workflow)
-
-    expect(inspection.hasCycle).toBe(true)
-    expect(inspection.nodes).toEqual([
-      expect.objectContaining({ node: workflow.nodes[0], isStart: true, isTerminal: false }),
-      expect.objectContaining({
-        node: workflow.nodes[1],
-        isStart: false,
-        isTerminal: false,
-        incomingEdges: [workflow.edges[0], workflow.edges[2]],
-        outgoingEdges: [workflow.edges[1], workflow.edges[2]],
-      }),
-      expect.objectContaining({ node: workflow.nodes[2], isStart: false, isTerminal: true }),
-    ])
-    expect(Object.isFrozen(inspection)).toBe(true)
-    expect(Object.isFrozen(inspection.nodes)).toBe(true)
-    expect(inspection.nodes.every(Object.isFrozen)).toBe(true)
-    expect(inspection.nodes.every((node) => Object.isFrozen(node.incomingEdges))).toBe(true)
-    expect(inspection.nodes.every((node) => Object.isFrozen(node.outgoingEdges))).toBe(true)
-  })
-
-  it('recognizes only one connected agent chain as a linear workflow', () => {
-    const single = createPredefinedV1Workflow({
-      createdAt: '2026-08-22T12:00:00Z',
-      agentDefaults: { provider: 'test', model: 'test', thinkingLevel: 'low' },
-    })
-    const firstAgent = single.nodes[0]
-    if (firstAgent?.type !== 'agent') throw new Error('Expected an agent fixture')
-    const chain = WorkflowSchema.parse({
-      ...single,
-      nodes: [firstAgent, { ...firstAgent, id: 'second-agent', name: 'Second agent' }],
-      edges: [
-        {
-          sourceNodeId: firstAgent.id,
-          targetNodeId: 'second-agent',
-          outcome: 'completed',
-          label: 'Completed',
-        },
-      ],
-    })
-    const branch = WorkflowSchema.parse({
-      ...chain,
-      nodes: [...chain.nodes, { ...firstAgent, id: 'third-agent', name: 'Third agent' }],
-      edges: [
-        ...chain.edges,
-        {
-          sourceNodeId: firstAgent.id,
-          targetNodeId: 'third-agent',
-          outcome: 'completed',
-          label: 'Completed',
-        },
-      ],
-    })
-
-    expect(isLinearAgentWorkflow(single)).toBe(true)
-    expect(isLinearAgentWorkflow(chain)).toBe(true)
-    expect(isLinearAgentWorkflow(branch)).toBe(false)
-    expect(isLinearAgentWorkflow(workflow)).toBe(false)
+    expect(
+      hasDirectedCycle(
+        WorkflowSchema.parse({
+          ...workflow,
+          edges: workflow.edges.filter((edge) => edge.outcome !== 'retry'),
+        }),
+      ),
+    ).toBe(false)
   })
 })

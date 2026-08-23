@@ -9,6 +9,7 @@ describe('execution pump', () => {
     let workerCalls = 0
     const pump = createExecutionPump({
       pollIntervalMs: 1_000,
+      recoverExpired: vi.fn(() => order.push('recover')),
       coordinator: {
         runOnce: vi.fn(() => {
           order.push('coordinator')
@@ -29,6 +30,7 @@ describe('execution pump', () => {
     await pump.wake()
 
     expect(order).toEqual([
+      'recover',
       'coordinator',
       'worker',
       'coordinator',
@@ -52,6 +54,7 @@ describe('execution pump', () => {
     }
     const pump = createExecutionPump({
       pollIntervalMs: 1_000,
+      recoverExpired: vi.fn(),
       coordinator: { runOnce: () => false },
       worker,
     })

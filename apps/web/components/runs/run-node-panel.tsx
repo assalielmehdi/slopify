@@ -3,12 +3,11 @@ import type { AgentNode } from '@slopify/workflow-model'
 
 import { AgentTranscript } from '@/components/runs/agent-transcript'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
 
 interface NodeExecutionSnapshot {
-  readonly attemptId: string | null
+  readonly attemptId: string
   readonly completedAt: string | null
   readonly durationMs: number | null
   readonly errorCode: string | null
@@ -20,10 +19,8 @@ interface NodeExecutionSnapshot {
 }
 
 export interface RunNodePanelProps {
-  readonly connectorNames: Readonly<Record<string, string>>
   readonly execution: NodeExecutionSnapshot | undefined
   readonly node: AgentNode
-  readonly providerName: string | undefined
   readonly status: NodeExecutionStatus
   readonly trace: AgentTrace | undefined
   readonly traceError: string | undefined
@@ -34,7 +31,7 @@ function DefinitionList({
   items,
 }: Readonly<{ items: readonly (readonly [label: string, value: string])[] }>) {
   return (
-    <dl className="grid grid-cols-3 gap-4">
+    <dl className="grid grid-cols-2 gap-4 sm:grid-cols-4">
       {items.map(([label, value]) => (
         <div className="min-w-0" key={label}>
           <dt className="text-xs/4 text-muted-foreground">{label}</dt>
@@ -47,48 +44,37 @@ function DefinitionList({
   )
 }
 
-function CapabilityRow({
-  empty,
-  label,
-  links,
-}: Readonly<{
-  empty: string
-  label: string
-  links: readonly Readonly<{ href: string; id: string; label: string }>[]
-}>) {
-  return (
-    <div className="grid grid-cols-[5rem_minmax(0,1fr)] items-start gap-3">
-      <p className="pt-0.5 text-xs/4 font-medium text-muted-foreground">{label}</p>
-      {links.length === 0 ? (
-        <p className="text-sm/5 text-muted-foreground">{empty}</p>
-      ) : (
-        <div className="flex flex-wrap gap-1.5">
-          {links.map((link) => (
-            <Badge
-              key={link.id}
-              variant="outline"
-              render={<a href={link.href} aria-label={link.label} />}
-            >
-              {link.label}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
+const harnessLabel = (harnessId: string): string => (harnessId === 'pi' ? 'Pi' : harnessId)
 
 export function RunNodePanel({
-  connectorNames,
   execution,
   node,
-  providerName,
   status,
   trace,
   traceError,
   traceLoading,
 }: RunNodePanelProps) {
   const runtimeConfiguration = trace?.header.configuration
+  const harnessConfiguration = trace?.header.configuration
+  const displayedHarness =
+    harnessConfiguration === undefined
+      ? harnessLabel(node.harness.harnessId)
+      : harnessLabel(harnessConfiguration.harnessId)
+  const displayedModel = harnessConfiguration?.model ?? node.harness.modelId ?? 'Harness default'
+  const displayedThinking =
+    harnessConfiguration?.thinkingLevel ?? node.harness.thinkingLevel ?? 'Harness default'
+  const configurationItems: (readonly [string, string])[] = [
+    ['Harness', displayedHarness],
+    ...(harnessConfiguration === undefined
+      ? []
+      : ([['Version', harnessConfiguration.harnessVersion]] as const)),
+    ['Model', displayedModel],
+    ['Thinking', displayedThinking],
+  ]
+  const primaryProject = harnessConfiguration?.projects.find(
+    ({ projectId }) => projectId === harnessConfiguration.primaryProjectId,
+  )
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid shrink-0 content-start gap-8 p-6">
@@ -100,38 +86,38 @@ export function RunNodePanel({
         )}
 
         <section className="grid" aria-label="Configuration">
-          <DefinitionList
-            items={[
-              [
-                'Provider',
-                providerName ?? runtimeConfiguration?.provider ?? node.job.inference.connectionId,
-              ],
-              ['Model', runtimeConfiguration?.model ?? node.job.inference.modelId],
-              ['Thinking', runtimeConfiguration?.thinkingLevel ?? node.job.inference.thinkingLevel],
-            ]}
-          />
+          <DefinitionList items={configurationItems} />
         </section>
 
-        <section className="grid gap-3" aria-label="Available capabilities">
-          <CapabilityRow
-            label="Skills"
-            empty="No skills available."
-            links={node.job.skillSnapshotRefs.map((skill) => ({
-              id: skill.skillId,
-              label: skill.name,
-              href: `/skills?skill=${encodeURIComponent(skill.skillId)}`,
-            }))}
-          />
-          <CapabilityRow
-            label="Connectors"
-            empty="No connectors available."
-            links={node.job.connectorIds.map((connectionId) => ({
-              id: connectionId,
-              label: connectorNames[connectionId] ?? connectionId,
-              href: `/connectors?connection=${encodeURIComponent(connectionId)}`,
-            }))}
-          />
-        </section>
+        {harnessConfiguration === undefined ? null : (
+          <section className="grid gap-3" aria-label="Run worktrees">
+            <div>
+              <h3 className="text-sm/5 font-semibold">Run worktrees</h3>
+              <p className="mt-1 text-xs/4 text-muted-foreground">
+                The agent started in {primaryProject?.name ?? 'the primary project'} and shared
+                these isolated worktrees with the run.
+              </p>
+            </div>
+            <ul className="grid gap-2">
+              {harnessConfiguration.projects.map((project) => (
+                <li className="rounded-md border border-border p-3" key={project.projectId}>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="text-sm/5 font-medium">{project.name}</p>
+                    {project.projectId === harnessConfiguration.primaryProjectId ? (
+                      <span className="text-xs/4 font-medium text-muted-foreground">Primary</span>
+                    ) : null}
+                  </div>
+                  <p className="mt-1 break-all font-mono text-xs/4 text-muted-foreground">
+                    {project.worktreePath}
+                  </p>
+                  <p className="mt-1 truncate font-mono text-xs/4 text-muted-foreground">
+                    {project.sourceBranch ?? 'Detached'} · {project.baseSha}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
       </div>
 
       <Separator />
@@ -153,7 +139,7 @@ export function RunNodePanel({
         ) : (
           <AgentTranscript
             events={trace?.events ?? []}
-            prompt={runtimeConfiguration?.renderedPrompt ?? node.job.prompt}
+            prompt={runtimeConfiguration?.renderedPrompt ?? node.prompt}
             result={execution?.output}
             streaming={status === 'RUNNING' && trace?.complete !== true}
           />

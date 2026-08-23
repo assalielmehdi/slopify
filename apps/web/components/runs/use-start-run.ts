@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 
-import { getWorkflowPromptVariableNames, type Workflow } from '@slopify/workflow-model'
+import type { HarnessDescriptor, Project } from '@slopify/contracts'
+import type { Workflow } from '@slopify/workflow-model'
 
 import type { RunVariableRow } from '@/components/runs/run-configuration-fields'
 import {
@@ -10,32 +11,13 @@ import {
   type StartRunResponse,
   type WorkflowCatalogEntry,
 } from '@/lib/api-client'
+import { workflowRunDisabledReason } from '@/lib/workflow-run-readiness'
 
 export type StartRunErrorScope = 'load' | 'start'
 
 export interface StartRunError {
-  readonly activeRunId?: string | undefined
   readonly message: string
   readonly scope: StartRunErrorScope
-}
-
-const activeRunIdFrom = (details: unknown): string | undefined => {
-  if (typeof details !== 'object' || details === null || !('activeRunId' in details))
-    return undefined
-  const activeRunId = details.activeRunId
-  return typeof activeRunId === 'string' && activeRunId !== '' ? activeRunId : undefined
-}
-
-const missingVariablesFrom = (details: unknown): readonly string[] | undefined => {
-  if (typeof details !== 'object' || details === null || !('missingVariables' in details))
-    return undefined
-  const missingVariables = details.missingVariables
-  if (
-    !Array.isArray(missingVariables) ||
-    !missingVariables.every((value) => typeof value === 'string')
-  )
-    return undefined
-  return missingVariables
 }
 
 const normalizeStartError = (cause: unknown): StartRunError => {
@@ -45,15 +27,13 @@ const normalizeStartError = (cause: unknown): StartRunError => {
   return {
     scope: 'start',
     message: cause.message,
-    ...(cause.code === 'RUN_ACTIVE' ? { activeRunId: activeRunIdFrom(cause.details) } : {}),
   }
 }
 
 const requiredRows = (workflow: Workflow): readonly RunVariableRow[] =>
-  getWorkflowPromptVariableNames(workflow).map((key, index) => ({
+  workflow.configuration.variables.map((key, index) => ({
     id: `required-${index}`,
     key,
-    required: true,
     value: '',
   }))
 
@@ -66,26 +46,19 @@ const parseVariableValue = (value: string): JsonValue => {
 }
 
 const variablesFrom = (rows: readonly RunVariableRow[]): Readonly<Record<string, JsonValue>> =>
-  Object.fromEntries(
-    rows
-      .filter((row) => row.value !== '')
-      .map((row) => [row.key.trim(), parseVariableValue(row.value)] as const)
-      .filter(([key]) => key !== ''),
-  )
+  Object.fromEntries(rows.map((row) => [row.key, parseVariableValue(row.value)] as const))
 
-const hasValidKeys = (rows: readonly RunVariableRow[]): boolean => {
-  const keys = rows.map(({ key }) => key.trim())
-  return keys.every((key) => key !== '') && new Set(keys).size === keys.length
-}
-
-export type StartRunClient = Pick<ApiClient, 'listWorkflows' | 'startRun'>
+export type StartRunClient = Pick<
+  ApiClient,
+  'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'
+>
 
 export function useStartRun(client: StartRunClient) {
-  const nextRowId = useRef(0)
   const [workflows, setWorkflows] = useState<readonly WorkflowCatalogEntry[]>([])
+  const [harnesses, setHarnesses] = useState<readonly HarnessDescriptor[]>([])
+  const [projects, setProjects] = useState<readonly Project[]>([])
   const [workflowId, setWorkflowId] = useState('')
   const [rows, setRows] = useState<readonly RunVariableRow[]>([])
-  const [missingVariables, setMissingVariables] = useState<readonly string[]>([])
   const [startedRun, setStartedRun] = useState<StartRunResponse>()
   const [error, setError] = useState<StartRunError>()
   const [loading, setLoading] = useState(true)
@@ -95,9 +68,15 @@ export function useStartRun(client: StartRunClient) {
     let active = true
     const load = async () => {
       try {
-        const nextWorkflows = await client.listWorkflows()
+        const [nextWorkflows, nextHarnesses, nextProjects] = await Promise.all([
+          client.listWorkflows(),
+          client.listHarnesses(),
+          client.listProjects(),
+        ])
         if (!active) return
         setWorkflows(nextWorkflows)
+        setHarnesses(nextHarnesses)
+        setProjects(nextProjects)
         const workflow = nextWorkflows[0]
         if (workflow !== undefined) {
           setWorkflowId(workflow.workflowId)
@@ -121,16 +100,19 @@ export function useStartRun(client: StartRunClient) {
   }, [client])
 
   const selectedWorkflow = workflows.find((workflow) => workflow.workflowId === workflowId)
-  const runnable = selectedWorkflow?.nodes.some(({ type }) => type === 'agent') === true
+  const runDisabledReason =
+    selectedWorkflow === undefined
+      ? 'Choose a workflow before starting a run.'
+      : workflowRunDisabledReason({ harnesses, projects, workflow: selectedWorkflow })
+  const runnable = runDisabledReason === undefined
   const canStart =
     selectedWorkflow !== undefined &&
     runnable &&
-    hasValidKeys(rows) &&
+    rows.every(({ value }) => value !== '') &&
     !starting &&
     startedRun === undefined
 
-  const resetConfirmation = () => {
-    setMissingVariables([])
+  const reset = () => {
     setStartedRun(undefined)
     setError(undefined)
   }
@@ -139,67 +121,43 @@ export function useStartRun(client: StartRunClient) {
     const workflow = workflows.find(({ workflowId: candidateId }) => candidateId === nextWorkflowId)
     setWorkflowId(nextWorkflowId)
     setRows(workflow === undefined ? [] : requiredRows(workflow))
-    resetConfirmation()
+    reset()
   }
 
-  const addVariable = () => {
-    nextRowId.current += 1
-    setRows((current) => [
-      ...current,
-      { id: `extra-${nextRowId.current}`, key: '', required: false, value: '' },
-    ])
-    resetConfirmation()
+  const changeVariable = (id: string, value: string) => {
+    setRows((current) => current.map((row) => (row.id === id ? { ...row, value } : row)))
+    reset()
   }
 
-  const removeVariable = (id: string) => {
-    setRows((current) => current.filter((row) => row.id !== id || row.required))
-    resetConfirmation()
-  }
-
-  const changeVariable = (id: string, field: 'key' | 'value', value: string) => {
-    setRows((current) => current.map((row) => (row.id === id ? { ...row, [field]: value } : row)))
-    resetConfirmation()
-  }
-
-  const start = async (confirmMissingVariables = false) => {
+  const start = async () => {
     if (!canStart) return
     setStarting(true)
     setStartedRun(undefined)
     setError(undefined)
     try {
-      setStartedRun(
-        await client.startRun({
-          workflowId,
-          variables: variablesFrom(rows),
-          ...(confirmMissingVariables ? { confirmMissingVariables: true } : {}),
-        }),
-      )
-      setMissingVariables([])
+      const run = await client.startRun({
+        workflowId,
+        variables: variablesFrom(rows),
+      })
+      setStartedRun(run)
+      return run
     } catch (cause) {
-      if (cause instanceof ApiClientError && cause.code === 'RUN_VARIABLES_MISSING') {
-        const missing = missingVariablesFrom(cause.details)
-        if (missing !== undefined && missing.length > 0) {
-          setMissingVariables(missing)
-          return
-        }
-      }
       setError(normalizeStartError(cause))
+      return undefined
     } finally {
       setStarting(false)
     }
   }
 
   return {
-    addVariable,
     canStart,
     changeVariable,
     changeWorkflow,
     error,
     loading,
-    missingVariables,
-    removeVariable,
     rows,
     runnable,
+    runDisabledReason,
     selectedWorkflow,
     start,
     startedRun,

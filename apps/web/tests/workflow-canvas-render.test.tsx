@@ -4,9 +4,8 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import type { ReactFlowProps } from '@xyflow/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
-
 import { WorkflowCanvas } from '../components/workflow/workflow-canvas'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const flowRenders = vi.hoisted(
   () =>
@@ -43,13 +42,10 @@ vi.mock('@xyflow/react', async (importOriginal) => {
   }
 })
 
-const workflow = createPredefinedV1Workflow({
+const workflow = createAgentWorkflowFixture({
   createdAt: '2026-08-18T12:00:00Z',
-  agentDefaults: {
-    provider: 'test-provider',
-    model: 'test-model',
-    thinkingLevel: 'high',
-  },
+  modelId: 'test-model',
+  thinkingLevel: 'high',
 })
 
 afterEach(() => {
@@ -64,6 +60,7 @@ describe('WorkflowCanvas rendering', () => {
     const onConnect = vi.fn()
     const onEdgeDelete = vi.fn()
     const onRun = vi.fn()
+    const onConfigure = vi.fn()
     const view = render(
       <>
         <input aria-label="Agent name" />
@@ -75,6 +72,7 @@ describe('WorkflowCanvas rendering', () => {
           onConnect={onConnect}
           onEdgeDelete={onEdgeDelete}
           onRun={onRun}
+          onConfigure={onConfigure}
           runnable
         />
       </>,
@@ -91,6 +89,7 @@ describe('WorkflowCanvas rendering', () => {
           onConnect={onConnect}
           onEdgeDelete={onEdgeDelete}
           onRun={onRun}
+          onConfigure={onConfigure}
           runnable
         />
       </>,
@@ -115,6 +114,8 @@ describe('WorkflowCanvas rendering', () => {
     addFromNode?.()
     expect(onAddAgent).toHaveBeenCalledWith('identify-agent')
     const runButton = screen.getByRole('button', { name: 'Run' })
+    fireEvent.click(screen.getByRole('button', { name: 'Configure workflow' }))
+    expect(onConfigure).toHaveBeenCalledOnce()
     expect(runButton.getAttribute('aria-keyshortcuts')).toBe('R')
     expect(runButton.className).toContain('t-resize')
     expect(runButton.className).toContain('w-8')
@@ -133,5 +134,24 @@ describe('WorkflowCanvas rendering', () => {
     expect(graph.className).toContain('workflow-graph')
     expect(graph.className).not.toContain('border')
     expect(graph.className).not.toContain('rounded')
+  })
+
+  it('shows disabled action reasons without relying on inaccessible title text', () => {
+    render(
+      <WorkflowCanvas
+        workflow={workflow}
+        onNodeSelect={vi.fn()}
+        onAddAgent={vi.fn()}
+        onRun={vi.fn()}
+        addAgentDisabledReason="Pi is unavailable. Open Harnesses for installation instructions."
+        runDisabledReason="Pi is unavailable. Open Harnesses before running."
+      />,
+    )
+
+    const status = screen.getByRole('status', { name: 'Workflow actions unavailable' })
+    expect(status.textContent).toContain('Open Harnesses')
+    expect(screen.getByRole('button', { name: 'Run' }).getAttribute('aria-describedby')).toBe(
+      status.id,
+    )
   })
 })

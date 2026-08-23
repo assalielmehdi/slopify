@@ -5,7 +5,7 @@ import { createEventRedactor, redactAgentNodeResult } from '../src/redaction.js'
 
 describe('agent event redaction', () => {
   it('redacts configured values and recognizable credential forms', () => {
-    const secret = 'sk-provider-secret'
+    const secret = 'host-secret-value'
     const privateKey = [
       '-----BEGIN PRIVATE KEY-----',
       'private-material',
@@ -32,38 +32,31 @@ describe('agent event redaction', () => {
   })
 
   it('withholds a configured secret split across streaming chunks', () => {
-    const redactor = createEventRedactor({ sensitiveValues: ['sk-provider-secret'] })
+    const redactor = createEventRedactor({ sensitiveValues: ['host-secret-value'] })
     const stream = redactor.createStream()
 
-    expect(stream.push('Visible text sk-provider-')).toBe('Visible text ')
-    expect(stream.push('secret remains visible afterward.')).toBe(
+    expect(stream.push('Visible text host-secret-')).toBe('Visible text ')
+    expect(stream.push('value remains visible afterward.')).toBe(
       '[REDACTED] remains visible afterward.',
     )
     expect(stream.finish()).toBe('')
   })
 
   it('withholds secret prefixes from snapshot-style tool updates', () => {
-    const redactor = createEventRedactor({ sensitiveValues: ['sk-provider-secret'] })
+    const redactor = createEventRedactor({ sensitiveValues: ['host-secret-value'] })
 
-    expect(redactor.redactSnapshot('command output: sk-provider-')).toBe('command output: ')
-    expect(redactor.redactSnapshot('command output: sk-provider-secret\ndone')).toBe(
+    expect(redactor.redactSnapshot('command output: host-secret-')).toBe('command output: ')
+    expect(redactor.redactSnapshot('command output: host-secret-value\ndone')).toBe(
       'command output: [REDACTED]\ndone',
     )
   })
 
   it('redacts every string field in the typed node result without mutating it', () => {
-    const secret = 'sk-provider-secret'
+    const secret = 'host-secret-value'
     const result: AgentNodeResult = {
       outcome: 'planned',
       summary: `Planned with ${secret}`,
       data: { nested: [secret, { token: secret }], [secret]: 'key is redacted', count: 2 },
-      artifacts: [
-        {
-          type: 'EXECUTION_PLAN',
-          title: `Plan ${secret}`,
-          content: `Authorization: Bearer ${secret}`,
-        },
-      ],
       evidence: [{ kind: 'note', value: `credential=${secret}` }],
     }
     const redactor = createEventRedactor({ sensitiveValues: [secret] })
@@ -79,7 +72,6 @@ describe('agent event redaction', () => {
         '[REDACTED]': 'key is redacted',
         count: 2,
       },
-      artifacts: [{ title: 'Plan [REDACTED]' }],
       evidence: [{ value: 'credential=[REDACTED]' }],
     })
     expect(JSON.stringify(result)).toContain(secret)

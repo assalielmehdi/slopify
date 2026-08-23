@@ -67,7 +67,7 @@ const leaseExpiration = (now: string, durationMs: number): string => {
 
 const insertMessage = (database: Database, message: NewExecutionMessage): void => {
   decodeExecutionMessagePayload({ type: message.type, payload: message.payload })
-  const expectedDestination = message.type === 'EXECUTE_JOB' ? 'WORKER' : 'COORDINATOR'
+  const expectedDestination = message.type === 'EXECUTE_NODE' ? 'WORKER' : 'COORDINATOR'
   if (message.destination !== expectedDestination)
     throw new TypeError('Message destination is invalid')
   database

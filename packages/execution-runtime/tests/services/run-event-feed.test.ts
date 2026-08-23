@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { RunEventFeedError, createRunEventFeed } from '../../src/index.js'
+import { appendEvent } from '../../src/events/event-store.js'
+import { getDatabaseHandle } from '../../src/persistence/database.js'
 import { TEST_RUN_ID, createPersistenceFixture, createRun } from '../persistence/test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -10,13 +12,28 @@ afterEach(() => {
 })
 
 const terminalize = (fixture: ReturnType<typeof createPersistenceFixture>): void => {
-  fixture.runs.completeRun({
-    runId: TEST_RUN_ID,
-    expectedStatus: 'PENDING',
-    status: 'SUCCEEDED',
-    durationMs: 2_000,
-    timestamp: '2026-08-18T23:30:02Z',
-  })
+  const connection = getDatabaseHandle(fixture.database)
+  connection
+    .transaction(() => {
+      connection
+        .prepare(
+          `UPDATE runs
+           SET status = 'SUCCEEDED', started_at = ?, completed_at = ?
+           WHERE run_id = ? AND status = 'PENDING'`,
+        )
+        .run('2026-08-18T23:30:00Z', '2026-08-18T23:30:02Z', TEST_RUN_ID)
+      appendEvent(connection, TEST_RUN_ID, {
+        type: 'RUN_STATUS_CHANGED',
+        data: { from: 'PENDING', to: 'SUCCEEDED' },
+        timestamp: '2026-08-18T23:30:02Z',
+      })
+      appendEvent(connection, TEST_RUN_ID, {
+        type: 'RUN_COMPLETED',
+        data: { status: 'SUCCEEDED', durationMs: 2_000 },
+        timestamp: '2026-08-18T23:30:02Z',
+      })
+    })
+    .immediate()
 }
 
 describe('run event feed', () => {

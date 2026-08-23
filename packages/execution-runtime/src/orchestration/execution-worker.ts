@@ -1,53 +1,32 @@
 import {
-  ExecuteJobPayloadSchema,
+  ExecuteNodePayloadSchema,
   type ExecutionMessageQueue,
   type NewExecutionMessage,
 } from './execution-messages.js'
 
-export interface JobExecutionInput {
+export interface NodeRunInput {
   readonly runId: string
   readonly nodeExecutionId: string
   readonly attemptId: string
   readonly nodeId: string
 }
 
-export interface JobProgress {
-  readonly eventType: string
-  readonly data: unknown
-}
-
-export type JobRunResult =
+export type NodeRunResult =
   | Readonly<{
       status: 'succeeded'
       outcome: string
       output: unknown
-      artifactIds: readonly string[]
     }>
   | Readonly<{
       status: 'failed'
       code: string
       message: string
-      retryable: boolean
     }>
   | Readonly<{ status: 'cancelled'; reason: string }>
 
-export interface JobRunner {
-  run(
-    input: JobExecutionInput,
-    publishProgress: (progress: JobProgress) => Promise<void>,
-  ): Promise<JobRunResult>
-  cancel(input: JobExecutionInput): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>>
-}
-
-export interface JobRunnerRegistry {
-  resolve(kind: string): JobRunner | undefined
-}
-
-export const createJobRunnerRegistry = (
-  runners: Readonly<Record<string, JobRunner>>,
-): JobRunnerRegistry => {
-  const byKind = new Map(Object.entries(runners))
-  return { resolve: (kind) => byKind.get(kind) }
+export interface NodeRunner {
+  run(input: NodeRunInput): Promise<NodeRunResult>
+  cancel(input: NodeRunInput): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>>
 }
 
 export interface ExecutionWorker {
@@ -55,7 +34,7 @@ export interface ExecutionWorker {
   drain(): Promise<number>
   cancelRun(runId: string): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>>
   shutdown(): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>>
-  activeRunIds(): readonly string[]
+  executingRunIds(): readonly string[]
 }
 
 const validConcurrency = (value: number): number => {
@@ -68,7 +47,7 @@ export const createExecutionWorker = (
   options: Readonly<{
     workerId: string
     queue: ExecutionMessageQueue
-    runners: JobRunnerRegistry
+    runner: NodeRunner
     concurrency?: number
     leaseDurationMs?: number
     leaseRenewalMs?: number
@@ -88,7 +67,7 @@ export const createExecutionWorker = (
   }
   const now = options.now ?? (() => new Date().toISOString())
   const createMessageId = options.createMessageId ?? (() => `message-${crypto.randomUUID()}`)
-  const active = new Map<string, Readonly<{ input: JobExecutionInput; runner: JobRunner }>>()
+  const active = new Map<string, Readonly<{ input: NodeRunInput; runner: NodeRunner }>>()
 
   const runOnce = async (): Promise<boolean> => {
     const command = options.queue.claimNext({
@@ -98,8 +77,8 @@ export const createExecutionWorker = (
       leaseDurationMs,
     })
     if (command === undefined) return false
-    const payload = ExecuteJobPayloadSchema.parse(command.payload)
-    const input: JobExecutionInput = {
+    const payload = ExecuteNodePayloadSchema.parse(command.payload)
+    const input: NodeRunInput = {
       runId: command.runId,
       nodeExecutionId: command.nodeExecutionId,
       attemptId: command.attemptId,
@@ -109,7 +88,7 @@ export const createExecutionWorker = (
     options.queue.enqueue({
       id: createMessageId(),
       destination: 'COORDINATOR',
-      type: 'JOB_STARTED',
+      type: 'NODE_EXECUTION_STARTED',
       runId: command.runId,
       nodeExecutionId: command.nodeExecutionId,
       attemptId: command.attemptId,
@@ -117,53 +96,25 @@ export const createExecutionWorker = (
       availableAt: startedAt,
       createdAt: startedAt,
     })
-    const runner = options.runners.resolve(payload.jobKind)
+    const runner = options.runner
     let renewal: ReturnType<typeof setInterval> | undefined
-    let result: JobRunResult
+    let result: NodeRunResult
     try {
-      if (runner === undefined) {
-        result = {
-          status: 'failed',
-          code: 'JOB_RUNNER_NOT_REGISTERED',
-          message: 'No runner is registered for this job kind',
-          retryable: false,
-        }
-      } else {
-        active.set(command.id, { input, runner })
-        renewal = setInterval(() => {
-          options.queue.renewClaim({
-            messageId: command.id,
-            consumerId: options.workerId,
-            now: now(),
-            leaseDurationMs,
-          })
-        }, leaseRenewalMs)
-        result = await runner.run(input, async (progress) => {
-          const occurredAt = now()
-          options.queue.enqueue({
-            id: createMessageId(),
-            destination: 'COORDINATOR',
-            type: 'JOB_PROGRESS',
-            runId: command.runId,
-            nodeExecutionId: command.nodeExecutionId,
-            attemptId: command.attemptId,
-            payload: {
-              version: 1,
-              eventType: progress.eventType,
-              data: JSON.parse(JSON.stringify(progress.data)) as never,
-              occurredAt,
-            },
-            availableAt: occurredAt,
-            createdAt: occurredAt,
-          })
+      active.set(command.id, { input, runner })
+      renewal = setInterval(() => {
+        options.queue.renewClaim({
+          messageId: command.id,
+          consumerId: options.workerId,
+          now: now(),
+          leaseDurationMs,
         })
-      }
+      }, leaseRenewalMs)
+      result = await runner.run(input)
     } catch {
       result = {
         status: 'failed',
-        code: 'JOB_RUNNER_FAILED',
-        message: 'Job runner failed before producing a result',
-        retryable: false,
+        code: 'NODE_RUNNER_FAILED',
+        message: 'Node runner failed before producing a result',
       }
     } finally {
       if (renewal !== undefined) clearInterval(renewal)
@@ -176,7 +127,7 @@ export const createExecutionWorker = (
       terminal = {
         id: createMessageId(),
         destination: 'COORDINATOR',
-        type: 'JOB_SUCCEEDED',
+        type: 'NODE_EXECUTION_SUCCEEDED',
         runId: command.runId,
         nodeExecutionId: command.nodeExecutionId,
         attemptId: command.attemptId,
@@ -184,7 +135,6 @@ export const createExecutionWorker = (
           version: 1,
           outcome: result.outcome,
           output: JSON.parse(JSON.stringify(result.output)) as never,
-          artifactIds: result.artifactIds,
           completedAt,
           durationMs,
         },
@@ -195,7 +145,7 @@ export const createExecutionWorker = (
       terminal = {
         id: createMessageId(),
         destination: 'COORDINATOR',
-        type: 'JOB_CANCELLED',
+        type: 'NODE_EXECUTION_CANCELLED',
         runId: command.runId,
         nodeExecutionId: command.nodeExecutionId,
         attemptId: command.attemptId,
@@ -207,7 +157,7 @@ export const createExecutionWorker = (
       terminal = {
         id: createMessageId(),
         destination: 'COORDINATOR',
-        type: 'JOB_FAILED',
+        type: 'NODE_EXECUTION_FAILED',
         runId: command.runId,
         nodeExecutionId: command.nodeExecutionId,
         attemptId: command.attemptId,
@@ -215,7 +165,6 @@ export const createExecutionWorker = (
           version: 1,
           code: result.code,
           message: result.message,
-          retryable: result.retryable,
           completedAt,
           durationMs,
         },
@@ -233,7 +182,7 @@ export const createExecutionWorker = (
   }
 
   const cancel = async (
-    entries: readonly Readonly<{ input: JobExecutionInput; runner: JobRunner }>[],
+    entries: readonly Readonly<{ input: NodeRunInput; runner: NodeRunner }>[],
   ): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>> => {
     if (entries.length === 0) return { status: 'unconfirmed' }
     const results = await Promise.all(
@@ -267,7 +216,7 @@ export const createExecutionWorker = (
     shutdown() {
       return cancel([...active.values()])
     },
-    activeRunIds() {
+    executingRunIds() {
       return [...new Set([...active.values()].map(({ input }) => input.runId))]
     },
   }

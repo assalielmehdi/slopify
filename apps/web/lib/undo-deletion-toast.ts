@@ -1,6 +1,6 @@
 import type { DeletionReceipt } from '@slopify/contracts'
 
-import { toast } from '@/components/ui/toast'
+import { toast } from '@/lib/toast'
 
 interface UndoDeletionToastOptions {
   readonly receipt: Pick<DeletionReceipt, 'undoExpiresAt'>

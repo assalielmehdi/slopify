@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createRunEventFeed } from '@slopify/execution-runtime'
+import { appendEvent } from '../../../packages/execution-runtime/src/events/event-store.js'
+import { getDatabaseHandle } from '../../../packages/execution-runtime/src/persistence/database.js'
 import {
   TEST_RUN_ID,
   createPersistenceFixture,
@@ -19,13 +21,28 @@ const terminalFixture = () => {
   const fixture = createPersistenceFixture()
   fixtures.push(fixture)
   createRun(fixture)
-  fixture.runs.completeRun({
-    runId: TEST_RUN_ID,
-    expectedStatus: 'PENDING',
-    status: 'SUCCEEDED',
-    durationMs: 2_000,
-    timestamp: '2026-08-18T23:45:02Z',
-  })
+  const connection = getDatabaseHandle(fixture.database)
+  connection
+    .transaction(() => {
+      connection
+        .prepare(
+          `UPDATE runs
+           SET status = 'SUCCEEDED', started_at = ?, completed_at = ?
+           WHERE run_id = ? AND status = 'PENDING'`,
+        )
+        .run('2026-08-18T23:45:00Z', '2026-08-18T23:45:02Z', TEST_RUN_ID)
+      appendEvent(connection, TEST_RUN_ID, {
+        type: 'RUN_STATUS_CHANGED',
+        data: { from: 'PENDING', to: 'SUCCEEDED' },
+        timestamp: '2026-08-18T23:45:02Z',
+      })
+      appendEvent(connection, TEST_RUN_ID, {
+        type: 'RUN_COMPLETED',
+        data: { status: 'SUCCEEDED', durationMs: 2_000 },
+        timestamp: '2026-08-18T23:45:02Z',
+      })
+    })
+    .immediate()
   return {
     fixture,
     app: createApiApp({
@@ -109,11 +126,8 @@ describe('run event SSE API', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
-        skillsRoot: '/skills',
-        skillSnapshotsRoot: '/skill-snapshots',
-        credentialPath: '/credentials.json',
         tracesRoot: '/traces',
-        guestToolsRoot: '/guest-tools',
+        worktreesRoot: '/worktrees',
         shutdownGracePeriodMs: 10_000,
       },
     })

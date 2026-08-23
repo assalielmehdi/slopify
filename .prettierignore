@@ -1,9 +1,6 @@
-.local/
 **/.next/
 **/coverage/
 **/dist/
 **/node_modules/
-**/playwright-report/
+**/.turbo/
 bun.lock
-tasks/
-**/test-results/

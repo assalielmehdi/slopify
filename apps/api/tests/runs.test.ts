@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createRunService } from '@slopify/execution-runtime'
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 import {
   TEST_WORKFLOW_ID,
+  createTestHarnessCatalog,
+  createTestAgentWorkflow,
   createPersistenceFixture,
+  resolveTestProject,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
@@ -16,13 +18,10 @@ afterEach(() => {
 
 const createFixture = () => {
   const fixture = createPersistenceFixture(
-    createPredefinedV1Workflow({
+    createTestAgentWorkflow({
       createdAt: '2026-08-18T23:15:00Z',
-      agentDefaults: {
-        provider: 'test-provider',
-        model: 'test-model',
-        thinkingLevel: 'medium',
-      },
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
     }),
   )
   fixtures.push(fixture)
@@ -31,6 +30,8 @@ const createFixture = () => {
     events: fixture.events,
     runs: fixture.runs,
     workflows: fixture.workflows,
+    harnesses: createTestHarnessCatalog(),
+    resolveProject: resolveTestProject,
     now: () => '2026-08-18T23:15:00Z',
     createRunId: () => `run-api-${++identity}`,
   })
@@ -62,29 +63,22 @@ describe('run JSON API', () => {
       run: expect.any(Object),
       events: expect.any(Array),
       nodeExecutions: expect.any(Array),
-      outputChunks: expect.any(Array),
-      artifacts: expect.any(Array),
+      projects: expect.any(Array),
+      projectWorktrees: expect.any(Array),
     })
-    expect(detail.run).not.toHaveProperty('profileSnapshotId')
-    expect(detail.run).not.toHaveProperty('taskReference')
   })
 
-  it('rejects removed revision and task context fields in run requests', async () => {
+  it('rejects unknown fields in run requests', async () => {
     const { app } = createFixture()
 
-    for (const input of [
-      { ...createBody, revisionId: 'revision-01' },
-      { ...createBody, taskReference: 'TASK-1' },
-      { ...createBody, profileId: 'profile-01' },
-    ]) {
-      const response = await app.request('/api/runs', {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(input),
-      })
-      expect(response.status).toBe(400)
-      expect(await response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
-    }
+    const response = await app.request('/api/runs', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...createBody, unexpected: true }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
   })
 
   it('lists minimal run summaries through validated one-based pagination', async () => {
@@ -124,7 +118,7 @@ describe('run JSON API', () => {
     const second = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...createBody, variables: { objective: 'second' } }),
+      body: JSON.stringify(createBody),
     })
 
     expect(first.status).toBe(201)
@@ -189,16 +183,6 @@ describe('run JSON API', () => {
     expect(unknown.status).toBe(404)
     expect(await unknown.json()).toEqual({
       error: { code: 'RUN_NOT_FOUND', message: 'Run was not found' },
-    })
-  })
-
-  it('does not expose the removed node-source route', async () => {
-    const { app } = createFixture()
-    const response = await app.request('/api/runs/run-api-1/nodes/identify-agent/source')
-
-    expect(response.status).toBe(404)
-    expect(await response.json()).toEqual({
-      error: { code: 'NOT_FOUND', message: 'Route not found' },
     })
   })
 })

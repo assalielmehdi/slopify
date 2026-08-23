@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { createPiEventNormalizer } from '../src/event-normalizer.js'
 import { createEventRedactor } from '../src/redaction.js'
 
-const secret = 'sk-provider-secret'
+const secret = 'host-secret-value'
 
 const createNormalizer = () =>
   createPiEventNormalizer({
@@ -12,7 +12,7 @@ const createNormalizer = () =>
 
 describe('Pi event normalizer', () => {
   const applicationEvents = <T extends { readonly type: string }>(events: readonly T[]): T[] =>
-    events.filter(({ type }) => type !== 'PI_EVENT')
+    events.filter(({ type }) => type !== 'HARNESS_EVENT')
 
   it('preserves visible assistant text and reasoning in order', () => {
     const normalizer = createNormalizer()
@@ -145,13 +145,13 @@ describe('Pi event normalizer', () => {
       type: 'tool_execution_update',
       toolCallId: 'tool-03',
       toolName: 'bash',
-      partialResult: { content: [{ type: 'text', text: 'output sk-provider-' }] },
+      partialResult: { content: [{ type: 'text', text: 'output host-secret-' }] },
     })
     const second = normalizer.normalize({
       type: 'tool_execution_update',
       toolCallId: 'tool-03',
       toolName: 'bash',
-      partialResult: { content: [{ type: 'text', text: 'secret done' }] },
+      partialResult: { content: [{ type: 'text', text: 'value done' }] },
     })
 
     expect(applicationEvents([...first, ...second])).toEqual([
@@ -208,23 +208,23 @@ describe('Pi event normalizer', () => {
     { type: 'summarization_retry_attempt_start', source: 'branchSummary' },
     { type: 'summarization_retry_finished' },
     { type: 'bash_execution_update', id: 'bash-01', delta: 'output' },
-  ])('faithfully captures the Pi $type event', (sdkEvent) => {
-    expect(createNormalizer().normalize(sdkEvent)).toContainEqual({
-      type: 'PI_EVENT',
-      data: { event: sdkEvent },
+  ])('faithfully captures the Pi RPC $type event', (harnessEvent) => {
+    expect(createNormalizer().normalize(harnessEvent)).toContainEqual({
+      type: 'HARNESS_EVENT',
+      data: { harnessId: 'pi', event: harnessEvent },
     })
   })
 
-  it('accepts provider-generated tool call identifiers without losing derived tool events', () => {
-    const sdkEvent = {
+  it('accepts harness-generated tool call identifiers without losing derived tool events', () => {
+    const harnessEvent = {
       type: 'tool_execution_start',
       toolCallId: 'call_JkP9a|fc_72ZQ',
       toolName: 'bash',
       args: { command: 'pwd' },
     }
 
-    expect(createNormalizer().normalize(sdkEvent)).toEqual([
-      { type: 'PI_EVENT', data: { event: sdkEvent } },
+    expect(createNormalizer().normalize(harnessEvent)).toEqual([
+      { type: 'HARNESS_EVENT', data: { harnessId: 'pi', event: harnessEvent } },
       {
         type: 'AGENT_TOOL_STARTED',
         data: {
@@ -254,11 +254,11 @@ describe('Pi event normalizer', () => {
     { type: 'done', reason: 'stop' },
     { type: 'error', reason: 'error' },
   ])('faithfully captures the Pi assistant message $type event', (assistantMessageEvent) => {
-    const sdkEvent = { type: 'message_update', assistantMessageEvent }
+    const harnessEvent = { type: 'message_update', assistantMessageEvent }
 
-    expect(createNormalizer().normalize(sdkEvent)).toContainEqual({
-      type: 'PI_EVENT',
-      data: { event: sdkEvent },
+    expect(createNormalizer().normalize(harnessEvent)).toContainEqual({
+      type: 'HARNESS_EVENT',
+      data: { harnessId: 'pi', event: harnessEvent },
     })
   })
 
@@ -268,8 +268,11 @@ describe('Pi event normalizer', () => {
     expect(normalizer.normalize(null)).toEqual([])
     expect(normalizer.normalize({ type: 'future_event', credential: secret })).toEqual([
       {
-        type: 'PI_EVENT',
-        data: { event: { type: 'future_event', credential: '[REDACTED]' } },
+        type: 'HARNESS_EVENT',
+        data: {
+          harnessId: 'pi',
+          event: { type: 'future_event', credential: '[REDACTED]' },
+        },
       },
     ])
   })
@@ -285,8 +288,9 @@ describe('Pi event normalizer', () => {
 
     expect(createNormalizer().normalize(event)).toEqual([
       {
-        type: 'PI_EVENT',
+        type: 'HARNESS_EVENT',
         data: {
+          harnessId: 'pi',
           event: {
             type: 'tool_execution_update',
             captureError: 'Pi event payload could not be serialized',

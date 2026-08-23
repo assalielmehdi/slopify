@@ -1,10 +1,12 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createRunService } from '@slopify/execution-runtime'
-import { createPredefinedV1Workflow, WorkflowSchema } from '@slopify/workflow-model'
 import {
   TEST_WORKFLOW_ID,
+  createTestHarnessCatalog,
+  createTestAgentWorkflow,
   createPersistenceFixture,
+  resolveTestProject,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
@@ -15,21 +17,12 @@ afterEach(() => {
 })
 
 const createFixture = () => {
-  const base = createPredefinedV1Workflow({
+  const workflow = createTestAgentWorkflow({
     createdAt: '2026-08-19T07:30:00Z',
-    agentDefaults: {
-      provider: 'test-provider',
-      model: 'test-model',
-      thinkingLevel: 'medium',
-    },
-  })
-  const workflow = WorkflowSchema.parse({
-    ...base,
-    nodes: base.nodes.map((node) =>
-      node.type === 'agent'
-        ? { ...node, job: { ...node.job, prompt: 'Deliver {{objective}} for {{project}}.' } }
-        : node,
-    ),
+    prompt: 'Deliver {{objective}} for {{project}}.',
+    projectIds: ['project-api'],
+    primaryProjectId: 'project-api',
+    variables: ['objective', 'project'],
   })
   const fixture = createPersistenceFixture(workflow)
   fixtures.push(fixture)
@@ -37,6 +30,8 @@ const createFixture = () => {
     events: fixture.events,
     runs: fixture.runs,
     workflows: fixture.workflows,
+    harnesses: createTestHarnessCatalog(),
+    resolveProject: resolveTestProject,
     now: () => '2026-08-19T07:30:00Z',
     createRunId: () => 'run-start-01',
   })
@@ -62,12 +57,11 @@ describe('start run admission', () => {
         status: 'PENDING',
         workflowSnapshot: expect.objectContaining({ workflowId: TEST_WORKFLOW_ID }),
         variables: { objective: 'Ship the API', project: 'Slopify' },
-        missingVariables: [],
       },
     })
   })
 
-  it('reports missing variables and admits them only after explicit confirmation', async () => {
+  it('rejects variables that do not exactly match the workflow configuration', async () => {
     const { app, runs } = createFixture()
 
     const missing = await app.request('/api/runs', {
@@ -76,26 +70,31 @@ describe('start run admission', () => {
       body: JSON.stringify({ workflowId: TEST_WORKFLOW_ID }),
     })
 
-    expect(missing.status).toBe(409)
+    expect(missing.status).toBe(400)
     expect(await missing.json()).toEqual({
       error: {
-        code: 'RUN_VARIABLES_MISSING',
-        message: 'Required workflow variables are missing',
-        details: { missingVariables: ['objective', 'project'] },
+        code: 'RUN_VARIABLES_INVALID',
+        message: 'Run variables must exactly match the workflow configuration',
       },
     })
     expect(runs.list({ page: 1, pageSize: 20 }).data).toEqual([])
 
-    const confirmed = await app.request('/api/runs', {
+    const extra = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ workflowId: TEST_WORKFLOW_ID, confirmMissingVariables: true }),
+      body: JSON.stringify({
+        workflowId: TEST_WORKFLOW_ID,
+        variables: { objective: 'Ship', project: 'Slopify', typo: true },
+      }),
     })
 
-    expect(confirmed.status).toBe(201)
-    expect(await confirmed.json()).toMatchObject({
-      variables: {},
-      missingVariables: ['objective', 'project'],
+    expect(extra.status).toBe(400)
+    expect(await extra.json()).toEqual({
+      error: {
+        code: 'RUN_VARIABLES_INVALID',
+        message: 'Run variables must exactly match the workflow configuration',
+      },
     })
+    expect(runs.list({ page: 1, pageSize: 20 }).data).toEqual([])
   })
 })

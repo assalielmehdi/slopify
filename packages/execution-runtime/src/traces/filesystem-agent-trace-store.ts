@@ -2,8 +2,8 @@ import { constants } from 'node:fs'
 import { appendFile, mkdir, open, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import type { AgentExecutionEvent } from '@slopify/agent-runtimes'
 import {
+  type AgentExecutionEvent,
   AgentTraceEventSchema,
   AgentTraceHeaderSchema,
   AgentTraceSchema,

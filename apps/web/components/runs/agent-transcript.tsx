@@ -6,7 +6,6 @@ import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
-import { formatDuration } from '@/components/runs/run-status'
 import { Bubble, BubbleContent } from '@/components/ui/bubble'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Message, MessageContent, MessageHeader } from '@/components/ui/message'
@@ -18,6 +17,7 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from '@/components/ui/message-scroller'
+import { formatDuration } from '@/lib/run-format'
 
 interface AgentTranscriptProps {
   readonly events: readonly AgentTraceEvent[]
@@ -76,14 +76,14 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
   for (const event of events) {
     const data = record(event.data)
     if (data === undefined) continue
-    if (event.type === 'PI_EVENT') {
-      const piEvent = record(data.event)
-      const assistantEvent = record(piEvent?.assistantMessageEvent)
-      if (piEvent?.type === 'message_update' && assistantEvent?.type === 'thinking_start') {
+    if (event.type === 'HARNESS_EVENT') {
+      const harnessEvent = record(data.event)
+      const assistantEvent = record(harnessEvent?.assistantMessageEvent)
+      if (harnessEvent?.type === 'message_update' && assistantEvent?.type === 'thinking_start') {
         reasoningStreamOpen = true
         activeReasoning = undefined
       }
-      if (piEvent?.type === 'message_update' && assistantEvent?.type === 'thinking_end') {
+      if (harnessEvent?.type === 'message_update' && assistantEvent?.type === 'thinking_end') {
         reasoningStreamOpen = false
         activeReasoning = undefined
       }
@@ -321,7 +321,7 @@ export function AgentTranscript({ events, prompt, result, streaming }: AgentTran
             <MessageScrollerItem messageId="agent-trace">
               <Message>
                 <MessageContent>
-                  <MessageHeader>Pi agent</MessageHeader>
+                  <MessageHeader>Agent</MessageHeader>
                   {workItems.length > 0 || durationMs !== undefined ? (
                     <Collapsible
                       className="t-acc w-full"

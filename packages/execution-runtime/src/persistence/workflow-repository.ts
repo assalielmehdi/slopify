@@ -36,23 +36,12 @@ export const createWorkflowRepository = (database: WorkbenchDatabase): WorkflowR
       try {
         connection
           .prepare(
-            `INSERT INTO workflows (
-               workflow_id, name, description, definition_json, created_at, updated_at
-             ) VALUES (?, ?, ?, ?, ?, ?)
+            `INSERT INTO workflows (workflow_id, definition_json)
+             VALUES (?, ?)
              ON CONFLICT (workflow_id) DO UPDATE SET
-               name = excluded.name,
-               description = excluded.description,
-               definition_json = excluded.definition_json,
-               updated_at = excluded.updated_at`,
+               definition_json = excluded.definition_json`,
           )
-          .run(
-            workflow.workflowId,
-            workflow.name,
-            workflow.description,
-            JSON.stringify(workflow),
-            workflow.createdAt,
-            workflow.updatedAt,
-          )
+          .run(workflow.workflowId, JSON.stringify(workflow))
       } catch (cause) {
         throw mapPersistenceError(cause, 'Could not persist workflow')
       }
@@ -63,7 +52,7 @@ export const createWorkflowRepository = (database: WorkbenchDatabase): WorkflowR
         .prepare(
           `SELECT definition_json
            FROM workflows
-           ORDER BY updated_at DESC, workflow_id`,
+           ORDER BY json_extract(definition_json, '$.updatedAt') DESC, workflow_id`,
         )
         .all() as WorkflowRow[]
       return rows.map((row) => WorkflowSchema.parse(JSON.parse(row.definition_json)))

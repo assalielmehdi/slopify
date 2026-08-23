@@ -1,14 +1,15 @@
 import { mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 
-import { applyMigrations } from './migrations.js'
+import { DatabaseSchemaIncompatibleError, initializeCurrentSchema } from './schema.js'
 import { Database } from './sqlite.js'
 
 export type DatabaseInitializationErrorCode =
   | 'DATABASE_PATH_INVALID'
   | 'DATABASE_OPEN_FAILED'
   | 'DATABASE_CONFIGURATION_FAILED'
-  | 'DATABASE_MIGRATION_FAILED'
+  | 'DATABASE_SCHEMA_INCOMPATIBLE'
+  | 'DATABASE_SCHEMA_INITIALIZATION_FAILED'
   | 'DATABASE_NOT_WRITABLE'
 
 export class DatabaseInitializationError extends Error {
@@ -50,7 +51,7 @@ const databaseHandles = new WeakMap<WorkbenchDatabase, Database>()
 
 const readSchemaVersion = (database: Database): number => {
   const version = database
-    .prepare('SELECT COALESCE(MAX(version), 0) FROM schema_migrations')
+    .prepare('SELECT COALESCE(MAX(version), 0) FROM schema_metadata')
     .pluck()
     .get()
 
@@ -61,7 +62,7 @@ const verifyWritable = (database: Database): void => {
   const schemaVersion = readSchemaVersion(database)
   const verify = database.transaction(() => {
     database
-      .prepare('UPDATE schema_migrations SET applied_at = applied_at WHERE version = ?')
+      .prepare('UPDATE schema_metadata SET applied_at = applied_at WHERE version = ?')
       .run(schemaVersion)
   })
   verify.immediate()
@@ -139,6 +140,24 @@ export const openDatabase = (options: OpenDatabaseOptions): WorkbenchDatabase =>
   }
 
   try {
+    initializeCurrentSchema(database)
+  } catch (cause) {
+    closeAfterFailure(database)
+    throw new DatabaseInitializationError({
+      code:
+        cause instanceof DatabaseSchemaIncompatibleError
+          ? 'DATABASE_SCHEMA_INCOMPATIBLE'
+          : 'DATABASE_SCHEMA_INITIALIZATION_FAILED',
+      databasePath,
+      message:
+        cause instanceof DatabaseSchemaIncompatibleError
+          ? cause.message
+          : 'Could not initialize the current SQLite schema',
+      cause,
+    })
+  }
+
+  try {
     const journalMode = database.pragma('journal_mode = WAL', { simple: true })
     database.pragma('foreign_keys = ON')
     if (String(journalMode).toLowerCase() !== 'wal') {
@@ -153,18 +172,6 @@ export const openDatabase = (options: OpenDatabaseOptions): WorkbenchDatabase =>
       code: 'DATABASE_CONFIGURATION_FAILED',
       databasePath,
       message: 'Could not configure the SQLite database',
-      cause,
-    })
-  }
-
-  try {
-    applyMigrations(database)
-  } catch (cause) {
-    closeAfterFailure(database)
-    throw new DatabaseInitializationError({
-      code: 'DATABASE_MIGRATION_FAILED',
-      databasePath,
-      message: 'Could not migrate the SQLite database',
       cause,
     })
   }

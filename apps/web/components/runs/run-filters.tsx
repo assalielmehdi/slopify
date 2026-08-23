@@ -22,36 +22,12 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { activeRunFilterCount, type RunFilters } from '@/lib/run-filters'
 import { cn } from '@/lib/utils'
-
-export interface RunFilters {
-  readonly runId: string
-  readonly statuses: readonly RunStatus[]
-  readonly startedFrom: string
-  readonly startedTo: string
-  readonly durationMinSeconds: string
-  readonly durationMaxSeconds: string
-}
-
-export const emptyRunFilters: RunFilters = {
-  runId: '',
-  statuses: [],
-  startedFrom: '',
-  startedTo: '',
-  durationMinSeconds: '',
-  durationMaxSeconds: '',
-}
 
 type AttributeKey = 'runId' | 'started' | 'duration' | 'status'
 
-const statuses: readonly RunStatus[] = [
-  'PENDING',
-  'RUNNING',
-  'SUCCEEDED',
-  'FAILED',
-  'CANCELLED',
-  'INTERRUPTED',
-]
+const statuses: readonly RunStatus[] = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED']
 
 const statusFilterClassName = {
   PENDING:
@@ -64,8 +40,6 @@ const statusFilterClassName = {
     'text-destructive hover:bg-destructive/10 hover:text-destructive aria-checked:bg-destructive/15 aria-checked:text-destructive dark:hover:bg-destructive/15 dark:aria-checked:bg-destructive/20',
   CANCELLED:
     'text-status-warning hover:bg-status-warning/10 hover:text-status-warning aria-checked:bg-status-warning/15 aria-checked:text-status-warning dark:hover:bg-status-warning/15 dark:aria-checked:bg-status-warning/20',
-  INTERRUPTED:
-    'text-destructive hover:bg-destructive/10 hover:text-destructive aria-checked:bg-destructive/15 aria-checked:text-destructive dark:hover:bg-destructive/15 dark:aria-checked:bg-destructive/20',
 } as const satisfies Readonly<Record<RunStatus, string>>
 
 const statusLabel = (status: RunStatus): string => status.charAt(0) + status.slice(1).toLowerCase()
@@ -77,11 +51,6 @@ const valueCount = (attribute: AttributeKey, filters: RunFilters): number => {
     return Number(filters.startedFrom !== '') + Number(filters.startedTo !== '')
   return Number(filters.durationMinSeconds !== '') + Number(filters.durationMaxSeconds !== '')
 }
-
-export const activeRunFilterCount = (filters: RunFilters): number =>
-  (['runId', 'started', 'duration', 'status'] as const).filter(
-    (attribute) => valueCount(attribute, filters) > 0,
-  ).length
 
 const attributes = [
   { key: 'runId', label: 'Run ID', icon: FingerprintIcon },
@@ -343,6 +312,7 @@ export function RunFilterControls({
   const [activeAttribute, setActiveAttribute] = useState<AttributeKey | null>(null)
   const [attributeQuery, setAttributeQuery] = useState('')
   const activeCount = activeRunFilterCount(filters)
+  const activeAttributes = attributes.filter((attribute) => valueCount(attribute.key, filters) > 0)
   const visibleAttributes = useMemo(() => {
     const query = attributeQuery.trim().toLocaleLowerCase()
     return query === ''
@@ -355,32 +325,30 @@ export function RunFilterControls({
       <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
         {activeCount === 0
           ? null
-          : attributes
-              .filter((attribute) => valueCount(attribute.key, filters) > 0)
-              .map((attribute) => (
-                <div
-                  className="group/filter-chip flex h-7 max-w-full items-center rounded-full bg-muted px-2.5 text-xs whitespace-nowrap transition-[padding-right] duration-[var(--resize-dur)] ease-[var(--resize-ease)] hover:pr-1.5 focus-within:pr-1.5 motion-reduce:transition-none"
-                  data-slot="run-filter-chip"
-                  key={attribute.key}
-                  title={filterSummary(attribute.key, filters)}
+          : activeAttributes.map((attribute) => (
+              <div
+                className="group/filter-chip flex h-7 max-w-full items-center rounded-full bg-muted px-2.5 text-xs whitespace-nowrap transition-[padding-right] duration-[var(--resize-dur)] ease-[var(--resize-ease)] hover:pr-1.5 focus-within:pr-1.5 motion-reduce:transition-none"
+                data-slot="run-filter-chip"
+                key={attribute.key}
+                title={filterSummary(attribute.key, filters)}
+              >
+                <span className="min-w-0 truncate">{filterSummary(attribute.key, filters)}</span>
+                <span
+                  className="t-resize flex w-0 shrink-0 overflow-hidden group-hover/filter-chip:w-7 group-focus-within/filter-chip:w-7"
+                  data-slot="run-filter-chip-remove-slot"
                 >
-                  <span className="min-w-0 truncate">{filterSummary(attribute.key, filters)}</span>
-                  <span
-                    className="t-resize flex w-0 shrink-0 overflow-hidden group-hover/filter-chip:w-7 group-focus-within/filter-chip:w-7"
-                    data-slot="run-filter-chip-remove-slot"
+                  <Button
+                    aria-label={`Remove ${attribute.label} filter`}
+                    className="pointer-events-none ml-1 size-6 shrink-0 rounded-full opacity-0 transition-opacity duration-[var(--resize-dur)] ease-[var(--resize-ease)] group-hover/filter-chip:pointer-events-auto group-hover/filter-chip:opacity-100 group-focus-within/filter-chip:pointer-events-auto group-focus-within/filter-chip:opacity-100 hover:bg-foreground/10 motion-reduce:transition-none dark:hover:bg-foreground/15"
+                    onClick={() => onChange(clearAttribute(attribute.key, filters))}
+                    size="icon-xs"
+                    variant="ghost"
                   >
-                    <Button
-                      aria-label={`Remove ${attribute.label} filter`}
-                      className="pointer-events-none ml-1 size-6 shrink-0 rounded-full opacity-0 transition-opacity duration-[var(--resize-dur)] ease-[var(--resize-ease)] group-hover/filter-chip:pointer-events-auto group-hover/filter-chip:opacity-100 group-focus-within/filter-chip:pointer-events-auto group-focus-within/filter-chip:opacity-100 hover:bg-foreground/10 motion-reduce:transition-none dark:hover:bg-foreground/15"
-                      onClick={() => onChange(clearAttribute(attribute.key, filters))}
-                      size="icon-xs"
-                      variant="ghost"
-                    >
-                      <XIcon aria-hidden="true" className="size-3" />
-                    </Button>
-                  </span>
-                </div>
-              ))}
+                    <XIcon aria-hidden="true" className="size-3" />
+                  </Button>
+                </span>
+              </div>
+            ))}
         {updating ? (
           <span aria-live="polite" className="text-xs text-muted-foreground">
             Updating…

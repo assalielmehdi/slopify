@@ -1,133 +1,132 @@
 import { rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { ProjectProfileIdSchema, RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
-import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
+import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import {
+  type HarnessCatalog,
+  type RunProjectResolution,
   createEventStore,
-  createProfileRepository,
+  createProjectRepository,
   createRunRepository,
   createWorkflowRepository,
   openDatabase,
+  type JsonValue,
 } from '../../src/index.js'
-export const TEST_TIMESTAMP = '2026-08-18T20:00:00Z'
-export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('delivery-workflow')
-export const TEST_PROFILE_ID = ProjectProfileIdSchema.parse('profile-01')
+
+export const TEST_TIMESTAMP = '2026-08-23T12:00:00.000Z'
+export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('test-workflow')
 export const TEST_RUN_ID = RunIdSchema.parse('run-01')
+export const TEST_RUN_PROJECT: RunProjectResolution = {
+  projectId: 'project-api' as RunProjectResolution['projectId'],
+  name: 'API',
+  repositoryPath: '/workspace/api',
+  baseSha: 'a'.repeat(40) as RunProjectResolution['baseSha'],
+  sourceBranch: 'main',
+}
 
-export const TEST_PROFILE = {
-  profileId: TEST_PROFILE_ID,
-  displayName: 'Local profile',
-  clickupWorkspaceId: 'workspace-01',
-  clickupListId: 'list-01',
-  clickupInReviewStatusId: 'in-review',
-  repositories: [
-    {
-      repositoryId: 'api',
-      displayName: 'API',
-      purpose: 'Backend',
-      repositoryPath: '/workspace/api',
-      gitlabProject: 'group/api',
-      remote: 'origin',
-      targetBranch: 'main',
-      worktreeParent: '/worktrees',
-      branchTemplate: 'ai/{task}-{run}',
-      executableChecks: [{ executable: 'node', arguments: ['--version'] }],
-      verificationCommands: [{ executable: 'pnpm', arguments: ['test'] }],
-      mergeRequestLabels: ['backend'],
-    },
-    {
-      repositoryId: 'web',
-      displayName: 'Web',
-      purpose: 'Frontend',
-      repositoryPath: '/workspace/web',
-      gitlabProject: 'group/web',
-      remote: 'origin',
-      targetBranch: 'main',
-      worktreeParent: '/worktrees',
-      branchTemplate: 'ai/{task}-{run}',
-      executableChecks: [{ executable: 'node', arguments: ['--version'] }],
-      verificationCommands: [{ executable: 'pnpm', arguments: ['test'] }],
-      mergeRequestLabels: ['frontend'],
-    },
-    {
-      repositoryId: 'docs',
-      displayName: 'Docs',
-      purpose: 'Documentation',
-      repositoryPath: '/workspace/docs',
-      gitlabProject: 'group/docs',
-      remote: 'origin',
-      targetBranch: 'main',
-      worktreeParent: '/worktrees',
-      branchTemplate: 'ai/{task}-{run}',
-      executableChecks: [],
-      verificationCommands: [{ executable: 'pnpm', arguments: ['lint'] }],
-      mergeRequestLabels: [],
-    },
-  ],
-} as const
+export const createTestHarnessCatalog = (): HarnessCatalog => ({
+  list: async () => [],
+  get: async () => undefined,
+  requireAvailable: async () => ({
+    harnessId: 'pi',
+    name: 'Pi',
+    description: 'Run workflows with the host-installed Pi harness.',
+    availability: 'AVAILABLE',
+    executablePath: '/usr/local/bin/pi',
+    version: '0.84.2',
+    installHref: 'https://pi.dev/',
+    installLabel: 'Install Pi',
+    models: [{ id: 'test-model', name: 'test-model', thinkingLevels: ['medium'] }],
+  }),
+})
 
-export const createPersistenceFixture = (workflowInput?: Workflow) => {
-  const directory = join(tmpdir(), `slopify-repositories-${crypto.randomUUID()}`)
+export interface CreateTestAgentWorkflowInput {
+  readonly workflowId?: string
+  readonly prompt?: string
+  readonly projectIds?: readonly string[]
+  readonly primaryProjectId?: string | null
+  readonly variables?: readonly string[]
+  readonly createdAt?: string
+}
+
+export const createTestAgentWorkflow = (input: CreateTestAgentWorkflowInput = {}): Workflow => {
+  const createdAt = input.createdAt ?? TEST_TIMESTAMP
+  const projectIds = input.projectIds ?? []
+  return WorkflowSchema.parse({
+    schemaVersion: 1,
+    workflowId: input.workflowId ?? TEST_WORKFLOW_ID,
+    name: 'Test workflow',
+    description: 'A current Pi-backed agent workflow for tests.',
+    configuration: {
+      projectIds,
+      primaryProjectId:
+        input.primaryProjectId === undefined ? (projectIds[0] ?? null) : input.primaryProjectId,
+      variables: input.variables ?? [],
+    },
+    startNodeId: 'agent',
+    nodes: [
+      {
+        type: 'agent',
+        id: 'agent',
+        name: 'Agent',
+        prompt: input.prompt ?? 'Complete the test task.',
+        harness: { harnessId: 'pi' },
+      },
+    ],
+    edges: [],
+    maxTransitions: 0,
+    createdAt,
+    updatedAt: createdAt,
+  })
+}
+
+export const resolveTestProject = async (projectId: string): Promise<RunProjectResolution> => ({
+  ...TEST_RUN_PROJECT,
+  projectId: projectId as RunProjectResolution['projectId'],
+})
+
+export const createTestRunProjects = (workflow: Workflow): readonly RunProjectResolution[] =>
+  workflow.configuration.projectIds.map((projectId) => ({
+    ...TEST_RUN_PROJECT,
+    projectId,
+    name: projectId === TEST_RUN_PROJECT.projectId ? TEST_RUN_PROJECT.name : projectId,
+    repositoryPath:
+      projectId === TEST_RUN_PROJECT.projectId
+        ? TEST_RUN_PROJECT.repositoryPath
+        : `/workspace/${projectId}`,
+  }))
+
+export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) => {
+  const directory = join(tmpdir(), `slopify-persistence-${crypto.randomUUID()}`)
   const path = join(directory, 'state', 'workbench.sqlite')
   const database = openDatabase({ path })
   const workflows = createWorkflowRepository(database)
-  const profiles = createProfileRepository(database)
+  const projects = createProjectRepository(database)
   const runs = createRunRepository(database)
   const events = createEventStore(database)
-  const workflow =
-    workflowInput ??
-    createPredefinedV1Workflow({
-      createdAt: TEST_TIMESTAMP,
-      agentDefaults: {
-        provider: 'test-provider',
-        model: 'test-model',
-        thinkingLevel: 'medium',
-      },
-    })
 
   workflows.save(workflow)
-  profiles.save(TEST_PROFILE, TEST_TIMESTAMP)
-  const snapshot = profiles.createSnapshot({
-    snapshotId: 'snapshot-01',
-    profileId: TEST_PROFILE_ID,
-    createdAt: TEST_TIMESTAMP,
-  })
 
   const cleanup = (): void => {
     if (database.isOpen) database.close()
     rmSync(directory, { force: true, recursive: true })
   }
 
-  return {
-    database,
-    events,
-    path,
-    profiles,
-    workflow,
-    runs,
-    snapshot,
-    workflows,
-    cleanup,
-  }
+  return { database, events, path, projects, workflow, runs, workflows, cleanup }
 }
 
 export const createRun = (
   fixture: ReturnType<typeof createPersistenceFixture>,
   workflowSnapshot: Workflow = fixture.workflow,
-  variables: Readonly<Record<string, string>> = { task: 'Implement persistence' },
+  variables: Readonly<Record<string, JsonValue>> = {},
 ) =>
   fixture.runs.create({
     runId: TEST_RUN_ID,
-    workflowId: TEST_WORKFLOW_ID,
+    workflowId: workflowSnapshot.workflowId,
     workflowSnapshot,
     variables,
-    missingVariables: [],
     createdAt: TEST_TIMESTAMP,
-    legacy: {
-      profileSnapshotId: fixture.snapshot.snapshotId,
-      taskReference: 'TASK-1',
-      taskSnapshot: { id: 'TASK-1', name: 'Implement persistence' },
-    },
+    projects: createTestRunProjects(workflowSnapshot),
   })

@@ -66,7 +66,7 @@ describe('bounded process runner', () => {
   })
 
   it('redacts configured secrets before retaining bounded stream evidence', async () => {
-    const secret = 'credential-value'
+    const secret = 'private-host-value'
     const runner = createProcessRunner({
       maxOutputBytes: 64,
       redactedValues: [secret],

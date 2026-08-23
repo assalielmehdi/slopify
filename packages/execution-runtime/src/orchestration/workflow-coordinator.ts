@@ -2,11 +2,10 @@ import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 import {
-  JobCancelledPayloadSchema,
-  JobFailedPayloadSchema,
-  JobProgressPayloadSchema,
-  JobStartedPayloadSchema,
-  JobSucceededPayloadSchema,
+  NodeExecutionCancelledPayloadSchema,
+  NodeExecutionFailedPayloadSchema,
+  NodeExecutionStartedPayloadSchema,
+  NodeExecutionSucceededPayloadSchema,
   type ExecutionMessage,
   type ExecutionMessageQueue,
   type NewExecutionMessage,
@@ -116,11 +115,6 @@ export interface WorkflowCoordinator {
   cancel(runId: string, reason: string): CoordinatorRunState
 }
 
-const jobKind = (node: Workflow['nodes'][number]): 'agent' | 'command' | 'router' => {
-  if (node.type === 'terminal') throw new TypeError('Terminal nodes are not jobs')
-  return node.type
-}
-
 export const createWorkflowCoordinator = (
   options: Readonly<{
     coordinatorId: string
@@ -135,6 +129,12 @@ export const createWorkflowCoordinator = (
   const createId = options.createId ?? ((prefix) => `${prefix}-${crypto.randomUUID()}`)
   const leaseDurationMs = options.leaseDurationMs ?? 30_000
 
+  const completeWhenSettled = (state: CoordinatorRunState): CoordinatorRunState =>
+    state.status === 'RUNNING' &&
+    state.executions.every(({ status }) => status !== 'PENDING' && status !== 'RUNNING')
+      ? { ...state, status: 'SUCCEEDED' }
+      : state
+
   const schedule = (
     state: CoordinatorRunState,
     nodeId: string,
@@ -142,28 +142,23 @@ export const createWorkflowCoordinator = (
   ): CoordinatorRunState => {
     const node = state.workflow.nodes.find((candidate) => candidate.id === nodeId)
     if (node === undefined) return { ...state, status: 'FAILED', failureCode: 'WORKFLOW_INVALID' }
-    if (node.type === 'terminal') return { ...state, status: node.terminalStatus }
     const nodeExecutionId = createId('node-execution')
     const attemptId = createId('attempt')
     const timestamp = now()
     commands.push({
       id: createId('message'),
       destination: 'WORKER',
-      type: 'EXECUTE_JOB',
+      type: 'EXECUTE_NODE',
       runId: state.runId,
       nodeExecutionId,
       attemptId,
-      payload: { version: 1, nodeId: node.id, jobKind: jobKind(node) },
+      payload: { version: 1, nodeId: node.id },
       availableAt: timestamp,
       createdAt: timestamp,
     })
     return {
       ...state,
       executions: [...state.executions, { nodeExecutionId, attemptId, nodeId, status: 'PENDING' }],
-      events: [
-        ...state.events,
-        { type: 'JOB_SCHEDULED', data: { nodeId, nodeExecutionId, attemptId }, timestamp },
-      ],
     }
   }
 
@@ -260,19 +255,14 @@ export const createWorkflowCoordinator = (
         const append = (type: string, data: unknown, timestamp: string) => {
           next = { ...next, events: [...next.events, { type, data, timestamp }] }
         }
-        if (message.type === 'JOB_STARTED') {
-          const payload = JobStartedPayloadSchema.parse(message.payload)
+        if (message.type === 'NODE_EXECUTION_STARTED') {
+          const payload = NodeExecutionStartedPayloadSchema.parse(message.payload)
           replaceExecution({ ...execution, status: 'RUNNING' })
           append('NODE_STARTED', {}, payload.startedAt)
           return next
         }
-        if (message.type === 'JOB_PROGRESS') {
-          const payload = JobProgressPayloadSchema.parse(message.payload)
-          append(payload.eventType, payload.data, payload.occurredAt)
-          return next
-        }
-        if (message.type === 'JOB_FAILED') {
-          const payload = JobFailedPayloadSchema.parse(message.payload)
+        if (message.type === 'NODE_EXECUTION_FAILED') {
+          const payload = NodeExecutionFailedPayloadSchema.parse(message.payload)
           replaceExecution({ ...execution, status: 'FAILED' })
           append(
             'NODE_FAILED',
@@ -281,17 +271,17 @@ export const createWorkflowCoordinator = (
           )
           return { ...next, status: 'FAILED', failureCode: payload.code }
         }
-        if (message.type === 'JOB_CANCELLED') {
-          const payload = JobCancelledPayloadSchema.parse(message.payload)
+        if (message.type === 'NODE_EXECUTION_CANCELLED') {
+          const payload = NodeExecutionCancelledPayloadSchema.parse(message.payload)
           replaceExecution({ ...execution, status: 'CANCELLED' })
           append(
             'NODE_CANCELLED',
-            { code: 'JOB_CANCELLED', message: payload.reason, durationMs: payload.durationMs },
+            { reason: payload.reason, durationMs: payload.durationMs },
             payload.completedAt,
           )
           return { ...next, status: 'CANCELLED' }
         }
-        const payload = JobSucceededPayloadSchema.parse(message.payload)
+        const payload = NodeExecutionSucceededPayloadSchema.parse(message.payload)
         if (execution.status === 'SUCCEEDED') return next
         replaceExecution({
           ...execution,
@@ -301,21 +291,14 @@ export const createWorkflowCoordinator = (
         })
         append(
           'NODE_COMPLETED',
-          {
-            outcome: payload.outcome,
-            durationMs: payload.durationMs,
-            artifactIds: payload.artifactIds,
-          },
+          { outcome: payload.outcome, durationMs: payload.durationMs },
           payload.completedAt,
         )
         const candidateOutgoing = next.workflow.edges.filter(
           (edge) => edge.sourceNodeId === execution.nodeId,
         )
         if (candidateOutgoing.length === 0) {
-          const completedNode = next.workflow.nodes.find(({ id }) => id === execution.nodeId)
-          return completedNode?.type === 'agent'
-            ? { ...next, status: 'SUCCEEDED' }
-            : { ...next, status: 'FAILED', failureCode: 'JOB_KIND_UNSUPPORTED' }
+          return completeWhenSettled(next)
         }
         const outgoing = candidateOutgoing.filter(
           (edge) => edge.sourceNodeId === execution.nodeId && edge.outcome === payload.outcome,
@@ -349,7 +332,7 @@ export const createWorkflowCoordinator = (
           next = schedule(next, target, commands)
           if (next.status !== 'RUNNING') break
         }
-        return next
+        return completeWhenSettled(next)
       }
       const processedAt = now()
       if (options.state.updateAndCompleteClaim === undefined) {

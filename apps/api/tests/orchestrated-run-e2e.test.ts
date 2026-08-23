@@ -1,18 +1,19 @@
-import { rmSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { z } from 'zod'
 
 import { AgentExecutionEventSchema, type AgentExecutor } from '@slopify/agent-runtimes'
+import { GitShaSchema, ProjectIdSchema } from '@slopify/contracts'
 import {
-  createAgentJobRunner,
-  createAgentResultSchemaRegistry,
+  createAgentNodeRunner,
   createEventStore,
   createExecutionWorker,
-  createJobRunnerRegistry,
+  createNativeGitRunWorkspaceProvisioner,
   createOrchestratedRunService,
+  createProcessRunner,
   createRunEventFeed,
   createRunRepository,
   createRunService,
@@ -22,10 +23,13 @@ import {
   createWorkflowRepository,
   openDatabase,
 } from '@slopify/execution-runtime'
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { createApiApp } from '../src/app.js'
 import { createExecutionPump } from '../src/execution-pump.js'
+import {
+  createTestAgentWorkflow,
+  createTestHarnessCatalog,
+} from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 
 const cleanups: (() => void)[] = []
 
@@ -36,19 +40,28 @@ afterEach(() => {
 describe('orchestrated run HTTP flow', () => {
   it('admits, executes, persists, and returns a completed leaf-agent run', async () => {
     const directory = join(tmpdir(), `slopify-api-e2e-${crypto.randomUUID()}`)
+    const sourceRepository = join(directory, 'source', 'api')
+    const worktreesRoot = join(directory, 'worktrees')
+    mkdirSync(sourceRepository, { recursive: true })
+    execFileSync('git', ['init', '--quiet', '--initial-branch=main', sourceRepository])
+    execFileSync('git', ['-C', sourceRepository, 'config', 'user.email', 'test@slopify.local'])
+    execFileSync('git', ['-C', sourceRepository, 'config', 'user.name', 'Slopify Test'])
+    writeFileSync(join(sourceRepository, 'README.md'), 'source repository\n')
+    execFileSync('git', ['-C', sourceRepository, 'add', 'README.md'])
+    execFileSync('git', ['-C', sourceRepository, 'commit', '--quiet', '-m', 'initial'])
+    const baseSha = execFileSync('git', ['-C', sourceRepository, 'rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+    }).trim()
     const database = openDatabase({ path: join(directory, 'state.sqlite') })
     cleanups.push(() => {
       database.close()
       rmSync(directory, { recursive: true, force: true })
     })
     const workflows = createWorkflowRepository(database)
-    const workflow = createPredefinedV1Workflow({
+    const workflow = createTestAgentWorkflow({
       createdAt: '2026-08-20T12:00:00.000Z',
-      agentDefaults: {
-        provider: 'test-provider',
-        model: 'test-model',
-        thinkingLevel: 'medium',
-      },
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
     })
     workflows.save(workflow)
     const runs = createRunRepository(database)
@@ -60,9 +73,15 @@ describe('orchestrated run HTTP flow', () => {
       state: createSqliteCoordinatorStateStore(database),
       now: () => '2026-08-20T12:00:02.000Z',
     })
+    const harnesses = createTestHarnessCatalog()
     const agent: AgentExecutor = {
       execute(input) {
         return (async function* () {
+          const primary = input.workspace.projects.find(
+            ({ projectId }) => projectId === input.workspace.primaryProjectId,
+          )
+          if (primary === undefined) throw new Error('Expected a primary worktree')
+          writeFileSync(join(primary.path, 'agent-result.txt'), 'written in the run worktree\n')
           yield AgentExecutionEventSchema.parse({
             executionId: input.executionId,
             runId: input.runId,
@@ -74,7 +93,6 @@ describe('orchestrated run HTTP flow', () => {
                 outcome: 'completed',
                 summary: 'Agent identified itself',
                 data: { identity: 'Slopify test agent' },
-                artifacts: [],
                 evidence: [],
               },
               usage: {
@@ -90,24 +108,42 @@ describe('orchestrated run HTTP flow', () => {
       },
       cancel: vi.fn(async () => ({ status: 'cancelled' })),
     }
-    const runner = createAgentJobRunner({
-      agent,
+    const workspaces = createNativeGitRunWorkspaceProvisioner({
       runs,
-      resultSchemas: createAgentResultSchemaRegistry({ 'json:any-v1': z.json() }),
-      resolveInference: (connectionId) =>
-        connectionId === 'test-provider-default' ? { provider: 'test-provider' } : undefined,
+      worktreesRoot,
+      processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
+      now: () => '2026-08-20T12:00:02.000Z',
+    })
+    const runner = createAgentNodeRunner({
+      harnesses,
+      resolveHarness: (harnessId) => (harnessId === 'pi' ? agent : undefined),
+      workspaces,
+      runs,
     })
     const worker = createExecutionWorker({
       workerId: 'worker-e2e',
       queue,
-      runners: createJobRunnerRegistry({ agent: runner }),
+      runner,
       now: () => '2026-08-20T12:00:02.000Z',
     })
-    const pump = createExecutionPump({ coordinator, worker, pollIntervalMs: 1_000 })
+    const pump = createExecutionPump({
+      coordinator,
+      worker,
+      pollIntervalMs: 1_000,
+      recoverExpired: () => undefined,
+    })
     const baseRuns = createRunService({
       events,
       runs,
       workflows,
+      harnesses,
+      resolveProject: async (projectId) => ({
+        projectId: ProjectIdSchema.parse(projectId),
+        name: 'API',
+        repositoryPath: sourceRepository,
+        baseSha: GitShaSchema.parse(baseSha),
+        sourceBranch: 'main',
+      }),
       now: () => '2026-08-20T12:00:00.000Z',
       createRunId: () => 'run-e2e',
     })
@@ -135,7 +171,7 @@ describe('orchestrated run HTTP flow', () => {
       run: { status: 'SUCCEEDED', transitionCount: 0 },
       nodeExecutions: [
         {
-          nodeId: 'identify-agent',
+          nodeId: 'agent',
           status: 'SUCCEEDED',
           outcome: 'completed',
           attemptId: expect.stringMatching(/^attempt-/u),
@@ -154,6 +190,12 @@ describe('orchestrated run HTTP flow', () => {
         'RUN_COMPLETED',
       ]),
     )
+    const worktreePath = join(realpathSync(worktreesRoot), 'run-e2e', 'project-api')
+    expect(existsSync(join(worktreePath, 'agent-result.txt'))).toBe(true)
+    expect(existsSync(join(sourceRepository, 'agent-result.txt'))).toBe(false)
+    expect(runs.listRunProjectWorktrees('run-e2e')).toMatchObject([
+      { projectId: 'project-api', status: 'READY', worktreePath },
+    ])
     await pump.stop()
   })
 })

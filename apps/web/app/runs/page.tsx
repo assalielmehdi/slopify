@@ -1,8 +1,8 @@
 import type { Metadata } from 'next'
 import { RunStatusSchema } from '@slopify/contracts'
 
-import { emptyRunFilters, type RunFilters } from '@/components/runs/run-filters'
 import { RunHistory } from '@/components/runs/run-history'
+import { emptyRunFilters, runFilterSearch, type RunFilters } from '@/lib/run-filters'
 
 export const metadata: Metadata = {
   title: 'Runs',
@@ -53,5 +53,11 @@ export default async function RunsPage({
     durationMaxSeconds: seconds('durationMaxSeconds'),
   }
 
-  return <RunHistory initialFilters={filters} page={page} />
+  return (
+    <RunHistory
+      initialFilters={filters}
+      key={runFilterSearch(filters, page).slice('/runs?'.length)}
+      page={page}
+    />
+  )
 }

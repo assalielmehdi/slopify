@@ -3,34 +3,31 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createExecutionWorker,
   createInMemoryExecutionMessageQueue,
-  createJobRunnerRegistry,
-  type JobRunner,
+  type NodeRunner,
 } from '../../src/index.js'
 
 const timestamp = '2026-08-20T12:00:00.000Z'
 
 describe('execution worker', () => {
-  it('is graph-neutral and publishes one terminal fact for a claimed job', async () => {
+  it('is graph-neutral and publishes one terminal fact for a claimed node', async () => {
     const queue = createInMemoryExecutionMessageQueue()
     queue.enqueue({
       id: 'command-01',
       destination: 'WORKER',
-      type: 'EXECUTE_JOB',
+      type: 'EXECUTE_NODE',
       runId: 'run-01',
       nodeExecutionId: 'node-execution-01',
       attemptId: 'attempt-01',
-      payload: { version: 1, nodeId: 'plan', jobKind: 'agent' },
+      payload: { version: 1, nodeId: 'plan' },
       availableAt: timestamp,
       createdAt: timestamp,
     })
-    const runner: JobRunner = {
-      run: vi.fn(async (input, publishProgress) => {
-        await publishProgress({ eventType: 'AGENT_MESSAGE', data: { content: 'Working' } })
+    const runner: NodeRunner = {
+      run: vi.fn(async () => {
         return {
           status: 'succeeded',
           outcome: 'ready',
           output: { summary: 'Done' },
-          artifactIds: [],
         }
       }),
       cancel: vi.fn(async () => ({ status: 'cancelled' })),
@@ -38,7 +35,7 @@ describe('execution worker', () => {
     const worker = createExecutionWorker({
       workerId: 'worker-01',
       queue,
-      runners: createJobRunnerRegistry({ agent: runner }),
+      runner,
       now: () => timestamp,
       createMessageId: (() => {
         let id = 0
@@ -54,30 +51,12 @@ describe('execution worker', () => {
         attemptId: 'attempt-01',
         nodeId: 'plan',
       }),
-      expect.any(Function),
     )
     expect(queue.list({ destination: 'COORDINATOR' }).map(({ type }) => type)).toEqual([
-      'JOB_STARTED',
-      'JOB_PROGRESS',
-      'JOB_SUCCEEDED',
+      'NODE_EXECUTION_STARTED',
+      'NODE_EXECUTION_SUCCEEDED',
     ])
     expect(queue.get('command-01')).toMatchObject({ status: 'PROCESSED' })
-  })
-
-  it('registers a future job runner without graph-specific worker changes', async () => {
-    const codeRunner: JobRunner = {
-      run: vi.fn(async () => ({
-        status: 'failed',
-        code: 'NOT_IMPLEMENTED',
-        message: 'Code jobs are deferred',
-        retryable: false,
-      })),
-      cancel: vi.fn(async () => ({ status: 'cancelled' })),
-    }
-    const registry = createJobRunnerRegistry({ agent: codeRunner })
-
-    expect(registry.resolve('agent')).toBe(codeRunner)
-    expect(registry.resolve('code')).toBeUndefined()
   })
 
   it('does not exceed its configured concurrency', async () => {
@@ -86,24 +65,24 @@ describe('execution worker', () => {
       queue.enqueue({
         id: `command-${index}`,
         destination: 'WORKER',
-        type: 'EXECUTE_JOB',
+        type: 'EXECUTE_NODE',
         runId: 'run-01',
         nodeExecutionId: `node-execution-${index}`,
         attemptId: `attempt-${index}`,
-        payload: { version: 1, nodeId: `node-${index}`, jobKind: 'agent' },
+        payload: { version: 1, nodeId: `node-${index}` },
         availableAt: timestamp,
         createdAt: timestamp,
       })
     }
     let active = 0
     let maximum = 0
-    const runner: JobRunner = {
+    const runner: NodeRunner = {
       async run() {
         active += 1
         maximum = Math.max(maximum, active)
         await Promise.resolve()
         active -= 1
-        return { status: 'succeeded', outcome: 'done', output: {}, artifactIds: [] }
+        return { status: 'succeeded', outcome: 'done', output: {} }
       },
       async cancel() {
         return { status: 'cancelled' }
@@ -113,7 +92,7 @@ describe('execution worker', () => {
       workerId: 'worker-01',
       concurrency: 2,
       queue,
-      runners: createJobRunnerRegistry({ agent: runner }),
+      runner,
       now: () => timestamp,
     })
 
@@ -126,11 +105,11 @@ describe('execution worker', () => {
     queue.enqueue({
       id: 'command-throw',
       destination: 'WORKER',
-      type: 'EXECUTE_JOB',
+      type: 'EXECUTE_NODE',
       runId: 'run-01',
       nodeExecutionId: 'node-execution-throw',
       attemptId: 'attempt-throw',
-      payload: { version: 1, nodeId: 'plan', jobKind: 'agent' },
+      payload: { version: 1, nodeId: 'plan' },
       availableAt: timestamp,
       createdAt: timestamp,
     })
@@ -138,41 +117,38 @@ describe('execution worker', () => {
     const worker = createExecutionWorker({
       workerId: 'worker-01',
       queue,
-      runners: createJobRunnerRegistry({
-        agent: {
-          run: vi.fn(async () => {
-            throw new Error(secret)
-          }),
-          cancel: vi.fn(async () => ({ status: 'cancelled' })),
-        },
-      }),
+      runner: {
+        run: vi.fn(async () => {
+          throw new Error(secret)
+        }),
+        cancel: vi.fn(async () => ({ status: 'cancelled' })),
+      },
       now: () => timestamp,
     })
 
     expect(await worker.runOnce()).toBe(true)
     const failure = queue.list({ destination: 'COORDINATOR' }).at(-1)
     expect(failure).toMatchObject({
-      type: 'JOB_FAILED',
+      type: 'NODE_EXECUTION_FAILED',
       payload: {
-        code: 'JOB_RUNNER_FAILED',
-        message: 'Job runner failed before producing a result',
-        retryable: false,
+        code: 'NODE_RUNNER_FAILED',
+        message: 'Node runner failed before producing a result',
       },
     })
     expect(JSON.stringify(failure)).not.toContain(secret)
     expect(queue.get('command-throw')).toMatchObject({ status: 'PROCESSED' })
   })
 
-  it('renews the claim while a long-running job is active', async () => {
+  it('renews the claim while a long-running node is active', async () => {
     const queue = createInMemoryExecutionMessageQueue()
     queue.enqueue({
       id: 'command-renew',
       destination: 'WORKER',
-      type: 'EXECUTE_JOB',
+      type: 'EXECUTE_NODE',
       runId: 'run-01',
       nodeExecutionId: 'node-execution-renew',
       attemptId: 'attempt-renew',
-      payload: { version: 1, nodeId: 'plan', jobKind: 'agent' },
+      payload: { version: 1, nodeId: 'plan' },
       availableAt: timestamp,
       createdAt: timestamp,
     })
@@ -182,17 +158,15 @@ describe('execution worker', () => {
       queue,
       leaseDurationMs: 30,
       leaseRenewalMs: 5,
-      runners: createJobRunnerRegistry({
-        agent: {
-          async run() {
-            await new Promise((resolve) => setTimeout(resolve, 18))
-            return { status: 'succeeded', outcome: 'done', output: {}, artifactIds: [] }
-          },
-          async cancel() {
-            return { status: 'cancelled' }
-          },
+      runner: {
+        async run() {
+          await new Promise((resolve) => setTimeout(resolve, 18))
+          return { status: 'succeeded', outcome: 'done', output: {} }
         },
-      }),
+        async cancel() {
+          return { status: 'cancelled' }
+        },
+      },
       now: () => new Date().toISOString(),
     })
 
@@ -205,11 +179,11 @@ describe('execution worker', () => {
     queue.enqueue({
       id: 'command-cancel',
       destination: 'WORKER',
-      type: 'EXECUTE_JOB',
+      type: 'EXECUTE_NODE',
       runId: 'run-01',
       nodeExecutionId: 'node-execution-cancel',
       attemptId: 'attempt-cancel',
-      payload: { version: 1, nodeId: 'plan', jobKind: 'agent' },
+      payload: { version: 1, nodeId: 'plan' },
       availableAt: timestamp,
       createdAt: timestamp,
     })
@@ -221,15 +195,13 @@ describe('execution worker', () => {
     const worker = createExecutionWorker({
       workerId: 'worker-01',
       queue,
-      runners: createJobRunnerRegistry({
-        agent: {
-          run: () =>
-            new Promise((resolve) => {
-              finish = resolve
-            }),
-          cancel,
-        },
-      }),
+      runner: {
+        run: () =>
+          new Promise((resolve) => {
+            finish = resolve
+          }),
+        cancel,
+      },
       now: () => timestamp,
     })
 

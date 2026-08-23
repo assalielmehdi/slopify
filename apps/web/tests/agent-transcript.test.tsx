@@ -69,7 +69,6 @@ describe('AgentTranscript', () => {
               outcome: 'completed',
               summary: 'The implementation is complete.',
               data: {},
-              artifacts: [],
               evidence: [],
             },
             usage: {
@@ -89,6 +88,8 @@ describe('AgentTranscript', () => {
     expect(screen.queryByText('I should inspect the source first.')).toBeNull()
     expect(screen.queryByText('read_file and bash')).toBeNull()
     expect(screen.getByText('The implementation is complete.')).toBeTruthy()
+    expect(screen.getByText('Agent')).toBeTruthy()
+    expect(screen.queryByText('Pi agent')).toBeNull()
 
     fireEvent.click(disclosure)
 
@@ -114,7 +115,7 @@ describe('AgentTranscript', () => {
   it('renders Markdown in prompt and results while reasoning remains plain text', () => {
     const { container } = render(
       <AgentTranscript
-        prompt="Read the **task** and visit [ClickUp](https://app.clickup.com)."
+        prompt="Read the **request** and visit [Reference](https://example.com/reference)."
         result={undefined}
         streaming={false}
         events={[
@@ -129,7 +130,6 @@ describe('AgentTranscript', () => {
               outcome: 'completed',
               summary: 'Successfully read **RVMP-90**.\n\n- Status: in progress',
               data: {},
-              artifacts: [],
               evidence: [],
             },
             usage: {
@@ -144,9 +144,9 @@ describe('AgentTranscript', () => {
       />,
     )
 
-    expect(screen.getByText('task').tagName).toBe('STRONG')
-    expect(screen.getByRole('link', { name: 'ClickUp' }).getAttribute('href')).toBe(
-      'https://app.clickup.com',
+    expect(screen.getByText('request').tagName).toBe('STRONG')
+    expect(screen.getByRole('link', { name: 'Reference' }).getAttribute('href')).toBe(
+      'https://example.com/reference',
     )
     fireEvent.click(screen.getByRole('button', { name: 'Worked for 1.3 s' }))
     const firstReasoningParagraph = screen
@@ -232,7 +232,6 @@ describe('AgentTranscript', () => {
               outcome: 'completed',
               summary: 'The implementation is complete.',
               data: {},
-              artifacts: [],
               evidence: [],
             },
             usage: {
@@ -292,5 +291,37 @@ describe('AgentTranscript', () => {
     const secondAnnouncement = container.querySelector('[aria-live] > span')
     expect(secondAnnouncement?.textContent).toBe('Model reasoning updated')
     expect(secondAnnouncement).not.toBe(firstAnnouncement)
+  })
+
+  it('uses raw harness events to group streamed reasoning updates', () => {
+    const { container } = render(
+      <AgentTranscript
+        prompt="Inspect the repository."
+        result={undefined}
+        streaming={false}
+        events={[
+          traceEvent(1, 'HARNESS_EVENT', {
+            harnessId: 'pi',
+            event: {
+              type: 'message_update',
+              assistantMessageEvent: { type: 'thinking_start' },
+            },
+          }),
+          traceEvent(2, 'AGENT_REASONING', { content: 'Inspecting ' }),
+          traceEvent(3, 'AGENT_REASONING', { content: 'the repository.' }),
+          traceEvent(4, 'HARNESS_EVENT', {
+            harnessId: 'pi',
+            event: {
+              type: 'message_update',
+              assistantMessageEvent: { type: 'thinking_end' },
+            },
+          }),
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Work details' }))
+    expect(screen.getByText('Inspecting the repository.')).toBeTruthy()
+    expect(container.querySelectorAll('[data-message-kind="reasoning"]')).toHaveLength(1)
   })
 })

@@ -3,14 +3,41 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   AgentTraceSchema,
   DeletionReceiptSchema,
+  HarnessCatalogResponseSchema,
   ProjectSchema,
   UndoDeletionResponseSchema,
 } from '@slopify/contracts'
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { ApiClientError, createApiClient } from '../lib/api-client'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 describe('API client', () => {
+  it('loads the host-discovered harness catalog', async () => {
+    const response = HarnessCatalogResponseSchema.parse({
+      harnesses: [
+        {
+          harnessId: 'pi',
+          name: 'Pi',
+          description: 'Runs the locally installed Pi coding agent.',
+          availability: 'AVAILABLE',
+          executablePath: '/opt/homebrew/bin/pi',
+          version: '0.84.2',
+          installHref: 'https://pi.dev/',
+          installLabel: 'Install Pi',
+          models: [],
+        },
+      ],
+    })
+    const fetchImplementation = vi.fn(async () => Response.json(response))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listHarnesses()).resolves.toEqual(response.harnesses)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/harnesses', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
+  })
+
   it('loads a typed agent trace for one captured node execution', async () => {
     const trace = AgentTraceSchema.parse({
       header: {
@@ -21,12 +48,22 @@ describe('API client', () => {
         nodeId: 'identify-agent',
         createdAt: '2026-08-22T10:00:00.000Z',
         configuration: {
-          connectionId: 'provider-default',
-          provider: 'openrouter',
+          harnessId: 'pi',
+          harnessVersion: '0.84.2',
           model: 'test/model',
           thinkingLevel: 'medium',
           renderedPrompt: 'Inspect the repository.',
-          permissionProfile: 'workspace-write',
+          workspaceRoot: '/worktrees/run-01/project-api',
+          primaryProjectId: 'project-api',
+          projects: [
+            {
+              projectId: 'project-api',
+              name: 'API',
+              worktreePath: '/worktrees/run-01/project-api',
+              baseSha: 'a'.repeat(40),
+              sourceBranch: 'main',
+            },
+          ],
           timeoutSeconds: 600,
         },
       },
@@ -87,140 +124,6 @@ describe('API client', () => {
     )
   })
 
-  it('loads the API-owned connection catalog with current connection state', async () => {
-    const catalogEntry = {
-      type: 'gitlab',
-      category: 'connector',
-      name: 'GitLab',
-      icon: 'gitlab',
-      eyebrow: 'Source control',
-      summary: 'Read repositories and manage delivery through GitLab.',
-      description: 'Connect GitLab to manage delivery.',
-      setup: ['Create a personal access token.'],
-      access: 'Uses the permissions available to your GitLab user.',
-      credentialLabel: 'Personal access token',
-      credentialDescription: 'Validated before storage.',
-      replacementLabel: 'New personal access token',
-      resourceHref: 'https://gitlab.com/-/user_settings/personal_access_tokens',
-      resourceLabel: 'Create a personal access token',
-    }
-    const fetchImplementation = vi.fn(async () =>
-      Response.json({ catalog: [catalogEntry], connections: [] }),
-    )
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(client.listConnections?.()).resolves.toEqual({
-      catalog: [catalogEntry],
-      connections: [],
-    })
-    expect(fetchImplementation).toHaveBeenCalledWith('/api/connections', {
-      headers: { accept: 'application/json' },
-      method: 'GET',
-    })
-  })
-
-  it('configures and deletes a canonical connection without sending a client-owned ID or label', async () => {
-    const record = {
-      connectionId: 'gitlab-default',
-      type: 'gitlab' as const,
-      category: 'connector' as const,
-      label: 'GitLab',
-      authority: 'Read and write GitLab resources available to the connected user.',
-      configuration: {},
-      metadata: { identity: { username: 'operator' } },
-      status: 'CONNECTED' as const,
-      validatedAt: '2026-08-22T10:00:00Z',
-      createdAt: '2026-08-22T10:00:00Z',
-      updatedAt: '2026-08-22T10:00:00Z',
-    }
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(record, { status: 201 }))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(
-      client.connect?.({
-        type: 'gitlab',
-        configuration: {},
-        credential: { type: 'api_key', key: 'secret-pat' },
-      }),
-    ).resolves.toEqual(record)
-    await expect(client.deleteConnection?.('gitlab-default')).resolves.toBeUndefined()
-    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/connections', {
-      body: JSON.stringify({
-        type: 'gitlab',
-        configuration: {},
-        credential: { type: 'api_key', key: 'secret-pat' },
-      }),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
-    })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/connections/gitlab-default', {
-      method: 'DELETE',
-    })
-  })
-
-  it('starts, polls, and cancels ChatGPT subscription authentication', async () => {
-    const pending = {
-      id: 'oauth-01',
-      status: 'PENDING' as const,
-      authorizationUrl: 'https://auth.openai.com/authorize',
-    }
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(pending, { status: 202 }))
-      .mockResolvedValueOnce(Response.json(pending))
-      .mockResolvedValueOnce(new Response(null, { status: 204 }))
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(client.startChatGptOAuth?.()).resolves.toEqual(pending)
-    await expect(client.getChatGptOAuth?.('oauth-01')).resolves.toEqual(pending)
-    await expect(client.cancelChatGptOAuth?.('oauth-01')).resolves.toBeUndefined()
-    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/connections/chatgpt/oauth', {
-      body: JSON.stringify({}),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
-    })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(
-      2,
-      '/api/connections/chatgpt/oauth/oauth-01',
-      { headers: { accept: 'application/json' }, method: 'GET' },
-    )
-    expect(fetchImplementation).toHaveBeenNthCalledWith(
-      3,
-      '/api/connections/chatgpt/oauth/oauth-01',
-      { method: 'DELETE' },
-    )
-  })
-
-  it('connects Figma Desktop without sending endpoint or credential data from the browser', async () => {
-    const record = {
-      connectionId: 'figma-default',
-      type: 'figma',
-      category: 'connector',
-      label: 'Figma',
-      authority: 'Read Figma designs.',
-      configuration: { serverUrl: 'http://127.0.0.1:3845/mcp' },
-      metadata: { tools: [{ name: 'get_metadata' }] },
-      status: 'CONNECTED',
-      validatedAt: '2026-08-23T00:00:00.000Z',
-      createdAt: '2026-08-23T00:00:00.000Z',
-      updatedAt: '2026-08-23T00:00:00.000Z',
-    } as const
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(record, { status: 201 }))
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(client.connectFigmaDesktop?.()).resolves.toEqual(record)
-    expect(fetchImplementation).toHaveBeenCalledWith('/api/connections/figma/desktop', {
-      body: JSON.stringify({}),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
-    })
-  })
-
   it('lists, adds, deletes, and restores local Git projects through the same-origin API', async () => {
     const project = ProjectSchema.parse({
       projectId: 'project-01',
@@ -271,13 +174,10 @@ describe('API client', () => {
   })
 
   it('loads and validates the workflow catalog and current workflow', async () => {
-    const workflow = createPredefinedV1Workflow({
+    const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
-      agentDefaults: {
-        provider: 'test-provider',
-        model: 'test-model',
-        thinkingLevel: 'high',
-      },
+      modelId: 'test-model',
+      thinkingLevel: 'high',
     })
     const fetchImplementation = vi
       .fn<typeof fetch>()
@@ -295,16 +195,17 @@ describe('API client', () => {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/delivery-workflow', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/default-workflow', {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
   })
 
   it('updates a full workflow and parses the canonical response', async () => {
-    const workflow = createPredefinedV1Workflow({
+    const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
-      agentDefaults: { provider: 'chatgpt', model: 'gpt-5.5', thinkingLevel: 'high' },
+      modelId: 'gpt-5.5',
+      thinkingLevel: 'high',
     })
     const canonical = { ...workflow, updatedAt: '2026-08-22T12:00:00.000Z' }
     const fetchImplementation = vi
@@ -313,7 +214,7 @@ describe('API client', () => {
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(client.updateWorkflow(workflow.workflowId, workflow)).resolves.toEqual(canonical)
-    expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows/delivery-workflow', {
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows/default-workflow', {
       body: JSON.stringify(workflow),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       method: 'PUT',
@@ -328,38 +229,17 @@ describe('API client', () => {
     await expect(client.listWorkflows()).rejects.toMatchObject({ name: 'ZodError' })
   })
 
-  it('loads connector status without exposing removed delivery profile APIs', async () => {
-    const fetchImplementation = vi
-      .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ clickup: false, gitlab: true, modelProvider: false }))
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(client.getConnectorStatus()).resolves.toEqual({
-      clickup: false,
-      gitlab: true,
-      modelProvider: false,
-    })
-    expect('listProjectProfiles' in client).toBe(false)
-    expect('getProjectProfileReadiness' in client).toBe(false)
-    expect('resolveClickUpTask' in client).toBe(false)
-  })
-
   it('starts a run with generic variables', async () => {
     const run = {
       runId: 'run-01',
-      workflowId: 'delivery-workflow',
-      workflowSnapshot: createPredefinedV1Workflow({
+      workflowId: 'default-workflow',
+      workflowSnapshot: createAgentWorkflowFixture({
         createdAt: '2026-08-18T12:00:00Z',
-        agentDefaults: {
-          provider: 'test-provider',
-          model: 'test-model',
-          thinkingLevel: 'high',
-        },
+        modelId: 'test-model',
+        thinkingLevel: 'high',
       }),
-      variables: { task: 'Coordinate API and web delivery.', attempts: 2 },
-      missingVariables: [],
+      variables: { task: 'Coordinate API and web changes.', attempts: 2 },
       status: 'PENDING',
-      currentNodeId: null,
       transitionCount: 0,
       createdAt: '2026-08-20T10:00:00Z',
       startedAt: null,
@@ -372,47 +252,70 @@ describe('API client', () => {
 
     await expect(
       client.startRun({
-        workflowId: 'delivery-workflow',
-        variables: { task: 'Coordinate API and web delivery.', attempts: 2 },
+        workflowId: 'default-workflow',
+        variables: { task: 'Coordinate API and web changes.', attempts: 2 },
       }),
     ).resolves.toEqual(run)
     expect(fetchImplementation).toHaveBeenCalledWith('/api/runs', {
       body: JSON.stringify({
-        workflowId: 'delivery-workflow',
-        variables: { task: 'Coordinate API and web delivery.', attempts: 2 },
+        workflowId: 'default-workflow',
+        variables: { task: 'Coordinate API and web changes.', attempts: 2 },
       }),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       method: 'POST',
     })
   })
 
-  it('preserves the active run identity from a start conflict', async () => {
-    const client = createApiClient({
-      fetch: async () =>
-        Response.json(
-          {
-            error: {
-              code: 'RUN_ACTIVE',
-              message: 'Another run is already active',
-              details: { activeRunId: 'run-active-01' },
-            },
-          },
-          { status: 409 },
-        ),
+  it('loads immutable project and worktree evidence with run details', async () => {
+    const workflow = createAgentWorkflowFixture({
+      createdAt: '2026-08-18T12:00:00Z',
+      modelId: 'test-model',
+      thinkingLevel: 'medium',
     })
-
-    await expect(
-      client.startRun({
-        workflowId: 'delivery-workflow',
+    const detail = {
+      run: {
+        runId: 'run-01',
+        workflowId: 'default-workflow',
+        workflowSnapshot: workflow,
         variables: {},
-      }),
-    ).rejects.toEqual(
-      new ApiClientError({
-        code: 'RUN_ACTIVE',
-        message: 'Another run is already active',
-        status: 409,
-        details: { activeRunId: 'run-active-01' },
-      }),
-    )
+        status: 'PENDING',
+        transitionCount: 0,
+        createdAt: '2026-08-23T12:00:00Z',
+        startedAt: null,
+        completedAt: null,
+      },
+      events: [],
+      nodeExecutions: [],
+      projects: [
+        {
+          projectId: 'project-api',
+          position: 0,
+          name: 'API',
+          repositoryPath: '/repositories/api',
+          baseSha: 'a'.repeat(40),
+          sourceBranch: 'main',
+          isPrimary: true,
+        },
+      ],
+      projectWorktrees: [
+        {
+          projectId: 'project-api',
+          position: 0,
+          status: 'READY',
+          worktreePath: '/worktrees/run-01/project-api',
+          errorMessage: null,
+          preparedAt: '2026-08-23T12:00:01Z',
+          updatedAt: '2026-08-23T12:00:01Z',
+        },
+      ],
+    }
+    const fetchImplementation = vi.fn(async () => Response.json(detail))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.getRun('run-01')).resolves.toEqual(detail)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/runs/run-01', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
   })
 })

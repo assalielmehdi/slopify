@@ -5,13 +5,13 @@ import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RunsPage from '../app/runs/page'
-import { formatRunHistoryTimestamp, RunHistory } from '../components/runs/run-history'
-import { formatTimestamp } from '../components/runs/run-status'
+import { RunHistory } from '../components/runs/run-history'
 import { createApiClient, type ApiClient, type RunHistoryPage } from '../lib/api-client'
+import { formatRunHistoryTimestamp, formatTimestamp } from '../lib/run-format'
 
 const runSummary = {
   runId: RunIdSchema.parse('run-newest'),
-  workflowId: WorkflowIdSchema.parse('delivery-workflow'),
+  workflowId: WorkflowIdSchema.parse('default-workflow'),
   status: 'SUCCEEDED',
   createdAt: '2026-08-20T11:00:00Z',
   startedAt: '2026-08-20T11:00:01Z',
@@ -118,6 +118,7 @@ describe('run history page', () => {
     const invalid = await RunsPage({ searchParams: Promise.resolve({ page: ['3', '4'] }) })
 
     expect(valid).toMatchObject({
+      key: 'page=3&status=FAILED&startedFrom=2026-08-20&durationMinSeconds=1.5',
       props: {
         page: 3,
         initialFilters: {
@@ -127,7 +128,7 @@ describe('run history page', () => {
         },
       },
     })
-    expect(invalid).toMatchObject({ props: { page: 1 } })
+    expect(invalid).toMatchObject({ key: '', props: { page: 1 } })
   })
 
   it('renders exactly run ID, started, duration, and semantic status columns', async () => {
@@ -259,12 +260,6 @@ describe('run history page', () => {
         'text-status-warning',
         'hover:bg-status-warning/10',
         'aria-checked:bg-status-warning/15',
-      ],
-      [
-        'Interrupted',
-        'text-destructive',
-        'hover:bg-destructive/10',
-        'aria-checked:bg-destructive/15',
       ],
     ] as const) {
       const option = screen.getByRole('checkbox', { name: label })

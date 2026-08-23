@@ -28,8 +28,7 @@ export function CatalogToolbar({
 
   return (
     <div className="mb-3 flex justify-end gap-2">
-      <div
-        role="search"
+      <search
         className={cn(
           't-resize group/search flex h-8 items-center overflow-hidden rounded-md bg-background [--resize-dur:var(--duration-very-slow)]',
           searchOpen ? 'w-60' : 'w-8 hover:w-60 focus-within:w-60',
@@ -68,7 +67,7 @@ export function CatalogToolbar({
               : 'opacity-0 group-hover/search:opacity-100 group-focus-within/search:opacity-100',
           )}
         />
-      </div>
+      </search>
       {children}
       <Button
         type="button"

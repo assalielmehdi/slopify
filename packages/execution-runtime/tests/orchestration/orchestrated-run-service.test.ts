@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
-
 import {
   createOrchestratedRunService,
   createRunService,
@@ -9,18 +7,21 @@ import {
   createSqliteExecutionMessageQueue,
   createWorkflowCoordinator,
 } from '../../src/index.js'
-import { TEST_WORKFLOW_ID, createPersistenceFixture } from '../persistence/test-fixture.js'
+import {
+  TEST_WORKFLOW_ID,
+  createPersistenceFixture,
+  createTestAgentWorkflow,
+  createTestHarnessCatalog,
+  resolveTestProject,
+} from '../persistence/test-fixture.js'
 
 describe('orchestrated run service', () => {
   it('starts the durable coordinator before returning the admitted run', async () => {
     const fixture = createPersistenceFixture(
-      createPredefinedV1Workflow({
+      createTestAgentWorkflow({
         createdAt: '2026-08-20T12:00:00.000Z',
-        agentDefaults: {
-          provider: 'test-provider',
-          model: 'test-model',
-          thinkingLevel: 'medium',
-        },
+        projectIds: ['project-api'],
+        primaryProjectId: 'project-api',
       }),
     )
     try {
@@ -35,6 +36,8 @@ describe('orchestrated run service', () => {
         events: fixture.events,
         runs: fixture.runs,
         workflows: fixture.workflows,
+        harnesses: createTestHarnessCatalog(),
+        resolveProject: resolveTestProject,
         createRunId: () => 'run-orchestrated',
         now: () => '2026-08-20T12:00:00.000Z',
       })
@@ -45,9 +48,9 @@ describe('orchestrated run service', () => {
       expect(run).toMatchObject({ runId: 'run-orchestrated', status: 'RUNNING' })
       expect(queue.list({ destination: 'WORKER' })).toEqual([
         expect.objectContaining({
-          type: 'EXECUTE_JOB',
+          type: 'EXECUTE_NODE',
           runId: 'run-orchestrated',
-          payload: { version: 1, nodeId: fixture.workflow.startNodeId, jobKind: 'agent' },
+          payload: { version: 1, nodeId: fixture.workflow.startNodeId },
         }),
       ])
       expect(service.get('run-orchestrated')?.events).toEqual(

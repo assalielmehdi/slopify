@@ -74,7 +74,7 @@ describe('API graceful shutdown', () => {
     expect(order.filter((entry) => entry === 'runs.stopAdmissions')).toHaveLength(1)
   })
 
-  it('forces connections closed and flushes SQLite at the configured deadline', async () => {
+  it('forces the server closed and flushes SQLite at the configured deadline', async () => {
     vi.useFakeTimers()
     const order: string[] = []
     let databaseOpen = true

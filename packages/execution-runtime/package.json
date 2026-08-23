@@ -16,13 +16,14 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run --filter @slopify/agent-runtimes build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json && rm -rf dist/skills/built-ins && cp -R src/skills/built-ins dist/skills/built-ins",
-    "typecheck": "bun run --filter @slopify/agent-runtimes build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
-    "lint": "bun --bun eslint src tests --max-warnings 0",
+    "clean": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "build": "bun run clean && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "dev": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "lint": "bun --bun eslint . --max-warnings 0",
     "test": "bun --bun vitest run --root ../.. packages/execution-runtime/tests"
   },
   "dependencies": {
-    "@slopify/agent-runtimes": "workspace:*",
     "@slopify/contracts": "workspace:*",
     "@slopify/workflow-model": "workspace:*",
     "execa": "10.0.1",

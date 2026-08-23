@@ -1,68 +1,19 @@
 export { createOrchestratedRunService } from './orchestration/orchestrated-run-service.js'
 export {
+  HarnessCatalogError,
+  createHarnessCatalog,
+  type AvailableHarnessDescriptor,
+  type HarnessCatalog,
+  type HarnessCatalogErrorCode,
+  type HarnessInspector,
+} from './harnesses/harness-catalog.js'
+export {
   AgentTraceStoreError,
   createFilesystemAgentTraceStore,
   type AgentTraceStore,
   type AgentTraceStoreErrorCode,
 } from './traces/filesystem-agent-trace-store.js'
-export {
-  createAgentJobRunner,
-  createAgentResultSchemaRegistry,
-  type AgentInferenceResolution,
-  type AgentResultSchemaRegistry,
-} from './orchestration/agent-job-runner.js'
-export {
-  CredentialSchema,
-  createFileCredentialStore,
-  createInMemoryCredentialStore,
-  type Credential,
-  type CredentialStore,
-} from './connections/credential-store.js'
-export {
-  ConnectionServiceError,
-  createConnectionService,
-  createInMemoryConnectionRepository,
-  type ConnectInput,
-  type ConnectionCategory,
-  type ConnectionDriver,
-  type ConnectionRecord,
-  type ConnectionRepository,
-  type ConnectionService,
-  type ConnectionServiceErrorCode,
-  type ConnectionType,
-  type ConnectionValidationInput,
-} from './connections/connection-service.js'
-export {
-  type ConnectionCatalog,
-  type ConnectionCatalogEntry,
-} from './connections/connection-catalog.js'
-export {
-  createClickUpConnectionDriver,
-  createChatGptSubscriptionConnectionDriver,
-  createFigmaConnectionDriver,
-  createGitLabConnectionDriver,
-  createOpenRouterConnectionDriver,
-} from './connections/http-drivers.js'
-export {
-  SkillCatalogError,
-  type CreateSkillInput,
-  type SkillCatalog,
-  type SkillCatalogErrorCode,
-  type SkillFile,
-  type SkillRecord,
-  type SkillSnapshot,
-  type SkillSnapshotStore,
-  type UpdateSkillInput,
-} from './skills/skill-catalog.js'
-export {
-  createFilesystemSkillCatalog,
-  createFilesystemSkillSnapshotStore,
-} from './skills/filesystem-skill-catalog.js'
-export {
-  BUILT_IN_CONNECTOR_SKILLS,
-  initializeBuiltInConnectorSkills,
-  type BuiltInConnectorSkill,
-} from './skills/built-in-connector-skills.js'
+export { createAgentNodeRunner } from './orchestration/agent-node-runner.js'
 export {
   DatabaseInitializationError,
   openDatabase,
@@ -71,8 +22,6 @@ export {
   type OpenDatabaseOptions,
   type WorkbenchDatabase,
 } from './persistence/database.js'
-export { createConnectionRepository } from './persistence/connection-repository.js'
-export { createConnectionCatalogRepository } from './persistence/connection-catalog-repository.js'
 export { createProjectRepository } from './persistence/project-repository.js'
 export { createDeletionOperationRepository } from './persistence/deletion-operation-repository.js'
 export {
@@ -95,16 +44,26 @@ export {
 } from './projects/project-service.js'
 export { type ProjectRecord, type ProjectRepository } from './projects/project-repository.js'
 export { createNativeGitProjectInspector } from './projects/native-git-project-inspector.js'
+export { createNativeRunProjectResolver } from './projects/native-run-project-resolver.js'
+export {
+  createNativeGitRunWorkspaceProvisioner,
+  type CreateNativeGitRunWorkspaceProvisionerOptions,
+} from './workspaces/native-git-run-workspace-provisioner.js'
+export {
+  RunWorkspaceProvisioningError,
+  type ProvisionedRunProject,
+  type RunWorkspaceProvisioner,
+  type RunWorkspaceProvisioningFailure,
+} from './workspaces/run-workspace-provisioner.js'
 export { createSqliteExecutionMessageQueue } from './persistence/execution-message-queue.js'
 export { createSqliteCoordinatorStateStore } from './persistence/coordinator-state-store.js'
 export {
-  ExecuteJobPayloadSchema,
+  ExecuteNodePayloadSchema,
   ExecutionMessagePayloadSchema,
-  JobCancelledPayloadSchema,
-  JobFailedPayloadSchema,
-  JobProgressPayloadSchema,
-  JobStartedPayloadSchema,
-  JobSucceededPayloadSchema,
+  NodeExecutionCancelledPayloadSchema,
+  NodeExecutionFailedPayloadSchema,
+  NodeExecutionStartedPayloadSchema,
+  NodeExecutionSucceededPayloadSchema,
   createInMemoryExecutionMessageQueue,
   decodeExecutionMessagePayload,
   type ExecutionMessage,
@@ -116,13 +75,10 @@ export {
 } from './orchestration/execution-messages.js'
 export {
   createExecutionWorker,
-  createJobRunnerRegistry,
   type ExecutionWorker,
-  type JobExecutionInput,
-  type JobProgress,
-  type JobRunResult,
-  type JobRunner,
-  type JobRunnerRegistry,
+  type NodeRunInput,
+  type NodeRunResult,
+  type NodeRunner,
 } from './orchestration/execution-worker.js'
 export {
   createInMemoryCoordinatorStateStore,
@@ -144,47 +100,21 @@ export {
 export { PersistenceError, type PersistenceErrorCode } from './persistence/errors.js'
 export { type JsonPrimitive, type JsonValue } from './persistence/json.js'
 export {
-  createProfileRepository,
-  type CreateProfileSnapshotInput,
-  type ProfileRepository,
-  type ProfileRepositoryConfiguration,
-  type ProfileRepositorySnapshot,
-  type ProjectProfileConfiguration,
-  type ProjectProfileSnapshot,
-} from './persistence/profile-repository.js'
-export {
   createRunRepository,
-  type ChangeRunStatusInput,
-  type CompleteNodeAndSelectEdgeInput,
-  type CompleteNodeInput,
-  type CompletedNodeRoute,
-  type CompleteRunInput,
+  type CreateRunProjectInput,
   type CreateRunInput,
   type ListRunsInput,
-  type DeliveryEvidence,
-  type DeliveryEvidenceStatus,
-  type ExcludedRepositoryInput,
-  type FailNodeAndRunInput,
-  type OutputChunk,
   type NodeExecutionRecord,
-  type PersistedArtifact,
-  type PersistedExcludedRepository,
-  type PersistedRepositorySelection,
-  type RecordArtifactInput,
-  type RecordOutputInput,
-  type RequestRunCancellationInput,
-  type RecordWorkspaceInput,
-  type RepositorySelectionInput,
-  type RepositorySelectionSnapshot,
+  type NodeExecutionStatus,
+  type MarkRunProjectWorktreeFailedInput,
+  type MarkRunProjectWorktreePreparingInput,
+  type MarkRunProjectWorktreeReadyInput,
   type RunRecord,
   type RunPage,
-  type RunWorkspace,
+  type RunProjectSnapshot,
+  type RunProjectWorktree,
+  type RunProjectWorktreeStatus,
   type RunRepository,
-  type SelectRepositoriesInput,
-  type SelectedRepositoryInput,
-  type StartNodeInput,
-  type UpsertDeliveryEvidenceInput,
-  type UpdateArtifactInput,
 } from './persistence/run-repository.js'
 export {
   createWorkflowRepository,
@@ -198,31 +128,22 @@ export {
   type ProcessRunner,
 } from './processes/process-runner.js'
 export {
-  createRecoveryService,
-  type CreateRecoveryServiceOptions,
-  type RecoveryService,
-} from './services/recovery-service.js'
-export {
   CancellationServiceError,
   createCoordinatorCancellationService,
-  createCancellationService,
-  type ActiveRunCancellationResult,
-  type ActiveRunExecution,
   type CancellationService,
   type CancellationServiceErrorCode,
-  type CreateCancellationServiceOptions,
 } from './services/cancellation-service.js'
 export {
   RunServiceError,
   createRunService,
   type CreateRunServiceInput,
   type CreateRunServiceOptions,
-  type PublicRunRecord,
   type RunDetail,
   type RunService,
   type RunServiceErrorCode,
   type RunSummary,
   type RunSummaryPage,
+  type RunProjectResolution,
 } from './services/run-service.js'
 export {
   WorkflowServiceError,

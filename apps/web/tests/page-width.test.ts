@@ -6,7 +6,7 @@ const pageShellSources = [
   'components/runs/live-run.tsx',
   'components/runs/run-history.tsx',
   'components/runs/start-run-form.tsx',
-  'components/skills/skills-manager.tsx',
+  'components/settings/harness-settings.tsx',
 ] as const
 
 describe('page width', () => {

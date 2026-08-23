@@ -1,7 +1,10 @@
+import { HarnessIdSchema } from '@slopify/contracts'
+
 import type { AgentExecutionEvent } from './contract.js'
 import type { EventRedactor, RedactionStream } from './redaction.js'
 
 const MAX_CONTENT_LENGTH = 1_000_000
+const PI_HARNESS_ID = HarnessIdSchema.parse('pi')
 type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue }
 
 type ObservableAgentEvent = Extract<
@@ -10,7 +13,7 @@ type ObservableAgentEvent = Extract<
     type:
       | 'AGENT_MESSAGE'
       | 'AGENT_REASONING'
-      | 'PI_EVENT'
+      | 'HARNESS_EVENT'
       | 'AGENT_TOOL_STARTED'
       | 'AGENT_TOOL_UPDATED'
       | 'AGENT_TOOL_COMPLETED'
@@ -41,7 +44,7 @@ const isToolCallId = (value: unknown): value is string =>
 const isToolName = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 128
 
-const capturedPiEvent = (
+const capturedHarnessEvent = (
   event: Record<string, unknown>,
   redactor: EventRedactor,
 ): NormalizedPiEvent => {
@@ -49,13 +52,17 @@ const capturedPiEvent = (
     const serialized = JSON.stringify(event)
     if (serialized === undefined) throw new Error('Pi event is not JSON serializable')
     return {
-      type: 'PI_EVENT',
-      data: { event: JSON.parse(redactor.redact(serialized)) as JsonValue },
+      type: 'HARNESS_EVENT',
+      data: {
+        harnessId: PI_HARNESS_ID,
+        event: JSON.parse(redactor.redact(serialized)) as JsonValue,
+      },
     }
   } catch {
     return {
-      type: 'PI_EVENT',
+      type: 'HARNESS_EVENT',
       data: {
+        harnessId: PI_HARNESS_ID,
         event: {
           type: typeof event.type === 'string' ? redactor.redact(event.type) : 'unknown',
           captureError: 'Pi event payload could not be serialized',
@@ -121,7 +128,7 @@ export const createPiEventNormalizer = (
   return {
     normalize(event) {
       if (!isRecord(event) || typeof event.type !== 'string') return []
-      const captured = capturedPiEvent(event, options.redactor)
+      const captured = capturedHarnessEvent(event, options.redactor)
 
       try {
         switch (event.type) {

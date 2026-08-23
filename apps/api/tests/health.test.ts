@@ -7,7 +7,7 @@ import { createApiApp } from '../src/app.js'
 const healthyStatus: DatabaseStatus = {
   foreignKeysEnabled: true,
   journalMode: 'wal',
-  schemaVersion: 2,
+  schemaVersion: 1,
   writable: true,
 }
 
@@ -26,7 +26,7 @@ describe('GET /healthz', () => {
     expect(HealthResponseSchema.parse(await response.json())).toEqual({ status: 'ok' })
   })
 
-  it('does not depend on external connector credentials', async () => {
+  it('ignores unrelated request headers', async () => {
     const response = await createApiApp({ database: createDatabase() }).request('/healthz', {
       headers: { authorization: 'Bearer absent-from-runtime' },
     })
@@ -48,13 +48,13 @@ describe('GET /healthz', () => {
     expect(status).not.toHaveBeenCalled()
   })
 
-  it('returns no database or credential details when writability cannot be proven', async () => {
+  it('returns no database or secret details when writability cannot be proven', async () => {
     const databasePath = '/private/configured/workbench.sqlite'
-    const credential = 'secret-credential-value'
+    const secret = 'private-host-value'
     const response = await createApiApp({
       database: createDatabase({
         status: () => {
-          throw new Error(`${databasePath}:${credential}`)
+          throw new Error(`${databasePath}:${secret}`)
         },
       }),
     }).request('/healthz')
@@ -62,7 +62,7 @@ describe('GET /healthz', () => {
     const body = await response.text()
     expect(response.status).toBe(503)
     expect(body).not.toContain(databasePath)
-    expect(body).not.toContain(credential)
+    expect(body).not.toContain(secret)
     expect(JSON.parse(body)).toEqual({
       error: { code: 'DATABASE_UNAVAILABLE', message: 'Local persistence is unavailable' },
     })

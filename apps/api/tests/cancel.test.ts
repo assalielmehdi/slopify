@@ -1,15 +1,17 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { NodeIdSchema, RunIdSchema } from '@slopify/contracts'
+import { RunIdSchema } from '@slopify/contracts'
 import {
-  createCancellationService,
+  CancellationServiceError,
   createRunService,
-  type ActiveRunExecution,
+  type CancellationService,
 } from '@slopify/execution-runtime'
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 import {
   TEST_WORKFLOW_ID,
+  createTestHarnessCatalog,
+  createTestAgentWorkflow,
   createPersistenceFixture,
+  resolveTestProject,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
@@ -21,13 +23,10 @@ afterEach(() => {
 
 const createFixture = () => {
   const fixture = createPersistenceFixture(
-    createPredefinedV1Workflow({
+    createTestAgentWorkflow({
       createdAt: '2026-08-18T23:30:00Z',
-      agentDefaults: {
-        provider: 'test-provider',
-        model: 'test-model',
-        thinkingLevel: 'medium',
-      },
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
     }),
   )
   fixtures.push(fixture)
@@ -35,99 +34,75 @@ const createFixture = () => {
     events: fixture.events,
     runs: fixture.runs,
     workflows: fixture.workflows,
+    harnesses: createTestHarnessCatalog(),
+    resolveProject: resolveTestProject,
     now: () => '2026-08-18T23:30:00Z',
     createRunId: () => 'run-api-cancel-1',
   })
-  let activeExecution: ActiveRunExecution | undefined
-  const cancellation = createCancellationService({
-    runs: fixture.runs,
-    activeExecution: () => activeExecution,
-    now: () => '2026-08-18T23:30:05Z',
-  })
+  const cancel = vi.fn(
+    async (
+      input: Parameters<CancellationService['cancel']>[0],
+    ): Promise<Awaited<ReturnType<CancellationService['cancel']>>> => {
+      const run = fixture.runs.get(RunIdSchema.parse(input.runId))
+      if (run === undefined)
+        throw new CancellationServiceError('RUN_NOT_FOUND', 'Run was not found')
+      throw new CancellationServiceError('RUN_NOT_CANCELLABLE', 'Run is not cancellable')
+    },
+  )
+  const cancellation: CancellationService = {
+    cancel,
+    cancelActive: vi.fn(async () => undefined),
+  }
   const app = createApiApp({ database: fixture.database, runs, cancellation })
 
-  return {
-    app,
-    fixture,
-    setActiveExecution(cancel: ActiveRunExecution['cancel']) {
-      activeExecution = {
-        runId: RunIdSchema.parse('run-api-cancel-1'),
-        nodeExecutionId: 'node-execution-api-cancel-1',
-        nodeId: NodeIdSchema.parse('identify-agent'),
-        cancel,
-      }
-    },
-  }
+  return { app, cancel, fixture }
 }
 
 const createBody = {
   workflowId: TEST_WORKFLOW_ID,
 }
 
-const startRun = async (fixture: ReturnType<typeof createFixture>): Promise<void> => {
-  await fixture.app.request('/api/runs', {
+const createRun = async (fixture: ReturnType<typeof createFixture>): Promise<void> => {
+  const response = await fixture.app.request('/api/runs', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(createBody),
   })
-  const runId = RunIdSchema.parse('run-api-cancel-1')
-  fixture.fixture.runs.changeStatus({
-    runId,
-    expectedStatus: 'PENDING',
-    status: 'RUNNING',
-    timestamp: '2026-08-18T23:30:01Z',
-  })
-  fixture.fixture.runs.startNode({
-    runId,
-    nodeExecutionId: 'node-execution-api-cancel-1',
-    nodeId: 'identify-agent',
-    inputReferences: [],
-    timestamp: '2026-08-18T23:30:02Z',
-  })
+  expect(response.status).toBe(201)
 }
 
 describe('run cancellation API', () => {
-  it('returns the server-confirmed cancelled run and persists its evidence', async () => {
+  it('returns the run produced by the cancellation service', async () => {
     const fixture = createFixture()
-    await startRun(fixture)
-    const cancel = vi.fn(async () => ({ status: 'cancelled' as const }))
-    fixture.setActiveExecution(cancel)
+    await createRun(fixture)
+    const run = fixture.fixture.runs.get(RunIdSchema.parse('run-api-cancel-1'))
+    if (run === undefined) throw new Error('Expected the created run')
+    fixture.cancel.mockResolvedValueOnce({
+      ...run,
+      status: 'CANCELLED',
+      completedAt: '2026-08-18T23:30:05Z',
+      durationMs: 5_000,
+    })
 
     const response = await fixture.app.request('/api/runs/run-api-cancel-1/cancel', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ reason: 'Operator stopped the run' }),
     })
-    const detail = await fixture.app.request('/api/runs/run-api-cancel-1')
-
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       runId: 'run-api-cancel-1',
       status: 'CANCELLED',
     })
-    expect(cancel).toHaveBeenCalledWith({ reason: 'Operator stopped the run' })
-    expect(await detail.json()).toMatchObject({
-      run: { status: 'CANCELLED' },
-      nodeExecutions: [{ status: 'CANCELLED', errorCode: 'EXECUTOR_CANCELLED' }],
-      events: [
-        { type: 'RUN_STARTED' },
-        { type: 'RUN_STATUS_CHANGED' },
-        { type: 'NODE_STARTED' },
-        { type: 'RUN_CANCEL_REQUESTED' },
-        { type: 'NODE_FAILED' },
-        { type: 'RUN_STATUS_CHANGED' },
-        { type: 'RUN_COMPLETED' },
-      ],
+    expect(fixture.cancel).toHaveBeenCalledWith({
+      runId: 'run-api-cancel-1',
+      reason: 'Operator stopped the run',
     })
   })
 
   it('returns stable errors for unknown, non-cancellable, and malformed requests', async () => {
     const fixture = createFixture()
-    await fixture.app.request('/api/runs', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(createBody),
-    })
+    await createRun(fixture)
 
     const unknown = await fixture.app.request('/api/runs/unknown/cancel', { method: 'POST' })
     const pending = await fixture.app.request('/api/runs/run-api-cancel-1/cancel', {
@@ -147,7 +122,7 @@ describe('run cancellation API', () => {
     expect(await pending.json()).toEqual({
       error: {
         code: 'RUN_NOT_CANCELLABLE',
-        message: 'Run is not the active cancellable execution',
+        message: 'Run is not cancellable',
       },
     })
     expect(malformed.status).toBe(400)

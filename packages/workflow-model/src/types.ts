@@ -1,37 +1,17 @@
 import type { z } from 'zod'
 
 import type {
-  AgentInferenceConfigurationSchema,
-  AgentJobDefinitionSchema,
+  AgentHarnessConfigurationSchema,
   AgentNodeSchema,
-  CommandNodeSchema,
-  PermissionProfileSchema,
-  ResourceBundleIdSchema,
-  ResultContractSchema,
-  RouterNodeSchema,
-  SandboxReferenceSchema,
-  SkillSnapshotReferenceSchema,
-  TerminalNodeSchema,
-  TerminalStatusSchema,
   WorkflowEdgeSchema,
-  WorkflowNodeSchema,
+  WorkflowConfigurationSchema,
+  WorkflowVariableNameSchema,
   WorkflowSchema,
-  WorkspacePolicySchema,
 } from './schemas.js'
 
-export type ResourceBundleId = z.infer<typeof ResourceBundleIdSchema>
-export type SkillSnapshotReference = z.infer<typeof SkillSnapshotReferenceSchema>
-export type AgentInferenceConfiguration = z.infer<typeof AgentInferenceConfigurationSchema>
-export type AgentJobDefinition = z.infer<typeof AgentJobDefinitionSchema>
-export type ResultContract = z.infer<typeof ResultContractSchema>
-export type SandboxReference = z.infer<typeof SandboxReferenceSchema>
-export type WorkspacePolicy = z.infer<typeof WorkspacePolicySchema>
-export type PermissionProfile = z.infer<typeof PermissionProfileSchema>
-export type TerminalStatus = z.infer<typeof TerminalStatusSchema>
+export type AgentHarnessConfiguration = z.infer<typeof AgentHarnessConfigurationSchema>
 export type AgentNode = z.infer<typeof AgentNodeSchema>
-export type CommandNode = z.infer<typeof CommandNodeSchema>
-export type RouterNode = z.infer<typeof RouterNodeSchema>
-export type TerminalNode = z.infer<typeof TerminalNodeSchema>
-export type WorkflowNode = z.infer<typeof WorkflowNodeSchema>
 export type WorkflowEdge = z.infer<typeof WorkflowEdgeSchema>
+export type WorkflowConfiguration = z.infer<typeof WorkflowConfigurationSchema>
+export type WorkflowVariableName = z.infer<typeof WorkflowVariableNameSchema>
 export type Workflow = z.infer<typeof WorkflowSchema>

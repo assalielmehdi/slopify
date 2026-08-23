@@ -13,26 +13,22 @@ const executionInput = {
   nodeId: 'plan',
   workspace: {
     rootPath: '/workspaces/run-01',
-    repositories: [
+    primaryProjectId: 'backend',
+    projects: [
       {
-        repositoryId: 'backend',
+        projectId: 'backend',
         path: '/workspaces/run-01/backend',
-        access: 'read-only',
       },
       {
-        repositoryId: 'web',
+        projectId: 'web',
         path: '/workspaces/run-01/web',
-        access: 'read-only',
       },
     ],
   },
-  provider: 'anthropic',
-  model: 'claude-sonnet-4-5',
+  model: 'anthropic/claude-sonnet-4-5',
   thinkingLevel: 'high',
-  permissionProfile: 'read-only',
   renderedPrompt: '# Plan\n\nInspect only the explicit workspace map.',
   declaredOutcomes: ['planned', 'blocked'],
-  resourceBundleId: 'delivery.planning.v1',
   timeoutSeconds: 600,
 }
 
@@ -40,14 +36,7 @@ const result = {
   outcome: 'planned',
   summary: 'Prepared a bounded implementation plan.',
   data: { sections: 3 },
-  artifacts: [
-    {
-      type: 'EXECUTION_PLAN',
-      title: 'Execution plan',
-      content: '# Plan\n\nThree ordered slices.',
-    },
-  ],
-  evidence: [{ kind: 'file', value: 'tasks/plan.md' }],
+  evidence: [{ kind: 'file', value: 'src/plan.ts' }],
 }
 
 const eventBase = {
@@ -64,41 +53,58 @@ describe('agent execution input contract', () => {
     expect(parsed).toEqual(executionInput)
   })
 
-  it('allows a repository-free private workspace', () => {
+  it('rejects a project-free workspace', () => {
+    expect(
+      AgentExecutionInputSchema.safeParse({
+        ...executionInput,
+        workspace: { rootPath: '/', projects: [] },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('accepts project paths under the filesystem root', () => {
     expect(
       AgentExecutionInputSchema.parse({
         ...executionInput,
-        workspace: { rootPath: '/', repositories: [] },
+        workspace: {
+          rootPath: '/',
+          primaryProjectId: 'backend',
+          projects: [{ projectId: 'backend', path: '/backend' }],
+        },
       }).workspace,
-    ).toEqual({ rootPath: '/', repositories: [] })
+    ).toMatchObject({ rootPath: '/', primaryProjectId: 'backend' })
   })
 
   it.each([
     ['execution ID', { ...executionInput, executionId: undefined }],
     ['run ID', { ...executionInput, runId: undefined }],
     ['node ID', { ...executionInput, nodeId: undefined }],
-    ['provider', { ...executionInput, provider: '  ' }],
-    ['model', { ...executionInput, model: '' }],
-    ['thinking level', { ...executionInput, thinkingLevel: '' }],
+    ['thinking level', { ...executionInput, thinkingLevel: 'extreme' }],
     ['rendered prompt', { ...executionInput, renderedPrompt: '  ' }],
     ['declared outcomes', { ...executionInput, declaredOutcomes: [] }],
-    ['resource bundle', { ...executionInput, resourceBundleId: '' }],
     ['timeout', { ...executionInput, timeoutSeconds: 0 }],
   ])('rejects a missing or malformed %s', (_field, input) => {
     expect(AgentExecutionInputSchema.safeParse(input).success).toBe(false)
   })
 
-  it('rejects duplicate repository IDs or paths', () => {
+  it('accepts omitted model and thinking preferences', () => {
+    const { model: _model, thinkingLevel: _thinkingLevel, ...withoutPreferences } = executionInput
+    void _model
+    void _thinkingLevel
+
+    expect(AgentExecutionInputSchema.parse(withoutPreferences)).toEqual(withoutPreferences)
+  })
+
+  it('rejects duplicate project IDs or paths', () => {
     const duplicateId = {
       ...executionInput,
       workspace: {
         ...executionInput.workspace,
-        repositories: [
-          executionInput.workspace.repositories[0],
+        projects: [
+          executionInput.workspace.projects[0],
           {
-            repositoryId: 'backend',
+            projectId: 'backend',
             path: '/workspaces/run-01/other',
-            access: 'read-only',
           },
         ],
       },
@@ -107,12 +113,11 @@ describe('agent execution input contract', () => {
       ...executionInput,
       workspace: {
         ...executionInput.workspace,
-        repositories: [
-          executionInput.workspace.repositories[0],
+        projects: [
+          executionInput.workspace.projects[0],
           {
-            repositoryId: 'other',
+            projectId: 'other',
             path: '/workspaces/run-01/backend',
-            access: 'read-only',
           },
         ],
       },
@@ -122,16 +127,15 @@ describe('agent execution input contract', () => {
     expect(AgentExecutionInputSchema.safeParse(duplicatePath).success).toBe(false)
   })
 
-  it('rejects repository paths outside the explicit workspace root', () => {
+  it('rejects project paths outside the explicit workspace root', () => {
     const input = {
       ...executionInput,
       workspace: {
         ...executionInput.workspace,
-        repositories: [
+        projects: [
           {
-            repositoryId: 'backend',
+            projectId: 'backend',
             path: '/other-run/backend',
-            access: 'read-only',
           },
         ],
       },
@@ -140,22 +144,19 @@ describe('agent execution input contract', () => {
     expect(AgentExecutionInputSchema.safeParse(input).success).toBe(false)
   })
 
-  it('rejects repository access broader than the selected permission profile', () => {
-    const input = {
-      ...executionInput,
-      workspace: {
-        ...executionInput.workspace,
-        repositories: [
-          {
-            repositoryId: 'backend',
-            path: '/workspaces/run-01/backend',
-            access: 'workspace-write',
-          },
-        ],
-      },
-    }
-
-    expect(AgentExecutionInputSchema.safeParse(input).success).toBe(false)
+  it('requires a primary project that belongs to the workspace', () => {
+    expect(
+      AgentExecutionInputSchema.safeParse({
+        ...executionInput,
+        workspace: { ...executionInput.workspace, primaryProjectId: undefined },
+      }).success,
+    ).toBe(false)
+    expect(
+      AgentExecutionInputSchema.safeParse({
+        ...executionInput,
+        workspace: { ...executionInput.workspace, primaryProjectId: 'missing' },
+      }).success,
+    ).toBe(false)
   })
 
   it('rejects duplicate outcomes and caller-selected tools or harnesses', () => {
@@ -181,15 +182,16 @@ describe('agent execution input contract', () => {
 })
 
 describe('agent result contract', () => {
-  it('parses a structured result without SDK-owned values', () => {
+  it('parses a structured result without harness-private values', () => {
     expect(AgentNodeResultSchema.parse(result)).toEqual(result)
   })
 
   it.each([
     ['undeclared shape', { ...result, extra: true }],
     ['missing data', { ...result, data: undefined }],
+    ['non-JSON data', { ...result, data: () => undefined }],
     ['blank summary', { ...result, summary: '  ' }],
-    ['unknown artifact type', { ...result, artifacts: [{ ...result.artifacts[0], type: 'LOG' }] }],
+    ['unknown result field', { ...result, unexpected: true }],
     ['unknown evidence kind', { ...result, evidence: [{ kind: 'thought', value: 'hidden' }] }],
   ])('rejects %s', (_description, input) => {
     expect(AgentNodeResultSchema.safeParse(input).success).toBe(false)
@@ -209,8 +211,8 @@ describe('agent execution event contract', () => {
       { ...eventBase, type: 'AGENT_REASONING', data: { content: 'Visible reasoning.' } },
       {
         ...eventBase,
-        type: 'PI_EVENT',
-        data: { event: { type: 'turn_start' } },
+        type: 'HARNESS_EVENT',
+        data: { harnessId: 'pi', event: { type: 'turn_start' } },
       },
       {
         ...eventBase,
@@ -249,7 +251,7 @@ describe('agent execution event contract', () => {
       {
         ...eventBase,
         type: 'AGENT_FAILED',
-        data: { code: 'PROVIDER_FAILED', message: 'Provider request failed', durationMs: 500 },
+        data: { code: 'HARNESS_FAILED', message: 'Harness execution failed', durationMs: 500 },
       },
       {
         ...eventBase,
@@ -263,7 +265,7 @@ describe('agent execution event contract', () => {
     )
   })
 
-  it('rejects unknown event types and extra raw SDK fields', () => {
+  it('rejects unknown event types and extra harness-private fields', () => {
     expect(
       AgentExecutionEventSchema.safeParse({ ...eventBase, type: 'TURN_STARTED', data: {} }).success,
     ).toBe(false)

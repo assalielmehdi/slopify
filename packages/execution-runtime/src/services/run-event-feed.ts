@@ -32,7 +32,7 @@ export interface CreateRunEventFeedOptions {
   readonly wait?: (signal: AbortSignal) => Promise<void>
 }
 
-const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED', 'INTERRUPTED'])
+const terminalStatuses = new Set(['SUCCEEDED', 'FAILED', 'CANCELLED'])
 
 const waitForPoll =
   (milliseconds: number) =>

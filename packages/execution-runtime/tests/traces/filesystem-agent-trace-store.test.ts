@@ -27,12 +27,22 @@ const header = AgentTraceHeaderSchema.parse({
   nodeId: 'identify-agent',
   createdAt: '2026-08-22T10:00:00.000Z',
   configuration: {
-    connectionId: 'provider-default',
-    provider: 'openrouter',
+    harnessId: 'pi',
+    harnessVersion: '0.84.2',
     model: 'test/model',
     thinkingLevel: 'medium',
     renderedPrompt: 'Inspect the repository.',
-    permissionProfile: 'workspace-write',
+    workspaceRoot: '/workspace/run-01',
+    primaryProjectId: 'project-api',
+    projects: [
+      {
+        projectId: 'project-api',
+        name: 'API',
+        worktreePath: '/workspace/run-01/project-api',
+        baseSha: 'a'.repeat(40),
+        sourceBranch: 'main',
+      },
+    ],
     timeoutSeconds: 600,
   },
 })
@@ -116,10 +126,10 @@ describe('filesystem agent trace store', () => {
     ).resolves.toMatchObject({ complete: true, events: [{ type: 'AGENT_FAILED' }] })
   })
 
-  it('writes the complete redacted Pi SDK event payload to JSONL', async () => {
+  it('writes the complete redacted harness event payload to JSONL', async () => {
     const { root, store } = createStore()
     await store.start(header)
-    const sdkEvent = {
+    const harnessEvent = {
       type: 'tool_execution_start',
       toolCallId: 'call_JkP9a|fc_72ZQ',
       toolName: 'bash',
@@ -130,8 +140,8 @@ describe('filesystem agent trace store', () => {
       runId: 'run-01',
       nodeId: 'identify-agent',
       timestamp: '2026-08-22T10:00:02.000Z',
-      type: 'PI_EVENT',
-      data: { event: sdkEvent },
+      type: 'HARNESS_EVENT',
+      data: { harnessId: 'pi', event: harnessEvent },
     })
 
     const tracePath = join(
@@ -152,8 +162,8 @@ describe('filesystem agent trace store', () => {
       event: {
         sequence: 1,
         timestamp: '2026-08-22T10:00:02.000Z',
-        type: 'PI_EVENT',
-        data: { event: sdkEvent },
+        type: 'HARNESS_EVENT',
+        data: { harnessId: 'pi', event: harnessEvent },
       },
     })
   })

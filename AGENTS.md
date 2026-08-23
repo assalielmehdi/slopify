@@ -2,10 +2,10 @@
 
 ## Product
 
-Slopify is a native, local agent orchestration workbench. Users define directed graphs
-of agents, configure their prompts and capabilities, and run them with optional
-variables. V1 exposes only agent jobs. Code-job schemas and APIs remain reserved for
-future compatibility, but code jobs are not executable or visible in the UI.
+Slopify is a native, local workflow orchestrator for already-installed agent harnesses.
+Users define directed graphs of agents, choose a harness, configure prompts, and run
+them against workflow Projects with workflow-defined variables. Pi is the first
+supported harness and runs through its CLI.
 
 ## Architecture invariants
 
@@ -14,50 +14,62 @@ future compatibility, but code jobs are not executable or visible in the UI.
   concrete adapters only in the API composition root.
 - A workflow has one current mutable definition; Slopify has no user-facing or internal
   workflow revision model. Every run captures an immutable copy of the full workflow
-  graph and each job configuration at admission. Execution and historical inspection
+  graph and each agent configuration at admission. Execution and historical inspection
   always use that run snapshot, never the current workflow. Routing outcomes come from
   the captured graph edges.
-- Workflows may contain zero or more agent nodes. An empty workflow is a valid draft but
-  is not runnable. Agent nodes may be graph leaves; Slopify does not add synthetic
-  setup, start, finalization, or terminal nodes. A successful leaf completes its branch.
-- Run variables are arbitrary JSON values captured with the run. Slopify interpolates
-  exact `{{ variable }}` placeholders in captured agent prompts before invoking Pi. If
-  referenced variables are missing, admission requires explicit confirmation and the
-  missing names remain part of the run's immutable evidence.
+- Workflows contain only agent nodes. An empty workflow is a valid draft but is not
+  runnable. Agent nodes may be graph leaves; a successful leaf completes its branch.
+- Workflow configuration owns the projects and variable names shared by all its agents.
+  Every configured project must resolve to an available local Git repository before run
+  admission. One configured project is primary and is the starting directory for every
+  agent; all configured projects remain available to every node.
+- A run must provide exactly one JSON value for every variable name declared by its
+  captured workflow. Slopify interpolates only exact `{{ variable }}` placeholders whose
+  names are declared there; undeclared placeholders remain literal.
 - Only the coordinator interprets workflow topology, readiness, joins, transitions, and
-  terminal state. Workers and job runners are graph-neutral.
+  terminal state. Workers and node runners are graph-neutral.
 - Execution is durable and asynchronous:
-  `Run API -> coordinator -> SQLite execution_messages -> worker -> job runner`, with
-  job facts returning through the same table. One table has separate `WORKER` and
-  `COORDINATOR` destinations. Delivery is at least once, so handlers and attempts must
-  remain idempotent. `run_events` is append-only audit history, never a queue.
-- Each agent execution receives a fresh trusted Bun child process, Pi session, and
-  private Gondolin VM. Agent-accessible filesystem, shell, process, and network effects
-  must run inside the VM. The default workspace is an empty in-memory filesystem;
-  pinned skill snapshots are mounted read-only. `complete_node` is the only routable
-  agent result.
-- Skills provide instructions, not authority. Connector grants, installed tools, and
-  default-deny VM policy define authority. GitLab and ClickUp are generic connector
-  capabilities; Slopify has no built-in task-loading or delivery/finalization path.
-- Raw credentials belong only to the owner-only Slopify credential file. Never persist
-  them in SQLite or workflow JSON, expose them to browsers, prompts, events, logs, or
-  worktrees, or mount them into VMs. Connector access uses execution-scoped mediated
-  capabilities; inference credentials remain in the trusted worker.
-- SQLite owns workflow, run, connection metadata, the supported connection catalog,
-  queue, and audit state. The API is the browser's only source for provider and
-  connector catalog data; the frontend must not hardcode a parallel catalog. The live
-  Skills catalog is filesystem-backed; run-captured workflows reference immutable,
-  content-addressed skill snapshots.
+  `Run API -> coordinator -> SQLite execution_messages -> worker -> node runner`, with
+  node facts returning through the same table. One table has separate `WORKER` and
+  `COORDINATOR` destinations. Message handling is at least once, so handlers and
+  attempts must remain idempotent. `run_events` is append-only audit history, never a
+  queue.
+- Run admission captures each configured Project's canonical path, current commit, and
+  source branch. Before a harness process starts, the worker prepares one detached Git
+  worktree per captured Project at
+  `~/.slopify/orchestrator/worktrees/<runId>/<projectId>`. Agents in one run share those
+  worktrees; separate runs never share a worktree. Never give a harness the source
+  checkout as its workspace.
+- Each agent execution receives a fresh Pi CLI RPC process with no persisted Pi session.
+  It starts in the primary run worktree without project-local approval and receives only
+  run worktree paths in its Slopify prompt and execution contract. Slopify's adapter-owned
+  `slopify_complete_node` bridge is the only routable agent result.
+- Pi runs directly as the Slopify host user and uses the existing host-level Pi setup.
+  Harness setup is external to Slopify. Git worktrees isolate configured Project state;
+  they do not restrict access to other host paths.
+- Harness availability and model metadata are discovered live through application
+  ports. Infrastructure adapters implement those ports; workflow and execution code
+  must not branch on Pi-specific protocols. Agent traces record the selected harness
+  and immutable worktree context without source checkout paths.
+- Before every harness launch, Slopify verifies that Git registered each run worktree at
+  its exact deterministic path under the canonical worktrees root. Symbolic-link or
+  parent-directory substitutions fail the node instead of changing its workspace.
+- Trace capture redacts bounded sensitive-looking values inherited from the harness
+  process environment and applies the same redaction to structured node results. Since
+  the host harness can read other user files, traces are trusted owner-local data.
+- SQLite owns current workflow, Project, run snapshot, run-worktree state, queue, and
+  audit data. `run_events` is append-only audit history and agent transcripts are stored
+  as owner-local JSONL traces. Harness state remains owned by the harness on the host.
 
 ## Code map
 
 - `apps/api`: Hono HTTP adapters and the composition root (`src/server.ts`).
 - `apps/web`: Next.js UI and API proxy.
-- `packages/workflow-model`: strict workflow/job schemas and graph rules.
+- `packages/workflow-model`: strict workflow and agent schemas with graph rules.
 - `packages/execution-runtime`: use cases, ports, coordinator, worker, persistence,
-  connections, Skills, and job runners.
-- `packages/agent-runtimes`: Bun child supervision, Pi SDK integration, Gondolin, and
-  ChatGPT OAuth.
+  worktree provisioning, harness discovery, and node runners.
+- `packages/agent-runtimes`: infrastructure adapters for host harnesses; currently Pi
+  CLI inspection and RPC execution.
 - `packages/contracts`: shared application contracts.
 
 ## Frontend
@@ -77,8 +89,13 @@ future compatibility, but code jobs are not executable or visible in the UI.
 
 - Use Bun 1.4.0 for the application runtime, workspace dependency management, and
   repository scripts.
+- Use Turborepo for every cross-workspace task. Root scripts delegate to Turbo, while
+  package scripts act only on their own package and never build workspace dependencies
+  recursively.
+- Run JavaScript and TypeScript tools through Bun. Do not introduce Node, npm, npx,
+  pnpm, Yarn, or another package-manager/runtime command path.
 - Keep changes focused. Use strict Zod schemas and exhaustive discriminated unions;
-  do not leak infrastructure types or raw credentials into core contracts.
+  do not leak infrastructure types into core contracts.
 - Write or update tests first for behavior changes. Core services must remain testable
   with in-memory adapters.
 - Run tests, typecheck, lint, formatting, and the production build before handoff.

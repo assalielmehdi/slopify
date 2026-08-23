@@ -9,10 +9,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run --filter @slopify/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "build": "bun run clean && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "clean": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { force: true, recursive: true })\"",
     "dev": "bun --watch --conditions=source src/server.ts",
-    "typecheck": "bun run --filter @slopify/execution-runtime build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
-    "lint": "bun --bun eslint src tests --max-warnings 0",
+    "typecheck": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "lint": "bun --bun eslint . --max-warnings 0",
     "test": "bun --bun vitest run --root ../.. apps/api/tests",
     "start": "bun dist/server.js"
   },

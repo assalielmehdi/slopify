@@ -232,14 +232,14 @@
   background: color-mix(in oklch, var(--foreground) 18%, transparent);
 }
 
-.provider-floating-panel-shell {
+.floating-panel-shell {
   translate: calc(100% + 0.75rem) 0;
   pointer-events: none;
   transition: translate var(--panel-close-dur) var(--panel-ease);
   will-change: translate;
 }
 
-.provider-floating-panel-shell[data-open='true'] {
+.floating-panel-shell[data-open='true'] {
   translate: 0 0;
   pointer-events: auto;
   transition: translate var(--panel-open-dur) var(--panel-ease);
@@ -268,7 +268,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .provider-floating-panel-shell,
+  .floating-panel-shell,
   .t-panel-slide {
     transition: none !important;
   }

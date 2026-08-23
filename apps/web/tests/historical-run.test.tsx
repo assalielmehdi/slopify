@@ -3,11 +3,10 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
-
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse } from '../lib/api-client'
-import type { RunEventConnector } from '../lib/event-stream'
+import type { RunEventSubscription } from '../lib/event-stream'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 vi.mock('../components/workflow/workflow-canvas', () => ({
   WorkflowCanvas: ({
@@ -26,33 +25,19 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   ),
 }))
 
-const workflow = createPredefinedV1Workflow({
+const workflow = createAgentWorkflowFixture({
   createdAt: '2026-07-01T10:00:00Z',
-  agentDefaults: {
-    provider: 'chatgpt-subscription',
-    model: 'historical-model',
-    thinkingLevel: 'xhigh',
-  },
+  modelId: 'historical-model',
+  thinkingLevel: 'xhigh',
 })
-
-const workflowWithConnectors = {
-  ...workflow,
-  nodes: workflow.nodes.map((node) =>
-    node.type === 'agent' && node.id === 'identify-agent'
-      ? { ...node, job: { ...node.job, connectorIds: ['clickup-default', 'gitlab-default'] } }
-      : node,
-  ),
-}
 
 const detail = {
   run: {
     runId: 'run-historical',
     workflowId: workflow.workflowId,
-    workflowSnapshot: workflowWithConnectors,
+    workflowSnapshot: workflow,
     variables: { task: 'PROJ-9' },
-    missingVariables: [],
     status: 'SUCCEEDED',
-    currentNodeId: null,
     transitionCount: 10,
     createdAt: '2026-07-01T10:00:00Z',
     startedAt: '2026-07-01T10:00:01Z',
@@ -66,19 +51,17 @@ const detail = {
       nodeId: 'identify-agent',
       executionIndex: 0,
       status: 'SUCCEEDED',
-      inputReferences: {},
       output: { data: { response: 'Captured response from July.' } },
       outcome: 'implemented',
       errorCode: null,
       errorMessage: null,
-      selectedTargetNodeId: 'verify',
       startedAt: '2026-07-01T10:01:00Z',
       completedAt: '2026-07-01T10:02:00Z',
       durationMs: 60_000,
     },
   ],
-  outputChunks: [],
-  artifacts: [],
+  projects: [],
+  projectWorktrees: [],
 } as unknown as RunDetailResponse
 
 beforeEach(() => {
@@ -99,65 +82,22 @@ afterEach(() => {
 
 describe('historical run', () => {
   it('uses the captured workflow and node configuration without opening a live stream', async () => {
-    const connector: RunEventConnector = vi.fn()
+    const subscription: RunEventSubscription = vi.fn()
     const client = {
       getRun: vi.fn(async () => detail),
       cancelRun: vi.fn(),
-      listConnections: vi.fn(async () => ({
-        catalog: [
-          {
-            type: 'chatgpt-subscription' as const,
-            category: 'inference' as const,
-            name: 'ChatGPT',
-            icon: 'chatgpt' as const,
-            eyebrow: 'Subscription provider',
-            summary: 'Use a ChatGPT subscription.',
-            description: 'Use ChatGPT through Pi.',
-            setup: ['Connect ChatGPT.'],
-            access: 'Inference only.',
-          },
-          {
-            type: 'clickup' as const,
-            category: 'connector' as const,
-            name: 'ClickUp',
-            icon: 'clickup' as const,
-            eyebrow: 'Work management',
-            summary: 'Use ClickUp.',
-            description: 'Connect ClickUp tasks.',
-            setup: ['Connect ClickUp.'],
-            access: 'Task access.',
-          },
-          {
-            type: 'gitlab' as const,
-            category: 'connector' as const,
-            name: 'GitLab',
-            icon: 'gitlab' as const,
-            eyebrow: 'Source control',
-            summary: 'Use GitLab.',
-            description: 'Connect GitLab projects.',
-            setup: ['Connect GitLab.'],
-            access: 'Repository access.',
-          },
-        ],
-        connections: [],
-      })),
     }
 
-    render(<LiveRun runId="run-historical" client={client} connect={connector} />)
+    render(<LiveRun runId="run-historical" client={client} connect={subscription} />)
 
     expect(await screen.findByText('Captured graph Who are you?')).toBeTruthy()
-    expect(connector).not.toHaveBeenCalled()
+    expect(subscription).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Inspect captured agent' }))
 
     const panel = screen.getByRole('dialog', { name: 'Who are you?' })
-    expect(await screen.findByText('ChatGPT')).toBeTruthy()
-    expect(panel.textContent).not.toContain('chatgpt-subscription-default')
+    expect(await screen.findByText('Pi')).toBeTruthy()
     expect(panel.textContent).toContain('historical-model')
     expect(panel.textContent).toContain('xhigh')
-    expect(panel.textContent).toContain('ClickUp')
-    expect(panel.textContent).toContain('GitLab')
-    expect(panel.textContent).not.toContain('clickup-default')
-    expect(panel.textContent).not.toContain('gitlab-default')
     expect(panel.textContent).toContain('Took 1m 0s')
     expect(panel.textContent).toContain('Captured response from July.')
   })

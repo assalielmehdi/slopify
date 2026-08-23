@@ -16,20 +16,15 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun run --filter @slopify/workflow-model build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json && bun build src/mcp-guest-sidecar.ts --target=node --format=esm --outfile=dist/mcp-guest-sidecar.js",
-    "typecheck": "bun run --filter @slopify/workflow-model build && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
-    "lint": "bun --bun eslint src tests --max-warnings 0",
-    "test": "bun --bun vitest run --root ../.. packages/agent-runtimes/tests",
-    "test:integration": "SLOPIFY_GONDOLIN_INTEGRATION=1 bun --bun vitest run --root ../.. packages/agent-runtimes/tests/integration"
+    "clean": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "build": "bun run clean && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "dev": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --watch --preserveWatchOutput",
+    "typecheck": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
+    "lint": "bun --bun eslint . --max-warnings 0",
+    "test": "bun --bun vitest run --root ../.. packages/agent-runtimes/tests"
   },
   "dependencies": {
-    "@earendil-works/gondolin": "0.12.0",
-    "@earendil-works/pi-ai": "0.84.2",
-    "@earendil-works/pi-coding-agent": "0.84.2",
-    "@modelcontextprotocol/client": "2.0.0",
     "@slopify/contracts": "workspace:*",
-    "@slopify/workflow-model": "workspace:*",
-    "typebox": "1.3.7",
-    "zod": "4.4.3"
+    "typebox": "1.3.7"
   }
 }

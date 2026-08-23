@@ -1,9 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
+import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
-import { RunServiceError, createRunService } from '../../src/index.js'
-import { createPersistenceFixture } from '../persistence/test-fixture.js'
+import {
+  RunServiceError,
+  createRunService,
+  type HarnessCatalog,
+  type RunProjectResolution,
+} from '../../src/index.js'
+import { createPersistenceFixture, createTestAgentWorkflow } from '../persistence/test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
 
@@ -12,31 +17,49 @@ afterEach(() => {
 })
 
 const agentWorkflow = (): Workflow => {
-  const workflow = createPredefinedV1Workflow({
+  const workflow = createTestAgentWorkflow({
     createdAt: '2026-08-18T22:00:00Z',
-    agentDefaults: {
-      provider: 'test-provider',
-      model: 'test-model',
-      thinkingLevel: 'medium',
-    },
+    prompt: 'Implement {{ objective }} for {{project}}. Escaped: \\{{ignored}}.',
+    projectIds: ['project-api'],
+    primaryProjectId: 'project-api',
+    variables: ['objective', 'project'],
   })
   const node = workflow.nodes[0]
-  if (node?.type !== 'agent') throw new Error('Expected the predefined workflow to be agent-only')
-  return {
+  if (node === undefined) throw new Error('Expected an agent workflow')
+  return WorkflowSchema.parse({
     ...workflow,
     nodes: [
       {
         ...node,
-        job: {
-          ...node.job,
-          prompt: 'Implement {{ objective }} for {{project}}. Escaped: \\{{ignored}}.',
-        },
+        harness: { harnessId: 'pi', modelId: 'test-model', thinkingLevel: 'medium' },
       },
     ],
-  }
+  })
 }
 
-const createServiceFixture = (workflow: Workflow = agentWorkflow()) => {
+const createServiceFixture = (
+  workflow: Workflow = agentWorkflow(),
+  resolveProject: (projectId: string) => Promise<RunProjectResolution> = async (projectId) => ({
+    projectId: projectId as RunProjectResolution['projectId'],
+    name: 'API',
+    repositoryPath: '/workspace/api',
+    baseSha: 'a'.repeat(40) as RunProjectResolution['baseSha'],
+    sourceBranch: 'main',
+  }),
+  harnesses: Pick<HarnessCatalog, 'requireAvailable'> = {
+    requireAvailable: vi.fn(async () => ({
+      harnessId: 'pi',
+      name: 'Pi',
+      description: 'Run workflows with Pi.',
+      availability: 'AVAILABLE',
+      executablePath: '/usr/local/bin/pi',
+      version: '0.84.2',
+      installHref: 'https://pi.dev/',
+      installLabel: 'Install Pi',
+      models: [{ id: 'test-model', name: 'test-model', thinkingLevels: ['medium'] }],
+    })),
+  },
+) => {
   const fixture = createPersistenceFixture(workflow)
   fixtures.push(fixture)
   let identity = 0
@@ -44,6 +67,8 @@ const createServiceFixture = (workflow: Workflow = agentWorkflow()) => {
     events: fixture.events,
     runs: fixture.runs,
     workflows: fixture.workflows,
+    resolveProject,
+    harnesses,
     now: () => '2026-08-18T22:30:00Z',
     createRunId: () => `run-service-${++identity}`,
   })
@@ -51,7 +76,7 @@ const createServiceFixture = (workflow: Workflow = agentWorkflow()) => {
 }
 
 const createInput = {
-  workflowId: 'delivery-workflow',
+  workflowId: 'test-workflow',
   variables: { objective: 'the run API', project: 'Slopify' },
 }
 
@@ -67,7 +92,7 @@ describe('run service admission', () => {
     expect(service.list({ page: 1, pageSize: 20 }).data).toEqual([])
   })
 
-  it('snapshots the workflow, supplied variables, and missing-variable decision', async () => {
+  it('snapshots the workflow and its exact supplied variables', async () => {
     const { fixture, service } = createServiceFixture()
 
     const run = await service.create(createInput)
@@ -78,76 +103,105 @@ describe('run service admission', () => {
       status: 'PENDING',
       workflowSnapshot: fixture.workflow,
       variables: { objective: 'the run API', project: 'Slopify' },
-      missingVariables: [],
     })
     expect(detail).toMatchObject({
       run,
-      events: [{ type: 'RUN_STARTED', sequence: 1, data: { workflowId: 'delivery-workflow' } }],
+      events: [{ type: 'RUN_STARTED', sequence: 1, data: { workflowId: 'test-workflow' } }],
+      projects: [
+        {
+          projectId: 'project-api',
+          position: 0,
+          name: 'API',
+          repositoryPath: '/workspace/api',
+          baseSha: 'a'.repeat(40),
+          sourceBranch: 'main',
+          isPrimary: true,
+        },
+      ],
+      projectWorktrees: [],
     })
-    expect(detail).not.toHaveProperty('profileSnapshot')
-    expect(detail?.run).not.toHaveProperty('taskReference')
-    expect(detail?.run).not.toHaveProperty('taskSnapshot')
   })
 
-  it('reports every missing prompt variable before persisting a run', async () => {
+  it('rejects missing workflow variables before persisting a run', async () => {
     const { service } = createServiceFixture()
 
     await expect(
-      service.create({ workflowId: 'delivery-workflow', variables: { objective: 'the API' } }),
+      service.create({ workflowId: 'test-workflow', variables: { objective: 'the API' } }),
     ).rejects.toMatchObject({
-      code: 'RUN_VARIABLES_MISSING',
-      missingVariables: ['project'],
+      code: 'RUN_VARIABLES_INVALID',
     } satisfies Partial<RunServiceError>)
     expect(service.list({ page: 1, pageSize: 20 }).data).toEqual([])
   })
 
-  it('persists confirmed missing variables as part of the immutable run input', async () => {
+  it('rejects variables that are not declared by the workflow', async () => {
     const { service } = createServiceFixture()
 
-    const run = await service.create({
-      workflowId: 'delivery-workflow',
-      variables: { objective: 'the API' },
-      confirmMissingVariables: true,
-    })
-
-    expect(run).toMatchObject({
-      variables: { objective: 'the API' },
-      missingVariables: ['project'],
-    })
+    await expect(
+      service.create({
+        workflowId: 'test-workflow',
+        variables: { objective: 'the API', project: 'Slopify', unexpected: true },
+      }),
+    ).rejects.toMatchObject({ code: 'RUN_VARIABLES_INVALID' } satisfies Partial<RunServiceError>)
   })
 
-  it.each([
-    {
-      name: 'empty draft',
-      workflow: {
-        ...agentWorkflow(),
-        startNodeId: null,
-        nodes: [],
-        edges: [],
-        maxTransitions: 0,
+  it('requires every configured project to be available before admitting the run', async () => {
+    const workflow = {
+      ...agentWorkflow(),
+      configuration: {
+        projectIds: ['project-api'],
+        primaryProjectId: 'project-api',
+        variables: ['objective', 'project'],
       },
-    },
-    {
-      name: 'workflow containing a non-agent node',
-      workflow: {
-        ...agentWorkflow(),
-        startNodeId: 'command',
-        nodes: [
-          {
-            type: 'command' as const,
-            id: 'command',
-            name: 'Command',
-            description: 'Historical command node',
-            timeoutSeconds: 60,
-            commandId: 'historical-command',
-            outcomes: ['completed'],
-          },
-        ],
-        edges: [],
-        maxTransitions: 0,
+    }
+    const resolveProject = vi.fn(async () => {
+      throw new Error('missing')
+    })
+    const { service } = createServiceFixture(workflow, resolveProject)
+
+    await expect(service.create(createInput)).rejects.toMatchObject({
+      code: 'WORKFLOW_PROJECT_UNAVAILABLE',
+    } satisfies Partial<RunServiceError>)
+    expect(resolveProject).toHaveBeenCalledWith('project-api')
+  })
+
+  it('requires every agent harness and selected model to be available before admission', async () => {
+    const harnesses = {
+      requireAvailable: vi.fn(async () => {
+        throw new Error('missing')
+      }),
+    }
+    const { service } = createServiceFixture(agentWorkflow(), undefined, harnesses)
+
+    await expect(service.create(createInput)).rejects.toMatchObject({
+      code: 'WORKFLOW_HARNESS_UNAVAILABLE',
+    } satisfies Partial<RunServiceError>)
+    expect(harnesses.requireAvailable).toHaveBeenCalledWith('pi', 'test-model', 'medium')
+  })
+
+  it('rejects an agent workflow without a primary project', async () => {
+    const workflow = {
+      ...agentWorkflow(),
+      configuration: {
+        projectIds: [],
+        primaryProjectId: null,
+        variables: ['objective', 'project'],
       },
-    },
-  ])('rejects a $name as not runnable in V1', async ({ workflow }) => {
+    }
+    const { service } = createServiceFixture(workflow)
+
+    await expect(service.create(createInput)).rejects.toMatchObject({
+      code: 'WORKFLOW_NOT_RUNNABLE',
+    } satisfies Partial<RunServiceError>)
+  })
+
+  it('rejects an empty draft as not runnable', async () => {
+    const workflow = {
+      ...agentWorkflow(),
+      startNodeId: null,
+      nodes: [],
+      edges: [],
+      maxTransitions: 0,
+    }
     const { service } = createServiceFixture(workflow)
 
     await expect(service.create({ workflowId: workflow.workflowId })).rejects.toMatchObject({
@@ -176,15 +230,8 @@ describe('run service admission', () => {
 
 describe('run service inspection', () => {
   it('returns newest-first pages containing only run execution information', async () => {
-    const { fixture, service } = createServiceFixture()
-    const first = await service.create(createInput)
-    fixture.runs.completeRun({
-      runId: first.runId,
-      expectedStatus: 'PENDING',
-      status: 'SUCCEEDED',
-      durationMs: 2_000,
-      timestamp: '2026-08-18T22:30:02Z',
-    })
+    const { service } = createServiceFixture()
+    await service.create(createInput)
     const second = await service.create(createInput)
 
     const page = service.list({ page: 1, pageSize: 1 })
@@ -193,7 +240,7 @@ describe('run service inspection', () => {
     expect(page.data).toEqual([
       {
         runId: second.runId,
-        workflowId: 'delivery-workflow',
+        workflowId: 'test-workflow',
         status: 'PENDING',
         createdAt: '2026-08-18T22:30:00Z',
         startedAt: null,
@@ -204,53 +251,23 @@ describe('run service inspection', () => {
   })
 
   it('filters the complete run history before applying pagination', async () => {
-    const { fixture, service } = createServiceFixture()
+    const { service } = createServiceFixture()
     const matching = await service.create(createInput)
-    fixture.runs.changeStatus({
-      runId: matching.runId,
-      expectedStatus: 'PENDING',
-      status: 'RUNNING',
-      timestamp: '2026-08-18T22:30:00Z',
-    })
-    fixture.runs.completeRun({
-      runId: matching.runId,
-      expectedStatus: 'RUNNING',
-      status: 'SUCCEEDED',
-      durationMs: 2_000,
-      timestamp: '2026-08-18T22:30:02Z',
-    })
-    const excluded = await service.create(createInput)
-    fixture.runs.changeStatus({
-      runId: excluded.runId,
-      expectedStatus: 'PENDING',
-      status: 'RUNNING',
-      timestamp: '2026-08-18T22:31:00Z',
-    })
-    fixture.runs.completeRun({
-      runId: excluded.runId,
-      expectedStatus: 'RUNNING',
-      status: 'FAILED',
-      durationMs: 5_000,
-      timestamp: '2026-08-18T22:31:05Z',
-    })
+    await service.create(createInput)
 
     const page = service.list({
       page: 1,
       pageSize: 1,
       runId: 'service-1',
-      statuses: ['SUCCEEDED'],
-      startedFrom: '2026-08-18T22:29:00Z',
-      startedTo: '2026-08-18T22:30:30Z',
-      durationMinMs: 1_500,
-      durationMaxMs: 2_500,
+      statuses: ['PENDING'],
     })
 
     expect(page.pagination).toEqual({ page: 1, pageSize: 1, totalItems: 1, totalPages: 1 })
     expect(page.data).toEqual([
       expect.objectContaining({
         runId: matching.runId,
-        status: 'SUCCEEDED',
-        durationMs: 2_000,
+        status: 'PENDING',
+        durationMs: null,
       }),
     ])
   })

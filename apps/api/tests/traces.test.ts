@@ -13,12 +13,22 @@ const trace = AgentTraceSchema.parse({
     nodeId: 'identify-agent',
     createdAt: '2026-08-22T10:00:00.000Z',
     configuration: {
-      connectionId: 'provider-default',
-      provider: 'openrouter',
-      model: 'test/model',
+      harnessId: 'pi',
+      harnessVersion: '0.84.2',
+      model: 'openai/gpt-5.4',
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the repository.',
-      permissionProfile: 'workspace-write',
+      workspaceRoot: '/Users/developer/.slopify/orchestrator/worktrees/run-01',
+      primaryProjectId: 'project-api',
+      projects: [
+        {
+          projectId: 'project-api',
+          name: 'API',
+          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-01/project-api',
+          baseSha: '1111111111111111111111111111111111111111',
+          sourceBranch: 'main',
+        },
+      ],
       timeoutSeconds: 600,
     },
   },
@@ -55,6 +65,7 @@ describe('agent trace API', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(trace)
+    expect(trace.header.configuration.projects).toHaveLength(1)
     expect(traces.read).toHaveBeenCalledWith({
       runId: 'run-01',
       nodeExecutionId: 'node-execution-01',

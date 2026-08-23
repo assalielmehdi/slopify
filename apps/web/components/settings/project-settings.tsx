@@ -6,10 +6,10 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useReducer,
   useRef,
-  useState,
   type CSSProperties,
-  type FormEvent,
+  type RefObject,
 } from 'react'
 
 import { CatalogToolbar } from '@/components/settings/catalog-toolbar'
@@ -20,7 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { toast } from '@/components/ui/toast'
+import { toast } from '@/lib/toast'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
 import { showUndoDeletionToast } from '@/lib/undo-deletion-toast'
 import { cn } from '@/lib/utils'
@@ -29,6 +29,45 @@ type ProjectClient = Required<
   Pick<ApiClient, 'listProjects' | 'addProject' | 'deleteProject' | 'undoDeletion'>
 >
 type PanelSelection = 'add' | string
+
+interface ProjectSettingsState {
+  readonly projects: readonly Project[]
+  readonly selection: PanelSelection | undefined
+  readonly isPanelOpen: boolean
+  readonly error: string | undefined
+  readonly saving: boolean
+  readonly deleting: boolean
+  readonly confirmingDelete: boolean
+  readonly confirmationPath: string
+  readonly searchQuery: string
+  readonly closingProject: Project | undefined
+  readonly loading: boolean
+}
+
+type ProjectSettingsUpdate =
+  Partial<ProjectSettingsState> | ((state: ProjectSettingsState) => Partial<ProjectSettingsState>)
+
+const initialProjectSettingsState: ProjectSettingsState = {
+  projects: [],
+  selection: undefined,
+  isPanelOpen: false,
+  error: undefined,
+  saving: false,
+  deleting: false,
+  confirmingDelete: false,
+  confirmationPath: '',
+  searchQuery: '',
+  closingProject: undefined,
+  loading: true,
+}
+
+const updateProjectSettings = (
+  state: ProjectSettingsState,
+  update: ProjectSettingsUpdate,
+): ProjectSettingsState => ({
+  ...state,
+  ...(typeof update === 'function' ? update(state) : update),
+})
 
 const defaultClient = createApiClient()
 
@@ -102,20 +141,205 @@ function ProjectTile({ onSelect, project }: Readonly<{ onSelect: () => void; pro
   )
 }
 
+function ProjectPanel({
+  confirmationInputRef,
+  confirmationPath,
+  confirmingDelete,
+  deleting,
+  isOpen,
+  onAdd,
+  onClose,
+  onConfirmationPathChange,
+  onDelete,
+  onExited,
+  panelRef,
+  panelTitle,
+  saving,
+  selectedProject,
+  selection,
+}: Readonly<{
+  confirmationInputRef: RefObject<HTMLInputElement | null>
+  confirmationPath: string
+  confirmingDelete: boolean
+  deleting: boolean
+  isOpen: boolean
+  onAdd: (formData: FormData) => Promise<void>
+  onClose: () => void
+  onConfirmationPathChange: (value: string) => void
+  onDelete: () => Promise<void>
+  onExited: () => void
+  panelRef: RefObject<HTMLDivElement | null>
+  panelTitle: string
+  saving: boolean
+  selectedProject: Project | undefined
+  selection: PanelSelection | undefined
+}>) {
+  const dialogRef = useRef<HTMLDialogElement>(null)
+
+  useEffect(() => {
+    const dialog = dialogRef.current
+    if (dialog !== null && !dialog.open) {
+      if (typeof dialog.show === 'function') dialog.show()
+      else dialog.setAttribute('open', '')
+    }
+    return () => {
+      if (!dialog?.open) return
+      if (typeof dialog.close === 'function') dialog.close()
+      else dialog.removeAttribute('open')
+    }
+  }, [])
+
+  return (
+    <div
+      ref={panelRef}
+      aria-hidden={!isOpen}
+      className="floating-panel-shell fixed inset-y-3 right-3 left-3 z-30 w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
+      data-open={isOpen}
+      data-testid="project-panel-shell"
+      onTransitionEnd={(event) => {
+        if (event.target === event.currentTarget && event.propertyName === 'translate' && !isOpen) {
+          onExited()
+        }
+      }}
+      style={
+        {
+          '--panel-open-dur': '350ms',
+          '--panel-close-dur': '350ms',
+          '--panel-translate-y': '0px',
+        } as CSSProperties
+      }
+    >
+      <dialog
+        ref={dialogRef}
+        aria-labelledby="project-panel-title"
+        aria-modal="false"
+        className="t-panel-slide relative m-0 flex h-full max-h-none w-full max-w-none flex-col overflow-hidden rounded-xl border border-border bg-card p-0 text-card-foreground shadow-[var(--shadow-overlay)]"
+        data-layout="floating"
+        data-open={isOpen}
+      >
+        <header className="relative shrink-0 border-b border-border p-6 pr-14">
+          <div className="flex items-center gap-3">
+            <ProjectIcon />
+            <div className="min-w-0">
+              <h2
+                className="text-[18px]/6 font-semibold tracking-[-0.01em]"
+                id="project-panel-title"
+              >
+                {panelTitle}
+              </h2>
+              <p className="text-[12px]/4 text-muted-foreground">Local Git repository</p>
+            </div>
+            {selectedProject === undefined ? null : (
+              <div className="ml-auto">
+                <ProjectStatus project={selectedProject} />
+              </div>
+            )}
+          </div>
+          <Button
+            aria-label="Close project details"
+            className="absolute top-3 right-3"
+            onClick={onClose}
+            size="icon-sm"
+            type="button"
+            variant="ghost"
+          >
+            <XIcon aria-hidden="true" />
+          </Button>
+        </header>
+
+        <div className="grid min-h-0 gap-6 overflow-y-auto p-6">
+          {selection === 'add' ? (
+            <form action={onAdd} className="grid gap-4">
+              <Field>
+                <FieldLabel htmlFor="project-repository-path">Absolute local path</FieldLabel>
+                <Input
+                  autoComplete="off"
+                  id="project-repository-path"
+                  name="repositoryPath"
+                  placeholder="/Users/you/workspace/repository"
+                  required
+                />
+                <FieldDescription>
+                  The path must exist and point to the root of a local Git repository.
+                </FieldDescription>
+              </Field>
+              <Button disabled={saving} type="submit">
+                {saving ? 'Checking repository…' : 'Add project'}
+              </Button>
+            </form>
+          ) : selectedProject === undefined ? null : (
+            <>
+              <section className="grid gap-2">
+                <h2 className="text-[14px]/5 font-semibold">Repository path</h2>
+                <p className="break-all rounded-md border border-border bg-background p-3 font-mono text-[12px]/5 text-muted-foreground">
+                  {selectedProject.repositoryPath}
+                </p>
+              </section>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+                <div
+                  aria-hidden={!confirmingDelete}
+                  className={cn(
+                    't-resize min-w-0 justify-self-end overflow-hidden',
+                    confirmingDelete ? 'w-full' : 'w-0',
+                  )}
+                >
+                  <Input
+                    ref={confirmationInputRef}
+                    aria-describedby="project-delete-confirmation-hint"
+                    aria-invalid={
+                      confirmationPath.length > 0 &&
+                      confirmationPath !== selectedProject.repositoryPath
+                    }
+                    autoComplete="off"
+                    disabled={!confirmingDelete || deleting}
+                    onChange={(event) => onConfirmationPathChange(event.target.value)}
+                    placeholder="Enter the repository path"
+                    tabIndex={confirmingDelete ? 0 : -1}
+                    value={confirmationPath}
+                  />
+                </div>
+                <span className="sr-only" id="project-delete-confirmation-hint">
+                  Enter the full repository path exactly to enable deletion.
+                </span>
+                <Button
+                  className="col-start-2 ml-auto min-w-32"
+                  disabled={
+                    deleting ||
+                    (confirmingDelete && confirmationPath !== selectedProject.repositoryPath)
+                  }
+                  onClick={() => void onDelete()}
+                  type="button"
+                  variant="destructive"
+                >
+                  <Trash2Icon aria-hidden="true" />
+                  {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete project'}
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      </dialog>
+    </div>
+  )
+}
+
 export function ProjectSettings({
   client = defaultClient as ProjectClient,
 }: Readonly<{ client?: ProjectClient }>) {
-  const [projects, setProjects] = useState<readonly Project[]>([])
-  const [selection, setSelection] = useState<PanelSelection>()
-  const [isPanelOpen, setIsPanelOpen] = useState(false)
-  const [error, setError] = useState<string>()
-  const [saving, setSaving] = useState(false)
-  const [deleting, setDeleting] = useState(false)
-  const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [confirmationPath, setConfirmationPath] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
-  const [closingProject, setClosingProject] = useState<Project>()
-  const [loading, setLoading] = useState(true)
+  const [state, update] = useReducer(updateProjectSettings, initialProjectSettingsState)
+  const {
+    projects,
+    selection,
+    isPanelOpen,
+    error,
+    saving,
+    deleting,
+    confirmingDelete,
+    confirmationPath,
+    searchQuery,
+    closingProject,
+    loading,
+  } = state
   const panelRef = useRef<HTMLDivElement>(null)
   const panelOpenFrameRef = useRef<number | undefined>(undefined)
   const confirmationInputRef = useRef<HTMLInputElement>(null)
@@ -137,34 +361,33 @@ export function ProjectSettings({
       window.cancelAnimationFrame(panelOpenFrameRef.current)
       panelOpenFrameRef.current = undefined
     }
-    setIsPanelOpen(false)
-    setConfirmingDelete(false)
-    setConfirmationPath('')
+    update({ isPanelOpen: false, confirmingDelete: false, confirmationPath: '' })
     if (prefersReducedMotion()) {
-      setClosingProject(undefined)
-      setSelection(undefined)
+      update({ closingProject: undefined, selection: undefined })
     }
   }, [])
 
   const openPanel = useCallback((nextSelection: PanelSelection) => {
     if (panelOpenFrameRef.current !== undefined)
       window.cancelAnimationFrame(panelOpenFrameRef.current)
-    setSelection(nextSelection)
-    setError(undefined)
-    setConfirmingDelete(false)
-    setConfirmationPath('')
-    setClosingProject(undefined)
-    setIsPanelOpen(false)
+    update({
+      selection: nextSelection,
+      error: undefined,
+      confirmingDelete: false,
+      confirmationPath: '',
+      closingProject: undefined,
+      isPanelOpen: false,
+    })
 
     if (prefersReducedMotion()) {
-      setIsPanelOpen(true)
+      update({ isPanelOpen: true })
       panelOpenFrameRef.current = undefined
       return
     }
 
     panelOpenFrameRef.current = window.requestAnimationFrame(() => {
       panelOpenFrameRef.current = window.requestAnimationFrame(() => {
-        setIsPanelOpen(true)
+        update({ isPanelOpen: true })
         panelOpenFrameRef.current = undefined
       })
     })
@@ -175,14 +398,16 @@ export function ProjectSettings({
     void client
       .listProjects()
       .then((nextProjects) => {
-        if (active) setProjects(nextProjects)
+        if (active) update({ projects: nextProjects })
       })
       .catch((cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : 'Projects could not be loaded.')
+          update({
+            error: cause instanceof Error ? cause.message : 'Projects could not be loaded.',
+          })
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active) update({ loading: false })
       })
     return () => {
       active = false
@@ -205,16 +430,12 @@ export function ProjectSettings({
     if (confirmingDelete) confirmationInputRef.current?.focus()
   }, [confirmingDelete])
 
-  const addProject = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setSaving(true)
-    setError(undefined)
-    const form = event.currentTarget
-    const repositoryPath = String(new FormData(form).get('repositoryPath'))
+  const addProject = async (formData: FormData) => {
+    update({ saving: true, error: undefined })
+    const repositoryPath = String(formData.get('repositoryPath'))
     try {
       const project = await client.addProject({ repositoryPath })
-      setProjects((current) => [...current, project])
-      form.reset()
+      update((current) => ({ projects: [...current.projects, project] }))
       closePanel()
       toast.add({
         title: 'Project added',
@@ -222,25 +443,26 @@ export function ProjectSettings({
         type: 'success',
       })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Project could not be added.')
+      update({ error: cause instanceof Error ? cause.message : 'Project could not be added.' })
     } finally {
-      setSaving(false)
+      update({ saving: false })
     }
   }
 
   const deleteProject = async (project: Project) => {
     if (!confirmingDelete) {
-      setConfirmingDelete(true)
+      update({ confirmingDelete: true })
       return
     }
     if (confirmationPath !== project.repositoryPath) return
 
-    setDeleting(true)
-    setError(undefined)
+    update({ deleting: true, error: undefined })
     try {
       const receipt = await client.deleteProject(project.projectId)
-      setClosingProject(project)
-      setProjects((current) => current.filter(({ projectId }) => projectId !== project.projectId))
+      update((current) => ({
+        closingProject: project,
+        projects: current.projects.filter(({ projectId }) => projectId !== project.projectId),
+      }))
       closePanel()
       showUndoDeletionToast({
         receipt,
@@ -250,13 +472,13 @@ export function ProjectSettings({
         restoredDescription: `${project.name} is available in Slopify again.`,
         async onUndo() {
           await client.undoDeletion(receipt.deletionId)
-          setProjects(await client.listProjects())
+          update({ projects: await client.listProjects() })
         },
       })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Project could not be deleted.')
+      update({ error: cause instanceof Error ? cause.message : 'Project could not be deleted.' })
     } finally {
-      setDeleting(false)
+      update({ deleting: false })
     }
   }
 
@@ -268,7 +490,7 @@ export function ProjectSettings({
         singular="project"
         plural="projects"
         query={searchQuery}
-        onQueryChange={setSearchQuery}
+        onQueryChange={(query) => update({ searchQuery: query })}
         onAdd={() => openPanel('add')}
       />
 
@@ -313,146 +535,25 @@ export function ProjectSettings({
       ) : null}
 
       {panelTitle === undefined ? null : (
-        <div
-          ref={panelRef}
-          data-testid="project-panel-shell"
-          data-open={isPanelOpen}
-          aria-hidden={!isPanelOpen}
-          className="provider-floating-panel-shell fixed inset-y-3 right-3 left-3 z-30 w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
-          style={
-            {
-              '--panel-open-dur': '350ms',
-              '--panel-close-dur': '350ms',
-              '--panel-translate-y': '0px',
-            } as CSSProperties
+        <ProjectPanel
+          confirmationInputRef={confirmationInputRef}
+          confirmationPath={confirmationPath}
+          confirmingDelete={confirmingDelete}
+          deleting={deleting}
+          isOpen={isPanelOpen}
+          onAdd={addProject}
+          onClose={closePanel}
+          onConfirmationPathChange={(value) => update({ confirmationPath: value })}
+          onDelete={() =>
+            selectedProject === undefined ? Promise.resolve() : deleteProject(selectedProject)
           }
-          onTransitionEnd={(event) => {
-            if (
-              event.target === event.currentTarget &&
-              event.propertyName === 'translate' &&
-              !isPanelOpen
-            ) {
-              setClosingProject(undefined)
-              setSelection(undefined)
-            }
-          }}
-        >
-          <aside
-            role="dialog"
-            aria-modal="false"
-            aria-labelledby="project-panel-title"
-            data-layout="floating"
-            data-open={isPanelOpen}
-            className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
-          >
-            <header className="relative shrink-0 border-b border-border p-6 pr-14">
-              <div className="flex items-center gap-3">
-                <ProjectIcon />
-                <div className="min-w-0">
-                  <h2
-                    id="project-panel-title"
-                    className="text-[18px]/6 font-semibold tracking-[-0.01em]"
-                  >
-                    {panelTitle}
-                  </h2>
-                  <p className="text-[12px]/4 text-muted-foreground">Local Git repository</p>
-                </div>
-                {selectedProject === undefined ? null : (
-                  <div className="ml-auto">
-                    <ProjectStatus project={selectedProject} />
-                  </div>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Close project details"
-                onClick={closePanel}
-                className="absolute top-3 right-3"
-              >
-                <XIcon aria-hidden="true" />
-              </Button>
-            </header>
-
-            <div className="grid min-h-0 gap-6 overflow-y-auto p-6">
-              {selection === 'add' ? (
-                <form className="grid gap-4" onSubmit={(event) => void addProject(event)}>
-                  <Field>
-                    <FieldLabel htmlFor="project-repository-path">Absolute local path</FieldLabel>
-                    <Input
-                      id="project-repository-path"
-                      name="repositoryPath"
-                      placeholder="/Users/you/workspace/repository"
-                      autoComplete="off"
-                      required
-                    />
-                    <FieldDescription>
-                      The path must exist and point to the root of a local Git repository.
-                    </FieldDescription>
-                  </Field>
-                  <Button type="submit" disabled={saving}>
-                    {saving ? 'Checking repository…' : 'Add project'}
-                  </Button>
-                </form>
-              ) : selectedProject === undefined ? null : (
-                <>
-                  <section className="grid gap-2">
-                    <h2 className="text-[14px]/5 font-semibold">Repository path</h2>
-                    <p className="break-all rounded-md border border-border bg-background p-3 font-mono text-[12px]/5 text-muted-foreground">
-                      {selectedProject.repositoryPath}
-                    </p>
-                  </section>
-                  <form
-                    className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2"
-                    onSubmit={(event) => {
-                      event.preventDefault()
-                      void deleteProject(selectedProject)
-                    }}
-                  >
-                    <div
-                      aria-hidden={!confirmingDelete}
-                      className={cn(
-                        't-resize min-w-0 justify-self-end overflow-hidden',
-                        confirmingDelete ? 'w-full' : 'w-0',
-                      )}
-                    >
-                      <Input
-                        ref={confirmationInputRef}
-                        aria-describedby="project-delete-confirmation-hint"
-                        aria-invalid={
-                          confirmationPath.length > 0 &&
-                          confirmationPath !== selectedProject.repositoryPath
-                        }
-                        autoComplete="off"
-                        disabled={!confirmingDelete || deleting}
-                        placeholder="Enter the repository path"
-                        tabIndex={confirmingDelete ? 0 : -1}
-                        value={confirmationPath}
-                        onChange={(event) => setConfirmationPath(event.target.value)}
-                      />
-                    </div>
-                    <span id="project-delete-confirmation-hint" className="sr-only">
-                      Enter the full repository path exactly to enable deletion.
-                    </span>
-                    <Button
-                      type="submit"
-                      variant="destructive"
-                      className="col-start-2 ml-auto min-w-32"
-                      disabled={
-                        deleting ||
-                        (confirmingDelete && confirmationPath !== selectedProject.repositoryPath)
-                      }
-                    >
-                      <Trash2Icon aria-hidden="true" />
-                      {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete project'}
-                    </Button>
-                  </form>
-                </>
-              )}
-            </div>
-          </aside>
-        </div>
+          onExited={() => update({ closingProject: undefined, selection: undefined })}
+          panelRef={panelRef}
+          panelTitle={panelTitle}
+          saving={saving}
+          selectedProject={selectedProject}
+          selection={selection}
+        />
       )}
     </section>
   )

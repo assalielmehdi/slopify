@@ -4,7 +4,7 @@ import { waitFor } from '@testing-library/react'
 import { DeletionReceiptSchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { toast } from '../components/ui/toast'
+import { toast } from '../lib/toast'
 import { showUndoDeletionToast } from '../lib/undo-deletion-toast'
 
 const receipt = () =>

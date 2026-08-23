@@ -115,7 +115,7 @@ components:
 
 ## Overview
 
-Slopify is a native AI delivery workbench for technical users. Its interface should
+Slopify is a native agent workflow orchestrator for technical users. Its interface should
 feel calm, precise, capable, and durable: closer to a professional instrument than a
 branded marketing surface. It takes cues from Linear, Vercel, and Cloudflare without
 copying their identity.
@@ -305,31 +305,17 @@ text color of their role.
   from an incorrect origin.
 - Remove the transition when `prefers-reduced-motion: reduce` is active.
 
-### Provider and connector catalogs
+### Harnesses
 
-- SQLite is the source of truth for supported provider and connector catalog entries;
-  the API returns that catalog together with current connection state. The frontend
-  must not maintain a parallel list of names, descriptions, setup steps, or links.
-- If the catalog request fails, show the unavailable state and no catalog cards. Never
-  fabricate providers or connectors from client-side fallback data.
-- Providers and connectors use the same catalog component and interaction model. Start
-  each catalog from the main workspace's left content edge. Do not center a short final
-  row or introduce a narrow maximum-width wrapper.
-- Both routes use the same 24px horizontal and top padding around the catalog. The grid is left-aligned and
-  uses responsive `minmax(18rem, 1fr)` columns so additional providers fill available
-  space without imposing an arbitrary three-column ceiling.
-- Catalog cards share the same information order, status treatment, and whole-surface
-  interaction. Do not add a secondary `View setup` action.
-- Resting tiles use the work-surface color, a one-pixel border, and `raised` elevation.
-  Hover strengthens the border and shadow without introducing a color accent.
-- Catalogs always use the responsive card grid. Do not expose a list/card view selector.
-- Provider and connector details open in a floating, non-modal right drawer contained
-  by the main workspace. It must not overlap the breadcrumb bar, shift layout, dim
-  content, or disable background interaction.
-- The drawer enters and exits horizontally over 350ms. Clicking elsewhere closes it
-  while preserving the underlying interaction, and reduced motion removes the travel.
-- Provider and connector brand marks may keep their identity colors; surrounding UI
-  stays neutral and semantic.
+- Harnesses are discovered from the host through the API; the frontend never maintains
+  a parallel availability or model catalog. Harness setup remains external to Slopify.
+- Keep this screen deliberately minimal while Pi is the only harness: one left-aligned
+  bordered surface showing its name, installed version when available, availability,
+  and a short explanation that configuration remains in Pi.
+- When Pi is unavailable, show the reason and one link to the official installation
+  page. Never imply that Slopify can install or configure it.
+- Model metadata may be summarized. Detailed agent selection belongs in the workflow
+  agent drawer.
 
 ### Project catalog
 
@@ -338,8 +324,8 @@ text color of their role.
   a Git repository before persisting it.
 - After the API confirms a Project was added, close the add drawer and show a success
   toast naming the Project. Never show success before persistence completes.
-- Use the same card-only, left-aligned responsive catalog, whole-surface tiles, and
-  contained floating drawer as Providers and Connectors.
+- Use a left-aligned responsive card catalog, whole-surface tiles, and the standard
+  contained floating drawer.
 - Derive availability from the filesystem whenever Projects are listed or used. Never
   remove a saved Project merely because its path is unavailable.
 - A missing Project remains in its original catalog position with a muted tile and the
@@ -349,12 +335,14 @@ text color of their role.
 
 - A workflow screen presents the single current workflow graph. Do not expose revision
   selectors, revision IDs, version ancestry, or publication controls.
-- V1 presents every workflow node as an agent. Do not expose code jobs or invent setup,
-  start, finalization, or terminal control nodes. One agent can be the entire workflow.
+- Every workflow node is an agent. One agent can be the entire workflow.
 - An empty workflow is a valid draft state. Give it a calm, actionable empty canvas,
   but disable running it and explain that at least one agent is required.
-- Until editing is implemented, the graph remains read-only and the primary available
-  action is starting a new run. Do not imply that an edit can be saved when it cannot.
+- Keep a compact workflow configuration action directly beside Run. It opens the same
+  contained, non-modal floating right drawer used by agent configuration.
+- Workflow configuration contains Projects and Variables. Projects are selected from
+  Slopify's live Project catalog and apply to every agent in the workflow. Variables are
+  an ordered list of unique, non-empty names requested whenever a run starts.
 - Let the graph fill the workspace remaining below the application header. Keep the
   page itself fixed to the viewport; graph pan and zoom belong to the canvas.
 - Workflow nodes use the standard neutral card treatment. In a run snapshot, a node's
@@ -363,23 +351,24 @@ text color of their role.
 - Agent drawers use one proximity hierarchy on the 4px spacing grid: 4px between a
   section heading and its description, 8px between a visible field label and its
   control, 12px between the section introduction and its fields or between related
-  field rows, and 32px between Name, Prompt, Inference, Connectors, and Skills.
+  field rows, and 32px between Name, Prompt, and Harness.
   Repeated section titles do not require a second visible field label; keep the label
   accessible to assistive technology without adding it to the visual rhythm.
+- Harness configuration is limited to the selected harness plus optional model and
+  thinking effort supported by that harness. Explain that the rest of harness setup is
+  external to Slopify.
 
 ### Run variables
 
-- Starting a run accepts an optional set of named values. Prepopulate rows for every
-  exact `{{ variable }}` placeholder referenced by captured agent prompts, and allow
-  the user to add arbitrary names beyond those references.
+- Starting a run shows one read-only name and one value field for every variable
+  declared in the selected workflow. Do not scan prompts to create rows, and do not
+  allow adding, removing, or renaming variables from the run form.
 - Values accept JSON scalars, objects, and arrays. When entered text is not valid JSON,
   preserve it as a string rather than inventing a second input mode.
-- Missing referenced variables use a semantic warning, list the exact missing names,
-  and require a deliberate confirmation before the run is admitted. Editing variables
-  clears the prior confirmation.
-- Keep the warning and confirmation in the normal run-start flow. Do not hide them in a
-  modal, use danger styling, or imply that optional variables are schema validation
-  errors.
+- Require a value for every configured name before enabling Start. The API accepts
+  exactly those names and rejects missing or additional entries.
+- Interpolate only placeholders whose names are declared by the workflow. Leave
+  undeclared placeholders unchanged so prompt typos are visible rather than inferred.
 
 ### Data tables
 
@@ -443,20 +432,19 @@ text color of their role.
 
 ### Run detail
 
-- A run is the immutable historical capture of its workflow and every job
-  configuration, variables, and missing-variable confirmation at admission. The detail
-  UI always renders that capture; it must never fetch the current workflow to
-  reconstruct historical state.
+- A run is the immutable historical capture of its workflow, every agent configuration,
+  and its configured variable values at admission. The detail UI always renders that
+  capture; it must never fetch the current workflow to reconstruct historical state.
 - The top of the screen contains one wide ShadCN Card with the Run ID, Status, Started,
   and Duration. A running run may keep a compact cancel action in this card.
-- The rest of the desktop screen is the read-only workflow canvas. Do not append legacy
-  progress, configuration, artifact, evidence, or event-stream sections beneath it.
-- Opening a job uses the same contained, non-modal floating right panel as provider and
-  connector details. It does not shift the graph, overlap the application header, add
+- The rest of the desktop screen is the read-only workflow canvas. Do not append
+  additional summary sections beneath it.
+- Opening an agent uses the standard contained, non-modal floating right panel. It does
+  not shift the graph, overlap the application header, add
   a backdrop, trap focus, or block interaction with the canvas.
-- The panel shows the captured job type and configuration, skills, inference provider
-  and model, connectors, sandbox/result/timeout data, execution status and timing,
-  errors or output, and available agent transcript messages.
+- The panel shows the captured harness and version, optional model and thinking effort,
+  primary Project and run worktree paths, result/timeout data, execution status and
+  timing, errors or output, and available agent transcript messages.
 - The panel enters from and exits toward the right over 350ms using the catalog drawer
   easing. Clicking elsewhere begins its exit while allowing that underlying
   interaction. Long panel content scrolls inside the panel; the run page does not.

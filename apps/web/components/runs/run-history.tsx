@@ -4,16 +4,11 @@ import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect, useMemo, useState } from 'react'
 
-import {
-  RunFilterControls,
-  activeRunFilterCount,
-  emptyRunFilters,
-  type RunFilters,
-} from '@/components/runs/run-filters'
-import { RunStatusBadge, formatDuration, formatTimestamp } from '@/components/runs/run-status'
+import { RunFilterControls } from '@/components/runs/run-filters'
+import { RunStatusBadge } from '@/components/runs/run-status'
 import { displayRunId } from '@/lib/run-id'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { Button, buttonVariants } from '@/components/ui/button'
+import { Button } from '@/components/ui/button'
 import { RunTableSkeleton } from '@/components/runs/run-table-skeleton'
 import {
   Table,
@@ -25,6 +20,14 @@ import {
 } from '@/components/ui/table'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
+import { buttonVariants } from '@/lib/button-variants'
+import { formatDuration, formatRunHistoryTimestamp, formatTimestamp } from '@/lib/run-format'
+import {
+  activeRunFilterCount,
+  emptyRunFilters,
+  runFilterSearch,
+  type RunFilters,
+} from '@/lib/run-filters'
 import {
   createApiClient,
   type ApiClient,
@@ -46,25 +49,6 @@ const sortableColumns: readonly { key: SortKey; label: string }[] = [
   { key: 'durationMs', label: 'Duration' },
   { key: 'status', label: 'Status' },
 ]
-
-const sameLocalDay = (left: Date, right: Date): boolean =>
-  left.getFullYear() === right.getFullYear() &&
-  left.getMonth() === right.getMonth() &&
-  left.getDate() === right.getDate()
-
-export function formatRunHistoryTimestamp(timestamp: string | null, now = new Date()): string {
-  if (timestamp === null) return 'Not recorded'
-  const startedAt = new Date(timestamp)
-  const elapsedMs = now.getTime() - startedAt.getTime()
-  if (elapsedMs < 0 || !sameLocalDay(startedAt, now)) return formatTimestamp(timestamp)
-
-  const elapsedSeconds = Math.max(1, Math.floor(elapsedMs / 1_000))
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: 'always' })
-  if (elapsedSeconds < 60) return formatter.format(-elapsedSeconds, 'second')
-  const elapsedMinutes = Math.floor(elapsedSeconds / 60)
-  if (elapsedMinutes < 60) return formatter.format(-elapsedMinutes, 'minute')
-  return formatter.format(-Math.floor(elapsedMinutes / 60), 'hour')
-}
 
 function RunStartedAt({ timestamp }: Readonly<{ timestamp: string | null }>) {
   if (timestamp === null) return <>Not recorded</>
@@ -108,21 +92,6 @@ const compareRuns = (left: RunHistoryEntry, right: RunHistoryEntry, key: SortKey
   return compareNullable(left[key], right[key])
 }
 
-const filterSearch = (filters: RunFilters, page: number): string => {
-  const search = new URLSearchParams()
-  if (page > 1) search.set('page', String(page))
-  if (filters.runId.trim() !== '') search.set('runId', filters.runId.trim())
-  for (const status of filters.statuses) search.append('status', status)
-  if (filters.startedFrom !== '') search.set('startedFrom', filters.startedFrom)
-  if (filters.startedTo !== '') search.set('startedTo', filters.startedTo)
-  if (filters.durationMinSeconds !== '')
-    search.set('durationMinSeconds', filters.durationMinSeconds)
-  if (filters.durationMaxSeconds !== '')
-    search.set('durationMaxSeconds', filters.durationMaxSeconds)
-  const query = search.toString()
-  return query === '' ? '/runs' : `/runs?${query}`
-}
-
 const toListRunsInput = (filters: RunFilters, page: number): ListRunsInput => {
   const durationMin = Number(filters.durationMinSeconds)
   const durationMax = Number(filters.durationMaxSeconds)
@@ -154,7 +123,7 @@ function HistoryPagination({
         <Link
           aria-label="Previous page"
           className={cn(buttonVariants({ size: 'sm', variant: 'ghost' }), 'border-0')}
-          href={filterSearch(filters, page - 1)}
+          href={runFilterSearch(filters, page - 1)}
         >
           Previous
         </Link>
@@ -173,7 +142,7 @@ function HistoryPagination({
         <Link
           aria-label="Next page"
           className={cn(buttonVariants({ size: 'sm', variant: 'ghost' }), 'border-0')}
-          href={filterSearch(filters, page + 1)}
+          href={runFilterSearch(filters, page + 1)}
         >
           Next
         </Link>
@@ -228,19 +197,16 @@ export function RunHistory({
   const [history, setHistory] = useState<RunHistoryPage | null>(null)
   const [failed, setFailed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
-  const [filters, setFilters] = useState(initialFilters)
-  const [activePage, setActivePage] = useState(page)
+  const [view, setView] = useState({ filters: initialFilters, page })
   const [sortKey, setSortKey] = useState<SortKey>('startedAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('descending')
-
-  useEffect(() => setActivePage(page), [page])
 
   useEffect(() => {
     let active = true
     setFailed(false)
     setRefreshing(true)
 
-    void client.listRuns(toListRunsInput(filters, activePage)).then(
+    void client.listRuns(toListRunsInput(view.filters, view.page)).then(
       (result) => {
         if (active) {
           setHistory(result)
@@ -258,11 +224,11 @@ export function RunHistory({
     return () => {
       active = false
     }
-  }, [activePage, client, filters])
+  }, [client, view])
 
   const visibleRuns = useMemo(() => {
     const direction = sortDirection === 'ascending' ? 1 : -1
-    return [...(history?.data ?? [])].sort((left, right) => {
+    return (history?.data ?? []).toSorted((left, right) => {
       const comparison = compareRuns(left, right, sortKey)
       return comparison === 0 ? left.runId.localeCompare(right.runId) : comparison * direction
     })
@@ -278,12 +244,11 @@ export function RunHistory({
   }
 
   const updateFilters = (nextFilters: RunFilters) => {
-    setFilters(nextFilters)
-    setActivePage(1)
-    window.history.replaceState(null, '', filterSearch(nextFilters, 1))
+    setView({ filters: nextFilters, page: 1 })
+    window.history.replaceState(null, '', runFilterSearch(nextFilters, 1))
   }
 
-  const activeFilterCount = activeRunFilterCount(filters)
+  const activeFilterCount = activeRunFilterCount(view.filters)
 
   return (
     <section aria-busy={refreshing} aria-label="Runs" className="min-h-full w-full">
@@ -308,7 +273,11 @@ export function RunHistory({
             aria-label="Run history controls"
             className="flex min-h-12 items-center gap-2 border-b px-6 py-2"
           >
-            <RunFilterControls filters={filters} onChange={updateFilters} updating={refreshing} />
+            <RunFilterControls
+              filters={view.filters}
+              onChange={updateFilters}
+              updating={refreshing}
+            />
           </div>
           {history.data.length === 0 ? (
             <div className="border-b px-6 py-16 text-center">
@@ -371,7 +340,7 @@ export function RunHistory({
             </Table>
           )}
           <div className="border-t bg-background px-6 py-3">
-            <HistoryPagination filters={filters} history={history} />
+            <HistoryPagination filters={view.filters} history={history} />
           </div>
         </div>
       )}

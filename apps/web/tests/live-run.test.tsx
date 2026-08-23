@@ -4,11 +4,11 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentTraceSchema, RunEventSchema, type RunEvent } from '@slopify/contracts'
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse, StartRunResponse } from '../lib/api-client'
-import type { RunEventConnectionHandlers, RunEventConnector } from '../lib/event-stream'
+import type { RunEventSubscription, RunEventSubscriptionHandlers } from '../lib/event-stream'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const backgroundAction = vi.fn()
 
@@ -36,13 +36,10 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   ),
 }))
 
-const workflow = createPredefinedV1Workflow({
+const workflow = createAgentWorkflowFixture({
   createdAt: '2026-08-20T10:00:00Z',
-  agentDefaults: {
-    provider: 'test-provider',
-    model: 'test-model',
-    thinkingLevel: 'high',
-  },
+  modelId: 'test-model',
+  thinkingLevel: 'high',
 })
 
 const events = RunEventSchema.array().parse([
@@ -70,25 +67,6 @@ const events = RunEventSchema.array().parse([
     nodeId: 'identify-agent',
     data: {},
   },
-  {
-    runId: 'run-01',
-    sequence: 4,
-    timestamp: '2026-08-20T10:00:03Z',
-    type: 'NODE_OUTPUT',
-    nodeId: 'identify-agent',
-    data: { channel: 'agent', content: 'Tool started: read_file (tool-01)' },
-  },
-  {
-    runId: 'run-01',
-    sequence: 5,
-    timestamp: '2026-08-20T10:00:04Z',
-    type: 'NODE_OUTPUT',
-    nodeId: 'identify-agent',
-    data: {
-      channel: 'agent',
-      content: 'Tool succeeded: read_file (tool-01)\nRead 42 lines',
-    },
-  },
 ])
 
 const run = {
@@ -96,9 +74,7 @@ const run = {
   workflowId: workflow.workflowId,
   workflowSnapshot: workflow,
   variables: { task: 'Follow a live run' },
-  missingVariables: [],
   status: 'RUNNING',
-  currentNodeId: 'identify-agent',
   transitionCount: 1,
   createdAt: '2026-08-20T10:00:00Z',
   startedAt: '2026-08-20T10:00:01Z',
@@ -115,19 +91,17 @@ const detail = {
       nodeId: 'identify-agent',
       executionIndex: 0,
       status: 'RUNNING',
-      inputReferences: {},
       output: { data: { response: 'Implementation is in progress.' } },
       outcome: null,
       errorCode: null,
       errorMessage: null,
-      selectedTargetNodeId: null,
       startedAt: '2026-08-20T10:00:02Z',
       completedAt: null,
       durationMs: null,
     },
   ],
-  outputChunks: [],
-  artifacts: [],
+  projects: [],
+  projectWorktrees: [],
 } as unknown as RunDetailResponse
 
 const trace = AgentTraceSchema.parse({
@@ -139,12 +113,22 @@ const trace = AgentTraceSchema.parse({
     nodeId: 'identify-agent',
     createdAt: '2026-08-20T10:00:02Z',
     configuration: {
-      connectionId: 'test-provider-default',
-      provider: 'openrouter',
+      harnessId: 'pi',
+      harnessVersion: '0.84.2',
       model: 'test-model',
       thinkingLevel: 'high',
       renderedPrompt: "Who are you? What's your name?",
-      permissionProfile: 'workspace-write',
+      workspaceRoot: '/Users/developer/.slopify/orchestrator/worktrees/run-01/project-api',
+      primaryProjectId: 'project-api',
+      projects: [
+        {
+          projectId: 'project-api',
+          name: 'API',
+          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-01/project-api',
+          baseSha: '0123456789abcdef0123456789abcdef01234567',
+          sourceBranch: 'main',
+        },
+      ],
       timeoutSeconds: 300,
     },
   },
@@ -170,14 +154,14 @@ const trace = AgentTraceSchema.parse({
   complete: false,
 })
 
-const createConnector = () => {
-  let handlers: RunEventConnectionHandlers | undefined
+const createSubscription = () => {
+  let handlers: RunEventSubscriptionHandlers | undefined
   const close = vi.fn()
-  const connector: RunEventConnector = vi.fn((_url, nextHandlers) => {
+  const subscription: RunEventSubscription = vi.fn((_url, nextHandlers) => {
     handlers = nextHandlers
     return close
   })
-  return { close, connector, handlers: () => handlers }
+  return { close, subscription, handlers: () => handlers }
 }
 
 beforeEach(() => {
@@ -200,10 +184,10 @@ afterEach(() => {
 
 describe('LiveRun', () => {
   it('shows run timing and status as canvas overlays while keeping live updates connected', async () => {
-    const connection = createConnector()
+    const subscription = createSubscription()
     const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
 
-    render(<LiveRun runId="run-01" client={client} connect={connection.connector} />)
+    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
 
     const graph = await screen.findByRole('region', { name: 'Workflow graph' })
     const timing = screen.getByLabelText('Run timing')
@@ -218,19 +202,166 @@ describe('LiveRun', () => {
     expect(status.className).toContain('absolute')
     expect(status.className).toContain('right-3')
     expect(graph.textContent).toContain('Who are you?')
-    expect(screen.queryByText('Repository selection')).toBeNull()
-    expect(screen.queryByText('Delivery evidence')).toBeNull()
-    expect(screen.queryByText('Run events')).toBeNull()
-    expect(connection.connector).toHaveBeenCalledWith('/api/runs/run-01/events', expect.any(Object))
+    expect(subscription.subscription).toHaveBeenCalledWith(
+      '/api/runs/run-01/events',
+      expect.any(Object),
+    )
   })
 
-  it('keeps the captured-job panel open during canvas interaction and closes only from its close button', async () => {
+  it('reconciles a terminal snapshot immediately when live updates disconnect', async () => {
+    const subscription = createSubscription()
+    const completedEvents = RunEventSchema.array().parse([
+      ...events,
+      {
+        runId: 'run-01',
+        sequence: 4,
+        timestamp: '2026-08-20T10:00:09Z',
+        type: 'NODE_COMPLETED',
+        nodeId: 'identify-agent',
+        data: { outcome: 'completed', durationMs: 7_000 },
+      },
+      {
+        runId: 'run-01',
+        sequence: 5,
+        timestamp: '2026-08-20T10:00:10Z',
+        type: 'RUN_COMPLETED',
+        data: { status: 'SUCCEEDED', durationMs: 9_000 },
+      },
+    ])
+    const completedDetail = {
+      ...detail,
+      run: {
+        ...run,
+        status: 'SUCCEEDED',
+        completedAt: '2026-08-20T10:00:10Z',
+      },
+      events: completedEvents,
+      nodeExecutions: [
+        {
+          ...detail.nodeExecutions[0],
+          status: 'SUCCEEDED',
+          outcome: 'completed',
+          output: { data: { response: 'Implementation is complete.' } },
+          completedAt: '2026-08-20T10:00:09Z',
+          durationMs: 7_000,
+        },
+      ],
+    } as unknown as RunDetailResponse
+    const client = {
+      getRun: vi
+        .fn<() => Promise<RunDetailResponse>>()
+        .mockResolvedValueOnce(detail)
+        .mockResolvedValue(completedDetail),
+      cancelRun: vi.fn(),
+    }
+
+    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
+    const graph = await screen.findByRole('region', { name: 'Workflow graph' })
+    await waitFor(() => expect(subscription.subscription).toHaveBeenCalledOnce())
+
+    act(() => subscription.handlers()?.onDisconnect())
+
+    await waitFor(() => expect(client.getRun).toHaveBeenCalledTimes(2))
+    expect(screen.getByLabelText('Run status').textContent).toContain('Succeeded')
+    expect(graph.textContent).toContain('"identify-agent":"SUCCEEDED"')
+    expect(subscription.close).toHaveBeenCalledOnce()
+  })
+
+  it('ignores an older failed refresh after a newer reconnect refresh succeeds', async () => {
+    const subscription = createSubscription()
+    let rejectDisconnectedRefresh: (cause: Error) => void = () => undefined
+    let resolveReconnectedRefresh: (next: RunDetailResponse) => void = () => undefined
+    const disconnectedRefresh = new Promise<RunDetailResponse>((_resolve, reject) => {
+      rejectDisconnectedRefresh = reject
+    })
+    const reconnectedRefresh = new Promise<RunDetailResponse>((resolve) => {
+      resolveReconnectedRefresh = resolve
+    })
+    const client = {
+      getRun: vi
+        .fn<() => Promise<RunDetailResponse>>()
+        .mockResolvedValueOnce(detail)
+        .mockReturnValueOnce(disconnectedRefresh)
+        .mockReturnValueOnce(reconnectedRefresh),
+      cancelRun: vi.fn(),
+    }
+
+    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
+    await waitFor(() => expect(subscription.subscription).toHaveBeenCalledOnce())
+
+    act(() => {
+      subscription.handlers()?.onDisconnect()
+      subscription.handlers()?.onOpen()
+    })
+    await waitFor(() => expect(client.getRun).toHaveBeenCalledTimes(3))
+
+    await act(async () => resolveReconnectedRefresh(detail))
+    await act(async () => rejectDisconnectedRefresh(new Error('Stale refresh failed')))
+
+    expect(screen.getByText('Live')).toBeTruthy()
+    expect(screen.queryByText('Stale refresh failed')).toBeNull()
+  })
+
+  it('applies an older terminal refresh after a newer reconnect refresh fails', async () => {
+    const subscription = createSubscription()
+    let resolveDisconnectedRefresh: (next: RunDetailResponse) => void = () => undefined
+    let rejectReconnectedRefresh: (cause: Error) => void = () => undefined
+    const disconnectedRefresh = new Promise<RunDetailResponse>((resolve) => {
+      resolveDisconnectedRefresh = resolve
+    })
+    const reconnectedRefresh = new Promise<RunDetailResponse>((_resolve, reject) => {
+      rejectReconnectedRefresh = reject
+    })
+    const succeededDetail = {
+      ...detail,
+      run: { ...run, status: 'SUCCEEDED', completedAt: '2026-08-20T10:00:10Z' },
+      nodeExecutions: [
+        {
+          ...detail.nodeExecutions[0],
+          status: 'SUCCEEDED',
+          outcome: 'completed',
+          completedAt: '2026-08-20T10:00:09Z',
+          durationMs: 7_000,
+        },
+      ],
+    } as unknown as RunDetailResponse
+    const client = {
+      getRun: vi
+        .fn<() => Promise<RunDetailResponse>>()
+        .mockResolvedValueOnce(detail)
+        .mockReturnValueOnce(disconnectedRefresh)
+        .mockReturnValueOnce(reconnectedRefresh),
+      cancelRun: vi.fn(),
+    }
+
+    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
+    await waitFor(() => expect(subscription.subscription).toHaveBeenCalledOnce())
+
+    act(() => {
+      subscription.handlers()?.onDisconnect()
+      subscription.handlers()?.onOpen()
+    })
+    await waitFor(() => expect(client.getRun).toHaveBeenCalledTimes(3))
+
+    await act(async () => rejectReconnectedRefresh(new Error('Reconnect refresh failed')))
+    expect(await screen.findByText('Reconnect refresh failed')).toBeTruthy()
+    await act(async () => resolveDisconnectedRefresh(succeededDetail))
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('Run status').textContent).toContain('Succeeded'),
+    )
+    expect(screen.getByText('Closed')).toBeTruthy()
+    expect(screen.queryByText('Reconnect refresh failed')).toBeNull()
+    expect(subscription.close).toHaveBeenCalledOnce()
+  })
+
+  it('keeps the captured-agent panel open during canvas interaction and closes only from its close button', async () => {
     const client = {
       getRun: vi.fn(async () => detail),
       getAgentTrace: vi.fn(async () => trace),
       cancelRun: vi.fn(),
     }
-    render(<LiveRun runId="run-01" client={client} connect={createConnector().connector} />)
+    render(<LiveRun runId="run-01" client={client} connect={createSubscription().subscription} />)
 
     const inspectAgent = await screen.findByRole('button', { name: 'Inspect agent' })
     inspectAgent.focus()
@@ -263,7 +394,7 @@ describe('LiveRun', () => {
     expect(screen.getByTestId('run-node-panel-shell').getAttribute('data-open')).toBe('true')
     expect(screen.getByRole('dialog', { name: 'Who are you?' })).toBeTruthy()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close job details' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Close agent details' }))
     expect(document.activeElement).toBe(inspectAgent)
     const shell = screen.getByTestId('run-node-panel-shell')
     expect(shell.getAttribute('data-open')).toBe('false')
@@ -274,11 +405,10 @@ describe('LiveRun', () => {
   })
 
   it('reconciles streamed terminal status and cancels through the summary action', async () => {
-    const connection = createConnector()
+    const subscription = createSubscription()
     const cancelled = {
       ...run,
       status: 'CANCELLED',
-      currentNodeId: null,
       completedAt: '2026-08-20T10:00:10Z',
     } as StartRunResponse
     const cancelledDetail = { ...detail, run: cancelled }
@@ -290,19 +420,19 @@ describe('LiveRun', () => {
       cancelRun: vi.fn(async () => cancelled),
     }
 
-    render(<LiveRun runId="run-01" client={client} connect={connection.connector} />)
-    await waitFor(() => expect(connection.connector).toHaveBeenCalled())
+    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
+    await waitFor(() => expect(subscription.subscription).toHaveBeenCalled())
     fireEvent.click(screen.getByRole('button', { name: 'Cancel run' }))
 
     await waitFor(() => expect(client.cancelRun).toHaveBeenCalledWith('run-01', expect.any(Object)))
     expect(await screen.findByText('Cancelled')).toBeTruthy()
-    expect(connection.close).toHaveBeenCalled()
+    expect(subscription.close).toHaveBeenCalled()
 
     act(() => {
-      connection.handlers()?.onEvent(
+      subscription.handlers()?.onEvent(
         RunEventSchema.parse({
           runId: 'run-01',
-          sequence: 6,
+          sequence: 4,
           timestamp: '2026-08-20T10:00:10Z',
           type: 'RUN_COMPLETED',
           data: { status: 'CANCELLED', durationMs: 9_000 },

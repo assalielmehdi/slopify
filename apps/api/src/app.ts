@@ -1,24 +1,19 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/contracts'
-import type { ChatGptOAuthService } from '@slopify/agent-runtimes'
 import {
   CancellationServiceError,
   AgentTraceStoreError,
-  ConnectionServiceError,
   DeletionServiceError,
   ProjectServiceError,
   RunEventFeedError,
   RunServiceError,
-  SkillCatalogError,
   WorkflowServiceError,
   type CancellationService,
   type AgentTraceStore,
-  type ConnectionCatalog,
-  type ConnectionService,
   type DeletionService,
+  type HarnessCatalog,
   type ProjectService,
   type RunService,
   type RunEventFeed,
-  type SkillCatalog,
   type WorkbenchDatabase,
   type WorkflowService,
 } from '@slopify/execution-runtime'
@@ -26,12 +21,11 @@ import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
-import { registerConnectionRoutes } from './routes/connections.js'
 import { registerDeletionRoutes } from './routes/deletions.js'
+import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
-import { registerSkillRoutes, type BuiltInSkillPresentation } from './routes/skills.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
@@ -39,17 +33,13 @@ export { ApiApplicationError, parseJsonBody } from './api-error.js'
 export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
   readonly traces?: AgentTraceStore
-  readonly connectionCatalog?: ConnectionCatalog
-  readonly connections?: ConnectionService
-  readonly chatGptOAuth?: ChatGptOAuthService
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly deletions?: DeletionService
+  readonly harnesses?: HarnessCatalog
   readonly projects?: ProjectService
   readonly runs?: RunService
-  readonly skills?: SkillCatalog
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
-  readonly builtInSkillNames?: ReadonlyMap<string, string>
 }
 
 const errorBody = (input: {
@@ -89,38 +79,12 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   })
 
   if (options.projects !== undefined) registerProjectRoutes(app, options.projects)
+  if (options.harnesses !== undefined) registerHarnessRoutes(app, options.harnesses)
   if (options.deletions !== undefined) registerDeletionRoutes(app, options.deletions)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
   if (options.runs !== undefined)
     registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
-  if (options.skills !== undefined)
-    registerSkillRoutes(
-      app,
-      options.skills,
-      new Map<string, BuiltInSkillPresentation>([
-        ...(options.builtInSkillNames === undefined
-          ? []
-          : [...options.builtInSkillNames].map(
-              ([skillId, displayName]) =>
-                [skillId, { displayName, kind: 'built-in' as const }] as const,
-            )),
-        ...(options.connectionCatalog
-          ?.list()
-          .flatMap(({ skillId }) =>
-            skillId === undefined
-              ? []
-              : [[skillId, { displayName: skillId, kind: 'connector' as const }] as const],
-          ) ?? []),
-      ]),
-    )
-  if (options.connections !== undefined && options.connectionCatalog !== undefined)
-    registerConnectionRoutes(
-      app,
-      options.connections,
-      options.connectionCatalog,
-      options.chatGptOAuth,
-    )
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
@@ -140,32 +104,6 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       const status = error.code === 'TRACE_NOT_FOUND' ? 404 : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
-    if (error instanceof SkillCatalogError) {
-      const status =
-        error.code === 'SKILL_NOT_FOUND'
-          ? 404
-          : error.code === 'SKILL_READ_ONLY'
-            ? 403
-            : error.code === 'SKILL_CONFLICT'
-              ? 409
-              : error.code === 'SKILL_LIMIT_EXCEEDED'
-                ? 413
-                : 400
-      return context.json(errorBody({ code: error.code, message: error.message }), status)
-    }
-    if (error instanceof ConnectionServiceError) {
-      const status =
-        error.code === 'CONNECTION_NOT_FOUND'
-          ? 404
-          : error.code === 'CONNECTION_ALREADY_EXISTS'
-            ? 409
-            : error.code === 'CONNECTION_VALIDATION_FAILED'
-              ? 422
-              : error.code === 'CREDENTIAL_NOT_FOUND'
-                ? 409
-                : 400
-      return context.json(errorBody({ code: error.code, message: error.message }), status)
-    }
     if (error instanceof CancellationServiceError) {
       return context.json(
         errorBody({ code: error.code, message: error.message }),
@@ -182,32 +120,22 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       const status =
         error.code === 'RUN_ADMISSION_CLOSED'
           ? 503
-          : error.code === 'RUN_ACTIVE' || error.code === 'RUN_VARIABLES_MISSING'
+          : error.code === 'WORKFLOW_PROJECT_UNAVAILABLE' ||
+              error.code === 'WORKFLOW_HARNESS_UNAVAILABLE'
             ? 409
-            : error.code === 'RUN_REQUEST_INVALID'
+            : error.code === 'RUN_REQUEST_INVALID' || error.code === 'RUN_VARIABLES_INVALID'
               ? 400
               : error.code === 'WORKFLOW_NOT_RUNNABLE'
                 ? 422
                 : 404
-      return context.json(
-        errorBody({
-          code: error.code,
-          message: error.message,
-          ...(error.missingVariables !== undefined
-            ? { details: { missingVariables: error.missingVariables } }
-            : error.activeRunId === undefined
-              ? {}
-              : { details: { activeRunId: error.activeRunId } }),
-        }),
-        status,
-      )
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof WorkflowServiceError) {
       return context.json(
         errorBody({ code: error.code, message: error.message }),
         error.code === 'WORKFLOW_NOT_FOUND'
           ? 404
-          : error.code === 'WORKFLOW_NOT_LINEAR'
+          : error.code === 'WORKFLOW_HARNESS_UNAVAILABLE'
             ? 422
             : 409,
       )

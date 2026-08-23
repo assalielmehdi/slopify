@@ -10,41 +10,27 @@ const agent = (id: string) => ({
   type: 'agent' as const,
   id,
   name: id,
-  description: `${id} job`,
-  timeoutSeconds: 60,
-  result: { schemaRef: 'json:any-v1' },
-  sandbox: { profileId: 'agent-default-v1', imageId: 'gondolin-alpine-v1' },
-  job: {
-    kind: 'agent' as const,
-    prompt: `Run ${id}`,
-    skillSnapshotRefs: [],
-    inference: {
-      connectionId: 'openrouter-primary',
-      modelId: 'openai/gpt-5.4',
-      thinkingLevel: 'medium' as const,
-    },
-    connectorIds: [],
+  prompt: `Run ${id}`,
+  harness: {
+    harnessId: 'pi' as const,
+    modelId: 'openai/gpt-5.4',
+    thinkingLevel: 'medium' as const,
   },
 })
 
 const workflow = {
+  schemaVersion: 1 as const,
   workflowId: 'workflow-01',
   name: 'Parallel workflow',
   description: 'Exercises fan-out and a deterministic join.',
+  configuration: { projectIds: [], primaryProjectId: null, variables: [] },
   startNodeId: 'start',
-  nodes: [
-    agent('start'),
-    agent('left'),
-    agent('right'),
-    agent('join'),
-    { type: 'terminal' as const, id: 'done', name: 'Done', terminalStatus: 'SUCCEEDED' as const },
-  ],
+  nodes: [agent('start'), agent('left'), agent('right'), agent('join')],
   edges: [
     { sourceNodeId: 'start', outcome: 'split', targetNodeId: 'left', label: 'Left' },
     { sourceNodeId: 'start', outcome: 'split', targetNodeId: 'right', label: 'Right' },
     { sourceNodeId: 'left', outcome: 'ready', targetNodeId: 'join', label: 'Left ready' },
     { sourceNodeId: 'right', outcome: 'ready', targetNodeId: 'join', label: 'Right ready' },
-    { sourceNodeId: 'join', outcome: 'done', targetNodeId: 'done', label: 'Done' },
   ],
   maxTransitions: 8,
   createdAt: '2026-08-20T10:00:00.000Z',
@@ -79,7 +65,7 @@ describe('workflow coordinator', () => {
     queue.enqueue({
       id: 'success-leaf',
       destination: 'COORDINATOR',
-      type: 'JOB_SUCCEEDED',
+      type: 'NODE_EXECUTION_SUCCEEDED',
       runId: 'run-leaf',
       nodeExecutionId: leaf.nodeExecutionId,
       attemptId: leaf.attemptId,
@@ -87,7 +73,6 @@ describe('workflow coordinator', () => {
         version: 1,
         outcome: 'completed',
         output: {},
-        artifactIds: [],
         completedAt: timestamp,
         durationMs: 1,
       },
@@ -124,7 +109,7 @@ describe('workflow coordinator', () => {
       queue.enqueue({
         id: messageId,
         destination: 'COORDINATOR',
-        type: 'JOB_SUCCEEDED',
+        type: 'NODE_EXECUTION_SUCCEEDED',
         runId: 'run-01',
         nodeExecutionId,
         attemptId,
@@ -132,7 +117,6 @@ describe('workflow coordinator', () => {
           version: 1,
           outcome,
           output: {},
-          artifactIds: [],
           completedAt: timestamp,
           durationMs: 1,
         },
@@ -164,6 +148,60 @@ describe('workflow coordinator', () => {
     )
   })
 
+  it('keeps a fan-out run active until every leaf branch completes', () => {
+    const queue = createInMemoryExecutionMessageQueue()
+    const state = createInMemoryCoordinatorStateStore()
+    let nextId = 0
+    const coordinator = createWorkflowCoordinator({
+      coordinatorId: 'coordinator-01',
+      queue,
+      state,
+      now: () => timestamp,
+      createId: (prefix) => `${prefix}-${++nextId}`,
+    })
+    coordinator.start({
+      runId: 'run-independent-leaves',
+      workflow: {
+        ...workflow,
+        name: 'Independent leaves',
+        nodes: [agent('start'), agent('left'), agent('right')],
+        edges: workflow.edges.slice(0, 2),
+      },
+    })
+
+    const succeed = (nodeId: string, outcome: string) => {
+      const execution = state
+        .get('run-independent-leaves')
+        ?.executions.find((candidate) => candidate.nodeId === nodeId)
+      if (execution === undefined) throw new Error(`${nodeId} execution missing`)
+      queue.enqueue({
+        id: `success-${nodeId}`,
+        destination: 'COORDINATOR',
+        type: 'NODE_EXECUTION_SUCCEEDED',
+        runId: 'run-independent-leaves',
+        nodeExecutionId: execution.nodeExecutionId,
+        attemptId: execution.attemptId,
+        payload: {
+          version: 1,
+          outcome,
+          output: {},
+          completedAt: timestamp,
+          durationMs: 1,
+        },
+        availableAt: timestamp,
+        createdAt: timestamp,
+      })
+      coordinator.runOnce()
+    }
+
+    succeed('start', 'split')
+    succeed('left', 'completed')
+    expect(state.get('run-independent-leaves')?.status).toBe('RUNNING')
+
+    succeed('right', 'completed')
+    expect(state.get('run-independent-leaves')?.status).toBe('SUCCEEDED')
+  })
+
   it('fails deterministically when fan-out would exceed the transition limit', () => {
     const queue = createInMemoryExecutionMessageQueue()
     const state = createInMemoryCoordinatorStateStore()
@@ -179,7 +217,7 @@ describe('workflow coordinator', () => {
     queue.enqueue({
       id: 'success-start',
       destination: 'COORDINATOR',
-      type: 'JOB_SUCCEEDED',
+      type: 'NODE_EXECUTION_SUCCEEDED',
       runId: 'run-01',
       nodeExecutionId: start.nodeExecutionId,
       attemptId: start.attemptId,
@@ -187,7 +225,6 @@ describe('workflow coordinator', () => {
         version: 1,
         outcome: 'split',
         output: {},
-        artifactIds: [],
         completedAt: timestamp,
         durationMs: 1,
       },

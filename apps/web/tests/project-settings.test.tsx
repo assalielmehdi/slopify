@@ -9,7 +9,7 @@ import {
 } from '@slopify/contracts'
 
 import { ProjectSettings } from '../components/settings/project-settings'
-import { toast } from '../components/ui/toast'
+import { toast } from '../lib/toast'
 
 const projects = ProjectSchema.array().parse([
   {
@@ -98,13 +98,14 @@ describe('ProjectSettings', () => {
     ).toBeTruthy()
   })
 
-  it('uses the provider and connector card layout without a view selector', async () => {
+  it('uses the shared catalog card layout without a view selector', async () => {
     render(<ProjectSettings client={createClient()} />)
 
     const catalog = screen.getByRole('region', { name: 'Projects' })
     const projectGrid = await within(catalog).findByTestId('project-grid')
     const projectCard = within(catalog).getByRole('button', { name: /slopify, Available/ })
-    const searchSlot = within(catalog).getByRole('search')
+    const searchSlot = catalog.querySelector('search')
+    if (searchSlot === null) throw new Error('Expected the native search landmark')
     const add = within(catalog).getByRole('button', { name: 'Add project' })
 
     expect(catalog.className).toContain('px-6')
@@ -212,7 +213,7 @@ describe('ProjectSettings', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
     const addPanel = await screen.findByRole('dialog', { name: 'Add project' })
     const addShell = screen.getByTestId('project-panel-shell')
-    expect(addShell.className).toContain('provider-floating-panel-shell')
+    expect(addShell.className).toContain('floating-panel-shell')
     fireEvent.click(within(addPanel).getByRole('button', { name: 'Close project details' }))
     expect(addShell.getAttribute('data-open')).toBe('false')
     expect(screen.getByRole('dialog', { name: 'Add project', hidden: true })).toBeTruthy()

@@ -25,7 +25,7 @@ describe('coordinator cancellation service', () => {
       const service = createCoordinatorCancellationService({
         runs: fixture.runs,
         coordinator,
-        worker: { activeRunIds: () => [], cancelRun },
+        worker: { executingRunIds: () => [], cancelRun },
       })
 
       await expect(

@@ -13,11 +13,7 @@ export const WORKFLOW_VALIDATION_CODES = [
   'EDGE_SOURCE_NOT_FOUND',
   'EDGE_TARGET_NOT_FOUND',
   'START_NODE_HAS_INCOMING_EDGE',
-  'TERMINAL_NODE_HAS_OUTGOING_EDGE',
-  'EDGE_OUTCOME_UNDECLARED',
-  'OUTCOME_EDGE_MISSING',
   'NODE_UNREACHABLE',
-  'COMMAND_UNREGISTERED',
 ] as const
 
 export type WorkflowValidationCode = (typeof WORKFLOW_VALIDATION_CODES)[number]
@@ -27,10 +23,6 @@ export interface WorkflowValidationFinding {
   readonly code: WorkflowValidationCode
   readonly path: WorkflowValidationPath
   readonly message: string
-}
-
-export interface WorkflowValidationOptions {
-  readonly registeredCommandIds: ReadonlySet<string>
 }
 
 export type WorkflowValidationResult =
@@ -116,7 +108,7 @@ function validateNodeIdentities(
       createFinding(
         'START_NODE_REQUIRED',
         ['startNodeId'],
-        'A workflow containing jobs must declare a start node.',
+        'A workflow containing agents must declare a start node.',
       ),
     )
     return indexesByNodeId
@@ -185,61 +177,6 @@ function validateEdges(
         ),
       )
     }
-
-    if (sourceIndexes.length !== 1) {
-      return
-    }
-
-    const sourceNode = workflow.nodes[sourceIndexes[0] as number]
-    if (sourceNode === undefined) {
-      return
-    }
-    if (sourceNode.type === 'terminal') {
-      findings.push(
-        createFinding(
-          'TERMINAL_NODE_HAS_OUTGOING_EDGE',
-          ['edges', edgeIndex, 'sourceNodeId'],
-          `Terminal node "${sourceNode.id}" cannot have an outgoing edge.`,
-        ),
-      )
-      return
-    }
-    if (sourceNode.type !== 'agent' && !sourceNode.outcomes.includes(edge.outcome)) {
-      findings.push(
-        createFinding(
-          'EDGE_OUTCOME_UNDECLARED',
-          ['edges', edgeIndex, 'outcome'],
-          `Outcome "${edge.outcome}" is not declared by node "${sourceNode.id}".`,
-        ),
-      )
-    }
-  })
-}
-
-function validateOutcomes(workflow: Workflow, findings: WorkflowValidationFinding[]): void {
-  workflow.nodes.forEach((node, nodeIndex) => {
-    if (node.type === 'terminal') {
-      return
-    }
-
-    if (node.type === 'agent') {
-      return
-    }
-
-    node.outcomes.forEach((outcome, outcomeIndex) => {
-      const edgeCount = workflow.edges.filter(
-        (edge) => edge.sourceNodeId === node.id && edge.outcome === outcome,
-      ).length
-      if (edgeCount === 0) {
-        findings.push(
-          createFinding(
-            'OUTCOME_EDGE_MISSING',
-            ['nodes', nodeIndex, 'outcomes', outcomeIndex],
-            `Outcome "${outcome}" on node "${node.id}" has no edge.`,
-          ),
-        )
-      }
-    })
   })
 }
 
@@ -269,28 +206,7 @@ function validateReachability(
   })
 }
 
-function validateCommands(
-  workflow: Workflow,
-  registeredCommandIds: ReadonlySet<string>,
-  findings: WorkflowValidationFinding[],
-): void {
-  workflow.nodes.forEach((node, nodeIndex) => {
-    if (node.type === 'command' && !registeredCommandIds.has(node.commandId)) {
-      findings.push(
-        createFinding(
-          'COMMAND_UNREGISTERED',
-          ['nodes', nodeIndex, 'commandId'],
-          `Command "${node.commandId}" is not registered.`,
-        ),
-      )
-    }
-  })
-}
-
-export function validateWorkflow(
-  input: unknown,
-  options: WorkflowValidationOptions,
-): WorkflowValidationResult {
+export function validateWorkflow(input: unknown): WorkflowValidationResult {
   const parsed = WorkflowSchema.safeParse(input)
   if (!parsed.success) {
     return invalidResult(
@@ -309,9 +225,7 @@ export function validateWorkflow(
   const findings: WorkflowValidationFinding[] = []
   const indexesByNodeId = validateNodeIdentities(parsed.data, findings)
   validateEdges(parsed.data, indexesByNodeId, findings)
-  validateOutcomes(parsed.data, findings)
   validateReachability(parsed.data, indexesByNodeId, findings)
-  validateCommands(parsed.data, options.registeredCommandIds, findings)
 
   if (findings.length > 0) {
     return invalidResult(findings)

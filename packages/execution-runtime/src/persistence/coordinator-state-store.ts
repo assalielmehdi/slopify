@@ -26,7 +26,8 @@ const readState = (connection: Database, runId: string): CoordinatorRunState | u
   const row = connection
     .prepare('SELECT state_json FROM workflow_coordinator_states WHERE run_id = ?')
     .get(runId) as StateRow | undefined
-  return row === undefined ? undefined : CoordinatorRunStateSchema.parse(JSON.parse(row.state_json))
+  if (row === undefined) return undefined
+  return CoordinatorRunStateSchema.parse(JSON.parse(row.state_json))
 }
 
 const insertMessage = (connection: Database, message: NewExecutionMessage): void => {
@@ -63,9 +64,8 @@ const insertExecution = (
   connection
     .prepare(
       `INSERT INTO node_executions (
-         node_execution_id, run_id, node_id, execution_index, status, attempt_id,
-         input_references_json
-       ) VALUES (?, ?, ?, ?, ?, ?, '[]')`,
+         node_execution_id, run_id, node_id, execution_index, status, attempt_id
+       ) VALUES (?, ?, ?, ?, ?, ?)`,
     )
     .run(
       execution.nodeExecutionId,
@@ -83,6 +83,7 @@ const syncState = (
   next: CoordinatorRunState,
   messageNodeExecutionId?: string,
 ): void => {
+  const newEvents = next.events.slice(previous?.events.length ?? 0)
   const previousExecutions = new Map(
     previous?.executions.map((execution) => [execution.nodeExecutionId, execution]) ?? [],
   )
@@ -93,51 +94,86 @@ const syncState = (
       continue
     }
     if (JSON.stringify(existing) === JSON.stringify(execution)) continue
+    const lifecycleEvent = [...newEvents].reverse().find((event) => {
+      if (execution.status === 'RUNNING') return event.type === 'NODE_STARTED'
+      if (execution.status === 'SUCCEEDED') return event.type === 'NODE_COMPLETED'
+      if (execution.status === 'FAILED') return event.type === 'NODE_FAILED'
+      if (execution.status === 'CANCELLED')
+        return event.type === 'NODE_CANCELLED' || event.type === 'RUN_CANCEL_REQUESTED'
+      return false
+    })
+    const lifecycleData =
+      lifecycleEvent?.data !== null && typeof lifecycleEvent?.data === 'object'
+        ? (lifecycleEvent.data as Readonly<Record<string, unknown>>)
+        : {}
+    const terminal =
+      execution.status === 'SUCCEEDED' ||
+      execution.status === 'FAILED' ||
+      execution.status === 'CANCELLED'
+    const errorCode =
+      execution.status === 'FAILED'
+        ? typeof lifecycleData.code === 'string'
+          ? lifecycleData.code
+          : next.failureCode
+        : execution.status === 'CANCELLED'
+          ? typeof lifecycleData.code === 'string'
+            ? lifecycleData.code
+            : 'RUN_CANCELLED'
+          : undefined
+    const errorMessage =
+      execution.status === 'FAILED' || execution.status === 'CANCELLED'
+        ? typeof lifecycleData.message === 'string'
+          ? lifecycleData.message
+          : typeof lifecycleData.reason === 'string'
+            ? lifecycleData.reason
+            : undefined
+        : undefined
+    const durationMs =
+      terminal && typeof lifecycleData.durationMs === 'number'
+        ? lifecycleData.durationMs
+        : undefined
+    const eventTimestamp = lifecycleEvent?.timestamp ?? next.events.at(-1)?.timestamp ?? null
     connection
       .prepare(
         `UPDATE node_executions
          SET status = ?, outcome = ?, output_json = ?,
+             error_code = ?, error_message = ?, duration_ms = ?,
              started_at = CASE WHEN ? = 'RUNNING' THEN COALESCE(started_at, ?) ELSE started_at END,
-             completed_at = CASE WHEN ? IN ('SUCCEEDED', 'FAILED', 'CANCELLED') THEN ? ELSE completed_at END,
-             error_code = CASE WHEN ? IN ('FAILED', 'CANCELLED') THEN ? ELSE error_code END
+             completed_at = CASE WHEN ? = 1 THEN ? ELSE completed_at END
          WHERE run_id = ? AND node_execution_id = ?`,
       )
       .run(
         execution.status,
         execution.outcome ?? null,
         execution.output === undefined ? null : JSON.stringify(execution.output),
+        errorCode ?? null,
+        errorMessage ?? null,
+        durationMs ?? null,
         execution.status,
-        next.events.at(-1)?.timestamp ?? null,
-        execution.status,
-        next.events.at(-1)?.timestamp ?? null,
-        execution.status,
-        next.failureCode ?? null,
+        eventTimestamp,
+        terminal ? 1 : 0,
+        eventTimestamp,
         next.runId,
         execution.nodeExecutionId,
       )
   }
 
-  const active = [...next.executions]
-    .reverse()
-    .find(({ status }) => status === 'PENDING' || status === 'RUNNING')
   const completedAt = next.status === 'RUNNING' ? null : (next.events.at(-1)?.timestamp ?? null)
   connection
     .prepare(
       `UPDATE runs
-       SET status = ?, current_node_id = ?, transition_count = ?,
+       SET status = ?, transition_count = ?,
            started_at = COALESCE(started_at, ?), completed_at = ?
        WHERE run_id = ?`,
     )
     .run(
       next.status,
-      active?.nodeId ?? null,
       next.transitionCount,
       next.events[0]?.timestamp ?? null,
       completedAt,
       next.runId,
     )
 
-  const newEvents = next.events.slice(previous?.events.length ?? 0)
   const runId = RunIdSchema.parse(next.runId)
   for (const event of newEvents) {
     const execution =
@@ -155,7 +191,7 @@ const syncState = (
       appendEvent(connection, runId, {
         type: 'RUN_CANCEL_REQUESTED',
         timestamp: event.timestamp,
-        data: event.data as { reason?: string },
+        data: event.data as { reason: string },
       })
     } else if (event.type === 'NODE_STARTED' && execution !== undefined) {
       appendEvent(
@@ -181,10 +217,7 @@ const syncState = (
         },
         execution.nodeExecutionId,
       )
-    } else if (
-      (event.type === 'NODE_FAILED' || event.type === 'NODE_CANCELLED') &&
-      execution !== undefined
-    ) {
+    } else if (event.type === 'NODE_FAILED' && execution !== undefined) {
       appendEvent(
         connection,
         runId,
@@ -196,16 +229,15 @@ const syncState = (
         },
         execution.nodeExecutionId,
       )
-    } else if (execution !== undefined && event.type !== 'JOB_SCHEDULED') {
-      const content = JSON.stringify({ eventType: event.type, data: event.data })
+    } else if (event.type === 'NODE_CANCELLED' && execution !== undefined) {
       appendEvent(
         connection,
         runId,
         {
-          type: 'NODE_OUTPUT',
+          type: 'NODE_CANCELLED',
           nodeId: NodeIdSchema.parse(execution.nodeId),
           timestamp: event.timestamp,
-          data: { channel: 'agent', content },
+          data: event.data as never,
         },
         execution.nodeExecutionId,
       )

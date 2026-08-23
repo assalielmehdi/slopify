@@ -12,6 +12,7 @@ import {
   type WorkbenchDatabase,
 } from '../../src/index.js'
 import { getDatabaseHandle } from '../../src/persistence/database.js'
+import { createTestAgentWorkflow } from '../persistence/test-fixture.js'
 
 const databases: WorkbenchDatabase[] = []
 const directories: string[] = []
@@ -31,35 +32,18 @@ const queueFactories: readonly [string, () => ExecutionMessageQueue][] = [
       const database = openDatabase({ path: join(directory, 'state.sqlite') })
       databases.push(database)
       const timestamp = '2026-08-20T10:00:00.000Z'
-      getDatabaseHandle(database).exec(`
-        INSERT INTO workflows (
-          workflow_id, name, description, definition_json, created_at, updated_at
-        ) VALUES (
-          'workflow-01', 'Workflow', 'Queue fixture', '{}', '${timestamp}', '${timestamp}'
-        );
-        INSERT INTO project_profiles (
-          profile_id, display_name, clickup_workspace_id, clickup_list_id,
-          clickup_in_review_status_id, created_at, updated_at
-        ) VALUES (
-          'profile-01', 'Profile', 'workspace-01', 'list-01', 'review',
-          '${timestamp}', '${timestamp}'
-        );
-        INSERT INTO project_profile_snapshots (
-          snapshot_id, profile_id, display_name, clickup_workspace_id,
-          clickup_list_id, clickup_in_review_status_id, created_at
-        ) VALUES (
-          'snapshot-01', 'profile-01', 'Profile', 'workspace-01',
-          'list-01', 'review', '${timestamp}'
-        );
-        INSERT INTO runs (
-          run_id, workflow_id, profile_snapshot_id, task_reference,
-          task_snapshot_json, workflow_snapshot_json, variables_json,
-          missing_variables_json, status, created_at
-        ) VALUES (
-          'run-01', 'workflow-01', 'snapshot-01', 'TASK-1',
-          '{}', '{}', '{}', '[]', 'PENDING', '${timestamp}'
-        );
-      `)
+      const workflow = createTestAgentWorkflow({ workflowId: 'workflow-01', createdAt: timestamp })
+      const connection = getDatabaseHandle(database)
+      connection
+        .prepare(`INSERT INTO workflows (workflow_id, definition_json) VALUES (?, ?)`)
+        .run(workflow.workflowId, JSON.stringify(workflow))
+      connection
+        .prepare(
+          `INSERT INTO runs (
+             run_id, workflow_id, variables_json, workflow_snapshot_json, status, created_at
+           ) VALUES (?, ?, '{}', ?, 'PENDING', ?)`,
+        )
+        .run('run-01', workflow.workflowId, JSON.stringify(workflow), timestamp)
       return createSqliteExecutionMessageQueue(database)
     },
   ],
@@ -68,14 +52,13 @@ const queueFactories: readonly [string, () => ExecutionMessageQueue][] = [
 const command = {
   id: 'message-01',
   destination: 'WORKER' as const,
-  type: 'EXECUTE_JOB' as const,
+  type: 'EXECUTE_NODE' as const,
   runId: 'run-01',
   nodeExecutionId: 'node-execution-01',
   attemptId: 'attempt-01',
   payload: {
     version: 1 as const,
     nodeId: 'plan',
-    jobKind: 'agent' as const,
   },
   availableAt: '2026-08-20T10:00:00.000Z',
   createdAt: '2026-08-20T10:00:00.000Z',
@@ -164,7 +147,7 @@ describe.each(queueFactories)('%s execution message queue', (_, createQueue) => 
         {
           id: 'message-02',
           destination: 'COORDINATOR',
-          type: 'JOB_SUCCEEDED',
+          type: 'NODE_EXECUTION_SUCCEEDED',
           runId: command.runId,
           nodeExecutionId: command.nodeExecutionId,
           attemptId: command.attemptId,
@@ -172,7 +155,6 @@ describe.each(queueFactories)('%s execution message queue', (_, createQueue) => 
             version: 1,
             outcome: 'ready',
             output: { summary: 'Done' },
-            artifactIds: [],
             completedAt: '2026-08-20T10:00:02.000Z',
             durationMs: 2_000,
           },
@@ -207,14 +189,14 @@ describe('execution message payloads', () => {
   it('rejects unversioned and unknown payload properties', () => {
     expect(() =>
       ExecutionMessagePayloadSchema.parse({
-        type: 'EXECUTE_JOB',
-        payload: { nodeId: 'plan', jobKind: 'agent' },
+        type: 'EXECUTE_NODE',
+        payload: { nodeId: 'plan' },
       }),
     ).toThrow()
     expect(() =>
       ExecutionMessagePayloadSchema.parse({
-        type: 'EXECUTE_JOB',
-        payload: { version: 1, nodeId: 'plan', jobKind: 'agent', graph: {} },
+        type: 'EXECUTE_NODE',
+        payload: { version: 1, nodeId: 'plan', graph: {} },
       }),
     ).toThrow()
   })

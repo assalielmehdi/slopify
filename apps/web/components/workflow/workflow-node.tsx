@@ -13,6 +13,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   readonly isEnd: boolean
   readonly recentRunStatus?: NodeExecutionStatus
   readonly onAddAgent?: (() => void) | undefined
+  readonly addAgentDisabledReason?: string | undefined
 }
 
 export type WorkflowCanvasNode = Node<WorkflowNodeData, 'workflow'>
@@ -23,7 +24,6 @@ const statusLabels: Readonly<Record<NodeExecutionStatus, string>> = {
   SUCCEEDED: 'Succeeded',
   FAILED: 'Failed',
   CANCELLED: 'Cancelled',
-  SKIPPED: 'Skipped',
 }
 
 export function WorkflowNodeContent({
@@ -76,21 +76,23 @@ export function WorkflowNode({ data, selected, isConnectable }: NodeProps<Workfl
         />
       )}
       <WorkflowNodeContent data={data} selected={selected} />
-      {data.isEnd ? null : (
-        <Handle
-          type="source"
-          position={Position.Bottom}
-          isConnectable={isConnectable}
-          aria-label={`Connect from ${data.domainNode.name}`}
-        />
-      )}
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        isConnectable={isConnectable}
+        aria-label={`Connect from ${data.domainNode.name}`}
+      />
       {data.onAddAgent === undefined ? null : (
         <Button
           type="button"
           size="icon-xs"
           variant="outline"
           aria-label={`Add agent after ${data.domainNode.name}`}
-          title={`Add agent after ${data.domainNode.name}`}
+          aria-describedby={
+            data.addAgentDisabledReason === undefined ? undefined : 'workflow-action-status'
+          }
+          title={data.addAgentDisabledReason ?? `Add agent after ${data.domainNode.name}`}
+          disabled={data.addAgentDisabledReason !== undefined}
           className={cn(
             'nodrag nopan absolute top-full left-1/2 z-10 mt-2 translate-x-3 bg-background opacity-0 shadow-[var(--shadow-raised)] transition-[opacity,background-color,box-shadow,transform] group-hover/node:opacity-100 group-focus-within/node:opacity-100 hover:shadow-[var(--shadow-raised-hover)]',
             selected && 'opacity-100',

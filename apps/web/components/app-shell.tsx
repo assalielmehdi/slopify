@@ -4,14 +4,12 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useState, type ReactNode } from 'react'
 import {
-  BookOpenIcon,
   ChevronRightIcon,
   CpuIcon,
   HistoryIcon,
   FolderGit2Icon,
   PanelLeftCloseIcon,
   PanelLeftOpenIcon,
-  PlugIcon,
   Settings2Icon,
   WorkflowIcon,
   type LucideIcon,
@@ -42,9 +40,7 @@ const navigationSections: readonly { label: string; items: readonly NavigationIt
   {
     label: 'Configuration',
     items: [
-      { href: '/providers', label: 'Providers', icon: CpuIcon },
-      { href: '/connectors', label: 'Connectors', icon: PlugIcon },
-      { href: '/skills', label: 'Skills', icon: BookOpenIcon },
+      { href: '/harnesses', label: 'Harnesses', icon: CpuIcon },
       { href: '/projects', label: 'Projects', icon: FolderGit2Icon },
     ],
   },
@@ -131,7 +127,7 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   const isEditor = pathname === '/'
   const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
   const usesOwnPageSpacing =
-    ['/providers', '/connectors', '/skills', '/projects', '/runs'].includes(pathname) ||
+    ['/harnesses', '/projects', '/runs'].includes(pathname) ||
     isEditor ||
     isPreferences ||
     isRunDetail

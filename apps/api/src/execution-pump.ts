@@ -7,6 +7,7 @@ export interface ExecutionPump {
 export const createExecutionPump = (
   options: Readonly<{
     pollIntervalMs: number
+    recoverExpired(): void
     coordinator: Readonly<{ runOnce(): boolean }>
     worker: Readonly<{
       drain(): Promise<number>
@@ -30,6 +31,7 @@ export const createExecutionPump = (
     if (stopped) return Promise.resolve()
     if (inFlight !== undefined) return inFlight
     inFlight = (async () => {
+      options.recoverExpired()
       let coordinatorMessages = drainCoordinator()
       while (true) {
         const workerMessages = await options.worker.drain()

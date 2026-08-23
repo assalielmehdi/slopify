@@ -3,35 +3,71 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow, type Workflow } from '@slopify/workflow-model'
+import { HarnessDescriptorSchema, ProjectSchema } from '@slopify/contracts'
+import { WorkflowSchema } from '@slopify/workflow-model'
 
 import { StartRunDrawer } from '../components/runs/start-run-drawer'
 import type { ApiClient, StartRunResponse } from '../lib/api-client'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+const push = vi.fn()
 
-const baseWorkflow = createPredefinedV1Workflow({
+vi.mock('next/navigation', () => ({ useRouter: () => ({ push }) }))
+
+const baseWorkflow = createAgentWorkflowFixture({
   createdAt: '2026-08-22T10:00:00Z',
-  agentDefaults: { provider: 'test-provider', model: 'test-model', thinkingLevel: 'high' },
+  modelId: 'test-model',
+  thinkingLevel: 'high',
 })
-const workflow = {
+const workflow = WorkflowSchema.parse({
   ...baseWorkflow,
   name: 'Invisible workflow name',
-  nodes: baseWorkflow.nodes.map((node) =>
-    node.type === 'agent' ? { ...node, job: { ...node.job, prompt: 'Process {{ topic }}' } } : node,
-  ),
-} as Workflow
+  configuration: {
+    projectIds: ['project-api'],
+    primaryProjectId: 'project-api',
+    variables: ['topic'],
+  },
+  nodes: baseWorkflow.nodes.map((node) => ({ ...node, prompt: 'Process {{ topic }}' })),
+})
+const harnesses = HarnessDescriptorSchema.array().parse([
+  {
+    harnessId: 'pi',
+    name: 'Pi',
+    description: 'Runs the locally installed Pi coding agent.',
+    availability: 'AVAILABLE',
+    executablePath: '/opt/homebrew/bin/pi',
+    version: '0.84.2',
+    installHref: 'https://pi.dev/',
+    installLabel: 'Install Pi',
+    models: [{ id: 'test-model', name: 'Test model', thinkingLevels: ['high'] }],
+  },
+])
+const projects = ProjectSchema.array().parse([
+  {
+    projectId: 'project-api',
+    name: 'API',
+    repositoryPath: '/workspace/api',
+    availability: 'AVAILABLE',
+    createdAt: '2026-08-23T10:00:00Z',
+    updatedAt: '2026-08-23T10:00:00Z',
+  },
+])
 const startedRun = { runId: 'run-01' } as StartRunResponse
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  push.mockReset()
+})
 
 describe('StartRunDrawer', () => {
   it('starts the current workflow from a variables-only floating panel', async () => {
     const startRun = vi.fn(async () => startedRun)
     const client = {
       listWorkflows: vi.fn(async () => [workflow]),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
       startRun,
-    } as Pick<ApiClient, 'listWorkflows' | 'startRun'>
+    } as Pick<ApiClient, 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'>
     const onStarted = vi.fn()
 
     render(<StartRunDrawer client={client} onClose={vi.fn()} onStarted={onStarted} />)
@@ -39,19 +75,14 @@ describe('StartRunDrawer', () => {
     expect(await screen.findByRole('complementary', { name: 'Run' })).toBeTruthy()
     expect(screen.queryByLabelText('Workflow')).toBeNull()
     expect(screen.queryByText('Invisible workflow name')).toBeNull()
-    const addVariable = await screen.findByRole('button', { name: 'Add variable' })
-    const startRunButton = screen.getByRole('button', { name: 'Start run' })
+    const startRunButton = await screen.findByRole('button', { name: 'Start run' })
     const actions = screen.getByTestId('run-variable-actions')
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
     expect(screen.queryByRole('complementary', { name: 'Run' })?.querySelector('footer')).toBeNull()
     expect(actions.className).toContain('justify-end')
-    expect(actions.contains(addVariable)).toBe(true)
     expect(actions.contains(startRunButton)).toBe(true)
-    expect(
-      addVariable.compareDocumentPosition(startRunButton) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy()
-    expect(addVariable.className).toContain('border-0')
-    expect(addVariable.className).not.toContain('underline')
+    expect(screen.queryByRole('button', { name: 'Add variable' })).toBeNull()
+    expect(screen.queryByRole('button', { name: /Remove variable/ })).toBeNull()
     fireEvent.change(await screen.findByLabelText('Variable value for topic'), {
       target: { value: 'Spacing' },
     })
@@ -64,13 +95,16 @@ describe('StartRunDrawer', () => {
       }),
     )
     await waitFor(() => expect(onStarted).toHaveBeenCalledWith('run-01'))
+    expect(push).toHaveBeenCalledWith('/runs/run-01')
   })
 
   it('stays open during canvas interaction and closes only from its close button', async () => {
     const client = {
       listWorkflows: vi.fn(async () => [workflow]),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
       startRun: vi.fn(async () => startedRun),
-    } as Pick<ApiClient, 'listWorkflows' | 'startRun'>
+    } as Pick<ApiClient, 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'>
     const onClose = vi.fn()
 
     render(<StartRunDrawer client={client} onClose={onClose} />)

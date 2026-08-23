@@ -5,14 +5,17 @@ export interface EventReconciliation {
   readonly requiresSnapshot: boolean
 }
 
-export interface RunEventConnectionHandlers {
+export interface RunEventSubscriptionHandlers {
   readonly onDisconnect: () => void
   readonly onEvent: (event: RunEvent) => void
   readonly onInvalidEvent: (cause: unknown) => void
   readonly onOpen: () => void
 }
 
-export type RunEventConnector = (url: string, handlers: RunEventConnectionHandlers) => () => void
+export type RunEventSubscription = (
+  url: string,
+  handlers: RunEventSubscriptionHandlers,
+) => () => void
 
 const sameEvent = (left: RunEvent, right: RunEvent): boolean =>
   JSON.stringify(left) === JSON.stringify(right)
@@ -57,7 +60,7 @@ export const parseRunEvent = (data: string): RunEvent => RunEventSchema.parse(JS
 export const runEventStreamUrl = (runId: string): string =>
   `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/events`
 
-export const connectRunEventStream: RunEventConnector = (url, handlers) => {
+export const connectRunEventStream: RunEventSubscription = (url, handlers) => {
   const source = new EventSource(url)
   source.addEventListener('open', handlers.onOpen)
   source.addEventListener('error', handlers.onDisconnect)

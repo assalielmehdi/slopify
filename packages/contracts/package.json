@@ -16,9 +16,11 @@
     "dist"
   ],
   "scripts": {
-    "build": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "clean": "bun -e \"import { rmSync } from 'node:fs'; rmSync('dist', { recursive: true, force: true })\"",
+    "build": "bun run clean && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json",
+    "dev": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --watch --preserveWatchOutput",
     "typecheck": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
-    "lint": "bun --bun eslint src tests --max-warnings 0",
+    "lint": "bun --bun eslint . --max-warnings 0",
     "test": "bun --bun vitest run --root ../.. packages/contracts/tests"
   },
   "dependencies": {

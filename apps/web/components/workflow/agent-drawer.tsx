@@ -1,28 +1,17 @@
 'use client'
 
-import type {
-  AgentInferenceConfiguration,
-  AgentNode,
-  SkillSnapshotReference,
-} from '@slopify/workflow-model'
-import type { ConnectionCatalogEntry, InferenceModelOption } from '@slopify/contracts'
-import {
-  BookOpenIcon,
-  BotIcon,
-  BracesIcon,
-  PlugIcon,
-  SparklesIcon,
-  Trash2Icon,
-  XIcon,
-} from 'lucide-react'
+import Link from 'next/link'
+import type { HarnessDescriptor, HarnessThinkingLevel } from '@slopify/contracts'
+import type { AgentNode } from '@slopify/workflow-model'
+import { BotIcon, BracesIcon, CpuIcon, Trash2Icon, XIcon } from 'lucide-react'
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
   type FormEvent,
+  type RefObject,
 } from 'react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -37,35 +26,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import { toast } from '@/components/ui/toast'
+import { createAgentId, type AgentDrawerProps } from '@/lib/agent-drawer'
 import { cn } from '@/lib/utils'
-import type { ConnectionRecord, SkillRecord } from '@/lib/api-client'
+import { toast } from '@/lib/toast'
 
-export interface AgentFormValue {
-  readonly id: string
-  readonly name: string
-  readonly prompt: string
-  readonly inference: AgentInferenceConfiguration
-  readonly connectorIds: readonly string[]
-  readonly skillSnapshotRefs: readonly SkillSnapshotReference[]
-}
-
-export type AgentDrawerMode =
-  Readonly<{ kind: 'create' }> | Readonly<{ kind: 'edit'; agent: AgentNode }>
-
-export interface AgentDrawerProps {
-  readonly mode: AgentDrawerMode
-  readonly existingNodeIds: ReadonlySet<string>
-  readonly catalog: readonly ConnectionCatalogEntry[]
-  readonly connections: readonly ConnectionRecord[]
-  readonly skills: readonly SkillRecord[]
-  readonly catalogError?: string | undefined
-  readonly saveError?: string | undefined
-  readonly saving?: boolean | undefined
-  readonly onDelete: () => Promise<boolean>
-  readonly onClose: () => void
-  readonly onSubmit: (value: AgentFormValue) => Promise<boolean>
-}
+const HARNESS_DEFAULT = '__harness_default__'
 
 const prefersReducedMotion = (): boolean =>
   typeof window.matchMedia === 'function' &&
@@ -78,67 +43,327 @@ const durationMilliseconds = (value: string): number => {
   return 350
 }
 
-const slugify = (value: string): string =>
-  value
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/gu, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/gu, '-')
-    .replace(/^-+|-+$/gu, '') || 'agent'
+const effortLabel = (effort: HarnessThinkingLevel): string =>
+  effort === 'off' ? 'Off' : `${effort[0]?.toUpperCase()}${effort.slice(1)}`
 
-export const createAgentId = (name: string, existingNodeIds: ReadonlySet<string>): string => {
-  const base = slugify(name)
-  if (!existingNodeIds.has(base)) return base
-  let suffix = 2
-  while (existingNodeIds.has(`${base}-${suffix}`)) suffix += 1
-  return `${base}-${suffix}`
-}
-
-const toSkillReference = (skill: SkillRecord): SkillSnapshotReference => ({
-  skillId: skill.skillId as SkillSnapshotReference['skillId'],
-  snapshotId: `sha256:${skill.digest}`,
-  digest: skill.digest,
-  name: skill.name,
-  description: skill.description,
-})
-
-function CapabilityChoice({
-  checked,
-  description,
-  disabled,
+function AgentPromptFields({
   name,
-  onChange,
+  onNameChange,
+  onPromptChange,
+  prompt,
 }: Readonly<{
-  checked: boolean
-  description: string
-  disabled?: boolean
   name: string
-  onChange: (checked: boolean) => void
+  onNameChange: (value: string) => void
+  onPromptChange: (value: string) => void
+  prompt: string
 }>) {
   return (
-    <label className="flex cursor-pointer items-start gap-3 rounded-md border border-border p-3 transition-colors duration-[var(--duration-quick)] hover:bg-muted/40 has-[:checked]:border-foreground/25 has-[:checked]:bg-muted/55 has-[:disabled]:cursor-not-allowed has-[:disabled]:opacity-60">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-        className="mt-0.5 size-4 rounded border-input accent-foreground"
-      />
-      <span className="min-w-0">
-        <span className="block text-sm/5 font-medium">{name}</span>
-        <span className="block text-xs/4 text-muted-foreground">{description}</span>
-      </span>
-    </label>
+    <>
+      <Field>
+        <FieldLabel htmlFor="agent-name">Name</FieldLabel>
+        <Input
+          autoFocus
+          id="agent-name"
+          maxLength={128}
+          onChange={(event) => onNameChange(event.currentTarget.value)}
+          required
+          value={name}
+        />
+      </Field>
+
+      <section className="grid gap-3">
+        <div className="flex items-start gap-3">
+          <BracesIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
+          <div>
+            <h3 className="text-sm/5 font-semibold">Prompt</h3>
+            <p className="mt-1 text-xs/4 text-muted-foreground">
+              Instructions sent to the selected harness.
+            </p>
+          </div>
+        </div>
+        <Field>
+          <FieldLabel className="sr-only" htmlFor="agent-prompt">
+            Prompt
+          </FieldLabel>
+          <Textarea
+            className="min-h-40 resize-y font-mono text-sm/6"
+            id="agent-prompt"
+            onChange={(event) => onPromptChange(event.currentTarget.value)}
+            placeholder="Analyze {{ topic }} and summarize the evidence."
+            required
+            value={prompt}
+          />
+          <FieldDescription>
+            Only placeholders declared in workflow configuration, such as {'{{ topic }}'}, are
+            replaced at run time.
+          </FieldDescription>
+        </Field>
+      </section>
+    </>
+  )
+}
+
+function AgentHarnessFields({
+  availableHarnesses,
+  harnessSelectionDisabled,
+  harnesses,
+  harnessId,
+  modelId,
+  modelSelectionAvailable,
+  onHarnessChange,
+  onModelChange,
+  onThinkingLevelChange,
+  selectedHarness,
+  selectedHarnessAvailable,
+  selectedModel,
+  thinkingLevel,
+  thinkingLevels,
+  thinkingSelectionAvailable,
+}: Readonly<{
+  availableHarnesses: readonly HarnessDescriptor[]
+  harnessSelectionDisabled: boolean
+  harnesses: readonly HarnessDescriptor[]
+  harnessId: string
+  modelId: string
+  modelSelectionAvailable: boolean
+  onHarnessChange: (value: string | null) => void
+  onModelChange: (value: string | null) => void
+  onThinkingLevelChange: (value: string) => void
+  selectedHarness: HarnessDescriptor | undefined
+  selectedHarnessAvailable: boolean
+  selectedModel: HarnessDescriptor['models'][number] | undefined
+  thinkingLevel: string
+  thinkingLevels: readonly HarnessThinkingLevel[]
+  thinkingSelectionAvailable: boolean
+}>) {
+  return (
+    <section className="grid gap-3">
+      <div className="flex items-start gap-3">
+        <CpuIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
+        <div>
+          <h3 className="text-sm/5 font-semibold">Harness</h3>
+          <p className="mt-1 text-xs/4 text-muted-foreground">
+            Manage the rest of the harness setup outside Slopify.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        <Field className="sm:col-span-2">
+          <FieldLabel htmlFor="agent-harness">Harness</FieldLabel>
+          <Select
+            disabled={harnessSelectionDisabled}
+            onValueChange={onHarnessChange}
+            value={harnessId}
+          >
+            <SelectTrigger className="w-full" id="agent-harness">
+              <SelectValue placeholder="No harness available">{selectedHarness?.name}</SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              {harnesses.map((harness) => (
+                <SelectItem
+                  disabled={harness.availability !== 'AVAILABLE'}
+                  key={harness.harnessId}
+                  value={harness.harnessId}
+                >
+                  {harness.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {selectedHarness?.availability === 'UNAVAILABLE' ? (
+            <FieldDescription>{selectedHarness.unavailableReason}</FieldDescription>
+          ) : selectedHarness?.availability === 'AVAILABLE' ? (
+            <FieldDescription>
+              {selectedHarness.name} {selectedHarness.version} · {selectedHarness.executablePath}
+            </FieldDescription>
+          ) : null}
+        </Field>
+
+        <Field>
+          <FieldLabel htmlFor="agent-model">Model</FieldLabel>
+          <Select
+            disabled={!selectedHarnessAvailable}
+            onValueChange={onModelChange}
+            value={modelId}
+          >
+            <SelectTrigger className="w-full" id="agent-model">
+              <SelectValue>
+                {modelId === HARNESS_DEFAULT
+                  ? 'Harness default'
+                  : (selectedModel?.name ?? `${modelId} (unavailable)`)}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value={HARNESS_DEFAULT}>Harness default</SelectItem>
+              {selectedHarness?.models.map((model) => (
+                <SelectItem key={model.id} value={model.id}>
+                  {model.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {modelSelectionAvailable ? null : (
+            <FieldDescription>
+              This model is no longer available. Choose another model or the harness default.
+            </FieldDescription>
+          )}
+        </Field>
+
+        <Field>
+          <FieldLabel htmlFor="agent-thinking">Thinking effort</FieldLabel>
+          <Select
+            disabled={!selectedHarnessAvailable}
+            onValueChange={(value) => {
+              if (value !== null) onThinkingLevelChange(value)
+            }}
+            value={thinkingLevel}
+          >
+            <SelectTrigger className="w-full" id="agent-thinking">
+              <SelectValue>
+                {thinkingLevel === HARNESS_DEFAULT
+                  ? 'Harness default'
+                  : thinkingSelectionAvailable
+                    ? effortLabel(thinkingLevel as HarnessThinkingLevel)
+                    : `${effortLabel(thinkingLevel as HarnessThinkingLevel)} (unavailable)`}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value={HARNESS_DEFAULT}>Harness default</SelectItem>
+              {thinkingLevels.map((level) => (
+                <SelectItem key={level} value={level}>
+                  {effortLabel(level)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {thinkingSelectionAvailable ? null : (
+            <FieldDescription>
+              This thinking effort is no longer available for the selected model.
+            </FieldDescription>
+          )}
+        </Field>
+      </div>
+
+      {availableHarnesses.length === 0 ? (
+        <Alert>
+          <AlertTitle>No harness is ready</AlertTitle>
+          <AlertDescription>
+            Install and configure a supported harness before adding an agent.{' '}
+            <Link href="/harnesses">Open Harnesses</Link>
+          </AlertDescription>
+        </Alert>
+      ) : null}
+    </section>
+  )
+}
+
+function AgentFormActions({
+  confirmationInputRef,
+  confirmationName,
+  confirmingDelete,
+  deleting,
+  existing,
+  isDirty,
+  mode,
+  modelSelectionAvailable,
+  name,
+  onConfirmationNameChange,
+  onRemove,
+  prompt,
+  saving,
+  selectedHarnessAvailable,
+  thinkingSelectionAvailable,
+}: Readonly<{
+  confirmationInputRef: RefObject<HTMLInputElement | null>
+  confirmationName: string
+  confirmingDelete: boolean
+  deleting: boolean
+  existing: AgentNode | undefined
+  isDirty: boolean
+  mode: AgentDrawerProps['mode']
+  modelSelectionAvailable: boolean
+  name: string
+  onConfirmationNameChange: (value: string) => void
+  onRemove: () => Promise<void>
+  prompt: string
+  saving: boolean
+  selectedHarnessAvailable: boolean
+  thinkingSelectionAvailable: boolean
+}>) {
+  return (
+    <footer className="flex items-center justify-end gap-2">
+      {existing === undefined ? null : (
+        <>
+          <div
+            aria-hidden={!confirmingDelete}
+            className={cn(
+              't-resize min-w-0 shrink-0 overflow-hidden',
+              confirmingDelete ? 'w-56' : 'w-0',
+            )}
+          >
+            <Input
+              ref={confirmationInputRef}
+              aria-describedby="agent-delete-confirmation-hint"
+              aria-invalid={confirmationName.length > 0 && confirmationName !== existing.name}
+              autoComplete="off"
+              disabled={!confirmingDelete || deleting}
+              onChange={(event) => onConfirmationNameChange(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter') return
+                event.preventDefault()
+                void onRemove()
+              }}
+              placeholder="Enter the agent name"
+              tabIndex={confirmingDelete ? 0 : -1}
+              value={confirmationName}
+            />
+            <span className="sr-only" id="agent-delete-confirmation-hint">
+              Enter the agent name exactly to enable deletion.
+            </span>
+          </div>
+          <Button
+            className="min-w-32"
+            disabled={deleting || (confirmingDelete && confirmationName !== existing.name)}
+            onClick={() => void onRemove()}
+            type="button"
+            variant="destructive"
+          >
+            <Trash2Icon aria-hidden="true" />
+            {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete agent'}
+          </Button>
+        </>
+      )}
+      <Button
+        disabled={
+          saving ||
+          deleting ||
+          !selectedHarnessAvailable ||
+          !modelSelectionAvailable ||
+          !thinkingSelectionAvailable ||
+          name.trim() === '' ||
+          prompt.trim() === '' ||
+          (existing !== undefined && !isDirty)
+        }
+        type="submit"
+      >
+        {saving
+          ? mode.kind === 'create'
+            ? 'Adding agent…'
+            : 'Saving changes…'
+          : mode.kind === 'create'
+            ? 'Add agent'
+            : 'Save changes'}
+      </Button>
+    </footer>
   )
 }
 
 export function AgentDrawer({
   mode,
   existingNodeIds,
-  catalog,
-  connections,
-  skills,
-  catalogError,
+  harnesses,
+  harnessError,
   saveError,
   saving = false,
   onDelete,
@@ -150,77 +375,40 @@ export function AgentDrawer({
   const closeTimerRef = useRef<number | undefined>(undefined)
   const closingRef = useRef(false)
   const existing = mode.kind === 'edit' ? mode.agent : undefined
-  const inferenceConnections = useMemo(
-    () =>
-      connections.filter(
-        (connection) => connection.category === 'inference' && connection.status === 'CONNECTED',
-      ),
-    [connections],
+  const availableHarnesses = harnesses.filter(({ availability }) => availability === 'AVAILABLE')
+  const initialHarnessId = String(
+    existing?.harness.harnessId ??
+      availableHarnesses[0]?.harnessId ??
+      harnesses[0]?.harnessId ??
+      '',
   )
-  const connectorConnections = useMemo(
-    () =>
-      connections.filter(
-        (connection) => connection.category === 'connector' && connection.status === 'CONNECTED',
-      ),
-    [connections],
-  )
-  const initialInferenceId =
-    existing?.job.inference.connectionId ?? inferenceConnections[0]?.connectionId ?? ''
-  const modelsForConnection = (nextConnectionId: string): readonly InferenceModelOption[] => {
-    const connection = inferenceConnections.find(
-      (candidate) => candidate.connectionId === nextConnectionId,
-    )
-    return catalog.find((entry) => entry.type === connection?.type)?.models ?? []
-  }
-  const initialModels = modelsForConnection(initialInferenceId)
-  const initialModelId = existing?.job.inference.modelId ?? initialModels[0]?.id ?? ''
-  const initialThinkingLevels =
-    initialModels.find((model) => model.id === initialModelId)?.thinkingLevels ?? []
   const [name, setName] = useState(existing?.name ?? '')
-  const [prompt, setPrompt] = useState(existing?.job.prompt ?? '')
-  const [connectionId, setConnectionId] = useState(initialInferenceId)
-  const [modelId, setModelId] = useState(initialModelId)
-  const [thinkingLevel, setThinkingLevel] = useState<AgentInferenceConfiguration['thinkingLevel']>(
-    existing?.job.inference.thinkingLevel ??
-      (initialThinkingLevels.includes('medium') ? 'medium' : (initialThinkingLevels[0] ?? 'off')),
-  )
-  const [selectedConnectorIds, setSelectedConnectorIds] = useState<Set<string>>(
-    () => new Set(existing?.job.connectorIds.map(String) ?? []),
-  )
-  const [selectedSkillIds, setSelectedSkillIds] = useState<Set<string>>(
-    () => new Set(existing?.job.skillSnapshotRefs.map(({ skillId }) => String(skillId)) ?? []),
+  const [prompt, setPrompt] = useState(existing?.prompt ?? '')
+  const [harnessId, setHarnessId] = useState(initialHarnessId)
+  const [modelId, setModelId] = useState(existing?.harness.modelId ?? HARNESS_DEFAULT)
+  const [thinkingLevel, setThinkingLevel] = useState<string>(
+    existing?.harness.thinkingLevel ?? HARNESS_DEFAULT,
   )
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [confirmationName, setConfirmationName] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [open, setOpen] = useState(false)
   const confirmationInputRef = useRef<HTMLInputElement>(null)
-  const selectedInferenceConnection = inferenceConnections.find(
-    (connection) => connection.connectionId === connectionId,
-  )
-  const availableModels = modelsForConnection(connectionId)
-  const selectedModel = availableModels.find((model) => model.id === modelId)
-  const availableThinkingLevels = selectedModel?.thinkingLevels ?? []
-
-  const selectThinkingDefault = (
-    levels: readonly AgentInferenceConfiguration['thinkingLevel'][],
-  ) => (levels.includes('medium') ? 'medium' : (levels[0] ?? 'off'))
-
-  const changeProvider = (nextConnectionId: string | null) => {
-    if (nextConnectionId === null) return
-    const nextModels = modelsForConnection(nextConnectionId)
-    const nextModel = nextModels[0]
-    setConnectionId(nextConnectionId)
-    setModelId(nextModel?.id ?? '')
-    setThinkingLevel(selectThinkingDefault(nextModel?.thinkingLevels ?? []))
-  }
-
-  const changeModel = (nextModelId: string | null) => {
-    if (nextModelId === null) return
-    const levels = availableModels.find((model) => model.id === nextModelId)?.thinkingLevels ?? []
-    setModelId(nextModelId)
-    if (!levels.includes(thinkingLevel)) setThinkingLevel(selectThinkingDefault(levels))
-  }
+  const selectedHarness = harnesses.find((harness) => harness.harnessId === harnessId)
+  const selectedHarnessAvailable = selectedHarness?.availability === 'AVAILABLE'
+  const selectedModel = selectedHarness?.models.find(({ id }) => id === modelId)
+  const thinkingLevels = [
+    ...new Set(
+      (selectedModel === undefined
+        ? (selectedHarness?.models.flatMap(({ thinkingLevels: levels }) => levels) ?? [])
+        : selectedModel.thinkingLevels
+      ).map(String),
+    ),
+  ] as HarnessThinkingLevel[]
+  const modelSelectionAvailable = modelId === HARNESS_DEFAULT || selectedModel !== undefined
+  const thinkingSelectionAvailable =
+    thinkingLevel === HARNESS_DEFAULT ||
+    thinkingLevels.includes(thinkingLevel as HarnessThinkingLevel)
 
   const completeClose = useCallback(() => {
     if (!closingRef.current) return
@@ -263,45 +451,36 @@ export function AgentDrawer({
     if (confirmingDelete) confirmationInputRef.current?.focus()
   }, [confirmingDelete])
 
-  const skillChoices = useMemo(() => {
-    const liveById = new Map(skills.map((skill) => [skill.skillId, skill]))
-    const selectableSkills = skills.filter(({ kind }) => kind !== 'connector')
-    const pinned = existing?.job.skillSnapshotRefs ?? []
-    return [
-      ...selectableSkills.map((skill) => ({
-        id: String(skill.skillId),
-        name: skill.name,
-        description: skill.valid ? skill.description : `Unavailable: ${skill.issues.join(', ')}`,
-        disabled: !skill.valid,
-        reference:
-          pinned.find(({ skillId }) => skillId === skill.skillId) ?? toSkillReference(skill),
-      })),
-      ...pinned
-        .filter(({ skillId }) => !liveById.has(skillId))
-        .map((reference) => ({
-          id: String(reference.skillId),
-          name: reference.name,
-          description: `${reference.description} (captured snapshot; live skill unavailable)`,
-          disabled: false,
-          reference,
-        })),
-    ]
-  }, [existing, skills])
-
-  const sameSelection = (selected: ReadonlySet<string>, expected: readonly string[]) =>
-    selected.size === expected.length && expected.every((id) => selected.has(id))
+  const normalizedModelId = modelId === HARNESS_DEFAULT ? undefined : modelId
+  const normalizedThinkingLevel =
+    thinkingLevel === HARNESS_DEFAULT ? undefined : (thinkingLevel as HarnessThinkingLevel)
   const isDirty =
     existing === undefined ||
     name !== existing.name ||
-    prompt !== existing.job.prompt ||
-    connectionId !== existing.job.inference.connectionId ||
-    modelId !== existing.job.inference.modelId ||
-    thinkingLevel !== existing.job.inference.thinkingLevel ||
-    !sameSelection(selectedConnectorIds, existing.job.connectorIds.map(String)) ||
-    !sameSelection(
-      selectedSkillIds,
-      existing.job.skillSnapshotRefs.map(({ skillId }) => String(skillId)),
-    )
+    prompt !== existing.prompt ||
+    harnessId !== existing.harness.harnessId ||
+    normalizedModelId !== existing.harness.modelId ||
+    normalizedThinkingLevel !== existing.harness.thinkingLevel
+
+  const changeHarness = (nextHarnessId: string | null) => {
+    if (nextHarnessId === null) return
+    setHarnessId(nextHarnessId)
+    setModelId(HARNESS_DEFAULT)
+    setThinkingLevel(HARNESS_DEFAULT)
+  }
+
+  const changeModel = (nextModelId: string | null) => {
+    if (nextModelId === null) return
+    setModelId(nextModelId)
+    if (nextModelId === HARNESS_DEFAULT) return
+    const nextLevels = selectedHarness?.models.find(({ id }) => id === nextModelId)?.thinkingLevels
+    if (
+      thinkingLevel !== HARNESS_DEFAULT &&
+      !nextLevels?.includes(thinkingLevel as HarnessThinkingLevel)
+    ) {
+      setThinkingLevel(HARNESS_DEFAULT)
+    }
+  }
 
   const remove = async () => {
     if (existing === undefined) return
@@ -311,27 +490,37 @@ export function AgentDrawer({
     }
     if (confirmationName !== existing.name) return
     setDeleting(true)
-    const deleted = await onDelete()
-    setDeleting(false)
-    if (deleted) requestClose()
+    try {
+      if (await onDelete()) requestClose()
+    } finally {
+      setDeleting(false)
+    }
   }
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const trimmedName = name.trim()
     const trimmedPrompt = prompt.trim()
-    const trimmedModelId = modelId.trim()
-    if (trimmedName === '' || trimmedPrompt === '' || connectionId === '' || trimmedModelId === '')
+    if (
+      trimmedName === '' ||
+      trimmedPrompt === '' ||
+      harnessId === '' ||
+      !selectedHarnessAvailable ||
+      !modelSelectionAvailable ||
+      !thinkingSelectionAvailable
+    )
       return
     const saved = await onSubmit({
       id: existing?.id ?? createAgentId(trimmedName, existingNodeIds),
       name: trimmedName,
       prompt: trimmedPrompt,
-      inference: { connectionId, modelId: trimmedModelId, thinkingLevel },
-      connectorIds: [...selectedConnectorIds],
-      skillSnapshotRefs: skillChoices
-        .filter(({ id }) => selectedSkillIds.has(id))
-        .map(({ reference }) => reference),
+      harness: {
+        harnessId: selectedHarness.harnessId,
+        ...(normalizedModelId === undefined ? {} : { modelId: normalizedModelId }),
+        ...(normalizedThinkingLevel === undefined
+          ? {}
+          : { thinkingLevel: normalizedThinkingLevel }),
+      },
     })
     if (!saved) return
     toast.add({
@@ -351,19 +540,14 @@ export function AgentDrawer({
     <div
       ref={shellRef}
       data-open={open}
-      className="provider-floating-panel-shell fixed top-[4.25rem] right-3 bottom-3 left-3 z-30 isolate w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
-      style={
-        {
-          '--panel-translate-y': '0px',
-        } as CSSProperties
-      }
+      className="floating-panel-shell fixed top-[4.25rem] right-3 bottom-3 left-3 z-30 isolate w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
+      style={{ '--panel-translate-y': '0px' } as CSSProperties}
       onTransitionEnd={(event) => {
         if (event.target === event.currentTarget && event.propertyName === 'translate' && !open)
           completeClose()
       }}
     >
       <aside
-        role="complementary"
         aria-label={title}
         data-open={open}
         className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
@@ -376,7 +560,7 @@ export function AgentDrawer({
             <div className="min-w-0">
               <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]">{title}</h2>
               <p className="text-xs/4 text-muted-foreground">
-                Configure the instructions and capabilities available to this agent.
+                Configure this workflow agent and the harness that runs it.
               </p>
             </div>
           </div>
@@ -394,10 +578,10 @@ export function AgentDrawer({
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
           <div className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto p-6">
-            {catalogError === undefined ? null : (
+            {harnessError === undefined ? null : (
               <Alert variant="destructive">
-                <AlertTitle>Agent resources unavailable</AlertTitle>
-                <AlertDescription>{catalogError}</AlertDescription>
+                <AlertTitle>Harnesses unavailable</AlertTitle>
+                <AlertDescription>{harnessError}</AlertDescription>
               </Alert>
             )}
             {saveError === undefined ? null : (
@@ -407,269 +591,46 @@ export function AgentDrawer({
               </Alert>
             )}
 
-            <Field>
-              <FieldLabel htmlFor="agent-name">Name</FieldLabel>
-              <Input
-                id="agent-name"
-                value={name}
-                onChange={(event) => setName(event.currentTarget.value)}
-                maxLength={128}
-                autoFocus
-                required
-              />
-            </Field>
-
-            <section className="grid gap-3">
-              <div className="flex items-start gap-3">
-                <BracesIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <h3 className="text-sm/5 font-semibold">Prompt</h3>
-                  <p className="mt-1 text-xs/4 text-muted-foreground">
-                    The instructions Pi sends to this agent.
-                  </p>
-                </div>
-              </div>
-              <Field>
-                <FieldLabel htmlFor="agent-prompt" className="sr-only">
-                  Prompt
-                </FieldLabel>
-                <Textarea
-                  id="agent-prompt"
-                  className="min-h-40 resize-y font-mono text-sm/6"
-                  value={prompt}
-                  onChange={(event) => setPrompt(event.currentTarget.value)}
-                  placeholder="Analyze {{ topic }} and summarize the evidence."
-                  required
-                />
-                <FieldDescription>
-                  Use exact placeholders such as {'{{ topic }}'} to interpolate run variables.
-                </FieldDescription>
-              </Field>
-            </section>
-
-            <section className="grid gap-3">
-              <div className="flex items-start gap-3">
-                <SparklesIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <h3 className="text-sm/5 font-semibold">Inference</h3>
-                  <p className="mt-1 text-xs/4 text-muted-foreground">
-                    Select a connected provider, model, and thinking effort.
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-3 sm:grid-cols-2">
-                <Field className="sm:col-span-2">
-                  <FieldLabel htmlFor="agent-provider">Provider</FieldLabel>
-                  <Select
-                    value={connectionId}
-                    onValueChange={changeProvider}
-                    disabled={inferenceConnections.length === 0}
-                  >
-                    <SelectTrigger id="agent-provider" className="w-full">
-                      <SelectValue placeholder="No connected provider">
-                        {selectedInferenceConnection?.label}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      {inferenceConnections.map((connection) => (
-                        <SelectItem key={connection.connectionId} value={connection.connectionId}>
-                          {connection.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {inferenceConnections.length === 0 ? (
-                    <FieldDescription>
-                      No providers are connected yet. Add one from Providers before saving this
-                      agent.
-                    </FieldDescription>
-                  ) : null}
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="agent-model">Model</FieldLabel>
-                  <Select
-                    value={modelId}
-                    onValueChange={changeModel}
-                    disabled={availableModels.length === 0}
-                  >
-                    <SelectTrigger id="agent-model" className="w-full">
-                      <SelectValue placeholder="No models available">
-                        {selectedModel?.name}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      {availableModels.map((model) => (
-                        <SelectItem key={model.id} value={model.id}>
-                          {model.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-                <Field>
-                  <FieldLabel htmlFor="agent-thinking">Thinking effort</FieldLabel>
-                  <Select
-                    value={thinkingLevel}
-                    onValueChange={(value) => {
-                      if (value !== null) setThinkingLevel(value)
-                    }}
-                    disabled={availableThinkingLevels.length === 0}
-                  >
-                    <SelectTrigger id="agent-thinking" className="w-full">
-                      <SelectValue placeholder="No efforts available">
-                        {thinkingLevel === 'off'
-                          ? 'Off'
-                          : thinkingLevel[0]?.toUpperCase() + thinkingLevel.slice(1)}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent align="start">
-                      {availableThinkingLevels.map((level) => (
-                        <SelectItem key={level} value={level}>
-                          {level === 'off' ? 'Off' : level[0]?.toUpperCase() + level.slice(1)}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </Field>
-              </div>
-            </section>
-
-            <section className="grid gap-3">
-              <div className="flex items-start gap-3">
-                <PlugIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <h3 className="text-sm/5 font-semibold">Connectors</h3>
-                  <p className="mt-1 text-xs/4 text-muted-foreground">
-                    Grant only the connected services this agent needs.
-                  </p>
-                </div>
-              </div>
-              {connectorConnections.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-xs/4 text-muted-foreground">
-                  No connectors are connected yet.
-                </p>
-              ) : (
-                <div className="grid gap-2">
-                  {connectorConnections.map((connection) => (
-                    <CapabilityChoice
-                      key={connection.connectionId}
-                      name={connection.label}
-                      description={connection.authority}
-                      checked={selectedConnectorIds.has(connection.connectionId)}
-                      onChange={(checked) =>
-                        setSelectedConnectorIds((current) => {
-                          const next = new Set(current)
-                          if (checked) next.add(connection.connectionId)
-                          else next.delete(connection.connectionId)
-                          return next
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="grid gap-3">
-              <div className="flex items-start gap-3">
-                <BookOpenIcon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
-                <div>
-                  <h3 className="text-sm/5 font-semibold">Skills</h3>
-                  <p className="mt-1 text-xs/4 text-muted-foreground">
-                    Selected skills are captured and mounted read-only for this agent.
-                  </p>
-                </div>
-              </div>
-              {skillChoices.length === 0 ? (
-                <p className="rounded-md border border-dashed p-3 text-xs/4 text-muted-foreground">
-                  No skills are available yet.
-                </p>
-              ) : (
-                <div className="grid gap-2">
-                  {skillChoices.map((skill) => (
-                    <CapabilityChoice
-                      key={skill.id}
-                      name={skill.name}
-                      description={skill.description}
-                      disabled={skill.disabled}
-                      checked={selectedSkillIds.has(skill.id)}
-                      onChange={(checked) =>
-                        setSelectedSkillIds((current) => {
-                          const next = new Set(current)
-                          if (checked) next.add(skill.id)
-                          else next.delete(skill.id)
-                          return next
-                        })
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <footer className="flex items-center justify-end gap-2">
-              {existing === undefined ? null : (
-                <>
-                  <div
-                    aria-hidden={!confirmingDelete}
-                    className={cn(
-                      't-resize min-w-0 shrink-0 overflow-hidden',
-                      confirmingDelete ? 'w-56' : 'w-0',
-                    )}
-                  >
-                    <Input
-                      ref={confirmationInputRef}
-                      aria-describedby="agent-delete-confirmation-hint"
-                      aria-invalid={
-                        confirmationName.length > 0 && confirmationName !== existing.name
-                      }
-                      autoComplete="off"
-                      disabled={!confirmingDelete || deleting}
-                      placeholder="Enter the agent name"
-                      tabIndex={confirmingDelete ? 0 : -1}
-                      value={confirmationName}
-                      onChange={(event) => setConfirmationName(event.currentTarget.value)}
-                      onKeyDown={(event) => {
-                        if (event.key !== 'Enter') return
-                        event.preventDefault()
-                        void remove()
-                      }}
-                    />
-                    <span id="agent-delete-confirmation-hint" className="sr-only">
-                      Enter the agent name exactly to enable deletion.
-                    </span>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="destructive"
-                    className="min-w-32"
-                    disabled={deleting || (confirmingDelete && confirmationName !== existing.name)}
-                    onClick={() => void remove()}
-                  >
-                    <Trash2Icon aria-hidden="true" />
-                    {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete agent'}
-                  </Button>
-                </>
-              )}
-              <Button
-                type="submit"
-                disabled={
-                  saving ||
-                  deleting ||
-                  (existing !== undefined && !isDirty) ||
-                  inferenceConnections.length === 0 ||
-                  availableModels.length === 0
-                }
-              >
-                {saving
-                  ? mode.kind === 'create'
-                    ? 'Adding agent…'
-                    : 'Saving changes…'
-                  : mode.kind === 'create'
-                    ? 'Add agent'
-                    : 'Save changes'}
-              </Button>
-            </footer>
+            <AgentPromptFields
+              name={name}
+              onNameChange={setName}
+              onPromptChange={setPrompt}
+              prompt={prompt}
+            />
+            <AgentHarnessFields
+              availableHarnesses={availableHarnesses}
+              harnessSelectionDisabled={availableHarnesses.length === 0 && existing === undefined}
+              harnesses={harnesses}
+              harnessId={harnessId}
+              modelId={modelId}
+              modelSelectionAvailable={modelSelectionAvailable}
+              onHarnessChange={changeHarness}
+              onModelChange={changeModel}
+              onThinkingLevelChange={setThinkingLevel}
+              selectedHarness={selectedHarness}
+              selectedHarnessAvailable={selectedHarnessAvailable}
+              selectedModel={selectedModel}
+              thinkingLevel={thinkingLevel}
+              thinkingLevels={thinkingLevels}
+              thinkingSelectionAvailable={thinkingSelectionAvailable}
+            />
+            <AgentFormActions
+              confirmationInputRef={confirmationInputRef}
+              confirmationName={confirmationName}
+              confirmingDelete={confirmingDelete}
+              deleting={deleting}
+              existing={existing}
+              isDirty={isDirty}
+              mode={mode}
+              modelSelectionAvailable={modelSelectionAvailable}
+              name={name}
+              onConfirmationNameChange={setConfirmationName}
+              onRemove={remove}
+              prompt={prompt}
+              saving={saving}
+              selectedHarnessAvailable={selectedHarnessAvailable}
+              thinkingSelectionAvailable={thinkingSelectionAvailable}
+            />
           </div>
         </form>
       </aside>

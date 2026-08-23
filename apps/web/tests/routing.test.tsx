@@ -21,6 +21,8 @@ describe('App Router root', () => {
 
     expect(layout.type).toBe('html')
     expect(layout.props.lang).toBe('en')
+    expect(layout.props.suppressHydrationWarning).toBe(true)
     expect(layout.props.children.type).toBe('body')
+    expect(layout.props.children.props.suppressHydrationWarning).toBe(true)
   })
 })

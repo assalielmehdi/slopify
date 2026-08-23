@@ -1,10 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import { RunEventSchema, type RunEvent } from '@slopify/contracts'
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
 
 import { createApiClient } from '../lib/api-client'
 import { parseRunEvent, reconcileRunEvents, runEventStreamUrl } from '../lib/event-stream'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const event = (sequence: number, type: RunEvent['type'] = 'NODE_STARTED'): RunEvent =>
   RunEventSchema.parse(
@@ -15,7 +15,7 @@ const event = (sequence: number, type: RunEvent['type'] = 'NODE_STARTED'): RunEv
           timestamp: `2026-08-20T10:00:0${sequence}Z`,
           type,
           data: {
-            workflowId: 'delivery-workflow',
+            workflowId: 'default-workflow',
           },
         }
       : {
@@ -28,13 +28,10 @@ const event = (sequence: number, type: RunEvent['type'] = 'NODE_STARTED'): RunEv
         },
   )
 
-const workflow = createPredefinedV1Workflow({
+const workflow = createAgentWorkflowFixture({
   createdAt: '2026-08-20T10:00:00Z',
-  agentDefaults: {
-    provider: 'test-provider',
-    model: 'test-model',
-    thinkingLevel: 'high',
-  },
+  modelId: 'test-model',
+  thinkingLevel: 'high',
 })
 
 const run = {
@@ -42,9 +39,7 @@ const run = {
   workflowId: workflow.workflowId,
   workflowSnapshot: workflow,
   variables: { task: 'Follow a live run' },
-  missingVariables: [],
   status: 'RUNNING',
-  currentNodeId: 'implementation',
   transitionCount: 1,
   createdAt: '2026-08-20T10:00:00Z',
   startedAt: '2026-08-20T10:00:01Z',
@@ -53,10 +48,10 @@ const run = {
 
 const detail = {
   run,
+  projects: [],
+  projectWorktrees: [],
   events: [event(1, 'RUN_STARTED'), event(2)],
   nodeExecutions: [],
-  outputChunks: [],
-  artifacts: [],
 }
 
 describe('run event reconciliation', () => {
@@ -98,7 +93,6 @@ describe('live run API contract', () => {
     const cancelledRun = {
       ...run,
       status: 'CANCELLED',
-      currentNodeId: null,
       completedAt: '2026-08-20T10:00:09Z',
     } as const
     const fetchImplementation = vi.fn(async () => Response.json(cancelledRun))

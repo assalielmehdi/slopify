@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "bun run --filter @slopify/workflow-model build && bun --bun next typegen && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit && bun --bun next build",
+    "build": "bun run clean && bun --bun next typegen && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit && bun --bun next build",
+    "clean": "bun -e \"import { rmSync } from 'node:fs'; rmSync('.next', { force: true, recursive: true })\"",
     "dev": "bun --bun next dev",
     "start": "bun --bun next start",
-    "lint": "bun --bun eslint app components hooks lib tests --max-warnings 0",
+    "lint": "bun --bun eslint . --max-warnings 0",
     "test": "bun --bun vitest run --config vitest.config.ts",
     "typecheck": "bun --bun next typegen && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit"
   },

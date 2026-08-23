@@ -15,7 +15,7 @@ export const metadata: Metadata = {
     default: 'Slopify',
     template: '%s | Slopify',
   },
-  description: 'Local software delivery workbench',
+  description: 'Local agent workflow orchestrator',
 }
 
 export default function RootLayout({ children }: Readonly<{ children: ReactNode }>) {
@@ -25,7 +25,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
       className={cn('font-sans', geist.variable, geistMono.variable)}
       suppressHydrationWarning
     >
-      <body>
+      <body suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <AppShell>{children}</AppShell>
       </body>

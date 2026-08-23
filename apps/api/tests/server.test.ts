@@ -1,13 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createPredefinedV1Workflow } from '@slopify/workflow-model'
-
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
-  connectDefaultChatGpt,
-  connectDefaultFigma,
-  ensurePredefinedWorkflow,
+  ensureDefaultWorkflow,
   resolveApiServerConfiguration,
   startApiServer,
 } from '../src/server.js'
@@ -17,7 +13,7 @@ const database = {
   status: () => ({
     foreignKeysEnabled: true,
     journalMode: 'wal',
-    schemaVersion: 2,
+    schemaVersion: 1,
     writable: true,
   }),
 }
@@ -30,12 +26,12 @@ describe('API server configuration', () => {
       get: vi.fn(() => undefined),
     }
 
-    ensurePredefinedWorkflow(workflows)
+    ensureDefaultWorkflow(workflows)
 
     expect(save).toHaveBeenCalledTimes(1)
     expect(save).toHaveBeenCalledWith(
       expect.objectContaining({
-        workflowId: 'delivery-workflow',
+        workflowId: 'default-workflow',
         startNodeId: null,
         nodes: [],
         edges: [],
@@ -43,112 +39,50 @@ describe('API server configuration', () => {
     )
 
     workflows.get.mockReturnValue(save.mock.calls[0]?.[0])
-    ensurePredefinedWorkflow(workflows)
+    ensureDefaultWorkflow(workflows)
     expect(save).toHaveBeenCalledTimes(1)
   })
 
-  it('migrates only the exact untouched legacy seed to the empty draft', () => {
+  it('never overwrites an existing workflow', () => {
     const save = vi.fn()
-    const legacy = createPredefinedV1Workflow({
-      createdAt: '2026-08-20T23:30:00.000Z',
-      agentDefaults: {
-        provider: 'chatgpt-subscription',
-        model: 'gpt-5.4',
-        thinkingLevel: 'medium',
-      },
-    })
     const workflows = {
       save,
-      get: vi.fn(() => legacy),
+      get: vi.fn(() => ({ workflowId: 'default-workflow' })),
     }
 
-    ensurePredefinedWorkflow(workflows)
-
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(save.mock.calls[0]?.[0]).toMatchObject({ startNodeId: null, nodes: [], edges: [] })
-  })
-
-  it('never overwrites a user-edited workflow resembling the legacy seed', () => {
-    const save = vi.fn()
-    const legacy = createPredefinedV1Workflow({
-      createdAt: '2026-08-20T23:30:00.000Z',
-      agentDefaults: {
-        provider: 'chatgpt-subscription',
-        model: 'gpt-5.4',
-        thinkingLevel: 'medium',
-      },
-    })
-    const workflows = {
-      save,
-      get: vi.fn(() => ({ ...legacy, name: 'My edited workflow' })),
-    }
-
-    ensurePredefinedWorkflow(workflows)
+    ensureDefaultWorkflow(workflows)
 
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('stores ChatGPT OAuth under the server-owned catalog identity', async () => {
-    const connect = vi.fn(async () => ({ connectionId: 'chatgpt-subscription-default' }))
-
-    await expect(
-      connectDefaultChatGpt(connect, {
-        credential: {
-          type: 'oauth',
-          access: 'access-token',
-          refresh: 'refresh-token',
-          expires: Date.now() + 60_000,
-        },
-      }),
-    ).resolves.toEqual({ connectionId: 'chatgpt-subscription-default' })
-    expect(connect).toHaveBeenCalledWith(
-      expect.objectContaining({
-        type: 'chatgpt-subscription',
-      }),
-    )
-    expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('connectionId')
-    expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('label')
-  })
-
-  it('connects Figma Desktop under the server-owned catalog identity and MCP endpoint', async () => {
-    const connect = vi.fn(async () => ({ connectionId: 'figma-default' }))
-
-    await expect(connectDefaultFigma(connect)).resolves.toEqual({ connectionId: 'figma-default' })
-    expect(connect).toHaveBeenCalledWith({
-      type: 'figma',
-      configuration: { serverUrl: 'http://127.0.0.1:3845/mcp' },
-    })
-  })
-
-  it('uses native owner-local state and accepts explicit host and port overrides', () => {
+  it('configures only the database, traces, and worktrees under owner-local state', () => {
     expect(
       resolveApiServerConfiguration({
         API_HOST: '127.0.0.2',
         API_PORT: '4310',
         API_SHUTDOWN_GRACE_MS: '2500',
         DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
+        TRACES_ROOT: '/var/lib/workbench/traces',
+        WORKTREES_ROOT: '/var/lib/workbench/worktrees',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
       port: 4310,
       shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
-      skillsRoot: expect.any(String),
-      skillSnapshotsRoot: expect.any(String),
-      credentialPath: expect.any(String),
-      tracesRoot: expect.any(String),
-      guestToolsRoot: expect.any(String),
+      tracesRoot: '/var/lib/workbench/traces',
+      worktreesRoot: '/var/lib/workbench/worktrees',
     })
     expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
       hostname: '127.0.0.1',
       port: 3001,
       databasePath: '/tmp/slopify-test/slopify.db',
-      skillsRoot: '/tmp/slopify-test/skills',
-      skillSnapshotsRoot: '/tmp/slopify-test/skill-snapshots',
-      credentialPath: '/tmp/slopify-test/credentials.json',
       tracesRoot: '/tmp/slopify-test/traces',
-      guestToolsRoot: '/tmp/slopify-test/guest-tools',
+      worktreesRoot: '/tmp/slopify-test/worktrees',
     })
+    expect(resolveApiServerConfiguration({}).databasePath).toMatch(
+      /\.slopify\/orchestrator\/slopify\.db$/u,
+    )
   })
 
   it.each(['0', '65536', '3.14', 'invalid'])(
@@ -183,14 +117,8 @@ describe('API server configuration', () => {
         hostname: '127.0.0.1',
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
-        skillsRoot: '/skills',
-        skillSnapshotsRoot: '/skill-snapshots',
-        credentialPath: '/credentials.json',
         tracesRoot: '/traces',
-        guestToolsRoot: '/guest-tools',
-        figmaMcpOAuth: {
-          redirectUri: 'http://127.0.0.1:3001/api/connections/figma/oauth/callback',
-        },
+        worktreesRoot: '/worktrees',
         shutdownGracePeriodMs: 10_000,
       },
       serve,
@@ -203,5 +131,54 @@ describe('API server configuration', () => {
 
     await server.stop()
     expect(stop).toHaveBeenCalledOnce()
+  })
+
+  it('disables the idle timeout only for exact GET run event streams', async () => {
+    type ServeFactory = NonNullable<Parameters<typeof startApiServer>[0]['serve']>
+    type ServeOptions = Parameters<ServeFactory>[0]
+
+    const app = createApiApp({ database })
+    const stop = vi.fn(async () => undefined)
+    let fetchHandler: ServeOptions['fetch'] | undefined
+    const serve: ServeFactory = (options) => {
+      fetchHandler = options.fetch
+      return {
+        hostname: options.hostname,
+        port: options.port,
+        stop,
+      }
+    }
+    const timeout = vi.fn()
+    const requestServer = { timeout } as Parameters<ServeOptions['fetch']>[1]
+
+    startApiServer({
+      app,
+      configuration: {
+        hostname: '127.0.0.1',
+        port: 0,
+        databasePath: '/unused-in-this-test.sqlite',
+        tracesRoot: '/traces',
+        worktreesRoot: '/worktrees',
+        shutdownGracePeriodMs: 10_000,
+      },
+      serve,
+    })
+
+    const fetch = fetchHandler
+    if (fetch === undefined) throw new Error('Expected the API fetch handler to be registered')
+
+    const eventRequest = new Request('http://localhost/api/runs/run-123/events')
+    await fetch(eventRequest, requestServer)
+    expect(timeout).toHaveBeenCalledOnce()
+    expect(timeout).toHaveBeenCalledWith(eventRequest, 0)
+
+    timeout.mockClear()
+    await fetch(new Request('http://localhost/healthz'), requestServer)
+    await fetch(
+      new Request('http://localhost/api/runs/run-123/events', { method: 'POST' }),
+      requestServer,
+    )
+    await fetch(new Request('http://localhost/api/runs/run-123/events/next'), requestServer)
+    expect(timeout).not.toHaveBeenCalled()
   })
 })

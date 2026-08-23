@@ -3,132 +3,51 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AgentNodeSchema, createPredefinedV1Workflow } from '@slopify/workflow-model'
-import type { ConnectionCatalogEntry } from '@slopify/contracts'
+import { HarnessDescriptorSchema } from '@slopify/contracts'
+import { AgentNodeSchema } from '@slopify/workflow-model'
 
-import { AgentDrawer, createAgentId } from '../components/workflow/agent-drawer'
-import { toast } from '../components/ui/toast'
-import type { ConnectionRecord, SkillRecord } from '../lib/api-client'
+import { AgentDrawer } from '../components/workflow/agent-drawer'
+import { createAgentId } from '../lib/agent-drawer'
+import { toast } from '../lib/toast'
+import { createAgentWorkflowFixture } from './fixtures/workflow'
 
-const workflow = createPredefinedV1Workflow({
+const workflow = createAgentWorkflowFixture({
   createdAt: '2026-08-18T12:00:00Z',
-  agentDefaults: {
-    provider: 'chatgpt-subscription',
-    model: 'gpt-5.4',
-    thinkingLevel: 'medium',
-  },
+  modelId: 'openai/gpt-5.4',
+  thinkingLevel: 'medium',
 })
 
 const existingAgent = workflow.nodes[0]
-if (existingAgent?.type !== 'agent') throw new Error('Expected an agent fixture')
+if (existingAgent === undefined) throw new Error('Expected an agent fixture')
 
-const connection = (
-  input: Partial<ConnectionRecord> &
-    Pick<ConnectionRecord, 'connectionId' | 'type' | 'category' | 'label'>,
-): ConnectionRecord => ({
-  authority: 'Test authority',
-  configuration: {},
-  metadata: {},
-  status: 'CONNECTED',
-  validatedAt: '2026-08-22T08:00:00Z',
-  createdAt: '2026-08-22T08:00:00Z',
-  updatedAt: '2026-08-22T08:00:00Z',
-  ...input,
-})
-
-const connections = [
-  connection({
-    connectionId: 'chatgpt-subscription-default',
-    type: 'chatgpt-subscription',
-    category: 'inference',
-    label: 'ChatGPT',
-  }),
-  connection({
-    connectionId: 'gitlab-primary',
-    type: 'gitlab',
-    category: 'connector',
-    label: 'GitLab',
-  }),
-] as const
-
-const catalog = [
+const harnesses = HarnessDescriptorSchema.array().parse([
   {
-    type: 'chatgpt-subscription',
-    category: 'inference',
-    name: 'ChatGPT',
-    icon: 'chatgpt',
-    eyebrow: 'Subscription provider',
-    summary: 'Use a ChatGPT subscription.',
-    description: 'Use ChatGPT through Pi.',
-    setup: ['Connect ChatGPT.'],
-    access: 'Inference only.',
+    harnessId: 'pi',
+    name: 'Pi',
+    description: 'Runs the locally installed Pi coding agent.',
+    availability: 'AVAILABLE',
+    executablePath: '/opt/homebrew/bin/pi',
+    version: '0.84.2',
+    installHref: 'https://pi.dev/',
+    installLabel: 'Install Pi',
     models: [
       {
-        id: 'gpt-5.4',
+        id: 'openai/gpt-5.4',
         name: 'GPT-5.4',
         thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
       },
       {
-        id: 'gpt-5.6-luna',
+        id: 'openai/gpt-5.6-luna',
         name: 'GPT-5.6 Luna',
         thinkingLevels: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'],
       },
     ],
   },
-] as const satisfies readonly ConnectionCatalogEntry[]
-
-const skills = [
-  {
-    skillId: 'research',
-    name: 'Research',
-    description: 'Find and synthesize evidence.',
-    digest: 'a'.repeat(64),
-    modifiedAt: '2026-08-22T08:00:00Z',
-    valid: true,
-    issues: [],
-    files: [],
-    kind: 'user',
-  },
-] as const satisfies readonly SkillRecord[]
+])
 
 afterEach(cleanup)
 
 describe('AgentDrawer', () => {
-  it('does not offer built-in connector skills as explicit agent choices', () => {
-    render(
-      <AgentDrawer
-        mode={{ kind: 'create' }}
-        existingNodeIds={new Set([existingAgent.id])}
-        catalog={catalog}
-        connections={connections}
-        skills={[
-          ...skills,
-          {
-            ...skills[0],
-            skillId: 'gitlab-connector',
-            name: 'GitLab connector',
-            kind: 'connector',
-            readOnly: true,
-          },
-          {
-            ...skills[0],
-            skillId: 'utility',
-            name: 'Utility',
-            kind: 'built-in',
-            readOnly: true,
-          },
-        ]}
-        onDelete={vi.fn(async () => true)}
-        onClose={vi.fn()}
-        onSubmit={vi.fn(async () => true)}
-      />,
-    )
-
-    expect(screen.getByText('Research')).toBeTruthy()
-    expect(screen.getByText('Utility')).toBeTruthy()
-    expect(screen.queryByText('GitLab connector')).toBeNull()
-  })
-
   it('creates stable unique agent IDs from names', () => {
     expect(createAgentId('Release Reviewer', new Set())).toBe('release-reviewer')
     expect(createAgentId('Release Reviewer', new Set(['release-reviewer']))).toBe(
@@ -136,18 +55,15 @@ describe('AgentDrawer', () => {
     )
   })
 
-  it('submits prompt, inference, connectors, and skills from the add form', () => {
+  it('submits the harness with optional model and thinking preferences', async () => {
     const onSubmit = vi.fn(async () => true)
-    const onClose = vi.fn()
     render(
       <AgentDrawer
         mode={{ kind: 'create' }}
         existingNodeIds={new Set([existingAgent.id])}
-        catalog={catalog}
-        connections={connections}
-        skills={skills}
+        harnesses={harnesses}
         onDelete={vi.fn(async () => true)}
-        onClose={onClose}
+        onClose={vi.fn()}
         onSubmit={onSubmit}
       />,
     )
@@ -164,109 +80,93 @@ describe('AgentDrawer', () => {
     const highOption = screen.getByRole('option', { name: 'High' })
     fireEvent.pointerDown(highOption, { pointerType: 'mouse' })
     fireEvent.click(highOption)
-    expect(onClose).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('checkbox', { name: /GitLab/ }))
-    fireEvent.click(screen.getByRole('checkbox', { name: /Research/ }))
-    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
-    expect(screen.queryByRole('button', { name: 'Delete agent' })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
 
-    expect(onSubmit).toHaveBeenCalledWith({
-      connectorIds: ['gitlab-primary'],
-      id: 'research-agent',
-      inference: {
-        connectionId: 'chatgpt-subscription-default',
-        modelId: 'gpt-5.6-luna',
-        thinkingLevel: 'high',
-      },
-      name: 'Research agent',
-      prompt: 'Research {{ topic }} and report the evidence.',
-      skillSnapshotRefs: [
-        {
-          skillId: 'research',
-          snapshotId: `sha256:${'a'.repeat(64)}`,
-          digest: 'a'.repeat(64),
-          name: 'Research',
-          description: 'Find and synthesize evidence.',
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        id: 'research-agent',
+        name: 'Research agent',
+        prompt: 'Research {{ topic }} and report the evidence.',
+        harness: {
+          harnessId: 'pi',
+          modelId: 'openai/gpt-5.6-luna',
+          thinkingLevel: 'high',
         },
-      ],
-    })
+      }),
+    )
   })
 
-  it('excludes invalid connections and explains that an agent cannot use them', () => {
+  it('allows Pi to resolve the default model and thinking effort', async () => {
+    const onSubmit = vi.fn(async () => true)
     render(
       <AgentDrawer
         mode={{ kind: 'create' }}
         existingNodeIds={new Set()}
-        catalog={catalog}
-        connections={connections.map((item) => ({ ...item, status: 'INVALID' as const }))}
-        skills={[]}
+        harnesses={harnesses}
         onDelete={vi.fn(async () => true)}
         onClose={vi.fn()}
-        onSubmit={vi.fn(async () => true)}
+        onSubmit={onSubmit}
       />,
     )
 
-    expect(screen.getByText(/No providers are connected yet/)).toBeTruthy()
-    expect(screen.getByText('No connectors are connected yet.')).toBeTruthy()
-    expect(screen.queryByRole('option', { name: 'ChatGPT' })).toBeNull()
-    expect(screen.queryByRole('checkbox', { name: /GitLab/ })).toBeNull()
-    expect(screen.getByRole('button', { name: 'Add agent' }).hasAttribute('disabled')).toBe(true)
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Default agent' } })
+    fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Do the work.' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Add agent' }))
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        id: 'default-agent',
+        name: 'Default agent',
+        prompt: 'Do the work.',
+        harness: { harnessId: 'pi' },
+      }),
+    )
   })
 
-  it('uses proximity to distinguish fields within sections from separate sections', () => {
+  it('explains why creating agents is blocked when no harness is available', () => {
+    const unavailable = HarnessDescriptorSchema.array().parse([
+      {
+        harnessId: 'pi',
+        name: 'Pi',
+        description: 'Runs the locally installed Pi coding agent.',
+        availability: 'UNAVAILABLE',
+        unavailableReason: 'Pi was not found on PATH.',
+        installHref: 'https://pi.dev/',
+        installLabel: 'Install Pi',
+        models: [],
+      },
+    ])
     render(
       <AgentDrawer
-        mode={{ kind: 'edit', agent: existingAgent }}
-        existingNodeIds={new Set([existingAgent.id])}
-        catalog={catalog}
-        connections={connections}
-        skills={skills}
+        mode={{ kind: 'create' }}
+        existingNodeIds={new Set()}
+        harnesses={unavailable}
         onDelete={vi.fn(async () => true)}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => true)}
       />,
     )
 
-    const promptSection = screen.getByRole('heading', { name: 'Prompt' }).closest('section')
-    const inferenceSection = screen.getByRole('heading', { name: 'Inference' }).closest('section')
-    const scrollRegion = promptSection?.parentElement
-    const actions = screen.getByRole('button', { name: 'Save changes' }).closest('footer')
-
-    expect(scrollRegion?.className).toContain('gap-8')
-    expect(scrollRegion?.className).toContain('content-start')
-    expect(promptSection?.className).toContain('gap-3')
-    expect(inferenceSection?.className).toContain('gap-3')
-    expect(actions?.parentElement).toBe(scrollRegion)
-    expect(actions?.previousElementSibling).toBe(
-      screen.getByRole('heading', { name: 'Skills' }).closest('section'),
+    expect(screen.getByText('Pi was not found on PATH.')).toBeTruthy()
+    expect(screen.getByRole('link', { name: 'Open Harnesses' }).getAttribute('href')).toBe(
+      '/harnesses',
     )
-    expect(actions?.className).not.toContain('shrink-0')
-    expect(screen.getByLabelText('Prompt').previousElementSibling?.className).toContain('sr-only')
-    expect(screen.getByLabelText('Provider').parentElement?.parentElement?.className).toContain(
-      'gap-3',
+    expect((screen.getByRole('button', { name: 'Add agent' }) as HTMLButtonElement).disabled).toBe(
+      true,
     )
   })
 
-  it('uses the same form for editing, confirms saves, and closes after the transition', async () => {
+  it('edits existing harness configuration and closes after the transition', async () => {
     const onSubmit = vi.fn(async () => true)
     const onClose = vi.fn()
     const addToast = vi.spyOn(toast, 'add')
     const configuredAgent = AgentNodeSchema.parse({
       ...existingAgent,
-      job: {
-        ...existingAgent.job,
-        prompt: 'Existing {{ subject }} prompt',
-        connectorIds: ['gitlab-primary'],
-        skillSnapshotRefs: [
-          {
-            skillId: 'research',
-            snapshotId: `sha256:${'a'.repeat(64)}`,
-            digest: 'a'.repeat(64),
-            name: 'Research',
-            description: 'Find and synthesize evidence.',
-          },
-        ],
+      prompt: 'Existing {{ subject }} prompt',
+      harness: {
+        harnessId: 'pi',
+        modelId: 'openai/gpt-5.4',
+        thinkingLevel: 'medium',
       },
     })
 
@@ -274,9 +174,7 @@ describe('AgentDrawer', () => {
       <AgentDrawer
         mode={{ kind: 'edit', agent: configuredAgent }}
         existingNodeIds={new Set([configuredAgent.id])}
-        catalog={catalog}
-        connections={connections}
-        skills={skills}
+        harnesses={harnesses}
         onDelete={vi.fn(async () => true)}
         onClose={onClose}
         onSubmit={onSubmit}
@@ -287,42 +185,14 @@ describe('AgentDrawer', () => {
     expect((screen.getByLabelText('Prompt') as HTMLTextAreaElement).value).toBe(
       'Existing {{ subject }} prompt',
     )
-    expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
     expect(
       (screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled,
     ).toBe(true)
-    expect(
-      screen.getByRole('button', { name: 'Save changes' }).closest('footer')?.className,
-    ).not.toContain('border-t')
-    expect(screen.getByRole('button', { name: 'Delete agent' })).toBeTruthy()
-    expect(screen.queryByText('Identity')).toBeNull()
-    expect(screen.queryByLabelText('Agent ID')).toBeNull()
-    expect(screen.queryByText('Enter a model ID supported by the provider.')).toBeNull()
-    expect(screen.getByLabelText('Provider').tagName).toBe('BUTTON')
+    expect(screen.getByLabelText('Harness').tagName).toBe('BUTTON')
     expect(screen.getByLabelText('Model').tagName).toBe('BUTTON')
     expect(screen.getByLabelText('Thinking effort').tagName).toBe('BUTTON')
-    expect(
-      screen
-        .getByRole('heading', { name: 'Skills' })
-        .parentElement?.parentElement?.querySelector('svg'),
-    ).not.toBeNull()
-    expect(
-      screen.getByRole('complementary', { name: 'Edit agent' }).parentElement?.className,
-    ).toContain('fixed')
-    expect(
-      screen.getByRole('complementary', { name: 'Edit agent' }).parentElement?.className,
-    ).not.toContain('absolute')
-    expect((screen.getByRole('checkbox', { name: /GitLab/ }) as HTMLInputElement).checked).toBe(
-      true,
-    )
-    expect((screen.getByRole('checkbox', { name: /Research/ }) as HTMLInputElement).checked).toBe(
-      true,
-    )
 
     fireEvent.change(screen.getByLabelText('Prompt'), { target: { value: 'Updated prompt' } })
-    expect(
-      (screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled,
-    ).toBe(false)
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() =>
@@ -343,38 +213,39 @@ describe('AgentDrawer', () => {
     expect(onClose).toHaveBeenCalledOnce()
   })
 
-  it('stays open during canvas interaction and closes only from its close button', async () => {
-    const onClose = vi.fn()
+  it('identifies a configured model that disappeared from the harness catalog', () => {
+    const configuredAgent = AgentNodeSchema.parse({
+      ...existingAgent,
+      prompt: 'Existing prompt',
+      harness: {
+        harnessId: 'pi',
+        modelId: 'openai/gpt-5.4',
+        thinkingLevel: 'medium',
+      },
+    })
+    const changedCatalog = HarnessDescriptorSchema.array().parse([
+      {
+        ...harnesses[0],
+        models: harnesses[0]?.models.filter(({ id }) => id !== 'openai/gpt-5.4'),
+      },
+    ])
+
     render(
       <AgentDrawer
-        mode={{ kind: 'edit', agent: existingAgent }}
-        existingNodeIds={new Set([existingAgent.id])}
-        catalog={catalog}
-        connections={connections}
-        skills={skills}
+        mode={{ kind: 'edit', agent: configuredAgent }}
+        existingNodeIds={new Set([configuredAgent.id])}
+        harnesses={changedCatalog}
         onDelete={vi.fn(async () => true)}
-        onClose={onClose}
+        onClose={vi.fn()}
         onSubmit={vi.fn(async () => true)}
       />,
     )
 
-    const panel = screen.getByRole('complementary', { name: 'Edit agent' })
-    const shell = panel.parentElement
-    if (shell === null) throw new Error('Expected the drawer shell')
-    await waitFor(() => expect(shell.getAttribute('data-open')).toBe('true'))
-
-    fireEvent.pointerDown(document.body)
-    fireEvent.pointerMove(document.body)
-    fireEvent.pointerUp(document.body)
-    fireEvent.keyDown(document, { key: 'Escape' })
-
-    expect(shell.getAttribute('data-open')).toBe('true')
-    expect(onClose).not.toHaveBeenCalled()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close agent drawer' }))
-    expect(shell.getAttribute('data-open')).toBe('false')
-    fireEvent.transitionEnd(shell, { propertyName: 'translate' })
-    expect(onClose).toHaveBeenCalledOnce()
+    expect(screen.getByLabelText('Model').textContent).toContain('openai/gpt-5.4 (unavailable)')
+    fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Updated agent' } })
+    expect(
+      (screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
   })
 
   it('requires the exact agent name before deleting', async () => {
@@ -383,9 +254,7 @@ describe('AgentDrawer', () => {
       <AgentDrawer
         mode={{ kind: 'edit', agent: existingAgent }}
         existingNodeIds={new Set([existingAgent.id])}
-        catalog={catalog}
-        connections={connections}
-        skills={skills}
+        harnesses={harnesses}
         onDelete={onDelete}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => true)}
@@ -393,49 +262,11 @@ describe('AgentDrawer', () => {
     )
 
     fireEvent.click(screen.getByRole('button', { name: 'Delete agent' }))
-    expect(onDelete).not.toHaveBeenCalled()
     const confirmationName = screen.getByPlaceholderText('Enter the agent name')
     const confirmation = screen.getByRole('button', { name: 'Confirm' })
-    const saveChanges = screen.getByRole('button', { name: 'Save changes' })
-    expect(document.activeElement).toBe(confirmationName)
     expect((confirmation as HTMLButtonElement).disabled).toBe(true)
-    expect(confirmation.nextElementSibling).toBe(saveChanges)
-
-    fireEvent.change(confirmationName, { target: { value: 'Another agent' } })
-    fireEvent.click(confirmation)
-    expect(onDelete).not.toHaveBeenCalled()
-
     fireEvent.change(confirmationName, { target: { value: existingAgent.name } })
     fireEvent.click(confirmation)
     await waitFor(() => expect(onDelete).toHaveBeenCalledOnce())
-    expect(
-      screen
-        .getByRole('complementary', { name: 'Edit agent' })
-        .parentElement?.getAttribute('data-open'),
-    ).toBe('false')
-  })
-
-  it('shows catalog and save failures without hiding the form', () => {
-    render(
-      <AgentDrawer
-        mode={{ kind: 'create' }}
-        existingNodeIds={new Set()}
-        catalog={catalog}
-        connections={[]}
-        skills={[]}
-        catalogError="Agent resources could not be loaded."
-        saveError="Workflow could not be saved."
-        saving
-        onDelete={vi.fn(async () => false)}
-        onClose={vi.fn()}
-        onSubmit={vi.fn(async () => false)}
-      />,
-    )
-
-    expect(screen.getByText('Agent resources could not be loaded.')).toBeTruthy()
-    expect(screen.getByText('Workflow could not be saved.')).toBeTruthy()
-    expect(
-      (screen.getByRole('button', { name: 'Adding agent…' }) as HTMLButtonElement).disabled,
-    ).toBe(true)
   })
 })

@@ -6,41 +6,32 @@ const identifier = z.string().trim().min(1).max(256)
 const timestamp = z.iso.datetime({ offset: true })
 const duration = z.number().int().nonnegative().safe()
 
-export const ExecuteJobPayloadSchema = z.strictObject({
+export const ExecuteNodePayloadSchema = z.strictObject({
   version: z.literal(1),
   nodeId: identifier,
-  jobKind: z.enum(['agent', 'command', 'router']),
 })
-export const JobStartedPayloadSchema = z.strictObject({
+export const NodeExecutionStartedPayloadSchema = z.strictObject({
   version: z.literal(1),
   startedAt: timestamp,
 })
-export const JobProgressPayloadSchema = z.strictObject({
-  version: z.literal(1),
-  eventType: identifier,
-  data: z.json(),
-  occurredAt: timestamp,
-})
-export const JobSucceededPayloadSchema = z.strictObject({
+export const NodeExecutionSucceededPayloadSchema = z.strictObject({
   version: z.literal(1),
   outcome: identifier,
   output: z.json(),
-  artifactIds: z.array(identifier).max(32).readonly(),
   completedAt: timestamp,
   durationMs: duration,
 })
-export const JobFailedPayloadSchema = z.strictObject({
+export const NodeExecutionFailedPayloadSchema = z.strictObject({
   version: z.literal(1),
   code: z
     .string()
     .regex(/^[A-Z][A-Z0-9_]*$/u)
     .max(128),
   message: z.string().trim().min(1).max(4_096),
-  retryable: z.boolean(),
   completedAt: timestamp,
   durationMs: duration,
 })
-export const JobCancelledPayloadSchema = z.strictObject({
+export const NodeExecutionCancelledPayloadSchema = z.strictObject({
   version: z.literal(1),
   reason: z.string().trim().min(1).max(1_024),
   completedAt: timestamp,
@@ -48,12 +39,23 @@ export const JobCancelledPayloadSchema = z.strictObject({
 })
 
 export const ExecutionMessagePayloadSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('EXECUTE_JOB'), payload: ExecuteJobPayloadSchema }),
-  z.strictObject({ type: z.literal('JOB_STARTED'), payload: JobStartedPayloadSchema }),
-  z.strictObject({ type: z.literal('JOB_PROGRESS'), payload: JobProgressPayloadSchema }),
-  z.strictObject({ type: z.literal('JOB_SUCCEEDED'), payload: JobSucceededPayloadSchema }),
-  z.strictObject({ type: z.literal('JOB_FAILED'), payload: JobFailedPayloadSchema }),
-  z.strictObject({ type: z.literal('JOB_CANCELLED'), payload: JobCancelledPayloadSchema }),
+  z.strictObject({ type: z.literal('EXECUTE_NODE'), payload: ExecuteNodePayloadSchema }),
+  z.strictObject({
+    type: z.literal('NODE_EXECUTION_STARTED'),
+    payload: NodeExecutionStartedPayloadSchema,
+  }),
+  z.strictObject({
+    type: z.literal('NODE_EXECUTION_SUCCEEDED'),
+    payload: NodeExecutionSucceededPayloadSchema,
+  }),
+  z.strictObject({
+    type: z.literal('NODE_EXECUTION_FAILED'),
+    payload: NodeExecutionFailedPayloadSchema,
+  }),
+  z.strictObject({
+    type: z.literal('NODE_EXECUTION_CANCELLED'),
+    payload: NodeExecutionCancelledPayloadSchema,
+  }),
 ])
 
 export type ExecutionMessageType = z.infer<typeof ExecutionMessagePayloadSchema>['type']
@@ -142,7 +144,7 @@ const validateNewMessage = (message: NewExecutionMessage): NewExecutionMessage =
   timestamp.parse(message.availableAt)
   timestamp.parse(message.createdAt)
   ExecutionMessagePayloadSchema.parse({ type: message.type, payload: message.payload })
-  const expectedDestination = message.type === 'EXECUTE_JOB' ? 'WORKER' : 'COORDINATOR'
+  const expectedDestination = message.type === 'EXECUTE_NODE' ? 'WORKER' : 'COORDINATOR'
   if (message.destination !== expectedDestination)
     throw new TypeError('Message destination is invalid')
   return message

@@ -37,20 +37,16 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
         </Alert>
       ) : (
         <form
+          action={async () => {
+            await state.start()
+          }}
           aria-label="Start a run"
           className="grid items-start gap-6 xl:grid-cols-[minmax(0,1fr)_18rem]"
-          onSubmit={(event) => {
-            event.preventDefault()
-            void state.start(state.missingVariables.length > 0)
-          }}
         >
           <Card>
             <CardContent>
               <RunConfigurationFields
-                onAddVariable={state.addVariable}
-                onRemoveVariable={state.removeVariable}
-                onVariableKeyChange={(id, key) => state.changeVariable(id, 'key', key)}
-                onVariableValueChange={(id, value) => state.changeVariable(id, 'value', value)}
+                onVariableValueChange={state.changeVariable}
                 onWorkflowChange={state.changeWorkflow}
                 rows={state.rows}
                 workflowId={state.workflowId}
@@ -62,35 +58,10 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
           <aside className="grid gap-4 xl:sticky xl:top-20">
             {state.error?.scope === 'start' ? (
               <Alert variant="destructive">
-                <AlertTitle>
-                  {state.error.activeRunId === undefined
-                    ? 'Run not started'
-                    : 'Another run is active'}
-                </AlertTitle>
-                <AlertDescription>
-                  <p>{state.error.message}</p>
-                  {state.error.activeRunId === undefined ? null : (
-                    <Link href={`/runs/${state.error.activeRunId}`}>
-                      Open active run {displayRunId(state.error.activeRunId)}
-                    </Link>
-                  )}
-                </AlertDescription>
+                <AlertTitle>Run not started</AlertTitle>
+                <AlertDescription>{state.error.message}</AlertDescription>
               </Alert>
             ) : null}
-
-            {state.missingVariables.length === 0 ? null : (
-              <Alert className="border-status-warning/35 bg-status-warning/10">
-                <AlertTitle>Missing prompt variables</AlertTitle>
-                <AlertDescription>
-                  <p>Starting anyway substitutes an empty value for each missing variable.</p>
-                  <ul className="mt-2 list-inside list-disc font-mono text-xs/4">
-                    {state.missingVariables.map((variable) => (
-                      <li key={variable}>{variable}</li>
-                    ))}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )}
 
             {state.startedRun === undefined ? null : (
               <Alert>
@@ -108,17 +79,11 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
                 <p className="text-sm/5 text-muted-foreground">
                   The selected workflow and variables are snapshotted when the run starts.
                 </p>
-                {state.runnable ? null : (
-                  <p className="text-sm/5 text-status-warning">
-                    This workflow has no agent jobs and cannot be run.
-                  </p>
+                {state.runDisabledReason === undefined ? null : (
+                  <p className="text-sm/5 text-status-warning">{state.runDisabledReason}</p>
                 )}
                 <Button className="w-full" disabled={!state.canStart} type="submit">
-                  {state.starting
-                    ? 'Starting…'
-                    : state.missingVariables.length > 0
-                      ? 'Start without missing variables'
-                      : 'Start run'}
+                  {state.starting ? 'Starting…' : 'Start run'}
                 </Button>
               </CardContent>
             </Card>

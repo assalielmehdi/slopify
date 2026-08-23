@@ -4,7 +4,9 @@ const errorResponse = (status: number, code: string, message: string): Response 
   Response.json({ error: { code, message } }, { status })
 
 const apiOrigin = (): string => {
-  const url = new URL(process.env.API_INTERNAL_URL ?? DEFAULT_API_INTERNAL_URL)
+  const configuredUrl = process.env.API_INTERNAL_URL ?? DEFAULT_API_INTERNAL_URL
+  if (!URL.canParse(configuredUrl)) throw new Error('Invalid API origin')
+  const url = new URL(configuredUrl)
   const isHttp = url.protocol === 'http:' || url.protocol === 'https:'
   const isOriginOnly =
     url.username === '' &&
@@ -34,7 +36,7 @@ const proxyRequest = async (request: Request): Promise<Response> => {
     )
   }
 
-  const requestUrl = new URL(request.url)
+  const requestUrl = new URL(request.url, DEFAULT_API_INTERNAL_URL)
   const upstreamUrl = new URL(upstreamPath(requestUrl), origin)
 
   try {

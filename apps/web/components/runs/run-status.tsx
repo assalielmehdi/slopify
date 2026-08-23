@@ -14,7 +14,6 @@ const runStatusPresentation = {
   SUCCEEDED: { label: 'Succeeded', variant: 'outline', className: statusSuccessClassName },
   FAILED: { label: 'Failed', variant: 'destructive' },
   CANCELLED: { label: 'Cancelled', variant: 'outline', className: statusWarningClassName },
-  INTERRUPTED: { label: 'Interrupted', variant: 'destructive' },
 } as const satisfies Readonly<
   Record<
     RunStatus,
@@ -32,7 +31,6 @@ const nodeStatusPresentation = {
   SUCCEEDED: { label: 'Succeeded', variant: 'outline', className: statusSuccessClassName },
   FAILED: { label: 'Failed', variant: 'destructive' },
   CANCELLED: { label: 'Cancelled', variant: 'outline' },
-  SKIPPED: { label: 'Skipped', variant: 'outline' },
 } as const satisfies Readonly<
   Record<
     NodeExecutionStatus,
@@ -67,19 +65,3 @@ export function NodeStatusBadge({ status }: Readonly<{ status: NodeExecutionStat
     </Badge>
   )
 }
-
-export const formatDuration = (durationMs: number): string => {
-  if (durationMs < 1_000) return `${durationMs} ms`
-  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(1)} s`
-  const minutes = Math.floor(durationMs / 60_000)
-  const seconds = Math.floor((durationMs % 60_000) / 1_000)
-  return `${minutes}m ${seconds}s`
-}
-
-export const formatTimestamp = (timestamp: string | null): string =>
-  timestamp === null
-    ? 'Not recorded'
-    : new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'medium',
-      }).format(new Date(timestamp))

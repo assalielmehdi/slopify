@@ -3,70 +3,55 @@ import {
   RunIdSchema,
   WorkflowIdSchema,
   type CreateRunRequest,
+  type GitSha,
+  type ProjectId,
   type RunId,
 } from '@slopify/contracts'
-import {
-  WorkflowSchema,
-  findMissingPromptVariables,
-  getWorkflowPromptVariableNames,
-  validateWorkflow,
-} from '@slopify/workflow-model'
+import { WorkflowSchema, validateWorkflow } from '@slopify/workflow-model'
 
 import type { EventStore } from '../events/event-store.js'
+import type { HarnessCatalog } from '../harnesses/harness-catalog.js'
 import type { JsonValue } from '../persistence/json.js'
 import type {
   NodeExecutionRecord,
-  OutputChunk,
-  PersistedArtifact,
   ListRunsInput,
+  RunProjectSnapshot,
+  RunProjectWorktree,
   RunRecord,
   RunRepository,
 } from '../persistence/run-repository.js'
 import type { WorkflowRepository } from '../persistence/workflow-repository.js'
 
 export type RunServiceErrorCode =
-  | 'RUN_ACTIVE'
   | 'RUN_ADMISSION_CLOSED'
   | 'RUN_NOT_FOUND'
   | 'RUN_REQUEST_INVALID'
-  | 'RUN_VARIABLES_MISSING'
+  | 'RUN_VARIABLES_INVALID'
   | 'WORKFLOW_NOT_FOUND'
+  | 'WORKFLOW_HARNESS_UNAVAILABLE'
+  | 'WORKFLOW_PROJECT_UNAVAILABLE'
   | 'WORKFLOW_NOT_RUNNABLE'
 
 export class RunServiceError extends Error {
   override readonly name = 'RunServiceError'
-  readonly activeRunId?: RunId
-  readonly missingVariables?: readonly string[]
 
   constructor(
     readonly code: RunServiceErrorCode,
     message: string,
-    options?: Readonly<{
-      activeRunId?: RunId
-      missingVariables?: readonly string[]
-      cause?: unknown
-    }>,
+    options?: Readonly<{ cause?: unknown }>,
   ) {
     super(message, options?.cause === undefined ? undefined : { cause: options.cause })
-    if (options?.activeRunId !== undefined) this.activeRunId = options.activeRunId
-    if (options?.missingVariables !== undefined)
-      this.missingVariables = Object.freeze([...options.missingVariables])
   }
 }
 
 export type CreateRunServiceInput = CreateRunRequest
 
-export type PublicRunRecord = Omit<
-  RunRecord,
-  'profileSnapshotId' | 'taskReference' | 'notes' | 'taskSnapshot'
->
-
 export interface RunDetail {
-  readonly run: PublicRunRecord
+  readonly run: RunRecord
   readonly events: ReturnType<EventStore['list']>['events']
   readonly nodeExecutions: readonly NodeExecutionRecord[]
-  readonly outputChunks: readonly OutputChunk[]
-  readonly artifacts: readonly PersistedArtifact[]
+  readonly projects: readonly RunProjectSnapshot[]
+  readonly projectWorktrees: readonly RunProjectWorktree[]
 }
 
 export interface RunSummary {
@@ -91,7 +76,7 @@ export interface RunSummaryPage {
 
 export interface RunService {
   stopAdmissions(): void
-  create(input: CreateRunServiceInput): Promise<PublicRunRecord>
+  create(input: CreateRunServiceInput): Promise<RunRecord>
   get(runId: string): RunDetail | undefined
   list(input: ListRunsInput): RunSummaryPage
 }
@@ -100,25 +85,21 @@ export interface CreateRunServiceOptions {
   readonly events: EventStore
   readonly runs: RunRepository
   readonly workflows: WorkflowRepository
+  readonly harnesses: Pick<HarnessCatalog, 'requireAvailable'>
+  readonly resolveProject: (projectId: string) => Promise<RunProjectResolution>
   readonly now?: () => string
   readonly createRunId?: () => string
 }
 
-const cloneJson = <Value>(value: Value): Value => JSON.parse(JSON.stringify(value)) as Value
+export interface RunProjectResolution {
+  readonly projectId: ProjectId
+  readonly name: string
+  readonly repositoryPath: string
+  readonly baseSha: GitSha
+  readonly sourceBranch: string | null
+}
 
-const publicRun = (run: RunRecord): PublicRunRecord => ({
-  runId: run.runId,
-  workflowId: run.workflowId,
-  workflowSnapshot: run.workflowSnapshot,
-  variables: run.variables,
-  missingVariables: run.missingVariables,
-  status: run.status,
-  currentNodeId: run.currentNodeId,
-  transitionCount: run.transitionCount,
-  createdAt: run.createdAt,
-  startedAt: run.startedAt,
-  completedAt: run.completedAt,
-})
+const cloneJson = <Value>(value: Value): Value => JSON.parse(JSON.stringify(value)) as Value
 
 const duration = (run: RunRecord): number | null => {
   if (run.startedAt === null || run.completedAt === null) return null
@@ -149,32 +130,64 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
       if (workflow === undefined) {
         throw new RunServiceError('WORKFLOW_NOT_FOUND', 'Workflow was not found')
       }
-      const validation = validateWorkflow(workflow, { registeredCommandIds: new Set() })
+      const validation = validateWorkflow(workflow)
       if (
         !validation.valid ||
         workflow.startNodeId === null ||
         workflow.nodes.length === 0 ||
-        workflow.nodes.some((node) => node.type !== 'agent')
+        workflow.configuration.projectIds.length === 0 ||
+        workflow.configuration.primaryProjectId === null
       ) {
+        throw new RunServiceError('WORKFLOW_NOT_RUNNABLE', 'Workflow is not runnable')
+      }
+
+      try {
+        await Promise.all(
+          workflow.nodes.map((node) =>
+            options.harnesses.requireAvailable(
+              node.harness.harnessId,
+              node.harness.modelId,
+              node.harness.thinkingLevel,
+            ),
+          ),
+        )
+      } catch {
         throw new RunServiceError(
-          'WORKFLOW_NOT_RUNNABLE',
-          'Workflow is not runnable by the V1 agent runtime',
+          'WORKFLOW_HARNESS_UNAVAILABLE',
+          'An agent harness or selected model is unavailable',
+        )
+      }
+
+      let projects: readonly RunProjectResolution[]
+      try {
+        projects = await Promise.all(
+          workflow.configuration.projectIds.map((projectId) => options.resolveProject(projectId)),
+        )
+        if (
+          projects.length !== workflow.configuration.projectIds.length ||
+          projects.some(
+            (project, index) => project.projectId !== workflow.configuration.projectIds[index],
+          )
+        ) {
+          throw new Error('Project resolution did not preserve workflow order')
+        }
+      } catch {
+        throw new RunServiceError(
+          'WORKFLOW_PROJECT_UNAVAILABLE',
+          'A configured workflow project is unavailable',
         )
       }
 
       const variables = cloneJson(parsed.variables ?? {}) as Readonly<Record<string, JsonValue>>
-      const templates = workflow.nodes.flatMap((node) =>
-        node.type === 'agent' ? [node.job.prompt] : [],
-      )
-      const detectedMissing = new Set(findMissingPromptVariables(templates, variables))
-      const missingVariables = getWorkflowPromptVariableNames(workflow).filter((name) =>
-        detectedMissing.has(name),
-      )
-      if (missingVariables.length > 0 && parsed.confirmMissingVariables !== true) {
+      const configuredVariables = workflow.configuration.variables
+      const suppliedVariables = Object.keys(variables)
+      if (
+        configuredVariables.length !== suppliedVariables.length ||
+        configuredVariables.some((name) => !Object.hasOwn(variables, name))
+      ) {
         throw new RunServiceError(
-          'RUN_VARIABLES_MISSING',
-          'Required workflow variables are missing',
-          { missingVariables },
+          'RUN_VARIABLES_INVALID',
+          'Run variables must exactly match the workflow configuration',
         )
       }
 
@@ -184,10 +197,10 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         workflowId,
         workflowSnapshot: WorkflowSchema.parse(cloneJson(validation.workflow)),
         variables,
-        missingVariables,
+        projects,
         createdAt: now(),
       })
-      return publicRun(run)
+      return run
     },
 
     get(runIdInput) {
@@ -203,11 +216,11 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         afterSequence = page.nextAfterSequence
       }
       return {
-        run: publicRun(run),
+        run,
         events,
         nodeExecutions: options.runs.listNodeExecutions(runId),
-        outputChunks: options.runs.listOutputChunks(runId),
-        artifacts: options.runs.listArtifacts(runId),
+        projects: options.runs.listRunProjects(runId),
+        projectWorktrees: options.runs.listRunProjectWorktrees(runId),
       }
     },
 

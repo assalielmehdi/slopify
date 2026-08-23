@@ -9,7 +9,7 @@ const database = {
   status: () => ({
     foreignKeysEnabled: true,
     journalMode: 'wal',
-    schemaVersion: 2,
+    schemaVersion: 1,
     writable: true,
   }),
 }
@@ -85,18 +85,18 @@ describe('API error boundary', () => {
     })
   })
 
-  it('hides unexpected exception and credential details', async () => {
-    const credential = 'provider-token-value'
+  it('hides unexpected exception and sensitive details', async () => {
+    const secret = 'private-host-value'
     const app = createApiApp({ database })
     app.get('/unexpected-error', () => {
-      throw new Error(`Provider failed with ${credential}`)
+      throw new Error(`Harness process failed with ${secret}`)
     })
 
     const response = await app.request('/unexpected-error')
     const responseBody = await response.text()
 
     expect(response.status).toBe(500)
-    expect(responseBody).not.toContain(credential)
+    expect(responseBody).not.toContain(secret)
     expect(JSON.parse(responseBody)).toEqual({
       error: { code: 'INTERNAL_ERROR', message: 'Unexpected server error' },
     })

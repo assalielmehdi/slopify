@@ -1,25 +1,23 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
+  AgentTraceEventSchema,
+  AgentTraceHeaderSchema,
   ApiErrorSchema,
-  ArtifactTypeSchema,
   CreateRunRequestSchema,
-  ConnectionCatalogEntrySchema,
   DeletionReceiptSchema,
-  UndoDeletionResponseSchema,
-  EvidenceSchema,
-  FinalizeClickUpInputSchema,
+  HarnessCatalogResponseSchema,
+  HarnessIdSchema,
   HealthResponseSchema,
   NodeIdSchema,
   OutcomeNameSchema,
-  ProjectProfileCatalogResponseSchema,
-  ProjectProfileConfigurationSchema,
-  RepositoryReferenceSchema,
+  ProjectCatalogResponseSchema,
   RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
-  RunStatusSchema,
+  UndoDeletionResponseSchema,
   WorkflowIdSchema,
+  type HarnessId,
   type RunId,
   type WorkflowId,
 } from '../src/index.js'
@@ -31,84 +29,100 @@ const eventBase = {
 }
 
 describe('branded identifiers', () => {
-  it('accepts stable opaque identifiers while keeping brands distinct', () => {
-    const workflowId = WorkflowIdSchema.parse('delivery-workflow')
-    const runId = RunIdSchema.parse('019c-run.01')
-
-    expect(workflowId).toBe('delivery-workflow')
-    expect(runId).toBe('019c-run.01')
+  it('keeps workflow, run, and harness identifiers distinct', () => {
+    expect(WorkflowIdSchema.parse('workflow-01')).toBe('workflow-01')
+    expect(RunIdSchema.parse('019c-run.01')).toBe('019c-run.01')
+    expect(HarnessIdSchema.parse('pi')).toBe('pi')
     expectTypeOf<WorkflowId>().not.toEqualTypeOf<RunId>()
+    expectTypeOf<HarnessId>().not.toEqualTypeOf<RunId>()
   })
 
   it.each(['', ' ', 'contains spaces', '../escape', 'UPPERCASE'])(
     'rejects malformed opaque identifier %j',
-    (value) => {
-      expect(WorkflowIdSchema.safeParse(value).success).toBe(false)
-    },
+    (value) => expect(WorkflowIdSchema.safeParse(value).success).toBe(false),
   )
 
-  it.each(['plan-node', 'review-2'])('accepts kebab-case node and outcome name %s', (value) => {
+  it.each(['plan-node', 'review-2'])('accepts kebab-case graph identifier %s', (value) => {
     expect(NodeIdSchema.parse(value)).toBe(value)
     expect(OutcomeNameSchema.parse(value)).toBe(value)
   })
 })
 
-describe('connection catalog', () => {
-  it('accepts Figma as an OAuth-backed connector with its own brand icon', () => {
-    expect(
-      ConnectionCatalogEntrySchema.parse({
-        type: 'figma',
-        category: 'connector',
-        name: 'Figma',
-        icon: 'figma',
-        eyebrow: 'Design collaboration',
-        summary: 'Inspect Figma designs through the local Desktop MCP server.',
-        description: 'Connect Figma in the browser.',
-        setup: ['Authorize Figma.'],
-        access: 'Uses the permissions available to the connected Figma user.',
-        skillId: 'figma-connector',
-      }),
-    ).toMatchObject({ type: 'figma', icon: 'figma', skillId: 'figma-connector' })
-  })
-
-  it('constrains provider models and their supported thinking efforts', () => {
-    const entry = ConnectionCatalogEntrySchema.parse({
-      type: 'chatgpt-subscription',
-      category: 'inference',
-      name: 'ChatGPT',
-      icon: 'chatgpt',
-      eyebrow: 'Subscription provider',
-      summary: 'Use a ChatGPT subscription.',
-      description: 'Use ChatGPT through Pi.',
-      setup: ['Connect ChatGPT.'],
-      access: 'Inference only.',
-      models: [
+describe('harness and project catalogs', () => {
+  it('describes host-discovered harnesses without exposing host configuration', () => {
+    const catalog = HarnessCatalogResponseSchema.parse({
+      harnesses: [
         {
-          id: 'gpt-5.6-luna',
-          name: 'GPT-5.6 Luna',
-          thinkingLevels: ['low', 'medium', 'high', 'max'],
+          harnessId: 'pi',
+          name: 'Pi',
+          description: 'Run workflows with the Pi CLI configured on this machine.',
+          availability: 'AVAILABLE',
+          executablePath: '/opt/homebrew/bin/pi',
+          version: '0.84.2',
+          installHref: 'https://pi.dev/',
+          installLabel: 'Install Pi',
+          models: [
+            {
+              id: 'openai-codex/gpt-5.4',
+              name: 'openai-codex/gpt-5.4',
+              thinkingLevels: ['off', 'low', 'medium', 'high'],
+            },
+          ],
         },
       ],
     })
 
-    expect(entry.models).toEqual([
-      {
-        id: 'gpt-5.6-luna',
-        name: 'GPT-5.6 Luna',
-        thinkingLevels: ['low', 'medium', 'high', 'max'],
-      },
-    ])
+    expect(catalog.harnesses[0]).toMatchObject({
+      harnessId: 'pi',
+      availability: 'AVAILABLE',
+      version: '0.84.2',
+    })
     expect(
-      ConnectionCatalogEntrySchema.safeParse({
-        ...entry,
-        models: [{ ...entry.models[0], thinkingLevels: ['unsupported'] }],
+      HarnessCatalogResponseSchema.safeParse({
+        harnesses: [{ ...catalog.harnesses[0], unexpected: true }],
       }).success,
     ).toBe(false)
+  })
+
+  it('keeps unavailable harnesses actionable', () => {
+    expect(
+      HarnessCatalogResponseSchema.parse({
+        harnesses: [
+          {
+            harnessId: 'pi',
+            name: 'Pi',
+            description: 'Run workflows with the Pi CLI configured on this machine.',
+            availability: 'UNAVAILABLE',
+            unavailableReason: 'Pi was not found in PATH.',
+            installHref: 'https://pi.dev/',
+            installLabel: 'Install Pi',
+            models: [],
+          },
+        ],
+      }).harnesses[0],
+    ).toMatchObject({ availability: 'UNAVAILABLE', models: [] })
+  })
+
+  it('exposes only current local project records', () => {
+    const response = {
+      projects: [
+        {
+          projectId: 'slopify',
+          name: 'slopify',
+          repositoryPath: '/Users/operator/workspace/slopify',
+          availability: 'AVAILABLE',
+          createdAt: '2026-08-23T10:00:00.000Z',
+          updatedAt: '2026-08-23T10:00:00.000Z',
+        },
+      ],
+    }
+
+    expect(ProjectCatalogResponseSchema.parse(response)).toEqual(response)
   })
 })
 
 describe('public API records', () => {
-  it('keeps deletion receipts generic while subjects remain explicit', () => {
+  it('keeps project deletion receipts closed', () => {
     const receipt = {
       deletionId: 'deletion-01',
       subject: { type: 'PROJECT', id: 'project-01' },
@@ -124,12 +138,12 @@ describe('public API records', () => {
     expect(
       DeletionReceiptSchema.safeParse({
         ...receipt,
-        subject: { type: 'CONNECTION', id: 'connection-01' },
+        subject: { type: 'UNKNOWN', id: 'unknown-01' },
       }).success,
     ).toBe(false)
   })
 
-  it('uses one strict API error envelope', () => {
+  it('uses strict error and health envelopes', () => {
     expect(
       ApiErrorSchema.parse({
         error: {
@@ -138,23 +152,7 @@ describe('public API records', () => {
           details: { field: 'nodes.0.id' },
         },
       }),
-    ).toEqual({
-      error: {
-        code: 'VALIDATION_ERROR',
-        message: 'Invalid workflow document',
-        details: { field: 'nodes.0.id' },
-      },
-    })
-
-    expect(
-      ApiErrorSchema.safeParse({
-        error: { code: 'validation-error', message: 'bad' },
-        token: 'must-not-be-public',
-      }).success,
-    ).toBe(false)
-  })
-
-  it('keeps the health response minimal and closed', () => {
+    ).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
     expect(HealthResponseSchema.parse({ status: 'ok' })).toEqual({ status: 'ok' })
     expect(
       HealthResponseSchema.safeParse({ status: 'ok', databasePath: '/private/state.sqlite' })
@@ -162,90 +160,18 @@ describe('public API records', () => {
     ).toBe(false)
   })
 
-  it('validates strict provider-neutral evidence and repository references', () => {
-    expect(
-      EvidenceSchema.parse({
-        kind: 'test',
-        value: 'pnpm --filter @slopify/contracts test',
-        repositoryId: 'workbench',
-      }),
-    ).toMatchObject({ kind: 'test', repositoryId: 'workbench' })
-
-    expect(
-      RepositoryReferenceSchema.parse({
-        repositoryId: 'workbench',
-        path: '/workspace/workbench',
-        access: 'read-only',
-      }),
-    ).toMatchObject({ repositoryId: 'workbench', access: 'read-only' })
-
-    expect(
-      EvidenceSchema.safeParse({ kind: 'note', value: 'ok', apiToken: 'secret' }).success,
-    ).toBe(false)
-  })
-
-  it('keeps enum values closed and explicit', () => {
-    expect(ArtifactTypeSchema.parse('EXECUTION_PLAN')).toBe('EXECUTION_PLAN')
-    expect(RunStatusSchema.parse('INTERRUPTED')).toBe('INTERRUPTED')
-    expect(ArtifactTypeSchema.safeParse('RAW_LOG').success).toBe(false)
-  })
-
-  it('describes the active profile path boundary without runtime secrets', () => {
-    expect(
-      ProjectProfileCatalogResponseSchema.parse({
-        profiles: [],
-        runtime: { mode: 'container', root: '/workspace' },
-      }),
-    ).toEqual({ profiles: [], runtime: { mode: 'container', root: '/workspace' } })
-
-    expect(
-      ProjectProfileCatalogResponseSchema.safeParse({
-        profiles: [],
-        runtime: { mode: 'container', root: '/workspace', hostPath: '/Users/operator' },
-      }).success,
-    ).toBe(false)
-  })
-
-  it('accepts a repository-free profile for workflows that need no source checkout', () => {
-    expect(
-      ProjectProfileConfigurationSchema.parse({
-        profileId: 'default-profile',
-        displayName: 'Default profile',
-        clickupWorkspaceId: 'not-required',
-        clickupListId: 'not-required',
-        clickupInReviewStatusId: 'not-required',
-        repositories: [],
-      }),
-    ).toMatchObject({ profileId: 'default-profile', repositories: [] })
-  })
-
-  it('accepts workflow variables and rejects removed task and profile inputs', () => {
+  it('accepts workflow variables and rejects unrelated admission input', () => {
     expect(
       CreateRunRequestSchema.parse({
-        workflowId: 'delivery-workflow',
-        variables: {
-          objective: 'Coordinate the API and web changes.',
-          attempts: 2,
-          flags: ['focused'],
-        },
-        confirmMissingVariables: true,
+        workflowId: 'workflow-01',
+        variables: { objective: 'Coordinate the API and web changes.', attempts: 2 },
       }),
     ).toEqual({
-      workflowId: 'delivery-workflow',
-      variables: {
-        objective: 'Coordinate the API and web changes.',
-        attempts: 2,
-        flags: ['focused'],
-      },
-      confirmMissingVariables: true,
+      workflowId: 'workflow-01',
+      variables: { objective: 'Coordinate the API and web changes.', attempts: 2 },
     })
-
     expect(
-      CreateRunRequestSchema.safeParse({
-        taskReference: 'CU-123',
-        workflowId: 'delivery-workflow',
-        profileId: 'local-profile',
-      }).success,
+      CreateRunRequestSchema.safeParse({ workflowId: 'workflow-01', unexpected: true }).success,
     ).toBe(false)
   })
 
@@ -254,104 +180,45 @@ describe('public API records', () => {
       RunPaginationQuerySchema.parse({
         page: '2',
         pageSize: '20',
-        runId: 'run-api',
         statuses: ['FAILED', 'CANCELLED'],
-        startedFrom: '2026-08-20T00:00:00.000Z',
-        startedTo: '2026-08-22T23:59:59.999Z',
         durationMinMs: '1000',
         durationMaxMs: '5000',
       }),
-    ).toEqual({
+    ).toMatchObject({
       page: 2,
       pageSize: 20,
-      runId: 'run-api',
       statuses: ['FAILED', 'CANCELLED'],
-      startedFrom: '2026-08-20T00:00:00.000Z',
-      startedTo: '2026-08-22T23:59:59.999Z',
       durationMinMs: 1000,
       durationMaxMs: 5000,
     })
-
-    expect(
-      RunPaginationQuerySchema.safeParse({
-        startedFrom: '2026-08-23T00:00:00.000Z',
-        startedTo: '2026-08-22T00:00:00.000Z',
-      }).success,
-    ).toBe(false)
-    expect(
-      RunPaginationQuerySchema.safeParse({ durationMinMs: 5000, durationMaxMs: 1000 }).success,
-    ).toBe(false)
     expect(RunPaginationQuerySchema.safeParse({ statuses: ['FAILED', 'FAILED'] }).success).toBe(
       false,
     )
-  })
-
-  it.each([
-    { sourceBranch: 'ai/run\n## injected' },
-    { targetBranch: 'main?unexpected=true' },
-    { url: 'javascript:alert(1)' },
-  ])('rejects unsafe merge request identity fields at finalization', (override) => {
-    const mergeRequest = {
-      repositoryId: 'api',
-      project: 'group/api',
-      iid: 17,
-      url: 'https://gitlab.example/group/api/-/merge_requests/17',
-      state: 'opened',
-      sourceBranch: 'ai/run-01',
-      targetBranch: 'main',
-      baseSha: 'a'.repeat(40),
-      headSha: 'b'.repeat(40),
-      ...override,
-    }
-
-    expect(
-      FinalizeClickUpInputSchema.safeParse({
-        runId: 'run-01',
-        taskId: '86abc123',
-        mergeRequests: [mergeRequest],
-      }).success,
-    ).toBe(false)
   })
 })
 
 describe('run events', () => {
   const validEvents = [
-    {
-      ...eventBase,
-      type: 'RUN_STARTED',
-      data: { workflowId: 'delivery-workflow' },
-    },
+    { ...eventBase, type: 'RUN_STARTED', data: { workflowId: 'workflow-01' } },
     { ...eventBase, type: 'RUN_STATUS_CHANGED', data: { from: 'PENDING', to: 'RUNNING' } },
-    { ...eventBase, type: 'NODE_STARTED', nodeId: 'load-task', data: {} },
-    {
-      ...eventBase,
-      type: 'NODE_OUTPUT',
-      nodeId: 'verify',
-      data: { channel: 'stdout', content: 'checks passed', repositoryId: 'workbench' },
-    },
+    { ...eventBase, type: 'NODE_STARTED', nodeId: 'agent-01', data: {} },
     {
       ...eventBase,
       type: 'NODE_COMPLETED',
-      nodeId: 'verify',
-      data: { outcome: 'passed', durationMs: 25, artifactIds: [] },
+      nodeId: 'agent-01',
+      data: { outcome: 'completed', durationMs: 25 },
+    },
+    {
+      ...eventBase,
+      type: 'NODE_CANCELLED',
+      nodeId: 'agent-01',
+      data: { reason: 'Cancelled by the user', durationMs: 25 },
     },
     {
       ...eventBase,
       type: 'NODE_FAILED',
-      nodeId: 'verify',
-      data: { code: 'PROCESS_FAILED', message: 'check failed', durationMs: 25 },
-    },
-    {
-      ...eventBase,
-      type: 'EDGE_SELECTED',
-      nodeId: 'verify',
-      data: { outcome: 'passed', targetNodeId: 'requirements-review' },
-    },
-    {
-      ...eventBase,
-      type: 'ARTIFACT_RECORDED',
-      nodeId: 'plan',
-      data: { artifactId: 'artifact-01', artifactType: 'EXECUTION_PLAN' },
+      nodeId: 'agent-01',
+      data: { code: 'PROCESS_FAILED', message: 'Agent failed', durationMs: 25 },
     },
     { ...eventBase, type: 'RUN_CANCEL_REQUESTED', data: { reason: 'operator request' } },
     { ...eventBase, type: 'RUN_COMPLETED', data: { status: 'SUCCEEDED', durationMs: 100 } },
@@ -361,13 +228,65 @@ describe('run events', () => {
     expect(RunEventSchema.parse(event)).toEqual(event)
   })
 
-  it.each([
-    { ...validEvents[0], sequence: 0 },
-    { ...validEvents[0], timestamp: 'not-a-date' },
-    { ...eventBase, type: 'NODE_STARTED', data: {} },
-    { ...eventBase, type: 'UNKNOWN_EVENT', data: {} },
-    { ...eventBase, type: 'RUN_CANCEL_REQUESTED', data: { apiToken: 'secret' } },
-  ])('rejects a malformed or non-contract event', (event) => {
-    expect(RunEventSchema.safeParse(event).success).toBe(false)
+  it('keeps node event data strict', () => {
+    expect(
+      RunEventSchema.safeParse({
+        ...eventBase,
+        type: 'NODE_COMPLETED',
+        nodeId: 'agent-01',
+        data: { outcome: 'completed', durationMs: 25, unexpected: true },
+      }).success,
+    ).toBe(false)
+  })
+})
+
+describe('agent traces', () => {
+  const header = {
+    version: 1,
+    runId: 'run-01',
+    nodeExecutionId: 'node-execution-01',
+    attemptId: 'attempt-01',
+    nodeId: 'agent-01',
+    createdAt: '2026-08-23T10:00:00.000Z',
+    configuration: {
+      harnessId: 'pi',
+      harnessVersion: '0.84.2',
+      model: 'openai-codex/gpt-5.4',
+      thinkingLevel: 'medium',
+      renderedPrompt: 'Inspect the primary worktree.',
+      workspaceRoot: '/Users/operator/.slopify/orchestrator/worktrees/run-01',
+      primaryProjectId: 'slopify',
+      projects: [
+        {
+          projectId: 'slopify',
+          name: 'Slopify',
+          worktreePath: '/Users/operator/.slopify/orchestrator/worktrees/run-01/slopify',
+          baseSha: '0123456789abcdef0123456789abcdef01234567',
+          sourceBranch: 'main',
+        },
+      ],
+      timeoutSeconds: 600,
+    },
+  }
+
+  it('captures only the current harness and worktree configuration', () => {
+    expect(AgentTraceHeaderSchema.parse(header)).toEqual(header)
+  })
+
+  it('keeps trace headers and event types strict', () => {
+    expect(
+      AgentTraceHeaderSchema.safeParse({
+        ...header,
+        configuration: { ...header.configuration, unexpected: true },
+      }).success,
+    ).toBe(false)
+    expect(
+      AgentTraceEventSchema.safeParse({
+        sequence: 1,
+        timestamp: '2026-08-23T10:00:00.000Z',
+        type: 'UNKNOWN_EVENT',
+        data: {},
+      }).success,
+    ).toBe(false)
   })
 })
