@@ -62,7 +62,7 @@ const SkillsResponseSchema = z.strictObject({ skills: z.array(SkillRecordSchema)
 
 const ConnectionRecordSchema = z.strictObject({
   connectionId: z.string().min(1),
-  type: z.enum(['gitlab', 'clickup', 'openrouter', 'chatgpt-subscription']),
+  type: z.enum(['gitlab', 'clickup', 'figma', 'openrouter', 'chatgpt-subscription']),
   category: z.enum(['connector', 'inference']),
   label: z.string().min(1),
   authority: z.string().min(1),
@@ -77,7 +77,7 @@ const ConnectionsResponseSchema = z.strictObject({
   catalog: z.array(ConnectionCatalogEntrySchema).readonly(),
   connections: z.array(ConnectionRecordSchema).readonly(),
 })
-const ChatGptOAuthTransactionSchema = z.discriminatedUnion('status', [
+const OAuthTransactionSchema = z.discriminatedUnion('status', [
   z.strictObject({
     id: z.string(),
     status: z.literal('PENDING'),
@@ -189,7 +189,8 @@ export type ConnectionCatalogResponse = Readonly<{
   catalog: readonly ConnectionCatalogEntry[]
   connections: readonly ConnectionRecord[]
 }>
-export type ChatGptOAuthTransaction = z.infer<typeof ChatGptOAuthTransactionSchema>
+export type OAuthTransaction = z.infer<typeof OAuthTransactionSchema>
+export type ChatGptOAuthTransaction = OAuthTransaction
 
 export interface StartRunInput {
   readonly workflowId: string
@@ -245,6 +246,7 @@ export interface ApiClient {
   startChatGptOAuth?(): Promise<ChatGptOAuthTransaction>
   getChatGptOAuth?(transactionId: string): Promise<ChatGptOAuthTransaction>
   cancelChatGptOAuth?(transactionId: string): Promise<void>
+  connectFigmaDesktop?(): Promise<ConnectionRecord>
 }
 
 export class ApiClientError extends Error {
@@ -507,19 +509,30 @@ export const createApiClient = (
           headers: { accept: 'application/json', 'content-type': 'application/json' },
           body: JSON.stringify({}),
         },
-        ChatGptOAuthTransactionSchema,
+        OAuthTransactionSchema,
       )
     },
     async getChatGptOAuth(transactionId) {
       return get(
         `/api/connections/chatgpt/oauth/${encodeURIComponent(transactionId)}`,
-        ChatGptOAuthTransactionSchema,
+        OAuthTransactionSchema,
       )
     },
     async cancelChatGptOAuth(transactionId) {
       return noContent(`/api/connections/chatgpt/oauth/${encodeURIComponent(transactionId)}`, {
         method: 'DELETE',
       })
+    },
+    async connectFigmaDesktop() {
+      return request(
+        '/api/connections/figma/desktop',
+        {
+          method: 'POST',
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          body: JSON.stringify({}),
+        },
+        ConnectionRecordSchema,
+      )
     },
   }
 }

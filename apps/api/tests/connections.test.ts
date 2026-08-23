@@ -2,11 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createConnectionService,
+  createFigmaConnectionDriver,
   createInMemoryConnectionRepository,
   createInMemoryCredentialStore,
   type ConnectionCatalog,
   type ConnectionDriver,
 } from '@slopify/execution-runtime'
+import { FIGMA_DESKTOP_MCP_URL } from '@slopify/agent-runtimes'
 
 import { createApiApp } from '../src/app.js'
 import { createChatGptOAuthService } from '@slopify/agent-runtimes'
@@ -14,11 +16,29 @@ import { createChatGptOAuthService } from '@slopify/agent-runtimes'
 const driver: ConnectionDriver = {
   type: 'gitlab',
   category: 'connector',
+  credential: 'required',
   authority: 'Read and write GitLab resources available to the connected user.',
   async validate(input) {
     if (input.credential.type !== 'api_key' || input.credential.key !== 'secret')
       throw new Error('invalid')
     return { identity: { username: 'operator' }, scopes: ['api'] }
+  },
+}
+
+const figmaDriver: ConnectionDriver = {
+  type: 'figma',
+  category: 'connector',
+  credential: 'none',
+  authority: 'Read designs available through the active Figma Desktop session.',
+  async validate(input) {
+    if (!(
+      typeof input.configuration === 'object' &&
+      input.configuration !== null &&
+      'serverUrl' in input.configuration &&
+      input.configuration.serverUrl === FIGMA_DESKTOP_MCP_URL
+    ))
+      throw new Error('invalid')
+    return { serverUrl: FIGMA_DESKTOP_MCP_URL, tools: [{ name: 'get_metadata' }] }
   },
 }
 
@@ -39,6 +59,20 @@ const catalog: ConnectionCatalog = {
       replacementLabel: 'New personal access token',
       resourceHref: 'https://gitlab.com/-/user_settings/personal_access_tokens',
       resourceLabel: 'Create a personal access token',
+    },
+    {
+      type: 'figma',
+      category: 'connector',
+      name: 'Figma',
+      icon: 'figma',
+      eyebrow: 'Design collaboration',
+      summary: 'Inspect Figma designs.',
+      description: 'Connect Figma.',
+      setup: ['Sign in.'],
+      access: 'Uses Figma MCP.',
+      resourceHref: 'https://developers.figma.com/docs/figma-mcp-server/',
+      resourceLabel: 'Learn about Figma MCP',
+      skillId: 'figma-connector',
     },
     {
       type: 'chatgpt-subscription',
@@ -62,7 +96,7 @@ const fixture = () => {
     connections: createInMemoryConnectionRepository(),
     credentials,
     catalog,
-    drivers: [driver],
+    drivers: [driver, figmaDriver],
     now: () => '2026-08-20T00:00:00.000Z',
   })
   return {
@@ -226,5 +260,53 @@ describe('connections API', () => {
     expect(
       JSON.stringify(await (await app.request('/api/connections/chatgpt/oauth/oauth-01')).json()),
     ).not.toContain('secret')
+  })
+
+  it('connects Figma Desktop through the fixed server-owned endpoint without credentials', async () => {
+    const { app, credentials } = fixture()
+
+    const response = await app.request('/api/connections/figma/desktop', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      connectionId: 'figma-default',
+      type: 'figma',
+      configuration: { serverUrl: FIGMA_DESKTOP_MCP_URL },
+    })
+    expect(await credentials.read('figma-default')).toBeUndefined()
+  })
+
+  it('returns actionable recovery when Figma Desktop MCP is not running', async () => {
+    const connections = createConnectionService({
+      connections: createInMemoryConnectionRepository(),
+      credentials: createInMemoryCredentialStore(),
+      catalog,
+      drivers: [
+        createFigmaConnectionDriver({
+          inspect: vi.fn(async () => {
+            throw new Error('connect ECONNREFUSED 127.0.0.1:3845')
+          }),
+        }),
+      ],
+    })
+    const app = createApiApp({ connections, connectionCatalog: catalog })
+
+    const response = await app.request('/api/connections/figma/desktop', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({}),
+    })
+
+    expect(response.status).toBe(422)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'CONNECTION_VALIDATION_FAILED',
+        message:
+          'Figma Desktop MCP is unavailable. Open a design in Dev Mode and enable the desktop MCP server, then try again.',
+      },
+    })
   })
 })

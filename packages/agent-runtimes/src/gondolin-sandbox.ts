@@ -8,8 +8,8 @@ import {
   VM,
   createHttpHooks,
   makePlaceholderFunc,
-  type VMOptions,
   type VmFs,
+  type VMOptions,
 } from '@earendil-works/gondolin'
 import {
   createBashToolDefinition,
@@ -21,6 +21,16 @@ import {
   type ToolDefinition,
 } from '@earendil-works/pi-coding-agent'
 import { z } from 'zod'
+
+import {
+  connectMcpGuestBridge,
+  getMcpGuestSidecarScriptPath,
+  type McpGuestBridge,
+} from './mcp-bridge.js'
+import { FIGMA_DESKTOP_MCP_URL } from './desktop-mcp.js'
+
+const FIGMA_DESKTOP_PROXY_HOST = 'figma-desktop.slopify'
+const FIGMA_DESKTOP_PROXY_ORIGIN = `http://${FIGMA_DESKTOP_PROXY_HOST}`
 
 const identifier = z
   .string()
@@ -43,20 +53,39 @@ const SandboxInputSchema = z.strictObject({
     .max(32),
   connectors: z
     .array(
-      z.strictObject({
-        connectionId: identifier,
-        type: z.enum(['gitlab', 'clickup']),
-        authority: z.string().trim().min(1).max(2_048),
-        secret: z.string().min(1),
-        allowedHosts: z.array(z.string().trim().min(1)).min(1).max(8),
-      }),
+      z.discriminatedUnion('type', [
+        z.strictObject({
+          connectionId: identifier,
+          type: z.literal('gitlab'),
+          authority: z.string().trim().min(1).max(2_048),
+          secret: z.string().min(1),
+          allowedHosts: z.array(z.string().trim().min(1)).min(1).max(8),
+        }),
+        z.strictObject({
+          connectionId: identifier,
+          type: z.literal('clickup'),
+          authority: z.string().trim().min(1).max(2_048),
+          secret: z.string().min(1),
+          allowedHosts: z.array(z.string().trim().min(1)).min(1).max(8),
+        }),
+        z.strictObject({
+          connectionId: identifier,
+          type: z.literal('figma'),
+          authority: z.string().trim().min(1).max(2_048),
+          allowedHosts: z.array(z.literal(FIGMA_DESKTOP_PROXY_HOST)).length(1),
+          mcpServerUrl: z.literal(FIGMA_DESKTOP_MCP_URL),
+          tools: z.array(z.record(z.string(), z.unknown())).min(1).max(128),
+        }),
+      ]),
     )
     .max(32),
 })
 
 export type CreateAgentSandboxInput = z.input<typeof SandboxInputSchema>
 
-interface AgentSandboxExecProcess extends PromiseLike<Readonly<{ exitCode: number }>> {
+export interface AgentSandboxExecProcess extends PromiseLike<Readonly<{ exitCode: number }>> {
+  write(data: string | Buffer): void
+  end(): void
   output(): AsyncIterable<Readonly<{ stream: 'stdout' | 'stderr'; data: Buffer; text: string }>>
 }
 
@@ -69,6 +98,7 @@ export interface AgentSandboxVm {
       cwd?: string
       env?: Record<string, string>
       signal?: AbortSignal
+      stdin?: boolean
       stdout?: 'pipe'
       stderr?: 'pipe'
     }>,
@@ -158,6 +188,8 @@ const createGuestTools = (vm: AgentSandboxVm): readonly ToolDefinition[] => {
 export const createGondolinAgentSandboxFactory = (
   options: Readonly<{
     glabHostPath: string
+    mcpSidecarHostPath?: string
+    hostFetch?: typeof globalThis.fetch
     createVm?: (options: VMOptions) => Promise<AgentSandboxVm>
   }>,
 ): AgentSandboxFactory => ({
@@ -165,6 +197,17 @@ export const createGondolinAgentSandboxFactory = (
     const parsed = SandboxInputSchema.parse(input)
     if (!isAbsolute(options.glabHostPath) || basename(options.glabHostPath) !== 'glab')
       throw new TypeError('Guest glab path must be an absolute glab binary path')
+    const mcpConnectors = parsed.connectors.filter(
+      (connector): connector is Extract<(typeof parsed.connectors)[number], { type: 'figma' }> =>
+        connector.type === 'figma',
+    )
+    const mcpSidecarHostPath = options.mcpSidecarHostPath ?? getMcpGuestSidecarScriptPath()
+    if (
+      mcpConnectors.length > 0 &&
+      (!isAbsolute(mcpSidecarHostPath) || basename(mcpSidecarHostPath) !== 'mcp-guest-sidecar.js')
+    ) {
+      throw new TypeError('Guest MCP sidecar path must be an absolute mcp-guest-sidecar.js file')
+    }
     const repositoryIds = parsed.worktrees.map(({ repositoryId }) => repositoryId)
     const skillIds = parsed.skills.map(({ skillId }) => skillId)
     const connectorIds = parsed.connectors.map(({ connectionId }) => connectionId)
@@ -187,26 +230,62 @@ export const createGondolinAgentSandboxFactory = (
         new ReadonlyProvider(new RealFSProvider(hostPath)),
       ]),
       ['/opt/slopify/bin', new ReadonlyProvider(new RealFSProvider(dirname(options.glabHostPath)))],
+      ...(mcpConnectors.length === 0
+        ? []
+        : [
+            [
+              '/opt/slopify/mcp',
+              new ReadonlyProvider(new RealFSProvider(dirname(mcpSidecarHostPath))),
+            ],
+          ]),
     ])
     const secrets = Object.fromEntries(
-      parsed.connectors.map((connector) => [
-        environmentName(connector.type),
-        {
-          value: connector.secret,
-          hosts: connector.allowedHosts,
-          placeholder: makePlaceholderFunc({
-            prefix: 'slopify_',
-            length: 48,
-            alphabet: BASE64URL_ALPHABET,
-          }),
-        },
-      ]),
+      parsed.connectors.flatMap((connector) =>
+        connector.type === 'figma'
+          ? []
+          : [
+              [
+                environmentName(connector.type),
+                {
+                  value: connector.secret,
+                  hosts: connector.allowedHosts,
+                  placeholder: makePlaceholderFunc({
+                    prefix: 'slopify_',
+                    length: 48,
+                    alphabet: BASE64URL_ALPHABET,
+                  }),
+                },
+              ] as const,
+            ],
+      ),
     )
+    const mcpTargets = new Map(
+      mcpConnectors.map((connector) => [FIGMA_DESKTOP_PROXY_HOST, new URL(connector.mcpServerUrl)]),
+    )
+    const hostFetch = options.hostFetch ?? globalThis.fetch
     const network = createHttpHooks({
       allowedHosts: [...new Set(parsed.connectors.flatMap(({ allowedHosts }) => allowedHosts))],
       secrets,
       replaceSecretsInQuery: false,
       blockInternalRanges: true,
+      async onRequest(request) {
+        const incoming = new URL(request.url)
+        const configuredTarget = mcpTargets.get(incoming.hostname)
+        if (configuredTarget === undefined || incoming.protocol !== 'http:') return request
+        const target = new URL(incoming.pathname, configuredTarget.origin)
+        target.search = incoming.search
+        const canHaveBody = !['GET', 'HEAD'].includes(request.method.toUpperCase())
+        const body = canHaveBody ? await request.arrayBuffer() : undefined
+        const headers = new Headers(request.headers)
+        headers.set('host', configuredTarget.host)
+        return hostFetch(
+          new Request(target, {
+            method: request.method,
+            headers,
+            ...(body === undefined || body.byteLength === 0 ? {} : { body }),
+          }),
+        )
+      },
     })
     const gitlab = parsed.connectors.find(({ type }) => type === 'gitlab')
     const environment = {
@@ -228,11 +307,35 @@ export const createGondolinAgentSandboxFactory = (
       cpus: 2,
       sessionLabel: `slopify:${parsed.executionId}`,
     })
+    const bridges: McpGuestBridge[] = []
+    try {
+      for (const connector of mcpConnectors) {
+        bridges.push(
+          await connectMcpGuestBridge({
+            vm,
+            connectorName: connector.type,
+            serverUrl: `${FIGMA_DESKTOP_PROXY_ORIGIN}/mcp`,
+            expectedTools: connector.tools,
+            guestScriptPath: '/opt/slopify/mcp/mcp-guest-sidecar.js',
+            resultUrlRewrites: [
+              { from: new URL(connector.mcpServerUrl).origin, to: FIGMA_DESKTOP_PROXY_ORIGIN },
+              { from: 'http://localhost:3845', to: FIGMA_DESKTOP_PROXY_ORIGIN },
+            ],
+          }),
+        )
+      }
+    } catch (cause) {
+      await Promise.allSettled(bridges.map(({ close }) => close()))
+      for (const { name } of network.secretManager.listSecrets())
+        network.secretManager.deleteSecret(name)
+      await vm.close()
+      throw cause
+    }
     let closed = false
     return Object.freeze({
       sandboxId: vm.id,
       workspaceRoot: '/workspace' as const,
-      tools: createGuestTools(vm),
+      tools: Object.freeze([...createGuestTools(vm), ...bridges.flatMap(({ tools }) => tools)]),
       skills: Object.freeze([
         ...parsed.skills.map((skill) => ({
           name: skill.name,
@@ -252,6 +355,7 @@ export const createGondolinAgentSandboxFactory = (
       async close() {
         if (closed) return
         closed = true
+        await Promise.allSettled(bridges.map(({ close }) => close()))
         for (const { name } of network.secretManager.listSecrets())
           network.secretManager.deleteSecret(name)
         await vm.close()

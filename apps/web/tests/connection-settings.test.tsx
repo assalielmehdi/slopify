@@ -53,6 +53,26 @@ const catalog = [
     skillId: 'clickup-connector',
   },
   {
+    type: 'figma' as const,
+    category: 'connector' as const,
+    name: 'Figma',
+    icon: 'figma' as const,
+    eyebrow: 'Design collaboration',
+    summary: 'Inspect the active design through Figma Desktop.',
+    description:
+      'Connect the local Figma Desktop MCP server so workflow agents can inspect selections, nodes, variables, screenshots, motion, and design context through native tools.',
+    setup: [
+      'Open a Figma Design file in the latest Figma desktop app.',
+      'Switch to Dev Mode, then enable the desktop MCP server in the inspect panel.',
+      'Keep Figma Desktop open and connect from Slopify.',
+    ],
+    access:
+      'The connector uses the active Figma Desktop session. It does not store a Figma token or OAuth credential.',
+    resourceHref: 'https://developers.figma.com/docs/figma-mcp-server/local-server-installation/',
+    resourceLabel: 'Set up Figma Desktop MCP',
+    skillId: 'figma-connector',
+  },
+  {
     type: 'openrouter' as const,
     category: 'inference' as const,
     name: 'OpenRouter',
@@ -103,6 +123,7 @@ const createClient = (overrides: Record<string, unknown> = {}) => ({
   startChatGptOAuth: vi.fn(),
   getChatGptOAuth: vi.fn(),
   cancelChatGptOAuth: vi.fn(),
+  connectFigmaDesktop: vi.fn(),
   ...overrides,
 })
 
@@ -272,7 +293,11 @@ describe('ConnectionSettings', () => {
 
   it.each([
     { kind: 'providers' as const, singular: 'provider', choices: ['OpenRouter', 'ChatGPT'] },
-    { kind: 'connectors' as const, singular: 'connector', choices: ['GitLab', 'ClickUp'] },
+    {
+      kind: 'connectors' as const,
+      singular: 'connector',
+      choices: ['GitLab', 'ClickUp', 'Figma'],
+    },
   ])('opens the supported Add $singular chooser', async ({ kind, singular, choices }) => {
     const client = createClient()
     render(<ConnectionSettings kind={kind} client={client} />)
@@ -288,6 +313,7 @@ describe('ConnectionSettings', () => {
     }
     expect(client.connect).not.toHaveBeenCalled()
     expect(client.startChatGptOAuth).not.toHaveBeenCalled()
+    expect(client.connectFigmaDesktop).not.toHaveBeenCalled()
   })
 
   it('renders only configured providers and opens their management panel', async () => {
@@ -459,6 +485,7 @@ describe('ConnectionSettings', () => {
     const drawer = await screen.findByRole('dialog', { name: 'Add connector' })
     expect(within(drawer).queryByRole('button', { name: 'Configure GitLab' })).toBeNull()
     expect(within(drawer).getByRole('button', { name: 'Configure ClickUp' })).toBeTruthy()
+    expect(within(drawer).getByRole('button', { name: 'Configure Figma' })).toBeTruthy()
   })
 
   it('manages an existing singleton connection from its drawer', async () => {
@@ -555,6 +582,67 @@ describe('ConnectionSettings', () => {
     expect(
       await within(drawer).findByRole('link', { name: 'Continue with ChatGPT' }),
     ).toHaveProperty('href', 'https://auth.openai.com/authorize')
+  })
+
+  it('connects the local Figma Desktop MCP server without credentials or browser OAuth', async () => {
+    const figmaConnection = connectionFor('figma')
+    const connectFigmaDesktop = vi.fn(async () => figmaConnection)
+    const connect = vi.fn()
+    render(
+      <ConnectionSettings
+        kind="connectors"
+        client={createClient({
+          connect,
+          connectFigmaDesktop,
+        })}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add connector' }))
+    const chooser = await screen.findByRole('dialog', { name: 'Add connector' })
+    fireEvent.click(within(chooser).getByRole('button', { name: 'Configure Figma' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Figma' })
+    expect(within(drawer).getByRole('link', { name: 'View skill' })).toHaveProperty(
+      'href',
+      'http://localhost:3000/skills?skill=figma-connector',
+    )
+    expect(within(drawer).queryByRole('textbox')).toBeNull()
+    expect(within(drawer).getByText(/does not store a Figma token/i)).toBeTruthy()
+    expect(within(drawer).getByRole('link', { name: 'Set up Figma Desktop MCP' })).toHaveProperty(
+      'href',
+      'https://developers.figma.com/docs/figma-mcp-server/local-server-installation/',
+    )
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Connect Figma Desktop' }))
+
+    await waitFor(() => expect(connectFigmaDesktop).toHaveBeenCalledWith())
+    expect(connect).not.toHaveBeenCalled()
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(await screen.findByRole('button', { name: /Figma, Connected/ })).toBeTruthy()
+  })
+
+  it('explains how to recover when the Figma Desktop MCP server is unavailable', async () => {
+    render(
+      <ConnectionSettings
+        kind="connectors"
+        client={createClient({
+          connectFigmaDesktop: vi.fn(async () => {
+            throw new Error(
+              'Figma Desktop MCP is unavailable. Open a design in Dev Mode and enable the desktop MCP server, then try again.',
+            )
+          }),
+        })}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Add connector' }))
+    const chooser = await screen.findByRole('dialog', { name: 'Add connector' })
+    fireEvent.click(within(chooser).getByRole('button', { name: 'Configure Figma' }))
+    const drawer = await screen.findByRole('dialog', { name: 'Figma' })
+    fireEvent.click(within(drawer).getByRole('button', { name: 'Connect Figma Desktop' }))
+
+    expect((await within(drawer).findByRole('alert')).textContent).toContain(
+      'Open a design in Dev Mode and enable the desktop MCP server',
+    )
   })
 
   it('cancels pending ChatGPT authentication when the drawer closes', async () => {

@@ -54,6 +54,23 @@ describe('branded identifiers', () => {
 })
 
 describe('connection catalog', () => {
+  it('accepts Figma as an OAuth-backed connector with its own brand icon', () => {
+    expect(
+      ConnectionCatalogEntrySchema.parse({
+        type: 'figma',
+        category: 'connector',
+        name: 'Figma',
+        icon: 'figma',
+        eyebrow: 'Design collaboration',
+        summary: 'Inspect Figma designs through the local Desktop MCP server.',
+        description: 'Connect Figma in the browser.',
+        setup: ['Authorize Figma.'],
+        access: 'Uses the permissions available to the connected Figma user.',
+        skillId: 'figma-connector',
+      }),
+    ).toMatchObject({ type: 'figma', icon: 'figma', skillId: 'figma-connector' })
+  })
+
   it('constrains provider models and their supported thinking efforts', () => {
     const entry = ConnectionCatalogEntrySchema.parse({
       type: 'chatgpt-subscription',

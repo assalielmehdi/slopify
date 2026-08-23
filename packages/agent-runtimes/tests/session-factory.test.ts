@@ -292,4 +292,37 @@ describe('Pi session factory', () => {
     expect(options.resourceLoader.getAgentsFiles()).toEqual({ agentsFiles: [] })
     session.dispose()
   })
+
+  it('allows connector-native tools in addition to the four Gondolin workspace tools', async () => {
+    createAgentSessionMock.mockResolvedValue({
+      session: createSdkSession('session-figma'),
+      extensionsResult: {},
+    })
+    const factory = createPiSessionFactory({ credentialSource })
+    const guestTool = (name: string) => ({
+      name,
+      label: name,
+      description: name,
+      parameters: Type.Object({}),
+      execute: vi.fn(async () => ({ content: [{ type: 'text' as const, text: 'ok' }] })),
+    })
+    const tools = ['read', 'bash', 'edit', 'write', 'figma_get_metadata'].map(guestTool)
+
+    const session = await factory.create({
+      input,
+      outputSchema: z.unknown(),
+      resourceBundle,
+      sandbox: { workspaceRoot: '/workspace', tools, skills: [] },
+    })
+
+    expect(createAgentSessionMock.mock.calls[0]?.[0].tools).toEqual([
+      'read',
+      'bash',
+      'edit',
+      'write',
+      'figma_get_metadata',
+      'complete_node',
+    ])
+    session.dispose()
+  })
 })

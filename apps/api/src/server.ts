@@ -5,6 +5,7 @@ import {
   createBunChildAgentExecutor,
   createChatGptOAuthService,
   ensureGuestGlabBinary,
+  FIGMA_DESKTOP_MCP_URL,
   getBunAgentWorkerScriptPath,
 } from '@slopify/agent-runtimes'
 import {
@@ -27,6 +28,7 @@ import {
   createFilesystemSkillSnapshotStore,
   initializeBuiltInConnectorSkills,
   createFilesystemAgentTraceStore,
+  createFigmaConnectionDriver,
   createGitLabConnectionDriver,
   createOpenRouterConnectionDriver,
   createEventStore,
@@ -146,6 +148,12 @@ export const connectDefaultChatGpt = (
     credential: input.credential,
   })
 
+export const connectDefaultFigma = (connect: ConnectionService['connect']) =>
+  connect({
+    type: 'figma',
+    configuration: { serverUrl: FIGMA_DESKTOP_MCP_URL },
+  })
+
 const nonBlank = (
   value: string | undefined,
   fallback: string,
@@ -249,6 +257,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     drivers: [
       createGitLabConnectionDriver(),
       createClickUpConnectionDriver(),
+      createFigmaConnectionDriver(),
       createOpenRouterConnectionDriver(),
       createChatGptSubscriptionConnectionDriver(),
     ],
@@ -321,13 +330,30 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
           all.findIndex(({ skillId }) => skillId === snapshot.skillId) === index,
       )
       const connectorsForVm = connectorRecords.map((connection) => {
-        if (
-          connection.status !== 'CONNECTED' ||
-          connection.category !== 'connector' ||
-          (connection.type !== 'gitlab' && connection.type !== 'clickup')
-        ) {
+        if (connection.status !== 'CONNECTED' || connection.category !== 'connector') {
           throw new Error('Connector connection is unavailable')
         }
+        if (connection.type === 'figma') {
+          z.strictObject({
+            serverUrl: z.literal(FIGMA_DESKTOP_MCP_URL),
+          }).parse(connection.configuration)
+          const metadata = z
+            .object({
+              serverUrl: z.literal(FIGMA_DESKTOP_MCP_URL),
+              tools: z.array(z.record(z.string(), z.unknown())).min(1).max(128),
+            })
+            .parse(connection.metadata)
+          return {
+            connectionId: connection.connectionId,
+            type: connection.type,
+            authority: connection.authority,
+            allowedHosts: ['figma-desktop.slopify'],
+            mcpServerUrl: metadata.serverUrl,
+            tools: metadata.tools,
+          }
+        }
+        if (connection.type !== 'gitlab' && connection.type !== 'clickup')
+          throw new Error('Connector connection is unavailable')
         const configuration = z
           .strictObject({ baseUrl: z.url().optional() })
           .default({})

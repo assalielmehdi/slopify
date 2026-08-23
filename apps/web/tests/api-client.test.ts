@@ -194,6 +194,33 @@ describe('API client', () => {
     )
   })
 
+  it('connects Figma Desktop without sending endpoint or credential data from the browser', async () => {
+    const record = {
+      connectionId: 'figma-default',
+      type: 'figma',
+      category: 'connector',
+      label: 'Figma',
+      authority: 'Read Figma designs.',
+      configuration: { serverUrl: 'http://127.0.0.1:3845/mcp' },
+      metadata: { tools: [{ name: 'get_metadata' }] },
+      status: 'CONNECTED',
+      validatedAt: '2026-08-23T00:00:00.000Z',
+      createdAt: '2026-08-23T00:00:00.000Z',
+      updatedAt: '2026-08-23T00:00:00.000Z',
+    } as const
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(record, { status: 201 }))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.connectFigmaDesktop?.()).resolves.toEqual(record)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/connections/figma/desktop', {
+      body: JSON.stringify({}),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+  })
+
   it('lists, adds, deletes, and restores local Git projects through the same-origin API', async () => {
     const project = ProjectSchema.parse({
       projectId: 'project-01',

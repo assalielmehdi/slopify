@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   createClickUpConnectionDriver,
+  createFigmaConnectionDriver,
   createGitLabConnectionDriver,
   createOpenRouterConnectionDriver,
 } from '../../src/index.js'
@@ -13,6 +14,50 @@ const json = (body: unknown, status = 200) =>
   })
 
 describe('HTTP connection drivers', () => {
+  it('validates the fixed Figma Desktop MCP server without credentials and captures its tools', async () => {
+    const inspect = vi.fn(async () => ({
+      tools: [
+        {
+          name: 'get_metadata',
+          description: 'Read a Figma node tree.',
+          inputSchema: { type: 'object', properties: { fileKey: { type: 'string' } } },
+        },
+      ],
+    }))
+    const driver = createFigmaConnectionDriver({ inspect })
+
+    await expect(
+      driver.validate({
+        configuration: { serverUrl: 'http://127.0.0.1:3845/mcp' },
+      }),
+    ).resolves.toEqual({
+      serverUrl: 'http://127.0.0.1:3845/mcp',
+      tools: [
+        {
+          name: 'get_metadata',
+          description: 'Read a Figma node tree.',
+          inputSchema: { type: 'object', properties: { fileKey: { type: 'string' } } },
+        },
+      ],
+    })
+    expect(inspect).toHaveBeenCalledWith({
+      serverUrl: 'http://127.0.0.1:3845/mcp',
+    })
+    expect(driver.credential).toBe('none')
+  })
+
+  it('rejects any Figma MCP endpoint other than the fixed desktop loopback address', async () => {
+    const inspect = vi.fn()
+    const driver = createFigmaConnectionDriver({ inspect })
+
+    await expect(
+      driver.validate({
+        configuration: { serverUrl: 'http://localhost:3845/mcp' },
+      }),
+    ).rejects.toThrow(/Figma Desktop/i)
+    expect(inspect).not.toHaveBeenCalled()
+  })
+
   it('validates an active GitLab PAT with api scope and reads its identity', async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

@@ -44,11 +44,17 @@ describe('filesystem skill catalog', () => {
         category: 'connector',
         skillId: 'clickup-connector',
       },
+      {
+        type: 'figma',
+        category: 'connector',
+        skillId: 'figma-connector',
+      },
     ] as never
 
     initializeBuiltInConnectorSkills({ root: skillsRoot, catalog: connectorCatalog })
     expect((await catalog.refresh()).map(({ skillId }) => skillId)).toEqual([
       'clickup-connector',
+      'figma-connector',
       'gitlab-connector',
     ])
     const gitlab = await catalog.get('gitlab-connector')
@@ -63,6 +69,9 @@ describe('filesystem skill catalog', () => {
     expect(gitlab.files.find(({ path }) => path === 'SKILL.md')?.content).toContain(
       'GitLab workflow management using `glab` CLI',
     )
+    expect(
+      (await catalog.get('figma-connector')).files.find(({ path }) => path === 'SKILL.md')?.content,
+    ).toContain('`figma_`')
 
     await writeFile(
       join(skillsRoot, 'clickup-connector', 'SKILL.md'),

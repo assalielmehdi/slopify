@@ -1,7 +1,7 @@
 import type { Credential, CredentialStore } from './credential-store.js'
 import type { ConnectionCatalog } from './connection-catalog.js'
 
-export type ConnectionType = 'gitlab' | 'clickup' | 'openrouter' | 'chatgpt-subscription'
+export type ConnectionType = 'gitlab' | 'clickup' | 'figma' | 'openrouter' | 'chatgpt-subscription'
 export type ConnectionCategory = 'connector' | 'inference'
 
 export interface ConnectionRecord {
@@ -28,13 +28,14 @@ export interface ConnectionRepository {
 
 export interface ConnectionValidationInput {
   readonly configuration: unknown
-  readonly credential: Credential
+  readonly credential?: Credential
   readonly signal?: AbortSignal
 }
 
 export interface ConnectionDriver {
   readonly type: ConnectionType
   readonly category: ConnectionCategory
+  readonly credential: 'required' | 'none'
   readonly authority: string
   validate(input: ConnectionValidationInput): Promise<unknown>
 }
@@ -51,16 +52,19 @@ export class ConnectionServiceError extends Error {
   override readonly name = 'ConnectionServiceError'
   constructor(
     readonly code: ConnectionServiceErrorCode,
-    options?: Readonly<{ cause?: unknown }>,
+    options?: Readonly<{ cause?: unknown; message?: string }>,
   ) {
-    super(code, options?.cause === undefined ? undefined : { cause: options.cause })
+    super(
+      options?.message ?? code,
+      options?.cause === undefined ? undefined : { cause: options.cause },
+    )
   }
 }
 
 export interface ConnectInput {
   readonly type: ConnectionType
   readonly configuration: unknown
-  readonly credential: Credential
+  readonly credential?: Credential
 }
 
 export interface ConnectionService {
@@ -131,12 +135,16 @@ export const createConnectionService = (
       throw new ConnectionServiceError('CONNECTION_VALIDATION_FAILED', { cause })
     }
   }
-  const saveCredentialAndRecord = async (record: ConnectionRecord, credential: Credential) => {
-    await options.credentials.modify(record.connectionId, async () => credential)
+  const saveCredentialAndRecord = async (
+    record: ConnectionRecord,
+    credential: Credential | undefined,
+  ) => {
+    if (credential === undefined) await options.credentials.delete(record.connectionId)
+    else await options.credentials.modify(record.connectionId, async () => credential)
     try {
       options.connections.save(record)
     } catch (cause) {
-      await options.credentials.delete(record.connectionId)
+      if (credential !== undefined) await options.credentials.delete(record.connectionId)
       throw cause
     }
     return record
@@ -152,9 +160,13 @@ export const createConnectionService = (
         throw new ConnectionServiceError('CONNECTION_TYPE_UNSUPPORTED')
       if (options.connections.getByType(input.type) !== undefined)
         throw new ConnectionServiceError('CONNECTION_ALREADY_EXISTS')
+      if (driver.credential === 'required' && input.credential === undefined)
+        throw new ConnectionServiceError('CREDENTIAL_NOT_FOUND')
+      if (driver.credential === 'none' && input.credential !== undefined)
+        throw new ConnectionServiceError('CONNECTION_TYPE_UNSUPPORTED')
       const metadata = await validate(driver, {
         configuration: input.configuration,
-        credential: input.credential,
+        ...(input.credential === undefined ? {} : { credential: input.credential }),
       })
       const timestamp = now()
       const connectionId = `${entry.type}-default`
@@ -177,11 +189,17 @@ export const createConnectionService = (
     },
     async revalidate(connectionId) {
       const connection = get(connectionId)
-      const credential = await options.credentials.read(connectionId)
-      if (credential === undefined) throw new ConnectionServiceError('CREDENTIAL_NOT_FOUND')
-      const metadata = await validate(driverFor(connection.type), {
+      const driver = driverFor(connection.type)
+      let credential = await options.credentials.read(connectionId)
+      if (driver.credential === 'required' && credential === undefined)
+        throw new ConnectionServiceError('CREDENTIAL_NOT_FOUND')
+      if (driver.credential === 'none' && credential !== undefined) {
+        await options.credentials.delete(connectionId)
+        credential = undefined
+      }
+      const metadata = await validate(driver, {
         configuration: connection.configuration,
-        credential,
+        ...(credential === undefined ? {} : { credential }),
       })
       const timestamp = now()
       const updated = Object.freeze({
@@ -196,7 +214,10 @@ export const createConnectionService = (
     },
     async replaceCredential(connectionId, credential) {
       const connection = get(connectionId)
-      const metadata = await validate(driverFor(connection.type), {
+      const driver = driverFor(connection.type)
+      if (driver.credential === 'none')
+        throw new ConnectionServiceError('CONNECTION_TYPE_UNSUPPORTED')
+      const metadata = await validate(driver, {
         configuration: connection.configuration,
         credential,
       })

@@ -39,6 +39,7 @@ export {
 export {
   createClickUpConnectionDriver,
   createChatGptSubscriptionConnectionDriver,
+  createFigmaConnectionDriver,
   createGitLabConnectionDriver,
   createOpenRouterConnectionDriver,
 } from './connections/http-drivers.js'

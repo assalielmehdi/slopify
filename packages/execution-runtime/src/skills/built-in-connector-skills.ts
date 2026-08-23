@@ -46,6 +46,11 @@ export const BUILT_IN_CONNECTOR_SKILLS: Readonly<Record<string, BuiltInConnector
       legacySkillIds: ['slopify-clickup-connector'],
       files: readTree(join(builtInsRoot, 'clickup-connector')),
     },
+    figma: {
+      skillId: 'figma-connector',
+      legacySkillIds: [],
+      files: readTree(join(builtInsRoot, 'figma-connector')),
+    },
   })
 
 const SEED_STATE_FILE = '.slopify-built-in-skills.json'

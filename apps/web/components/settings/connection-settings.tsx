@@ -27,8 +27,8 @@ import { toast } from '@/components/ui/toast'
 import {
   createApiClient,
   type ApiClient,
-  type ChatGptOAuthTransaction,
   type ConnectionRecord,
+  type OAuthTransaction,
 } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 
@@ -44,6 +44,7 @@ type ConnectionClient = Required<
     | 'startChatGptOAuth'
     | 'getChatGptOAuth'
     | 'cancelChatGptOAuth'
+    | 'connectFigmaDesktop'
   >
 >
 
@@ -153,6 +154,18 @@ function ClickUpMark(props: SVGProps<SVGSVGElement>) {
   )
 }
 
+function FigmaMark(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 38 57" fill="none" xmlns="http://www.w3.org/2000/svg" {...props}>
+      <path fill="#F24E1E" d="M1 9.5A9.5 9.5 0 0 1 10.5 0H19v19H10.5A9.5 9.5 0 0 1 1 9.5Z" />
+      <path fill="#FF7262" d="M19 0h8.5a9.5 9.5 0 1 1 0 19H19V0Z" />
+      <path fill="#A259FF" d="M1 28.5a9.5 9.5 0 0 1 9.5-9.5H19v19h-8.5A9.5 9.5 0 0 1 1 28.5Z" />
+      <circle cx="28.5" cy="28.5" r="9.5" fill="#1ABCFE" />
+      <path fill="#0ACF83" d="M1 47.5a9.5 9.5 0 0 1 9.5-9.5H19v9.5a9.5 9.5 0 1 1-18 0Z" />
+    </svg>
+  )
+}
+
 const brandMarks: Readonly<
   Record<
     ConnectionCatalogEntry['icon'],
@@ -164,6 +177,7 @@ const brandMarks: Readonly<
 > = {
   gitlab: { icon: GitLabMark, className: '' },
   clickup: { icon: ClickUpMark, className: '' },
+  figma: { icon: FigmaMark, className: '' },
   openrouter: { icon: OpenRouterMark, className: 'text-[#7624F4]' },
   chatgpt: { icon: ChatGptMark, className: 'text-foreground' },
 }
@@ -273,7 +287,8 @@ export function ConnectionSettings({
 }: Readonly<{ client?: ConnectionClient; initialConnectionId?: string; kind?: CatalogKind }>) {
   const [catalogEntries, setCatalogEntries] = useState<readonly ConnectionCatalogEntry[]>([])
   const [connections, setConnections] = useState<readonly ConnectionRecord[]>([])
-  const [oauth, setOauth] = useState<ChatGptOAuthTransaction>()
+  const [oauth, setOauth] = useState<OAuthTransaction>()
+  const [connectingType, setConnectingType] = useState<ConnectionType>()
   const [error, setError] = useState<string>()
   const [selection, setSelection] = useState<PanelSelection>()
   const [searchQuery, setSearchQuery] = useState('')
@@ -306,7 +321,6 @@ export function ConnectionSettings({
   }, [configuredCatalog, searchQuery])
   const selectedConnection =
     selected === undefined ? undefined : connectionFor(connections, selected.type)
-
   const hidePanel = useCallback(() => {
     if (panelOpenFrameRef.current !== undefined) {
       window.cancelAnimationFrame(panelOpenFrameRef.current)
@@ -408,11 +422,12 @@ export function ConnectionSettings({
 
   useEffect(() => {
     if (oauth?.status !== 'PENDING') return
+    const current = oauth
     const timer = window.setInterval(() => {
       void client
-        .getChatGptOAuth(oauth.id)
+        .getChatGptOAuth(current.id)
         .then((next) => {
-          setOauth(next)
+          setOauth((state) => (state?.id === current.id ? next : state))
           if (next.status === 'CONNECTED') {
             void load().then(() => {
               toast.add({
@@ -442,7 +457,7 @@ export function ConnectionSettings({
 
   const connect = async (event: FormEvent<HTMLFormElement>, definition: ConnectionCatalogEntry) => {
     event.preventDefault()
-    if (definition.type === 'chatgpt-subscription') return
+    if (definition.type === 'chatgpt-subscription' || definition.type === 'figma') return
     setError(undefined)
     const form = event.currentTarget
     const key = String(new FormData(form).get('credential'))
@@ -465,7 +480,8 @@ export function ConnectionSettings({
     }
   }
 
-  const startChatGpt = async (definition: ConnectionCatalogEntry) => {
+  const startOAuth = async (definition: ConnectionCatalogEntry) => {
+    if (definition.type !== 'chatgpt-subscription') return
     setError(undefined)
     try {
       setOauth(await client.startChatGptOAuth())
@@ -473,6 +489,24 @@ export function ConnectionSettings({
       setError(
         cause instanceof Error ? cause.message : `${definition.name} connection could not start.`,
       )
+    }
+  }
+
+  const connectFigmaDesktop = async () => {
+    setError(undefined)
+    setConnectingType('figma')
+    try {
+      upsert(await client.connectFigmaDesktop())
+      toast.add({
+        title: 'Connector added',
+        description: 'Figma Desktop is ready to use in workflow agents.',
+        type: 'success',
+      })
+      closePanel()
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Figma Desktop could not be connected.')
+    } finally {
+      setConnectingType(undefined)
     }
   }
 
@@ -764,7 +798,7 @@ export function ConnectionSettings({
                       <h2 className="text-[14px]/5 font-semibold">Agent skill</h2>
                       <p className="text-[14px]/6 text-muted-foreground">
                         This connector is paired with a built-in skill that teaches agents how to
-                        use its credential safely.
+                        use its tools effectively.
                       </p>
                       <Link
                         href={`/skills?skill=${encodeURIComponent(selected.skillId)}`}
@@ -804,9 +838,23 @@ export function ConnectionSettings({
                         )}
                         <Button
                           className="justify-self-end"
-                          onClick={() => void startChatGpt(selected)}
+                          onClick={() => void startOAuth(selected)}
                         >
                           Connect {selected.name}
+                        </Button>
+                      </section>
+                    ) : selected.type === 'figma' ? (
+                      <section className="grid gap-3">
+                        <h2 className="text-[14px]/5 font-semibold">Connect Figma Desktop</h2>
+                        <p className="text-[14px]/6 text-muted-foreground">
+                          Slopify will verify the local MCP server and load its available tools.
+                        </p>
+                        <Button
+                          className="justify-self-end"
+                          disabled={connectingType === 'figma'}
+                          onClick={() => void connectFigmaDesktop()}
+                        >
+                          {connectingType === 'figma' ? 'Connecting…' : 'Connect Figma Desktop'}
                         </Button>
                       </section>
                     ) : (
@@ -898,7 +946,8 @@ export function ConnectionSettings({
                           <RefreshCwIcon aria-hidden="true" />
                           Revalidate
                         </Button>
-                        {selected.type === 'chatgpt-subscription' ? null : (
+                        {selected.type === 'chatgpt-subscription' ||
+                        selected.type === 'figma' ? null : (
                           <Button
                             type="button"
                             size="sm"

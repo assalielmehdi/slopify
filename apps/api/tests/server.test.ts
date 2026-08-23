@@ -6,6 +6,7 @@ import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
   connectDefaultChatGpt,
+  connectDefaultFigma,
   ensurePredefinedWorkflow,
   resolveApiServerConfiguration,
   startApiServer,
@@ -109,6 +110,16 @@ describe('API server configuration', () => {
     expect(connect.mock.calls[0]?.[0]).not.toHaveProperty('label')
   })
 
+  it('connects Figma Desktop under the server-owned catalog identity and MCP endpoint', async () => {
+    const connect = vi.fn(async () => ({ connectionId: 'figma-default' }))
+
+    await expect(connectDefaultFigma(connect)).resolves.toEqual({ connectionId: 'figma-default' })
+    expect(connect).toHaveBeenCalledWith({
+      type: 'figma',
+      configuration: { serverUrl: 'http://127.0.0.1:3845/mcp' },
+    })
+  })
+
   it('uses native owner-local state and accepts explicit host and port overrides', () => {
     expect(
       resolveApiServerConfiguration({
@@ -177,6 +188,9 @@ describe('API server configuration', () => {
         credentialPath: '/credentials.json',
         tracesRoot: '/traces',
         guestToolsRoot: '/guest-tools',
+        figmaMcpOAuth: {
+          redirectUri: 'http://127.0.0.1:3001/api/connections/figma/oauth/callback',
+        },
         shutdownGracePeriodMs: 10_000,
       },
       serve,

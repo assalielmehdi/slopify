@@ -920,6 +920,151 @@ export const EXECUTION_RUNTIME_MIGRATIONS: readonly Migration[] = Object.freeze(
       `)
     },
   }),
+  Object.freeze({
+    version: 18,
+    name: 'add_figma_connector',
+    up(database: Database) {
+      database.exec(`
+        ALTER TABLE connections RENAME TO connections_before_figma;
+        CREATE TABLE connections (
+          connection_id TEXT PRIMARY KEY,
+          type TEXT NOT NULL CHECK (
+            type IN ('gitlab', 'clickup', 'figma', 'openrouter', 'chatgpt-subscription')
+          ),
+          category TEXT NOT NULL CHECK (category IN ('connector', 'inference')),
+          label TEXT NOT NULL,
+          authority TEXT NOT NULL,
+          configuration_json TEXT NOT NULL CHECK (json_valid(configuration_json)),
+          metadata_json TEXT NOT NULL CHECK (json_valid(metadata_json)),
+          status TEXT NOT NULL CHECK (status IN ('CONNECTED', 'INVALID')),
+          validated_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+        INSERT INTO connections SELECT * FROM connections_before_figma;
+        DROP TABLE connections_before_figma;
+        CREATE INDEX connections_by_category_type
+          ON connections (category, type, label);
+        CREATE UNIQUE INDEX connections_one_per_type
+          ON connections (type);
+
+        ALTER TABLE connection_catalog RENAME TO connection_catalog_before_figma;
+        CREATE TABLE connection_catalog (
+          type TEXT PRIMARY KEY CHECK (
+            type IN ('gitlab', 'clickup', 'figma', 'openrouter', 'chatgpt-subscription')
+          ),
+          category TEXT NOT NULL CHECK (category IN ('connector', 'inference')),
+          name TEXT NOT NULL,
+          icon TEXT NOT NULL CHECK (icon IN ('gitlab', 'clickup', 'figma', 'openrouter', 'chatgpt')),
+          eyebrow TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          description TEXT NOT NULL,
+          setup_json TEXT NOT NULL CHECK (json_valid(setup_json)),
+          access TEXT NOT NULL,
+          input_label TEXT,
+          input_description TEXT,
+          replacement_input_label TEXT,
+          resource_href TEXT,
+          resource_label TEXT,
+          sort_order INTEGER NOT NULL UNIQUE CHECK (sort_order >= 0),
+          models_json TEXT NOT NULL CHECK (json_valid(models_json)),
+          skill_id TEXT
+        ) STRICT;
+        INSERT INTO connection_catalog (
+          type, category, name, icon, eyebrow, summary, description, setup_json,
+          access, input_label, input_description, replacement_input_label,
+          resource_href, resource_label, sort_order, models_json, skill_id
+        )
+        SELECT
+          type, category, name, icon, eyebrow, summary, description, setup_json,
+          access, input_label, input_description, replacement_input_label,
+          resource_href, resource_label,
+          CASE WHEN sort_order >= 2 THEN sort_order + 1 ELSE sort_order END,
+          models_json, skill_id
+        FROM connection_catalog_before_figma;
+        DROP TABLE connection_catalog_before_figma;
+        CREATE INDEX connection_catalog_by_category_order
+          ON connection_catalog (category, sort_order);
+        CREATE UNIQUE INDEX connection_catalog_by_skill
+          ON connection_catalog (skill_id)
+          WHERE skill_id IS NOT NULL;
+      `)
+
+      database
+        .prepare(
+          `INSERT INTO connection_catalog (
+            type, category, name, icon, eyebrow, summary, description, setup_json,
+            access, input_label, input_description, replacement_input_label,
+            resource_href, resource_label, sort_order, models_json, skill_id
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          'figma',
+          'connector',
+          'Figma',
+          'figma',
+          'Design collaboration',
+          'Inspect the active design through Figma Desktop.',
+          'Connect the local Figma Desktop MCP server so workflow agents can inspect selections, nodes, variables, screenshots, motion, and design context through native tools.',
+          JSON.stringify([
+            'Open a Figma Design file in the latest Figma desktop app.',
+            'Switch to Dev Mode, then enable the desktop MCP server in the inspect panel.',
+            'Keep Figma Desktop open and connect from Slopify.',
+          ]),
+          'The connector uses the active Figma Desktop session. It does not store a Figma token or OAuth credential.',
+          null,
+          null,
+          null,
+          'https://developers.figma.com/docs/figma-mcp-server/local-server-installation/',
+          'Set up Figma Desktop MCP',
+          2,
+          '[]',
+          'figma-connector',
+        )
+    },
+  }),
+  Object.freeze({
+    version: 19,
+    name: 'use_figma_desktop_mcp',
+    up(database: Database) {
+      database
+        .prepare(
+          `UPDATE connection_catalog SET
+            summary = ?,
+            description = ?,
+            setup_json = ?,
+            access = ?,
+            resource_href = ?,
+            resource_label = ?
+          WHERE type = 'figma'`,
+        )
+        .run(
+          'Inspect the active design through Figma Desktop.',
+          'Connect the local Figma Desktop MCP server so workflow agents can inspect selections, nodes, variables, screenshots, motion, and design context through native tools.',
+          JSON.stringify([
+            'Open a Figma Design file in the latest Figma desktop app.',
+            'Switch to Dev Mode, then enable the desktop MCP server in the inspect panel.',
+            'Keep Figma Desktop open and connect from Slopify.',
+          ]),
+          'The connector uses the active Figma Desktop session. It does not store a Figma token or OAuth credential.',
+          'https://developers.figma.com/docs/figma-mcp-server/local-server-installation/',
+          'Set up Figma Desktop MCP',
+        )
+      database
+        .prepare(
+          `UPDATE connections SET
+            configuration_json = ?,
+            metadata_json = '{}',
+            status = 'INVALID'
+          WHERE type = 'figma'
+            AND json_extract(configuration_json, '$.serverUrl') <> ?`,
+        )
+        .run(
+          JSON.stringify({ serverUrl: 'http://127.0.0.1:3845/mcp' }),
+          'http://127.0.0.1:3845/mcp',
+        )
+    },
+  }),
 ])
 
 interface AppliedMigration {

@@ -34,11 +34,41 @@ const catalog: ConnectionCatalog = {
 const gitlabDriver: ConnectionDriver = {
   type: 'gitlab',
   category: 'connector',
+  credential: 'required',
   authority: 'Read and write GitLab resources available to the connected user.',
   async validate(input) {
     if (input.credential.type !== 'api_key' || input.credential.key !== 'valid-token')
       throw new ConnectionServiceError('CONNECTION_VALIDATION_FAILED')
     return { identity: { username: 'operator' }, scopes: ['api'] }
+  },
+}
+
+const figmaCatalog: ConnectionCatalog = {
+  list: () => [
+    {
+      type: 'figma',
+      category: 'connector',
+      name: 'Figma',
+      icon: 'figma',
+      eyebrow: 'Design collaboration',
+      summary: 'Inspect designs from Figma Desktop.',
+      description: 'Connect the local Figma Desktop MCP server.',
+      setup: [],
+      access: 'Uses the active Figma Desktop session.',
+      models: [],
+      skillId: 'figma-connector',
+    },
+  ],
+}
+
+const figmaDriver: ConnectionDriver = {
+  type: 'figma',
+  category: 'connector',
+  credential: 'none',
+  authority: 'Read designs available through the active Figma Desktop session.',
+  async validate(input) {
+    expect(input.credential).toBeUndefined()
+    return { serverUrl: 'http://127.0.0.1:3845/mcp', tools: [{ name: 'get_metadata' }] }
   },
 }
 
@@ -93,6 +123,37 @@ describe('connection service', () => {
     ).rejects.toMatchObject({ code: 'CONNECTION_VALIDATION_FAILED' })
     expect(connections.list()).toEqual([])
     expect(await credentials.read('gitlab-default')).toBeUndefined()
+  })
+
+  it('connects and revalidates a credentialless local connector without creating a secret', async () => {
+    const credentials = createInMemoryCredentialStore()
+    const connections = createInMemoryConnectionRepository()
+    const validate = vi.fn(figmaDriver.validate)
+    const service = createConnectionService({
+      connections,
+      credentials,
+      catalog: figmaCatalog,
+      drivers: [{ ...figmaDriver, validate }],
+      now: () => '2026-08-23T00:00:00.000Z',
+    })
+    await credentials.modify('figma-default', async () => ({
+      type: 'api_key',
+      key: 'obsolete-remote-credential',
+    }))
+
+    await expect(
+      service.connect({
+        type: 'figma',
+        configuration: { serverUrl: 'http://127.0.0.1:3845/mcp' },
+      }),
+    ).resolves.toMatchObject({ connectionId: 'figma-default', status: 'CONNECTED' })
+    await expect(service.revalidate('figma-default')).resolves.toMatchObject({
+      connectionId: 'figma-default',
+      status: 'CONNECTED',
+    })
+
+    expect(validate).toHaveBeenCalledTimes(2)
+    expect(await credentials.read('figma-default')).toBeUndefined()
   })
 
   it('revalidates, replaces, and disconnects through registered drivers', async () => {

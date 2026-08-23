@@ -1,6 +1,15 @@
 import { z } from 'zod'
+import {
+  FIGMA_DESKTOP_MCP_URL,
+  inspectDesktopMcpServer,
+  type DesktopMcpInspection,
+} from '@slopify/agent-runtimes'
 
-import type { ConnectionDriver, ConnectionValidationInput } from './connection-service.js'
+import {
+  ConnectionServiceError,
+  type ConnectionDriver,
+  type ConnectionValidationInput,
+} from './connection-service.js'
 
 type Fetch = typeof globalThis.fetch
 
@@ -58,6 +67,7 @@ export const createGitLabConnectionDriver = (
 ): ConnectionDriver => ({
   type: 'gitlab',
   category: 'connector',
+  credential: 'required',
   authority: 'Read and write GitLab resources available to the connected user.',
   async validate(input) {
     const token = credential(input)
@@ -110,6 +120,7 @@ export const createClickUpConnectionDriver = (
 ): ConnectionDriver => ({
   type: 'clickup',
   category: 'connector',
+  credential: 'required',
   authority: 'Read and write ClickUp resources available to the connected user.',
   async validate(input) {
     const token = credential(input)
@@ -127,6 +138,47 @@ export const createClickUpConnectionDriver = (
   },
 })
 
+const FigmaConfigurationSchema = z.strictObject({ serverUrl: z.url() })
+
+export const createFigmaConnectionDriver = (
+  options: Readonly<{
+    inspect?: (
+      input: Readonly<{
+        serverUrl: string
+        signal?: AbortSignal
+      }>,
+    ) => Promise<DesktopMcpInspection>
+  }> = {},
+): ConnectionDriver => ({
+  type: 'figma',
+  category: 'connector',
+  credential: 'none',
+  authority: 'Read designs available through the active Figma Desktop session.',
+  async validate(input) {
+    const configuration = FigmaConfigurationSchema.parse(input.configuration)
+    const serverUrl = new URL(configuration.serverUrl)
+    if (serverUrl.href !== FIGMA_DESKTOP_MCP_URL)
+      throw new Error('Figma Desktop must use its fixed local MCP endpoint')
+    let inspection: DesktopMcpInspection
+    try {
+      inspection = await (options.inspect ?? inspectDesktopMcpServer)({
+        serverUrl: serverUrl.href,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
+      })
+    } catch (cause) {
+      throw new ConnectionServiceError('CONNECTION_VALIDATION_FAILED', {
+        cause,
+        message:
+          'Figma Desktop MCP is unavailable. Open a design in Dev Mode and enable the desktop MCP server, then try again.',
+      })
+    }
+    return {
+      serverUrl: serverUrl.href,
+      tools: structuredClone(inspection.tools),
+    }
+  },
+})
+
 const OpenRouterKeySchema = z.strictObject({
   data: z.object({
     label: z.string(),
@@ -141,6 +193,7 @@ export const createOpenRouterConnectionDriver = (
 ): ConnectionDriver => ({
   type: 'openrouter',
   category: 'inference',
+  credential: 'required',
   authority: 'Use the connected OpenRouter account for model inference.',
   async validate(input) {
     const key = credential(input)
@@ -166,6 +219,7 @@ export const createChatGptSubscriptionConnectionDriver = (
 ): ConnectionDriver => ({
   type: 'chatgpt-subscription',
   category: 'inference',
+  credential: 'required',
   authority: "Use the connected ChatGPT subscription through Pi's OpenAI Codex provider.",
   async validate(input) {
     const value = z

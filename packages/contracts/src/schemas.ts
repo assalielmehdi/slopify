@@ -209,6 +209,7 @@ export const ConnectorStatusSchema = z.strictObject({
 export const ConnectionTypeSchema = z.enum([
   'gitlab',
   'clickup',
+  'figma',
   'openrouter',
   'chatgpt-subscription',
 ])
@@ -235,7 +236,7 @@ export const ConnectionCatalogEntrySchema = z.strictObject({
   type: ConnectionTypeSchema,
   category: ConnectionCategorySchema,
   name: z.string().trim().min(1).max(128),
-  icon: z.enum(['gitlab', 'clickup', 'openrouter', 'chatgpt']),
+  icon: z.enum(['gitlab', 'clickup', 'figma', 'openrouter', 'chatgpt']),
   eyebrow: z.string().trim().min(1).max(128),
   summary: z.string().trim().min(1).max(512),
   description: z.string().trim().min(1).max(2_048),

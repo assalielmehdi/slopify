@@ -90,10 +90,18 @@ export {
 export {
   createGondolinAgentSandboxFactory,
   type AgentSandbox,
+  type AgentSandboxExecProcess,
   type AgentSandboxFactory,
   type AgentSandboxVm,
   type CreateAgentSandboxInput,
 } from './gondolin-sandbox.js'
+export {
+  connectMcpGuestBridge,
+  getMcpGuestSidecarScriptPath,
+  McpGuestBridgeError,
+  type McpGuestBridge,
+  type McpToolSnapshot,
+} from './mcp-bridge.js'
 export {
   createGondolinPiSdkAgentExecutor,
   type GondolinPiExecutionContext,
@@ -105,3 +113,8 @@ export {
   type ChatGptOAuthService,
   type ChatGptOAuthTransaction,
 } from './chatgpt-oauth.js'
+export {
+  FIGMA_DESKTOP_MCP_URL,
+  inspectDesktopMcpServer,
+  type DesktopMcpInspection,
+} from './desktop-mcp.js'

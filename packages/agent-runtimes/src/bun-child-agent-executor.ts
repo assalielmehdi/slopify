@@ -38,9 +38,11 @@ export interface BunWorkerExecutionContext {
   }>[]
   readonly connectors: readonly Readonly<{
     connectionId: string
-    type: 'gitlab' | 'clickup'
+    type: 'gitlab' | 'clickup' | 'figma'
     authority: string
     allowedHosts: readonly string[]
+    mcpServerUrl?: string
+    tools?: readonly Readonly<Record<string, unknown>>[]
   }>[]
 }
 

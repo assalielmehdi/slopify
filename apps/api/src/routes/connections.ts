@@ -3,7 +3,7 @@ import {
   type ConnectionCatalog,
   type ConnectionService,
 } from '@slopify/execution-runtime'
-import type { ChatGptOAuthService } from '@slopify/agent-runtimes'
+import { FIGMA_DESKTOP_MCP_URL, type ChatGptOAuthService } from '@slopify/agent-runtimes'
 import type { Hono } from 'hono'
 import { z } from 'zod'
 
@@ -71,4 +71,14 @@ export const registerConnectionRoutes = (
       return context.body(null, cancelled ? 204 : 409)
     })
   }
+  app.post('/api/connections/figma/desktop', async (context) => {
+    z.strictObject({}).parse(await parseJsonBody(context))
+    return context.json(
+      await connections.connect({
+        type: 'figma',
+        configuration: { serverUrl: FIGMA_DESKTOP_MCP_URL },
+      }),
+      201,
+    )
+  })
 }

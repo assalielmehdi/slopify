@@ -37,6 +37,14 @@ describe('SQLite connection catalog', () => {
         name: 'ClickUp',
         skillId: 'clickup-connector',
       }),
+      expect.objectContaining({
+        type: 'figma',
+        category: 'connector',
+        name: 'Figma',
+        summary: 'Inspect the active design through Figma Desktop.',
+        access: expect.stringContaining('does not store a Figma token'),
+        skillId: 'figma-connector',
+      }),
       expect.objectContaining({ type: 'openrouter', category: 'inference', name: 'OpenRouter' }),
       expect.objectContaining({
         type: 'chatgpt-subscription',

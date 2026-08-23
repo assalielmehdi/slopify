@@ -7,7 +7,7 @@ import { mapPersistenceError } from './errors.js'
 
 const ConnectionRecordSchema = z.strictObject({
   connectionId: z.string().min(1),
-  type: z.enum(['gitlab', 'clickup', 'openrouter', 'chatgpt-subscription']),
+  type: z.enum(['gitlab', 'clickup', 'figma', 'openrouter', 'chatgpt-subscription']),
   category: z.enum(['connector', 'inference']),
   label: z.string().min(1),
   authority: z.string().min(1),

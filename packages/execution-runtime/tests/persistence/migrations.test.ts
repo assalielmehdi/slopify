@@ -68,6 +68,8 @@ describe('forward-only migrations', () => {
       { version: 15, name: 'enforce_one_connection_per_type' },
       { version: 16, name: 'link_connectors_to_skills' },
       { version: 17, name: 'rename_connector_skills' },
+      { version: 18, name: 'add_figma_connector' },
+      { version: 19, name: 'use_figma_desktop_mcp' },
     ])
 
     expect(
@@ -76,6 +78,59 @@ describe('forward-only migrations', () => {
         .pluck()
         .get(),
     ).toBe('Use one OpenRouter API key to make its model catalog available to workflow agent jobs.')
+    expect(
+      raw
+        .prepare(
+          "SELECT type, category, icon, summary, resource_href, skill_id FROM connection_catalog WHERE type = 'figma'",
+        )
+        .get(),
+    ).toEqual({
+      type: 'figma',
+      category: 'connector',
+      icon: 'figma',
+      summary: 'Inspect the active design through Figma Desktop.',
+      resource_href:
+        'https://developers.figma.com/docs/figma-mcp-server/local-server-installation/',
+      skill_id: 'figma-connector',
+    })
+  })
+
+  it('invalidates an existing remote Figma connection for desktop revalidation', () => {
+    const raw = new Database(createDatabasePath())
+    rawDatabases.push(raw)
+    applyMigrations(raw, EXECUTION_RUNTIME_MIGRATIONS.slice(0, 18))
+    const timestamp = '2026-08-22T20:00:00Z'
+    raw
+      .prepare(
+        `INSERT INTO connections (
+          connection_id, type, category, label, authority, configuration_json,
+          metadata_json, status, validated_at, created_at, updated_at
+        ) VALUES (?, 'figma', 'connector', 'Figma', ?, ?, ?, 'CONNECTED', ?, ?, ?)`,
+      )
+      .run(
+        'figma-default',
+        'Read and write Figma resources available to the connected user.',
+        JSON.stringify({ serverUrl: 'https://mcp.figma.com/mcp' }),
+        JSON.stringify({ tools: [{ name: 'get_design_context' }] }),
+        timestamp,
+        timestamp,
+        timestamp,
+      )
+
+    applyMigrations(raw)
+
+    expect(
+      raw
+        .prepare(
+          `SELECT configuration_json, metadata_json, status
+           FROM connections WHERE connection_id = 'figma-default'`,
+        )
+        .get(),
+    ).toEqual({
+      configuration_json: JSON.stringify({ serverUrl: 'http://127.0.0.1:3845/mcp' }),
+      metadata_json: '{}',
+      status: 'INVALID',
+    })
   })
 
   it('migrates a populated v10 database to one current workflow and immutable run snapshots', () => {

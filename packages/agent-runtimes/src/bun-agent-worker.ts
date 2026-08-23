@@ -10,6 +10,7 @@ import { createIpcPiCredentialStore } from './bun-child-agent-executor.js'
 import { AgentExecutionInputSchema, type AgentExecutor } from './contract.js'
 import type { LoadedResourceBundle } from './resource-loader.js'
 import { createPiSessionFactory } from './session-factory.js'
+import { FIGMA_DESKTOP_MCP_URL } from './desktop-mcp.js'
 
 const message = (value: Readonly<Record<string, unknown>>): void => {
   process.send?.({ version: 1, ...value })
@@ -42,6 +43,22 @@ const secretValues = (credential: Credential | undefined): readonly string[] => 
   return [credential.access, credential.refresh]
 }
 
+type StartConnector =
+  | Readonly<{
+      connectionId: string
+      type: 'gitlab' | 'clickup'
+      authority: string
+      allowedHosts: readonly string[]
+    }>
+  | Readonly<{
+      connectionId: string
+      type: 'figma'
+      authority: string
+      allowedHosts: readonly 'figma-desktop.slopify'[]
+      mcpServerUrl: typeof FIGMA_DESKTOP_MCP_URL
+      tools: readonly Readonly<Record<string, unknown>>[]
+    }>
+
 interface StartContext {
   readonly outputSchemaRef: string
   readonly inferenceConnectionId: string
@@ -53,12 +70,7 @@ interface StartContext {
     description: string
     hostPath: string
   }>[]
-  readonly connectors: readonly Readonly<{
-    connectionId: string
-    type: 'gitlab' | 'clickup'
-    authority: string
-    allowedHosts: readonly string[]
-  }>[]
+  readonly connectors: readonly StartConnector[]
 }
 
 const parseContext = (value: unknown): StartContext =>
@@ -79,12 +91,28 @@ const parseContext = (value: unknown): StartContext =>
         }),
       ),
       connectors: z.array(
-        z.strictObject({
-          connectionId: z.string().trim().min(1).max(128),
-          type: z.enum(['gitlab', 'clickup']),
-          authority: z.string().trim().min(1).max(2_048),
-          allowedHosts: z.array(z.string().trim().min(1).max(512)).min(1).max(8),
-        }),
+        z.discriminatedUnion('type', [
+          z.strictObject({
+            connectionId: z.string().trim().min(1).max(128),
+            type: z.literal('gitlab'),
+            authority: z.string().trim().min(1).max(2_048),
+            allowedHosts: z.array(z.string().trim().min(1).max(512)).min(1).max(8),
+          }),
+          z.strictObject({
+            connectionId: z.string().trim().min(1).max(128),
+            type: z.literal('clickup'),
+            authority: z.string().trim().min(1).max(2_048),
+            allowedHosts: z.array(z.string().trim().min(1).max(512)).min(1).max(8),
+          }),
+          z.strictObject({
+            connectionId: z.string().trim().min(1).max(128),
+            type: z.literal('figma'),
+            authority: z.string().trim().min(1).max(2_048),
+            allowedHosts: z.array(z.literal('figma-desktop.slopify')).length(1),
+            mcpServerUrl: z.literal(FIGMA_DESKTOP_MCP_URL),
+            tools: z.array(z.record(z.string(), z.unknown())).min(1).max(128),
+          }),
+        ]),
       ),
     })
     .parse(value)
@@ -105,20 +133,32 @@ const run = async (unparsedInput: unknown, unparsedContext: unknown): Promise<vo
   })
   const inferenceCredential = await inferenceCredentials.read(input.provider)
   const connectorCredentials = await Promise.all(
-    context.connectors.map(async (connector) => ({
-      connector,
-      credential: (
-        await request(
-          { type: 'CREDENTIAL_READ', connectionId: connector.connectionId },
-          'CREDENTIAL_VALUE',
-        )
-      ).credential as Credential | undefined,
-    })),
+    context.connectors.map(async (connector) => {
+      if (connector.type === 'figma') return { connector, credential: undefined }
+      const store = createIpcPiCredentialStore({ connectionId: connector.connectionId, request })
+      return { connector, credential: await store.read(connector.connectionId) }
+    }),
   )
   const connectors = connectorCredentials.map(({ connector, credential }) => {
+    if (connector.type === 'figma') {
+      return {
+        connectionId: connector.connectionId,
+        type: connector.type,
+        authority: connector.authority,
+        allowedHosts: [...connector.allowedHosts],
+        mcpServerUrl: connector.mcpServerUrl,
+        tools: connector.tools.map((tool) => ({ ...tool })),
+      }
+    }
     if (credential?.type !== 'api_key' || credential.key === undefined)
       throw new Error('Connector credential is unavailable')
-    return { ...connector, allowedHosts: [...connector.allowedHosts], secret: credential.key }
+    return {
+      connectionId: connector.connectionId,
+      type: connector.type,
+      authority: connector.authority,
+      allowedHosts: [...connector.allowedHosts],
+      secret: credential.key,
+    }
   })
   const sensitiveValues = [
     ...secretValues(inferenceCredential),

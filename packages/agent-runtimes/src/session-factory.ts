@@ -150,8 +150,8 @@ export const createPiSessionFactory = (
       const toolNames = sandbox.tools.map(({ name }) => name)
       if (
         sandbox.workspaceRoot !== '/workspace' ||
-        toolNames.length !== 4 ||
         !['read', 'bash', 'edit', 'write'].every((name) => toolNames.includes(name)) ||
+        new Set(toolNames).size !== toolNames.length ||
         sandbox.skills.some(
           ({ filePath, baseDir }) =>
             !filePath.startsWith('/skills/') || !baseDir.startsWith('/skills/'),
