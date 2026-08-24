@@ -10,7 +10,11 @@ import { WorkflowWorkbench } from '../components/workflow/workflow-workbench'
 import { toast } from '../lib/toast'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
-vi.mock('next/navigation', () => ({ useRouter: () => ({ push: vi.fn() }) }))
+const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => navigation,
+}))
 
 vi.mock('../components/workflow/workflow-canvas', () => ({
   WorkflowCanvas: ({
@@ -182,6 +186,115 @@ afterEach(() => {
 })
 
 describe('WorkflowWorkbench', () => {
+  it('loads the URL-selected workflow and switches the graph with URL navigation', async () => {
+    const firstAgent = workflow.nodes[0]
+    if (firstAgent === undefined) throw new Error('Expected an agent fixture')
+    const releaseWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      workflowId: 'release-workflow',
+      name: 'Release workflow',
+      nodes: [firstAgent, { ...firstAgent, id: 'review-agent', name: 'Review agent' }],
+      updatedAt: '2026-08-24T15:00:00.000Z',
+    })
+    const workflows = [releaseWorkflow, workflow]
+    const client = {
+      listWorkflows: vi.fn(async () => workflows),
+      getWorkflow: vi.fn(async (workflowId: string) => {
+        const selected = workflows.find((candidate) => candidate.workflowId === workflowId)
+        if (selected === undefined) throw new Error('Workflow was not found')
+        return selected
+      }),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
+      startRun: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} selectedWorkflowId="release-workflow" />)
+
+    expect(await screen.findByText('Graph 2 nodes, 0 edges')).toBeTruthy()
+    expect(client.getWorkflow).toHaveBeenCalledWith('release-workflow')
+    expect(screen.getByRole('option', { name: /Release workflow.*API/u })).toBeTruthy()
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workflow' }), {
+      target: { value: 'default-workflow' },
+    })
+
+    expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
+    expect(navigation.push).toHaveBeenCalledWith('/?workflowId=default-workflow')
+  })
+
+  it('falls back to the newest workflow and normalizes an invalid URL selection', async () => {
+    const releaseWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      workflowId: 'release-workflow',
+      name: 'Release workflow',
+      updatedAt: '2026-08-24T15:00:00.000Z',
+    })
+    const client = {
+      listWorkflows: vi.fn(async () => [releaseWorkflow, workflow]),
+      getWorkflow: vi.fn(async () => releaseWorkflow),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
+      startRun: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} selectedWorkflowId="missing-workflow" />)
+
+    expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
+    expect(client.getWorkflow).toHaveBeenCalledWith('release-workflow')
+    expect(navigation.replace).toHaveBeenCalledWith('/?workflowId=release-workflow')
+  })
+
+  it('disables switching while saving and ignores a late save after URL navigation', async () => {
+    const firstAgent = workflow.nodes[0]
+    if (firstAgent === undefined) throw new Error('Expected an agent fixture')
+    const releaseWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      workflowId: 'release-workflow',
+      name: 'Release workflow',
+      nodes: [firstAgent, { ...firstAgent, id: 'review-agent', name: 'Review agent' }],
+      updatedAt: '2026-08-24T15:00:00.000Z',
+    })
+    let finishSave: ((saved: Workflow) => void) | undefined
+    const updateWorkflow = vi.fn(
+      async (_workflowId: string, next: Workflow) =>
+        new Promise<Workflow>((resolve) => {
+          finishSave = () => resolve(next)
+        }),
+    )
+    const client = {
+      listWorkflows: vi.fn(async () => [releaseWorkflow, workflow]),
+      getWorkflow: vi.fn(async (workflowId: string) =>
+        workflowId === releaseWorkflow.workflowId ? releaseWorkflow : workflow,
+      ),
+      updateWorkflow,
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
+      startRun: vi.fn(),
+    }
+    const view = render(
+      <WorkflowWorkbench client={client} selectedWorkflowId={workflow.workflowId} />,
+    )
+
+    await screen.findByText('Graph 1 nodes, 0 edges')
+    fireEvent.click(screen.getByRole('button', { name: 'Configure workflow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Save workflow configuration' }))
+    await waitFor(() => expect(updateWorkflow).toHaveBeenCalledTimes(1))
+    expect((screen.getByRole('combobox', { name: 'Workflow' }) as HTMLSelectElement).disabled).toBe(
+      true,
+    )
+
+    view.rerender(
+      <WorkflowWorkbench client={client} selectedWorkflowId={releaseWorkflow.workflowId} />,
+    )
+    expect(await screen.findByText('Graph 2 nodes, 0 edges')).toBeTruthy()
+
+    await act(async () => finishSave?.(workflow))
+    expect(screen.getByText('Graph 2 nodes, 0 edges')).toBeTruthy()
+  })
+
   it('loads only the graph workspace with a floating run action and graph-native drawers', async () => {
     const client = {
       listWorkflows: vi.fn(async () => catalog),
