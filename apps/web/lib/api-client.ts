@@ -36,7 +36,12 @@ import {
   type UndoDeletionResponse,
   type RunStatus,
 } from '@slopify/contracts'
-import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
+import {
+  CreateWorkflowInputSchema,
+  WorkflowSchema,
+  type CreateWorkflowInput,
+  type Workflow,
+} from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()
@@ -164,6 +169,7 @@ export interface ApiClient {
   deleteProject(projectId: string): Promise<DeletionReceipt>
   undoDeletion(deletionId: string): Promise<UndoDeletionResponse>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
+  createWorkflow(input: CreateWorkflowInput): Promise<Workflow>
   getWorkflow(workflowId: string): Promise<Workflow>
   updateWorkflow(workflowId: string, workflow: Workflow): Promise<Workflow>
   startRun(input: StartRunInput): Promise<StartRunResponse>
@@ -311,6 +317,18 @@ export const createApiClient = (
 
     async listWorkflows() {
       return (await get('/api/workflows', WorkflowCatalogResponseSchema)).workflows
+    },
+
+    async createWorkflow(input) {
+      return request(
+        '/api/workflows',
+        {
+          body: JSON.stringify(CreateWorkflowInputSchema.parse(input)),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'POST',
+        },
+        WorkflowSchema,
+      )
     },
 
     async getWorkflow(workflowId) {
