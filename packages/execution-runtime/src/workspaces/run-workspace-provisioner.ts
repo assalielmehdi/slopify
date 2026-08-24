@@ -3,11 +3,13 @@ import type { ProjectId, RunId } from '@slopify/contracts'
 import type { RunProjectSnapshot } from '../persistence/run-repository.js'
 
 export interface ProvisionedRunProject extends RunProjectSnapshot {
-  readonly worktreePath: string
+  readonly workspacePath: string
+  readonly branchName: string
 }
 
 export interface RunWorkspaceProvisioner {
   ensure(runId: RunId): Promise<readonly ProvisionedRunProject[]>
+  cleanup(runId: RunId): Promise<void>
 }
 
 export interface RunWorkspaceProvisioningFailure {
@@ -23,7 +25,7 @@ export class RunWorkspaceProvisioningError extends Error {
     super(
       failures.length === 1
         ? failures[0]?.message
-        : `${failures.length} run project worktrees could not be prepared`,
+        : `${failures.length} run project workspaces could not be prepared`,
     )
   }
 }

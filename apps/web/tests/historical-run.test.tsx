@@ -61,7 +61,7 @@ const detail = {
     },
   ],
   projects: [],
-  projectWorktrees: [],
+  projectWorkspaces: [],
 } as unknown as RunDetailResponse
 
 beforeEach(() => {

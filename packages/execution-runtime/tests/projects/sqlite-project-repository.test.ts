@@ -10,14 +10,19 @@ afterEach(() => {
 })
 
 describe('SQLite project repository', () => {
-  it('round-trips projects in creation order and enforces unique paths', () => {
+  it('round-trips projects in creation order and enforces unique provider repositories', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
     const projects = createProjectRepository(fixture.database)
     const record = {
       projectId: 'project-01',
       name: 'slopify',
-      repositoryPath: '/workspace/slopify',
+      provider: 'GITHUB' as const,
+      remoteId: '123',
+      fullName: 'operator/slopify',
+      cloneUrl: 'https://github.com/operator/slopify.git',
+      webUrl: 'https://github.com/operator/slopify',
+      defaultBranch: 'main',
       createdAt: '2026-08-21T10:00:00Z',
       updatedAt: '2026-08-21T10:00:00Z',
     }
@@ -25,7 +30,7 @@ describe('SQLite project repository', () => {
     projects.add(record)
 
     expect(projects.get('project-01')).toEqual(record)
-    expect(projects.findByPath('/workspace/slopify')).toEqual(record)
+    expect(projects.findByRemote('GITHUB', '123')).toEqual(record)
     expect(projects.list()).toEqual([record])
     expect(() => projects.add({ ...record, projectId: 'project-02' })).toThrowError(
       expect.objectContaining({ code: 'PERSISTENCE_CONFLICT' }),
@@ -51,7 +56,12 @@ describe('SQLite project repository', () => {
     projects.add({
       projectId: 'project-01',
       name: 'slopify',
-      repositoryPath: '/workspace/slopify',
+      provider: 'GITHUB',
+      remoteId: '123',
+      fullName: 'operator/slopify',
+      cloneUrl: 'https://github.com/operator/slopify.git',
+      webUrl: 'https://github.com/operator/slopify',
+      defaultBranch: 'main',
       createdAt: '2026-08-21T10:00:00Z',
       updatedAt: '2026-08-21T10:00:00Z',
     })
@@ -65,6 +75,6 @@ describe('SQLite project repository', () => {
     projects.purgeExpired('2026-08-22T10:00:10Z')
 
     expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:10Z')).toBe('EXPIRED')
-    expect(projects.findByPath('/workspace/slopify')).toBeUndefined()
+    expect(projects.findByRemote('GITHUB', '123')).toBeUndefined()
   })
 })

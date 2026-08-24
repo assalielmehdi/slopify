@@ -20,9 +20,10 @@ supported harness and runs through its CLI.
 - Workflows contain only agent nodes. An empty workflow is a valid draft but is not
   runnable. Agent nodes may be graph leaves; a successful leaf completes its branch.
 - Workflow configuration owns the projects and variable names shared by all its agents.
-  Every configured project must resolve to an available local Git repository before run
-  admission. One configured project is primary and is the starting directory for every
-  agent; all configured projects remain available to every node.
+  Every configured project identifies a GitHub.com or GitLab.com repository and must
+  resolve through its configured provider connection before run admission. One
+  configured project is primary and is the starting directory for every agent; all
+  configured projects remain available to every node.
 - A run must provide exactly one JSON value for every variable name declared by its
   captured workflow. Slopify interpolates only exact `{{ variable }}` placeholders whose
   names are declared there; undeclared placeholders remain literal.
@@ -34,30 +35,36 @@ supported harness and runs through its CLI.
   `COORDINATOR` destinations. Message handling is at least once, so handlers and
   attempts must remain idempotent. `run_events` is append-only audit history, never a
   queue.
-- Run admission captures each configured Project's canonical path, current commit, and
-  source branch. Before a harness process starts, the worker prepares one detached Git
-  worktree per captured Project at
-  `~/.slopify/orchestrator/worktrees/<runId>/<projectId>`. Agents in one run share those
-  worktrees; separate runs never share a worktree. Never give a harness the source
-  checkout as its workspace.
+- Run admission captures each configured Project's provider identity, HTTPS clone URL,
+  default branch, and current default-branch commit. Before a harness process starts,
+  the worker creates one fresh clone per captured Project at
+  `~/.slopify/orchestrator/workspaces/<runId>/<projectId>` and checks out the deterministic
+  branch `slopify/<runId>` from the captured commit. Agents in one run share those clones
+  and branches; separate runs never share a clone.
+- Slopify never pushes a run branch or creates a pull request. Agents do so deliberately
+  when their task requires it. Once a run reaches `SUCCEEDED`, `FAILED`, or `CANCELLED`,
+  Slopify removes its cloned workspace by default. Durable workspace state lets startup
+  polling retry cleanup after interruption.
 - Each agent execution receives a fresh Pi CLI RPC process with no persisted Pi session.
-  It starts in the primary run worktree without project-local approval and receives only
-  run worktree paths in its Slopify prompt and execution contract. Slopify's adapter-owned
+  It starts in the primary run clone without project-local approval and receives the
+  provider, repository, workspace path, branch, and base commit in its execution
+  contract. Slopify's adapter-owned
   `slopify_complete_node` bridge is the only routable agent result.
 - Pi runs directly as the Slopify host user and uses the existing host-level Pi setup.
-  Harness setup is external to Slopify. Git worktrees isolate configured Project state;
+  Harness setup is external to Slopify. Fresh Git clones isolate concurrent run state;
   they do not restrict access to other host paths.
 - Harness availability and model metadata are discovered live through application
   ports. Infrastructure adapters implement those ports; workflow and execution code
   must not branch on Pi-specific protocols. Agent traces record the selected harness
-  and immutable worktree context without source checkout paths.
-- Before every harness launch, Slopify verifies that Git registered each run worktree at
-  its exact deterministic path under the canonical worktrees root. Symbolic-link or
+  and immutable cloned-workspace context without credentials.
+- Before every harness launch, Slopify verifies the Git clone, origin, branch, and exact
+  deterministic path under the canonical workspaces root. Symbolic-link or
   parent-directory substitutions fail the node instead of changing its workspace.
 - Trace capture redacts bounded sensitive-looking values inherited from the harness
   process environment and applies the same redaction to structured node results. Since
   the host harness can read other user files, traces are trusted owner-local data.
-- SQLite owns current workflow, Project, run snapshot, run-worktree state, queue, and
+- SQLite owns current workflow, non-secret Git connection metadata, Project, run
+  snapshot, run-workspace state, queue, and
   audit data. `run_events` is append-only audit history and agent transcripts are stored
   as owner-local JSONL traces. Harness state remains owned by the harness on the host.
 
@@ -67,7 +74,7 @@ supported harness and runs through its CLI.
 - `apps/web`: Next.js UI and API proxy.
 - `packages/workflow-model`: strict workflow and agent schemas with graph rules.
 - `packages/execution-runtime`: use cases, ports, coordinator, worker, persistence,
-  worktree provisioning, harness discovery, and node runners.
+  clone provisioning, harness discovery, and node runners.
 - `packages/agent-runtimes`: infrastructure adapters for host harnesses; currently Pi
   CLI inspection and RPC execution.
 - `packages/contracts`: shared application contracts.

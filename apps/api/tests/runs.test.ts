@@ -64,7 +64,7 @@ describe('run JSON API', () => {
       events: expect.any(Array),
       nodeExecutions: expect.any(Array),
       projects: expect.any(Array),
-      projectWorktrees: expect.any(Array),
+      projectWorkspaces: expect.any(Array),
     })
   })
 

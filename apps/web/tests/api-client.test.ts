@@ -41,7 +41,7 @@ describe('API client', () => {
   it('loads a typed agent trace for one captured node execution', async () => {
     const trace = AgentTraceSchema.parse({
       header: {
-        version: 1,
+        version: 2,
         runId: 'run-01',
         nodeExecutionId: 'node-execution-01',
         attemptId: 'attempt-01',
@@ -53,15 +53,18 @@ describe('API client', () => {
           model: 'test/model',
           thinkingLevel: 'medium',
           renderedPrompt: 'Inspect the repository.',
-          workspaceRoot: '/worktrees/run-01/project-api',
+          workspaceRoot: '/workspaces/run-01',
           primaryProjectId: 'project-api',
           projects: [
             {
               projectId: 'project-api',
               name: 'API',
-              worktreePath: '/worktrees/run-01/project-api',
+              provider: 'GITHUB',
+              fullName: 'operator/api',
+              workspacePath: '/workspaces/run-01/project-api',
+              branchName: 'slopify/run-01',
               baseSha: 'a'.repeat(40),
-              sourceBranch: 'main',
+              defaultBranch: 'main',
             },
           ],
           timeoutSeconds: 600,
@@ -124,11 +127,16 @@ describe('API client', () => {
     )
   })
 
-  it('lists, adds, deletes, and restores local Git projects through the same-origin API', async () => {
+  it('lists, adds, deletes, and restores remote Git projects through the same-origin API', async () => {
     const project = ProjectSchema.parse({
       projectId: 'project-01',
       name: 'slopify',
-      repositoryPath: '/workspace/slopify',
+      provider: 'GITHUB',
+      remoteId: '123',
+      fullName: 'operator/slopify',
+      cloneUrl: 'https://github.com/operator/slopify.git',
+      webUrl: 'https://github.com/operator/slopify',
+      defaultBranch: 'main',
       availability: 'AVAILABLE',
       createdAt: '2026-08-21T10:00:00Z',
       updatedAt: '2026-08-21T10:00:00Z',
@@ -148,18 +156,18 @@ describe('API client', () => {
       .mockResolvedValueOnce(Response.json(undone))
     const client = createApiClient({ fetch: fetchImplementation })
 
-    await expect(client.listProjects?.()).resolves.toEqual([project])
-    await expect(client.addProject?.({ repositoryPath: '/workspace/slopify' })).resolves.toEqual(
+    await expect(client.listProjects()).resolves.toEqual([project])
+    await expect(client.addProject({ provider: 'GITHUB', remoteId: '123' })).resolves.toEqual(
       project,
     )
-    await expect(client.deleteProject?.('project-01')).resolves.toEqual(deletion)
-    await expect(client.undoDeletion?.('deletion-01')).resolves.toEqual(undone)
+    await expect(client.deleteProject('project-01')).resolves.toEqual(deletion)
+    await expect(client.undoDeletion('deletion-01')).resolves.toEqual(undone)
     expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/projects', {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
     expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/projects', {
-      body: JSON.stringify({ repositoryPath: '/workspace/slopify' }),
+      body: JSON.stringify({ provider: 'GITHUB', remoteId: '123' }),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       method: 'POST',
     })
@@ -170,6 +178,45 @@ describe('API client', () => {
     expect(fetchImplementation).toHaveBeenNthCalledWith(4, '/api/deletions/deletion-01/undo', {
       method: 'POST',
       headers: { accept: 'application/json' },
+    })
+  })
+
+  it('configures Git connections and loads their repositories without reading tokens back', async () => {
+    const connection = {
+      provider: 'GITHUB' as const,
+      accountUsername: 'operator',
+      connectedAt: '2026-08-24T00:00:00Z',
+      updatedAt: '2026-08-24T00:00:00Z',
+    }
+    const repository = {
+      provider: 'GITHUB' as const,
+      remoteId: '123',
+      name: 'slopify',
+      fullName: 'operator/slopify',
+      cloneUrl: 'https://github.com/operator/slopify.git',
+      webUrl: 'https://github.com/operator/slopify',
+      visibility: 'PRIVATE' as const,
+      defaultBranch: 'main',
+    }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ connections: [connection] }))
+      .mockResolvedValueOnce(Response.json(connection))
+      .mockResolvedValueOnce(Response.json({ repositories: [repository] }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listGitConnections()).resolves.toEqual([connection])
+    await expect(
+      client.configureGitConnection('GITHUB', { token: 'secret-token' }),
+    ).resolves.toEqual(connection)
+    await expect(client.listGitRepositories('GITHUB')).resolves.toEqual([repository])
+    await expect(client.disconnectGitConnection('GITHUB')).resolves.toBeUndefined()
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/git/connections/GITHUB', {
+      body: JSON.stringify({ token: 'secret-token' }),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'PUT',
     })
   })
 
@@ -266,7 +313,7 @@ describe('API client', () => {
     })
   })
 
-  it('loads immutable project and worktree evidence with run details', async () => {
+  it('loads immutable project and cloned workspace evidence with run details', async () => {
     const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
       modelId: 'test-model',
@@ -291,20 +338,25 @@ describe('API client', () => {
           projectId: 'project-api',
           position: 0,
           name: 'API',
-          repositoryPath: '/repositories/api',
+          provider: 'GITHUB',
+          remoteId: '123',
+          fullName: 'operator/api',
+          cloneUrl: 'https://github.com/operator/api.git',
+          defaultBranch: 'main',
           baseSha: 'a'.repeat(40),
-          sourceBranch: 'main',
           isPrimary: true,
         },
       ],
-      projectWorktrees: [
+      projectWorkspaces: [
         {
           projectId: 'project-api',
           position: 0,
           status: 'READY',
-          worktreePath: '/worktrees/run-01/project-api',
+          workspacePath: '/workspaces/run-01/project-api',
+          branchName: 'slopify/run-01',
           errorMessage: null,
           preparedAt: '2026-08-23T12:00:01Z',
+          cleanedAt: null,
           updatedAt: '2026-08-23T12:00:01Z',
         },
       ],

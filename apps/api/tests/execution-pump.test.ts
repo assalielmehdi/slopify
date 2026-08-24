@@ -10,6 +10,7 @@ describe('execution pump', () => {
     const pump = createExecutionPump({
       pollIntervalMs: 1_000,
       recoverExpired: vi.fn(() => order.push('recover')),
+      cleanupTerminalRuns: vi.fn(async () => order.push('cleanup')),
       coordinator: {
         runOnce: vi.fn(() => {
           order.push('coordinator')
@@ -37,6 +38,7 @@ describe('execution pump', () => {
       'coordinator',
       'worker',
       'coordinator',
+      'cleanup',
     ])
     await pump.stop()
   })
@@ -55,6 +57,7 @@ describe('execution pump', () => {
     const pump = createExecutionPump({
       pollIntervalMs: 1_000,
       recoverExpired: vi.fn(),
+      cleanupTerminalRuns: vi.fn(async () => undefined),
       coordinator: { runOnce: () => false },
       worker,
     })

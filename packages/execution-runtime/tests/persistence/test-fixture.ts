@@ -21,9 +21,12 @@ export const TEST_RUN_ID = RunIdSchema.parse('run-01')
 export const TEST_RUN_PROJECT: RunProjectResolution = {
   projectId: 'project-api' as RunProjectResolution['projectId'],
   name: 'API',
-  repositoryPath: '/workspace/api',
+  provider: 'GITHUB',
+  remoteId: '100',
+  fullName: 'operator/api',
+  cloneUrl: 'https://github.com/operator/api.git',
+  defaultBranch: 'main',
   baseSha: 'a'.repeat(40) as RunProjectResolution['baseSha'],
-  sourceBranch: 'main',
 }
 
 export const createTestHarnessCatalog = (): HarnessCatalog => ({
@@ -92,10 +95,15 @@ export const createTestRunProjects = (workflow: Workflow): readonly RunProjectRe
     ...TEST_RUN_PROJECT,
     projectId,
     name: projectId === TEST_RUN_PROJECT.projectId ? TEST_RUN_PROJECT.name : projectId,
-    repositoryPath:
+    remoteId: projectId === TEST_RUN_PROJECT.projectId ? TEST_RUN_PROJECT.remoteId : '200',
+    fullName:
       projectId === TEST_RUN_PROJECT.projectId
-        ? TEST_RUN_PROJECT.repositoryPath
-        : `/workspace/${projectId}`,
+        ? TEST_RUN_PROJECT.fullName
+        : `operator/${projectId}`,
+    cloneUrl:
+      projectId === TEST_RUN_PROJECT.projectId
+        ? TEST_RUN_PROJECT.cloneUrl
+        : `https://github.com/operator/${projectId}.git`,
   }))
 
 export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) => {

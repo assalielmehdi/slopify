@@ -1,11 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import { PersistenceError } from '../../src/index.js'
+import { getDatabaseHandle } from '../../src/persistence/database.js'
 import { createPersistenceFixture, createTestAgentWorkflow } from './test-fixture.js'
 
 const timestamp = '2026-08-23T12:00:00Z'
 const apiSha = '1111111111111111111111111111111111111111'
 const webSha = '2222222222222222222222222222222222222222'
+
+const project = (projectId: string, name: string, remoteId: string, baseSha: string) => ({
+  projectId,
+  name,
+  provider: 'GITHUB' as const,
+  remoteId,
+  fullName: `operator/${name.toLowerCase()}`,
+  cloneUrl: `https://github.com/operator/${name.toLowerCase()}.git`,
+  defaultBranch: 'main',
+  baseSha,
+})
 
 const workflowWithProjects = () =>
   createTestAgentWorkflow({
@@ -49,20 +61,8 @@ describe('run project snapshots', () => {
         variables: {},
         createdAt: timestamp,
         projects: [
-          {
-            projectId: 'project-api',
-            name: 'API',
-            repositoryPath: '/repositories/api',
-            baseSha: apiSha,
-            sourceBranch: 'main',
-          },
-          {
-            projectId: 'project-web',
-            name: 'Web',
-            repositoryPath: '/repositories/web',
-            baseSha: webSha,
-            sourceBranch: null,
-          },
+          project('project-api', 'API', '100', apiSha),
+          project('project-web', 'Web', '200', webSha),
         ],
       })
 
@@ -71,18 +71,24 @@ describe('run project snapshots', () => {
           projectId: 'project-api',
           position: 0,
           name: 'API',
-          repositoryPath: '/repositories/api',
+          provider: 'GITHUB',
+          remoteId: '100',
+          fullName: 'operator/api',
+          cloneUrl: 'https://github.com/operator/api.git',
+          defaultBranch: 'main',
           baseSha: apiSha,
-          sourceBranch: 'main',
           isPrimary: false,
         },
         {
           projectId: 'project-web',
           position: 1,
           name: 'Web',
-          repositoryPath: '/repositories/web',
+          provider: 'GITHUB',
+          remoteId: '200',
+          fullName: 'operator/web',
+          cloneUrl: 'https://github.com/operator/web.git',
+          defaultBranch: 'main',
           baseSha: webSha,
-          sourceBranch: null,
           isPrimary: true,
         },
       ])
@@ -102,15 +108,7 @@ describe('run project snapshots', () => {
           workflowSnapshot: fixture.workflow,
           variables: {},
           createdAt: timestamp,
-          projects: [
-            {
-              projectId: 'project-web',
-              name: 'Web',
-              repositoryPath: '/repositories/web',
-              baseSha: webSha,
-              sourceBranch: 'main',
-            },
-          ],
+          projects: [project('project-web', 'Web', '200', webSha)],
         }),
       ).toThrowError(
         expect.objectContaining({
@@ -135,20 +133,8 @@ describe('run project snapshots', () => {
           variables: {},
           createdAt: timestamp,
           projects: [
-            {
-              projectId: 'project-api',
-              name: 'API',
-              repositoryPath: '/repositories/shared',
-              baseSha: apiSha,
-              sourceBranch: 'main',
-            },
-            {
-              projectId: 'project-web',
-              name: 'Web',
-              repositoryPath: '/repositories/shared',
-              baseSha: webSha,
-              sourceBranch: 'main',
-            },
+            project('project-api', 'API', '100', apiSha),
+            project('project-web', 'Web', '100', webSha),
           ],
         }),
       ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_WRITE_FAILED' }))
@@ -159,7 +145,7 @@ describe('run project snapshots', () => {
     }
   })
 
-  it('persists idempotent PREPARING, READY, and FAILED worktree transitions', () => {
+  it('persists PREPARING, READY, FAILED, and CLEANED workspace transitions', () => {
     const fixture = createPersistenceFixture(workflowWithProjects())
 
     try {
@@ -170,78 +156,122 @@ describe('run project snapshots', () => {
         variables: {},
         createdAt: timestamp,
         projects: [
-          {
-            projectId: 'project-api',
-            name: 'API',
-            repositoryPath: '/repositories/api',
-            baseSha: apiSha,
-            sourceBranch: 'main',
-          },
-          {
-            projectId: 'project-web',
-            name: 'Web',
-            repositoryPath: '/repositories/web',
-            baseSha: webSha,
-            sourceBranch: 'main',
-          },
+          project('project-api', 'API', '100', apiSha),
+          project('project-web', 'Web', '200', webSha),
         ],
       })
 
-      fixture.runs.markRunProjectWorktreePreparing({
+      fixture.runs.markRunProjectWorkspacePreparing({
         runId: 'run-worktree-state',
         projectId: 'project-api',
-        worktreePath: '/worktrees/run-worktree-state/project-api',
+        workspacePath: '/workspaces/run-worktree-state/project-api',
+        branchName: 'slopify/run-worktree-state',
         timestamp,
       })
-      fixture.runs.markRunProjectWorktreeReady({
+      fixture.runs.markRunProjectWorkspaceReady({
         runId: 'run-worktree-state',
         projectId: 'project-api',
-        worktreePath: '/worktrees/run-worktree-state/project-api',
+        workspacePath: '/workspaces/run-worktree-state/project-api',
+        branchName: 'slopify/run-worktree-state',
         timestamp: '2026-08-23T12:00:01Z',
       })
-      fixture.runs.markRunProjectWorktreePreparing({
+      fixture.runs.markRunProjectWorkspacePreparing({
         runId: 'run-worktree-state',
         projectId: 'project-web',
-        worktreePath: '/worktrees/run-worktree-state/project-web',
+        workspacePath: '/workspaces/run-worktree-state/project-web',
+        branchName: 'slopify/run-worktree-state',
         timestamp,
       })
-      fixture.runs.markRunProjectWorktreeFailed({
+      fixture.runs.markRunProjectWorkspaceFailed({
         runId: 'run-worktree-state',
         projectId: 'project-web',
-        worktreePath: '/worktrees/run-worktree-state/project-web',
-        errorMessage: 'Git worktree creation failed',
+        workspacePath: '/workspaces/run-worktree-state/project-web',
+        branchName: 'slopify/run-worktree-state',
+        errorMessage: 'Git clone failed',
         timestamp: '2026-08-23T12:00:01Z',
       })
 
-      expect(fixture.runs.listRunProjectWorktrees('run-worktree-state')).toEqual([
+      fixture.runs.markRunProjectWorkspaceCleaned({
+        runId: 'run-worktree-state',
+        projectId: 'project-api',
+        timestamp: '2026-08-23T12:00:02Z',
+      })
+
+      expect(fixture.runs.listRunProjectWorkspaces('run-worktree-state')).toEqual([
         {
           projectId: 'project-api',
           position: 0,
-          status: 'READY',
-          worktreePath: '/worktrees/run-worktree-state/project-api',
+          status: 'CLEANED',
+          workspacePath: '/workspaces/run-worktree-state/project-api',
+          branchName: 'slopify/run-worktree-state',
           errorMessage: null,
           preparedAt: '2026-08-23T12:00:01Z',
-          updatedAt: '2026-08-23T12:00:01Z',
+          cleanedAt: '2026-08-23T12:00:02Z',
+          updatedAt: '2026-08-23T12:00:02Z',
         },
         {
           projectId: 'project-web',
           position: 1,
           status: 'FAILED',
-          worktreePath: '/worktrees/run-worktree-state/project-web',
-          errorMessage: 'Git worktree creation failed',
+          workspacePath: '/workspaces/run-worktree-state/project-web',
+          branchName: 'slopify/run-worktree-state',
+          errorMessage: 'Git clone failed',
           preparedAt: null,
+          cleanedAt: null,
           updatedAt: '2026-08-23T12:00:01Z',
         },
       ])
 
       expect(() =>
-        fixture.runs.markRunProjectWorktreePreparing({
+        fixture.runs.markRunProjectWorkspacePreparing({
           runId: 'run-worktree-state',
           projectId: 'project-api',
-          worktreePath: '/different/path',
+          workspacePath: '/different/path',
+          branchName: 'slopify/run-worktree-state',
           timestamp: '2026-08-23T12:00:02Z',
         }),
       ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_CONFLICT' }))
+    } finally {
+      fixture.cleanup()
+    }
+  })
+
+  it('lists terminal runs whose cloned workspaces still require cleanup', () => {
+    const fixture = createPersistenceFixture(workflowWithProjects())
+
+    try {
+      for (const runId of ['run-succeeded', 'run-running']) {
+        fixture.runs.create({
+          runId,
+          workflowId: fixture.workflow.workflowId,
+          workflowSnapshot: fixture.workflow,
+          variables: {},
+          createdAt: timestamp,
+          projects: [
+            project('project-api', 'API', '100', apiSha),
+            project('project-web', 'Web', '200', webSha),
+          ],
+        })
+        fixture.runs.markRunProjectWorkspacePreparing({
+          runId,
+          projectId: 'project-api',
+          workspacePath: `/workspaces/${runId}/project-api`,
+          branchName: `slopify/${runId}`,
+          timestamp,
+        })
+      }
+      getDatabaseHandle(fixture.database)
+        .prepare("UPDATE runs SET status = 'SUCCEEDED', completed_at = ? WHERE run_id = ?")
+        .run(timestamp, 'run-succeeded')
+
+      expect(fixture.runs.listTerminalRunIdsNeedingWorkspaceCleanup()).toEqual(['run-succeeded'])
+
+      fixture.runs.markRunProjectWorkspaceCleaned({
+        runId: 'run-succeeded',
+        projectId: 'project-api',
+        timestamp,
+      })
+      expect(fixture.runs.listTerminalRunIdsNeedingWorkspaceCleanup()).toEqual([])
     } finally {
       fixture.cleanup()
     }

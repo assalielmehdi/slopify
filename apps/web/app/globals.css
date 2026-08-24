@@ -83,6 +83,7 @@
   --duration-quick: 150ms;
   --duration-very-slow: 500ms;
   --duration-overlay: 240ms;
+  --workflow-running-fill-duration: 4s;
   --resize-dur: 300ms;
   --resize-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-standard: cubic-bezier(0.2, 0, 0, 1);
@@ -386,6 +387,39 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+}
+
+@keyframes workflow-node-running-fill {
+  from {
+    transform: scaleY(0);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+
+.workflow-node-running-fill::before {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  background: color-mix(in oklch, var(--status-info) 20%, var(--card));
+  content: '';
+  transform: scaleY(0);
+  transform-origin: top;
+  animation: workflow-node-running-fill var(--workflow-running-fill-duration) linear infinite;
+  will-change: transform;
+}
+
+.workflow-node-running-fill > * {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-node-running-fill::before {
+    animation: none;
+    transform: scaleY(1);
   }
 }
 

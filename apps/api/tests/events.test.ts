@@ -127,7 +127,7 @@ describe('run event SSE API', () => {
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
         tracesRoot: '/traces',
-        worktreesRoot: '/worktrees',
+        workspacesRoot: '/workspaces',
         shutdownGracePeriodMs: 10_000,
       },
     })

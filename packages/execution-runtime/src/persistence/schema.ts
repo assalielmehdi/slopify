@@ -1,9 +1,24 @@
 import type { Database } from './sqlite.js'
 
 export const SLOPIFY_DATABASE_APPLICATION_ID = 0x534c5059
-export const CURRENT_SCHEMA_MARKER = Object.freeze({ version: 1, name: 'current_schema' })
+export const CURRENT_SCHEMA_MARKER = Object.freeze({ version: 2, name: 'current_schema' })
 
 const CURRENT_TABLES = Object.freeze([
+  'deletion_operations',
+  'execution_messages',
+  'git_connections',
+  'node_executions',
+  'projects',
+  'run_events',
+  'run_project_workspaces',
+  'run_projects',
+  'runs',
+  'schema_metadata',
+  'workflow_coordinator_states',
+  'workflows',
+])
+
+const VERSION_ONE_TABLES = Object.freeze([
   'deletion_operations',
   'execution_messages',
   'node_executions',
@@ -29,6 +44,13 @@ const CURRENT_SCHEMA = `
     definition_json TEXT NOT NULL CHECK (json_valid(definition_json))
   ) STRICT;
 
+  CREATE TABLE git_connections (
+    provider TEXT PRIMARY KEY CHECK (provider IN ('GITHUB', 'GITLAB')),
+    account_username TEXT NOT NULL,
+    connected_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  ) STRICT;
+
   CREATE TABLE deletion_operations (
     deletion_id TEXT PRIMARY KEY,
     subject_type TEXT NOT NULL CHECK (subject_type = 'PROJECT'),
@@ -47,11 +69,17 @@ const CURRENT_SCHEMA = `
   CREATE TABLE projects (
     project_id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
-    repository_path TEXT NOT NULL UNIQUE,
+    provider TEXT NOT NULL CHECK (provider IN ('GITHUB', 'GITLAB')),
+    remote_id TEXT NOT NULL,
+    repository_full_name TEXT NOT NULL,
+    clone_url TEXT NOT NULL,
+    web_url TEXT NOT NULL,
+    default_branch TEXT NOT NULL,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     deletion_id TEXT REFERENCES deletion_operations (deletion_id),
-    deleted_at TEXT
+    deleted_at TEXT,
+    UNIQUE (provider, remote_id)
   ) STRICT;
 
   CREATE INDEX projects_by_deletion_id ON projects (deletion_id);
@@ -78,37 +106,48 @@ const CURRENT_SCHEMA = `
     project_id TEXT NOT NULL,
     project_position INTEGER NOT NULL CHECK (project_position >= 0),
     name TEXT NOT NULL,
-    repository_path TEXT NOT NULL,
+    provider TEXT CHECK (provider IS NULL OR provider IN ('GITHUB', 'GITLAB')),
+    remote_id TEXT,
+    repository_full_name TEXT NOT NULL,
+    clone_url TEXT NOT NULL,
+    default_branch TEXT,
     base_sha TEXT NOT NULL CHECK (
       base_sha NOT GLOB '*[^0-9a-f]*'
       AND length(base_sha) IN (40, 64)
     ),
-    source_branch TEXT,
     is_primary INTEGER NOT NULL CHECK (is_primary IN (0, 1)),
     PRIMARY KEY (run_id, project_id),
     UNIQUE (run_id, project_position),
-    UNIQUE (run_id, repository_path),
-    FOREIGN KEY (run_id) REFERENCES runs (run_id)
+    UNIQUE (run_id, provider, remote_id),
+    FOREIGN KEY (run_id) REFERENCES runs (run_id),
+    CHECK (
+      (provider IS NULL AND remote_id IS NULL)
+      OR (provider IS NOT NULL AND remote_id IS NOT NULL AND default_branch IS NOT NULL)
+    )
   ) STRICT;
 
   CREATE UNIQUE INDEX run_projects_one_primary
     ON run_projects (run_id)
     WHERE is_primary = 1;
 
-  CREATE TABLE run_project_worktrees (
+  CREATE TABLE run_project_workspaces (
     run_id TEXT NOT NULL,
     project_id TEXT NOT NULL,
-    status TEXT NOT NULL CHECK (status IN ('PREPARING', 'READY', 'FAILED')),
-    worktree_path TEXT NOT NULL UNIQUE,
+    status TEXT NOT NULL CHECK (status IN ('PREPARING', 'READY', 'FAILED', 'CLEANED', 'LEGACY')),
+    workspace_path TEXT NOT NULL UNIQUE,
+    branch_name TEXT,
     error_message TEXT,
     prepared_at TEXT,
+    cleaned_at TEXT,
     updated_at TEXT NOT NULL,
     PRIMARY KEY (run_id, project_id),
     FOREIGN KEY (run_id, project_id) REFERENCES run_projects (run_id, project_id),
     CHECK (
-      (status = 'PREPARING' AND error_message IS NULL AND prepared_at IS NULL)
-      OR (status = 'READY' AND error_message IS NULL AND prepared_at IS NOT NULL)
-      OR (status = 'FAILED' AND error_message IS NOT NULL AND prepared_at IS NULL)
+      (status = 'PREPARING' AND branch_name IS NOT NULL AND error_message IS NULL AND prepared_at IS NULL AND cleaned_at IS NULL)
+      OR (status = 'READY' AND branch_name IS NOT NULL AND error_message IS NULL AND prepared_at IS NOT NULL AND cleaned_at IS NULL)
+      OR (status = 'FAILED' AND branch_name IS NOT NULL AND error_message IS NOT NULL AND prepared_at IS NULL AND cleaned_at IS NULL)
+      OR (status = 'CLEANED' AND branch_name IS NOT NULL AND error_message IS NULL AND cleaned_at IS NOT NULL)
+      OR (status = 'LEGACY' AND branch_name IS NULL AND cleaned_at IS NULL)
     )
   ) STRICT;
 
@@ -207,6 +246,24 @@ interface SchemaMarkerRow {
   readonly name: string
 }
 
+const schemaMarkers = (database: Database): readonly SchemaMarkerRow[] =>
+  database
+    .prepare('SELECT version, name FROM schema_metadata ORDER BY version')
+    .all() as SchemaMarkerRow[]
+
+const hasMarker = (database: Database, version: number): boolean => {
+  try {
+    const markers = schemaMarkers(database)
+    return (
+      markers.length === 1 &&
+      markers[0]?.version === version &&
+      markers[0]?.name === 'current_schema'
+    )
+  } catch {
+    return false
+  }
+}
+
 export class DatabaseSchemaIncompatibleError extends Error {
   constructor(message: string) {
     super(message)
@@ -232,16 +289,130 @@ const isCurrentSchema = (database: Database, tables: readonly string[]): boolean
     return false
   }
   try {
-    const markers = database
-      .prepare('SELECT version, name FROM schema_metadata ORDER BY version')
-      .all() as SchemaMarkerRow[]
-    return (
-      markers.length === 1 &&
-      markers[0]?.version === CURRENT_SCHEMA_MARKER.version &&
-      markers[0]?.name === CURRENT_SCHEMA_MARKER.name
-    )
+    return hasMarker(database, CURRENT_SCHEMA_MARKER.version)
   } catch {
     return false
+  }
+}
+
+const isVersionOneSchema = (database: Database, tables: readonly string[]): boolean =>
+  tables.length === VERSION_ONE_TABLES.length &&
+  tables.every((table, index) => table === VERSION_ONE_TABLES[index]) &&
+  hasMarker(database, 1)
+
+const migrateVersionOne = (database: Database): void => {
+  database.pragma('foreign_keys = OFF')
+  try {
+    database
+      .transaction(() => {
+        database.exec(`
+          DROP INDEX projects_by_deletion_id;
+          DROP INDEX run_projects_one_primary;
+          ALTER TABLE projects RENAME TO projects_v1;
+          ALTER TABLE run_projects RENAME TO run_projects_v1;
+          ALTER TABLE run_project_worktrees RENAME TO run_project_worktrees_v1;
+
+          CREATE TABLE git_connections (
+            provider TEXT PRIMARY KEY CHECK (provider IN ('GITHUB', 'GITLAB')),
+            account_username TEXT NOT NULL,
+            connected_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+          ) STRICT;
+
+          CREATE TABLE projects (
+            project_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            provider TEXT NOT NULL CHECK (provider IN ('GITHUB', 'GITLAB')),
+            remote_id TEXT NOT NULL,
+            repository_full_name TEXT NOT NULL,
+            clone_url TEXT NOT NULL,
+            web_url TEXT NOT NULL,
+            default_branch TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deletion_id TEXT REFERENCES deletion_operations (deletion_id),
+            deleted_at TEXT,
+            UNIQUE (provider, remote_id)
+          ) STRICT;
+          CREATE INDEX projects_by_deletion_id ON projects (deletion_id);
+
+          CREATE TABLE run_projects (
+            run_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            project_position INTEGER NOT NULL CHECK (project_position >= 0),
+            name TEXT NOT NULL,
+            provider TEXT CHECK (provider IS NULL OR provider IN ('GITHUB', 'GITLAB')),
+            remote_id TEXT,
+            repository_full_name TEXT NOT NULL,
+            clone_url TEXT NOT NULL,
+            default_branch TEXT,
+            base_sha TEXT NOT NULL CHECK (
+              base_sha NOT GLOB '*[^0-9a-f]*' AND length(base_sha) IN (40, 64)
+            ),
+            is_primary INTEGER NOT NULL CHECK (is_primary IN (0, 1)),
+            PRIMARY KEY (run_id, project_id),
+            UNIQUE (run_id, project_position),
+            UNIQUE (run_id, provider, remote_id),
+            FOREIGN KEY (run_id) REFERENCES runs (run_id),
+            CHECK (
+              (provider IS NULL AND remote_id IS NULL)
+              OR (provider IS NOT NULL AND remote_id IS NOT NULL AND default_branch IS NOT NULL)
+            )
+          ) STRICT;
+          CREATE UNIQUE INDEX run_projects_one_primary
+            ON run_projects (run_id) WHERE is_primary = 1;
+
+          CREATE TABLE run_project_workspaces (
+            run_id TEXT NOT NULL,
+            project_id TEXT NOT NULL,
+            status TEXT NOT NULL CHECK (
+              status IN ('PREPARING', 'READY', 'FAILED', 'CLEANED', 'LEGACY')
+            ),
+            workspace_path TEXT NOT NULL UNIQUE,
+            branch_name TEXT,
+            error_message TEXT,
+            prepared_at TEXT,
+            cleaned_at TEXT,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY (run_id, project_id),
+            FOREIGN KEY (run_id, project_id) REFERENCES run_projects (run_id, project_id),
+            CHECK (
+              (status = 'PREPARING' AND branch_name IS NOT NULL AND error_message IS NULL AND prepared_at IS NULL AND cleaned_at IS NULL)
+              OR (status = 'READY' AND branch_name IS NOT NULL AND error_message IS NULL AND prepared_at IS NOT NULL AND cleaned_at IS NULL)
+              OR (status = 'FAILED' AND branch_name IS NOT NULL AND error_message IS NOT NULL AND prepared_at IS NULL AND cleaned_at IS NULL)
+              OR (status = 'CLEANED' AND branch_name IS NOT NULL AND error_message IS NULL AND cleaned_at IS NOT NULL)
+              OR (status = 'LEGACY' AND branch_name IS NULL AND cleaned_at IS NULL)
+            )
+          ) STRICT;
+
+          INSERT INTO run_projects (
+            run_id, project_id, project_position, name, provider, remote_id,
+            repository_full_name, clone_url, default_branch, base_sha, is_primary
+          )
+          SELECT run_id, project_id, project_position, name, NULL, NULL,
+                 name, repository_path, source_branch, base_sha, is_primary
+          FROM run_projects_v1;
+
+          INSERT INTO run_project_workspaces (
+            run_id, project_id, status, workspace_path, branch_name,
+            error_message, prepared_at, cleaned_at, updated_at
+          )
+          SELECT run_id, project_id, 'LEGACY', worktree_path, NULL,
+                 error_message, prepared_at, NULL, updated_at
+          FROM run_project_worktrees_v1;
+
+          DROP TABLE run_project_worktrees_v1;
+          DROP TABLE run_projects_v1;
+          DROP TABLE projects_v1;
+          DELETE FROM deletion_operations;
+          UPDATE schema_metadata
+          SET version = 2, applied_at = '2026-08-24T00:00:00.000Z'
+          WHERE version = 1 AND name = 'current_schema';
+        `)
+      })
+      .immediate()
+  } finally {
+    database.pragma('foreign_keys = ON')
   }
 }
 
@@ -264,6 +435,10 @@ export const initializeCurrentSchema = (database: Database): void => {
     return
   }
   if (applicationId !== SLOPIFY_DATABASE_APPLICATION_ID || !isCurrentSchema(database, tables)) {
+    if (applicationId === SLOPIFY_DATABASE_APPLICATION_ID && isVersionOneSchema(database, tables)) {
+      migrateVersionOne(database)
+      if (isCurrentSchema(database, listTables(database))) return
+    }
     throw new DatabaseSchemaIncompatibleError(
       'Database does not belong to the current Slopify storage generation',
     )

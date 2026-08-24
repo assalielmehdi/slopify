@@ -49,7 +49,7 @@ const run = {
 const detail = {
   run,
   projects: [],
-  projectWorktrees: [],
+  projectWorkspaces: [],
   events: [event(1, 'RUN_STARTED'), event(2)],
   nodeExecutions: [],
 }

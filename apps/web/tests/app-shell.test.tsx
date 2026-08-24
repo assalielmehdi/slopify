@@ -76,9 +76,7 @@ describe('AppShell', () => {
     expect(
       within(primaryNavigation).getByRole('link', { name: 'Harnesses' }).getAttribute('href'),
     ).toBe('/harnesses')
-    expect(screen.getByRole('link', { name: 'Preferences' }).getAttribute('href')).toBe(
-      '/preferences',
-    )
+    expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings')
     expect(within(breadcrumb).getByRole('link', { name: 'Workflow' }).getAttribute('href')).toBe(
       '/',
     )
@@ -137,7 +135,7 @@ describe('AppShell', () => {
     ['/runs/run-123', 'Runs', ['Runs', '123']],
     ['/harnesses', 'Harnesses', ['Harnesses']],
     ['/projects', 'Projects', ['Projects']],
-    ['/preferences', 'Preferences', ['Preferences']],
+    ['/settings', 'Settings', ['Settings']],
   ])('maps %s to the %s destination and breadcrumb', (pathname, linkName, crumbs) => {
     navigation.pathname = pathname
 
@@ -153,14 +151,12 @@ describe('AppShell', () => {
       .getAllByRole('link')
       .filter((link) => link.getAttribute('aria-current') === 'page')
 
-    expect(currentNavigationLinks).toHaveLength(linkName === 'Preferences' ? 0 : 1)
-    if (linkName !== 'Preferences') {
+    expect(currentNavigationLinks).toHaveLength(linkName === 'Settings' ? 0 : 1)
+    if (linkName !== 'Settings') {
       expect(currentNavigationLinks[0]?.textContent).toContain(linkName)
     } else {
-      const preferencesLinks = screen.getAllByRole('link', { name: 'Preferences' })
-      expect(preferencesLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(
-        true,
-      )
+      const settingsLinks = screen.getAllByRole('link', { name: 'Settings' })
+      expect(settingsLinks.some((link) => link.getAttribute('aria-current') === 'page')).toBe(true)
     }
     expect(
       within(breadcrumb)

@@ -76,7 +76,7 @@ function getBreadcrumbs(pathname: string): readonly { href: string; label: strin
     .flatMap(({ items }) => items)
     .find(({ href }) => href === pathname)
   if (destination !== undefined) return [{ href: destination.href, label: destination.label }]
-  if (pathname === '/preferences') return [{ href: '/preferences', label: 'Preferences' }]
+  if (pathname === '/settings') return [{ href: '/settings', label: 'Settings' }]
   return [{ href: pathname, label: 'Slopify' }]
 }
 
@@ -123,14 +123,11 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   const [isCollapsed, setIsCollapsed] = useState(false)
   const { toggleTheme } = useThemePreference()
   const breadcrumbs = getBreadcrumbs(pathname)
-  const isPreferences = pathname === '/preferences'
+  const isSettings = pathname === '/settings'
   const isEditor = pathname === '/'
   const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
   const usesOwnPageSpacing =
-    ['/harnesses', '/projects', '/runs'].includes(pathname) ||
-    isEditor ||
-    isPreferences ||
-    isRunDetail
+    ['/harnesses', '/projects', '/runs'].includes(pathname) || isEditor || isSettings || isRunDetail
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -250,20 +247,20 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
           )}
         >
           <Link
-            href="/preferences"
-            aria-label="Preferences"
-            aria-current={isPreferences ? 'page' : undefined}
-            title={isCollapsed ? 'Preferences' : undefined}
+            href="/settings"
+            aria-label="Settings"
+            aria-current={isSettings ? 'page' : undefined}
+            title={isCollapsed ? 'Settings' : undefined}
             className={cn(
               'flex h-9 items-center rounded-md text-[14px]/5 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring/30',
               isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-2',
-              isPreferences
+              isSettings
                 ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
                 : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
             )}
           >
             <Settings2Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.8} />
-            <span className={cn('truncate', isCollapsed && 'sr-only')}>Preferences</span>
+            <span className={cn('truncate', isCollapsed && 'sr-only')}>Settings</span>
           </Link>
         </div>
       </aside>

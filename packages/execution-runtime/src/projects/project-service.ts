@@ -1,4 +1,3 @@
-import { isAbsolute, resolve } from 'node:path'
 import {
   AddProjectRequestSchema,
   DeletionIdSchema,
@@ -9,23 +8,19 @@ import {
   type Project,
 } from '@slopify/contracts'
 
+import {
+  GitConnectionServiceError,
+  type GitConnectionService,
+} from '../git/git-connection-service.js'
+import type { RemoteGitHost } from '../git/remote-git-host.js'
 import { PersistenceError } from '../persistence/errors.js'
 import type { ProjectRecord, ProjectRepository } from './project-repository.js'
 
-export type ProjectInspection =
-  | Readonly<{ status: 'AVAILABLE'; canonicalPath: string; name: string }>
-  | Readonly<{ status: 'MISSING' }>
-  | Readonly<{ status: 'NOT_GIT_REPOSITORY' }>
-
-export interface ProjectInspector {
-  inspect(repositoryPath: string): Promise<ProjectInspection>
-}
-
 export type ProjectServiceErrorCode =
   | 'PROJECT_INVALID'
-  | 'PROJECT_PATH_NOT_FOUND'
-  | 'PROJECT_NOT_GIT_REPOSITORY'
-  | 'PROJECT_PATH_CONFLICT'
+  | 'PROJECT_CONNECTION_REQUIRED'
+  | 'PROJECT_REPOSITORY_NOT_FOUND'
+  | 'PROJECT_REMOTE_CONFLICT'
   | 'PROJECT_NOT_FOUND'
   | 'PROJECT_UNAVAILABLE'
 
@@ -50,7 +45,8 @@ export interface ProjectService {
 
 export interface CreateProjectServiceOptions {
   readonly projects: ProjectRepository
-  readonly inspector: ProjectInspector
+  readonly connections: Pick<GitConnectionService, 'requireToken'>
+  readonly remote: RemoteGitHost
   readonly createId?: () => string
   readonly createDeletionId?: () => string
   readonly now?: () => string
@@ -58,7 +54,7 @@ export interface CreateProjectServiceOptions {
 }
 
 const unavailableError = () =>
-  new ProjectServiceError('PROJECT_UNAVAILABLE', "Project can't be found in the file system")
+  new ProjectServiceError('PROJECT_UNAVAILABLE', 'Project repository is unavailable')
 
 export const createProjectService = (options: CreateProjectServiceOptions): ProjectService => {
   const createId = options.createId ?? (() => `project-${crypto.randomUUID()}`)
@@ -69,11 +65,33 @@ export const createProjectService = (options: CreateProjectServiceOptions): Proj
   const purgeExpired = () => options.projects.purgeExpired(now())
 
   const inspectRecord = async (record: ProjectRecord): Promise<Project> => {
-    const inspection = await options.inspector.inspect(record.repositoryPath)
-    return ProjectSchema.parse({
-      ...record,
-      availability: inspection.status,
-    })
+    let token: string
+    try {
+      token = await options.connections.requireToken(record.provider)
+    } catch (cause) {
+      if (cause instanceof GitConnectionServiceError) {
+        return ProjectSchema.parse({ ...record, availability: 'CONNECTION_MISSING' })
+      }
+      throw cause
+    }
+    try {
+      const repository = await options.remote.getRepository(record.provider, token, record.remoteId)
+      return ProjectSchema.parse({
+        ...record,
+        ...(repository === undefined
+          ? { availability: 'REPOSITORY_UNAVAILABLE' as const }
+          : {
+              name: repository.name,
+              fullName: repository.fullName,
+              cloneUrl: repository.cloneUrl,
+              webUrl: repository.webUrl,
+              defaultBranch: repository.defaultBranch,
+              availability: 'AVAILABLE' as const,
+            }),
+      })
+    } catch {
+      return ProjectSchema.parse({ ...record, availability: 'REPOSITORY_UNAVAILABLE' })
+    }
   }
 
   return {
@@ -81,29 +99,41 @@ export const createProjectService = (options: CreateProjectServiceOptions): Proj
     async add(input) {
       purgeExpired()
       const result = AddProjectRequestSchema.safeParse(input)
-      if (!result.success || !isAbsolute(result.data.repositoryPath)) {
-        throw new ProjectServiceError('PROJECT_INVALID', 'Project path must be absolute')
+      if (!result.success) throw new ProjectServiceError('PROJECT_INVALID', 'Project is invalid')
+      const { provider, remoteId } = result.data
+      if (options.projects.findByRemote(provider, remoteId) !== undefined) {
+        throw new ProjectServiceError('PROJECT_REMOTE_CONFLICT', 'Project already exists')
       }
-
-      const inspection = await options.inspector.inspect(resolve(result.data.repositoryPath))
-      if (inspection.status === 'MISSING') {
-        throw new ProjectServiceError('PROJECT_PATH_NOT_FOUND', 'Project path could not be found')
+      let token: string
+      try {
+        token = await options.connections.requireToken(provider)
+      } catch (cause) {
+        if (cause instanceof GitConnectionServiceError) {
+          throw new ProjectServiceError(
+            'PROJECT_CONNECTION_REQUIRED',
+            `${provider === 'GITHUB' ? 'GitHub' : 'GitLab'} must be connected first`,
+          )
+        }
+        throw cause
       }
-      if (inspection.status === 'NOT_GIT_REPOSITORY') {
+      const repository = await options.remote.getRepository(provider, token, remoteId)
+      if (repository === undefined) {
         throw new ProjectServiceError(
-          'PROJECT_NOT_GIT_REPOSITORY',
-          'Project path must be a Git repository',
+          'PROJECT_REPOSITORY_NOT_FOUND',
+          'Repository could not be found',
         )
-      }
-      if (options.projects.findByPath(inspection.canonicalPath) !== undefined) {
-        throw new ProjectServiceError('PROJECT_PATH_CONFLICT', 'Project already exists')
       }
 
       const timestamp = now()
-      const record = {
+      const record: ProjectRecord = {
         projectId: ProjectIdSchema.parse(createId()),
-        name: inspection.name,
-        repositoryPath: inspection.canonicalPath,
+        name: repository.name,
+        provider: repository.provider,
+        remoteId: repository.remoteId,
+        fullName: repository.fullName,
+        cloneUrl: repository.cloneUrl,
+        webUrl: repository.webUrl,
+        defaultBranch: repository.defaultBranch,
         createdAt: timestamp,
         updatedAt: timestamp,
       }
@@ -111,7 +141,7 @@ export const createProjectService = (options: CreateProjectServiceOptions): Proj
         options.projects.add(record)
       } catch (cause) {
         if (cause instanceof PersistenceError && cause.code === 'PERSISTENCE_CONFLICT') {
-          throw new ProjectServiceError('PROJECT_PATH_CONFLICT', 'Project already exists')
+          throw new ProjectServiceError('PROJECT_REMOTE_CONFLICT', 'Project already exists')
         }
         throw cause
       }

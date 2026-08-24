@@ -18,7 +18,7 @@ const trace = AgentTraceSchema.parse({
       model: 'openai/gpt-5.4',
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the repository.',
-      workspaceRoot: '/Users/developer/.slopify/orchestrator/worktrees/run-01',
+      workspaceRoot: '/Users/developer/.slopify/orchestrator/workspaces/run-01',
       primaryProjectId: 'project-api',
       projects: [
         {

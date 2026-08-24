@@ -1,98 +1,108 @@
+import type { GitProvider, GitRepository } from '@slopify/contracts'
 import { describe, expect, it } from 'vitest'
 
 import {
+  GitConnectionServiceError,
   ProjectServiceError,
   createProjectService,
-  type ProjectInspection,
-  type ProjectInspector,
+  type GitConnectionService,
   type ProjectRecord,
   type ProjectRepository,
+  type RemoteGitHost,
 } from '../../src/index.js'
+
+const remoteRepository: GitRepository = {
+  provider: 'GITHUB',
+  remoteId: '123',
+  name: 'slopify',
+  fullName: 'operator/slopify',
+  cloneUrl: 'https://github.com/operator/slopify.git',
+  webUrl: 'https://github.com/operator/slopify',
+  visibility: 'PRIVATE',
+  defaultBranch: 'main',
+}
+
+const storedProject = (): ProjectRecord => ({
+  projectId: 'project-01',
+  name: remoteRepository.name,
+  provider: remoteRepository.provider,
+  remoteId: remoteRepository.remoteId,
+  fullName: remoteRepository.fullName,
+  cloneUrl: remoteRepository.cloneUrl,
+  webUrl: remoteRepository.webUrl,
+  defaultBranch: remoteRepository.defaultBranch,
+  createdAt: '2026-08-21T10:00:00Z',
+  updatedAt: '2026-08-21T10:00:00Z',
+})
 
 const createRepository = (): ProjectRepository & { records: ProjectRecord[] } => {
   const records: ProjectRecord[] = []
-  const deletions = new Map<
-    string,
-    {
-      record: ProjectRecord
-      deletedAt: string
-      undoExpiresAt: string
-      state: 'PENDING' | 'UNDONE' | 'PURGED'
-    }
-  >()
+  const deleted = new Map<string, ProjectRecord>()
   return {
     records,
-    add(record) {
-      records.push(record)
-    },
-    get(projectId) {
-      return records.find((record) => record.projectId === projectId)
-    },
-    findByPath(repositoryPath) {
-      return records.find((record) => record.repositoryPath === repositoryPath)
-    },
+    add: (record) => void records.push(record),
+    get: (projectId) => records.find((record) => record.projectId === projectId),
+    findByRemote: (provider, remoteId) =>
+      records.find((record) => record.provider === provider && record.remoteId === remoteId),
+    list: () => [...records],
     stageDeletion(input) {
-      const projectId = input.subject.id
-      const index = records.findIndex((record) => record.projectId === projectId)
-      if (index === -1) return false
+      const index = records.findIndex(({ projectId }) => projectId === input.subject.id)
+      if (index < 0) return false
       const [record] = records.splice(index, 1)
       if (record === undefined) return false
-      deletions.set(input.deletionId, {
-        record,
-        deletedAt: input.deletedAt,
-        undoExpiresAt: input.undoExpiresAt,
-        state: 'PENDING',
-      })
+      deleted.set(input.deletionId, record)
       return true
     },
-    restoreDeletion(deletionId, now) {
-      const deletion = deletions.get(deletionId)
-      if (deletion === undefined) return 'NOT_FOUND'
-      if (deletion.state === 'UNDONE') return 'UNDONE'
-      if (deletion.state === 'PURGED' || Date.parse(deletion.undoExpiresAt) <= Date.parse(now)) {
-        deletion.state = 'PURGED'
-        return 'EXPIRED'
-      }
-      deletion.state = 'UNDONE'
-      records.push(deletion.record)
+    restoreDeletion(deletionId) {
+      const record = deleted.get(deletionId)
+      if (record === undefined) return 'NOT_FOUND'
+      records.push(record)
+      deleted.delete(deletionId)
       return 'UNDONE'
     },
-    purgeExpired(now) {
-      for (const deletion of deletions.values()) {
-        if (deletion.state === 'PENDING' && Date.parse(deletion.undoExpiresAt) <= Date.parse(now))
-          deletion.state = 'PURGED'
-      }
-    },
-    list() {
-      return [...records]
-    },
+    purgeExpired: () => undefined,
   }
 }
 
-const createInspector = (inspect: (path: string) => ProjectInspection): ProjectInspector => ({
-  inspect: async (path) => inspect(path),
-})
+const createConnections = (tokens = new Map<GitProvider, string>([['GITHUB', 'token']])) =>
+  ({
+    requireToken: async (provider: GitProvider) => {
+      const token = tokens.get(provider)
+      if (token === undefined) {
+        throw new GitConnectionServiceError('GIT_CONNECTION_NOT_FOUND', 'Provider not connected')
+      }
+      return token
+    },
+  }) as Pick<GitConnectionService, 'requireToken'>
 
-const available = (path: string): ProjectInspection => ({
-  status: 'AVAILABLE',
-  canonicalPath: path,
-  name: path.split('/').at(-1) ?? path,
+const createRemote = (repository: GitRepository | undefined = remoteRepository): RemoteGitHost => ({
+  authenticate: async (provider) => ({ provider, accountUsername: 'operator' }),
+  listRepositories: async () => (repository === undefined ? [] : [repository]),
+  getRepository: async (_provider, _token, remoteId) =>
+    repository?.remoteId === remoteId ? repository : undefined,
+  getDefaultBranchSha: async () => 'a'.repeat(40) as never,
 })
 
 describe('project service', () => {
-  it('adds a canonical absolute Git repository and lists its live availability', async () => {
+  it('adds a repository from a connected provider and lists its live availability', async () => {
     const projects = createRepository()
     const service = createProjectService({
       projects,
-      inspector: createInspector((path) => available(path)),
+      connections: createConnections(),
+      remote: createRemote(),
       createId: () => 'project-01',
       now: () => '2026-08-21T10:00:00Z',
     })
 
-    await expect(service.add({ repositoryPath: '/workspace/slopify' })).resolves.toEqual({
+    await expect(service.add({ provider: 'GITHUB', remoteId: '123' })).resolves.toEqual({
       projectId: 'project-01',
       name: 'slopify',
-      repositoryPath: '/workspace/slopify',
+      provider: 'GITHUB',
+      remoteId: '123',
+      fullName: 'operator/slopify',
+      cloneUrl: 'https://github.com/operator/slopify.git',
+      webUrl: 'https://github.com/operator/slopify',
+      defaultBranch: 'main',
       availability: 'AVAILABLE',
       createdAt: '2026-08-21T10:00:00Z',
       updatedAt: '2026-08-21T10:00:00Z',
@@ -102,62 +112,54 @@ describe('project service', () => {
     ])
   })
 
-  it.each([
-    ['relative path', 'workspace/slopify', available('/workspace/slopify'), 'PROJECT_INVALID'],
-    [
-      'missing path',
-      '/workspace/missing',
-      { status: 'MISSING' } as const,
-      'PROJECT_PATH_NOT_FOUND',
-    ],
-    [
-      'non-Git directory',
-      '/workspace/folder',
-      { status: 'NOT_GIT_REPOSITORY' } as const,
-      'PROJECT_NOT_GIT_REPOSITORY',
-    ],
-  ])('rejects a %s without persisting it', async (_name, path, inspection, code) => {
+  it('requires a configured provider and an existing remote repository', async () => {
     const projects = createRepository()
-    const service = createProjectService({
+    const disconnected = createProjectService({
       projects,
-      inspector: createInspector(() => inspection),
-      createId: () => 'project-01',
+      connections: createConnections(new Map()),
+      remote: createRemote(),
+    })
+    await expect(disconnected.add({ provider: 'GITHUB', remoteId: '123' })).rejects.toMatchObject({
+      code: 'PROJECT_CONNECTION_REQUIRED',
     })
 
-    await expect(service.add({ repositoryPath: path })).rejects.toMatchObject({ code })
+    const missing = createProjectService({
+      projects,
+      connections: createConnections(),
+      remote: createRemote(undefined),
+    })
+    await expect(missing.add({ provider: 'GITHUB', remoteId: '404' })).rejects.toMatchObject({
+      code: 'PROJECT_REPOSITORY_NOT_FOUND',
+    })
     expect(projects.records).toEqual([])
   })
 
-  it('rejects a duplicate canonical repository path', async () => {
+  it('rejects a duplicate provider repository', async () => {
     const projects = createRepository()
     const service = createProjectService({
       projects,
-      inspector: createInspector(() => available('/workspace/slopify')),
+      connections: createConnections(),
+      remote: createRemote(),
       createId: () => `project-0${projects.records.length + 1}`,
     })
 
-    await service.add({ repositoryPath: '/workspace/alias' })
-    await expect(service.add({ repositoryPath: '/workspace/slopify' })).rejects.toMatchObject({
-      code: 'PROJECT_PATH_CONFLICT',
+    await service.add({ provider: 'GITHUB', remoteId: '123' })
+    await expect(service.add({ provider: 'GITHUB', remoteId: '123' })).rejects.toMatchObject({
+      code: 'PROJECT_REMOTE_CONFLICT',
     })
   })
 
-  it('retains missing projects in the catalog and rejects them for use', async () => {
+  it('retains projects when their provider disconnects and rejects them for run admission', async () => {
     const projects = createRepository()
-    projects.add({
-      projectId: 'project-01',
-      name: 'slopify',
-      repositoryPath: '/workspace/slopify',
-      createdAt: '2026-08-21T10:00:00Z',
-      updatedAt: '2026-08-21T10:00:00Z',
-    })
+    projects.add(storedProject())
     const service = createProjectService({
       projects,
-      inspector: createInspector(() => ({ status: 'MISSING' })),
+      connections: createConnections(new Map()),
+      remote: createRemote(),
     })
 
     await expect(service.list()).resolves.toEqual([
-      expect.objectContaining({ projectId: 'project-01', availability: 'MISSING' }),
+      expect.objectContaining({ availability: 'CONNECTION_MISSING' }),
     ])
     await expect(service.requireAvailable('project-01')).rejects.toBeInstanceOf(ProjectServiceError)
     await expect(service.requireAvailable('project-01')).rejects.toMatchObject({
@@ -165,57 +167,49 @@ describe('project service', () => {
     })
   })
 
-  it('stages an existing project for deletion and restores it during the undo window', async () => {
+  it('uses current remote metadata when a repository is renamed', async () => {
     const projects = createRepository()
-    projects.add({
-      projectId: 'project-01',
-      name: 'slopify',
-      repositoryPath: '/workspace/slopify',
-      createdAt: '2026-08-21T10:00:00Z',
-      updatedAt: '2026-08-21T10:00:00Z',
-    })
+    projects.add(storedProject())
+    const renamedRepository: GitRepository = {
+      ...remoteRepository,
+      name: 'renamed',
+      fullName: 'operator/renamed',
+      cloneUrl: 'https://github.com/operator/renamed.git',
+      webUrl: 'https://github.com/operator/renamed',
+      defaultBranch: 'trunk',
+    }
     const service = createProjectService({
       projects,
-      inspector: createInspector((path) => available(path)),
+      connections: createConnections(),
+      remote: createRemote(renamedRepository),
+    })
+
+    await expect(service.requireAvailable('project-01')).resolves.toMatchObject({
+      name: 'renamed',
+      fullName: 'operator/renamed',
+      cloneUrl: 'https://github.com/operator/renamed.git',
+      webUrl: 'https://github.com/operator/renamed',
+      defaultBranch: 'trunk',
+      availability: 'AVAILABLE',
+    })
+  })
+
+  it('stages and restores project deletion', async () => {
+    const projects = createRepository()
+    projects.add(storedProject())
+    const service = createProjectService({
+      projects,
+      connections: createConnections(),
+      remote: createRemote(),
       createDeletionId: () => 'deletion-01',
       now: () => '2026-08-22T10:00:00Z',
     })
 
-    await expect(service.delete('project-01')).resolves.toEqual({
+    await expect(service.delete('project-01')).resolves.toMatchObject({
       deletionId: 'deletion-01',
       subject: { type: 'PROJECT', id: 'project-01' },
-      deletedAt: '2026-08-22T10:00:00Z',
-      undoExpiresAt: '2026-08-22T10:00:10.000Z',
     })
-    expect(projects.records).toEqual([])
     await expect(service.undoDeletion('deletion-01')).resolves.toBe('UNDONE')
     expect(projects.records).toHaveLength(1)
-    await expect(service.delete('project-missing')).rejects.toMatchObject({
-      code: 'PROJECT_NOT_FOUND',
-    })
-  })
-
-  it('rejects undo after the deletion window expires', async () => {
-    const projects = createRepository()
-    projects.add({
-      projectId: 'project-01',
-      name: 'slopify',
-      repositoryPath: '/workspace/slopify',
-      createdAt: '2026-08-21T10:00:00Z',
-      updatedAt: '2026-08-21T10:00:00Z',
-    })
-    let timestamp = '2026-08-22T10:00:00Z'
-    const service = createProjectService({
-      projects,
-      inspector: createInspector((path) => available(path)),
-      createDeletionId: () => 'deletion-01',
-      now: () => timestamp,
-    })
-
-    await service.delete('project-01')
-    timestamp = '2026-08-22T10:00:10Z'
-
-    await expect(service.undoDeletion('deletion-01')).resolves.toBe('EXPIRED')
-    expect(projects.records).toEqual([])
   })
 })

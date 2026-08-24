@@ -46,7 +46,12 @@ const projects = ProjectSchema.array().parse([
   {
     projectId: 'project-api',
     name: 'API',
-    repositoryPath: '/workspace/api',
+    provider: 'GITHUB',
+    remoteId: '101',
+    fullName: 'operator/api',
+    cloneUrl: 'https://github.com/operator/api.git',
+    webUrl: 'https://github.com/operator/api',
+    defaultBranch: 'main',
     availability: 'AVAILABLE',
     createdAt: '2026-08-23T10:00:00Z',
     updatedAt: '2026-08-23T10:00:00Z',

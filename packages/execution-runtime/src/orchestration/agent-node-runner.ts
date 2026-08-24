@@ -33,10 +33,10 @@ const configuredProjectsPrompt = (projects: readonly ProvisionedRunProject[]): s
   const locations = projects
     .map(
       (project) =>
-        `- ${project.isPrimary ? 'Primary project — ' : ''}${project.name}: ${project.worktreePath}`,
+        `- ${project.isPrimary ? 'Primary project — ' : ''}${project.name} (${project.provider} ${project.fullName})\n  Workspace: ${project.workspacePath}\n  Branch: ${project.branchName}\n  Base: ${project.defaultBranch} at ${project.baseSha}`,
     )
     .join('\n')
-  return `\n\nWorkflow projects:\nStart in the primary project. Every path below is a per-run Git worktree shared by this workflow's agents. Work only in these worktrees; do not use the source repositories.\n${locations}`
+  return `\n\nWorkflow projects:\nStart in the primary project. Every path below is a fresh per-run clone shared by this workflow's agents. Work only in these workspaces. Changes made by an earlier agent remain on the shared run branch for later agents. Slopify will not push branches or create pull requests; do that yourself when the task requires it.\n${locations}`
 }
 
 const workspaceContext = (
@@ -50,8 +50,8 @@ const workspaceContext = (
   const primary = projects.find(({ isPrimary }) => isPrimary)
   if (primary === undefined || projects.filter(({ isPrimary }) => isPrimary).length !== 1)
     return undefined
-  const rootPath = dirname(primary.worktreePath)
-  if (projects.some(({ worktreePath }) => dirname(worktreePath) !== rootPath)) return undefined
+  const rootPath = dirname(primary.workspacePath)
+  if (projects.some(({ workspacePath }) => dirname(workspacePath) !== rootPath)) return undefined
   return { rootPath, primary }
 }
 
@@ -107,19 +107,19 @@ export const createAgentNodeRunner = (
       }
       return failed(
         'RUN_WORKSPACE_PROVISIONING_FAILED',
-        'Run project worktrees could not be prepared',
+        'Run project workspaces could not be prepared',
       )
     }
     const context = workspaceContext(projects)
     if (context === undefined)
-      return failed('RUN_WORKSPACE_INVALID', 'Run project worktrees are invalid')
+      return failed('RUN_WORKSPACE_INVALID', 'Run project workspaces are invalid')
     const configuredIds = workflow.data.configuration.projectIds
     if (
       projects.length !== configuredIds.length ||
       projects.some((project, index) => project.projectId !== configuredIds[index]) ||
       context.primary.projectId !== workflow.data.configuration.primaryProjectId
     ) {
-      return failed('RUN_WORKSPACE_INVALID', 'Run project worktrees do not match the workflow')
+      return failed('RUN_WORKSPACE_INVALID', 'Run project workspaces do not match the workflow')
     }
 
     const routableOutcomes = getDeclaredOutcomes(workflow.data, node.id)
@@ -146,7 +146,7 @@ export const createAgentNodeRunner = (
         primaryProjectId: context.primary.projectId,
         projects: projects.map((project) => ({
           projectId: project.projectId,
-          path: project.worktreePath,
+          path: project.workspacePath,
         })),
       },
       ...(node.harness.modelId === undefined ? {} : { model: node.harness.modelId }),
@@ -158,7 +158,7 @@ export const createAgentNodeRunner = (
       timeoutSeconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
     })
     const traceHeader = AgentTraceHeaderSchema.parse({
-      version: 1,
+      version: 2,
       runId: run.runId,
       nodeExecutionId: input.nodeExecutionId,
       attemptId: input.attemptId,
@@ -177,9 +177,12 @@ export const createAgentNodeRunner = (
         projects: projects.map((project) => ({
           projectId: project.projectId,
           name: project.name,
-          worktreePath: project.worktreePath,
+          provider: project.provider,
+          fullName: project.fullName,
+          workspacePath: project.workspacePath,
+          branchName: project.branchName,
           baseSha: project.baseSha,
-          sourceBranch: project.sourceBranch,
+          defaultBranch: project.defaultBranch,
         })),
         timeoutSeconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
       },

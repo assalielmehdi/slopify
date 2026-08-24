@@ -20,6 +20,19 @@ describe('the application design foundation', () => {
     expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce)')
   })
 
+  it('loops the running workflow-node fill from top to bottom with a static fallback', () => {
+    const stylesheet = source('app/globals.css')
+
+    expect(stylesheet).toContain('--workflow-running-fill-duration: 4s')
+    expect(stylesheet).toContain('@keyframes workflow-node-running-fill')
+    expect(stylesheet).toContain(
+      'animation: workflow-node-running-fill var(--workflow-running-fill-duration) linear infinite;',
+    )
+    expect(stylesheet).toMatch(
+      /@media \(prefers-reduced-motion: reduce\)[\s\S]*?\.workflow-node-running-fill::before[\s\S]*?animation: none;/,
+    )
+  })
+
   it('uses one pure canvas for the shell and ordinary surfaces in both themes', () => {
     const stylesheet = source('app/globals.css')
 

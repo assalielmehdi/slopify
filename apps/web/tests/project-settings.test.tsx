@@ -1,30 +1,62 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   DeletionReceiptSchema,
   ProjectSchema,
   UndoDeletionResponseSchema,
 } from '@slopify/contracts'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { ProjectSettings } from '../components/settings/project-settings'
 import { toast } from '../lib/toast'
+
+const connections = [
+  {
+    provider: 'GITHUB' as const,
+    accountUsername: 'operator',
+    connectedAt: '2026-08-24T00:00:00Z',
+    updatedAt: '2026-08-24T00:00:00Z',
+  },
+]
+
+const repositories = [
+  {
+    provider: 'GITHUB' as const,
+    remoteId: '303',
+    name: 'new-project',
+    fullName: 'operator/new-project',
+    cloneUrl: 'https://github.com/operator/new-project.git',
+    webUrl: 'https://github.com/operator/new-project',
+    visibility: 'PRIVATE' as const,
+    defaultBranch: 'main',
+  },
+]
 
 const projects = ProjectSchema.array().parse([
   {
     projectId: 'project-01',
     name: 'slopify',
-    repositoryPath: '/workspace/slopify',
+    provider: 'GITHUB',
+    remoteId: '101',
+    fullName: 'operator/slopify',
+    cloneUrl: 'https://github.com/operator/slopify.git',
+    webUrl: 'https://github.com/operator/slopify',
+    defaultBranch: 'main',
     availability: 'AVAILABLE',
     createdAt: '2026-08-21T10:00:00Z',
     updatedAt: '2026-08-21T10:00:00Z',
   },
   {
     projectId: 'project-02',
-    name: 'deleted-project',
-    repositoryPath: '/workspace/deleted-project',
-    availability: 'MISSING',
+    name: 'archived',
+    provider: 'GITLAB',
+    remoteId: '202',
+    fullName: 'operator/archived',
+    cloneUrl: 'https://gitlab.com/operator/archived.git',
+    webUrl: 'https://gitlab.com/operator/archived',
+    defaultBranch: 'trunk',
+    availability: 'CONNECTION_MISSING',
     createdAt: '2026-08-21T10:01:00Z',
     updatedAt: '2026-08-21T10:01:00Z',
   },
@@ -32,11 +64,18 @@ const projects = ProjectSchema.array().parse([
 
 const createClient = (overrides: Record<string, unknown> = {}) => ({
   listProjects: vi.fn(async () => projects),
-  addProject: vi.fn(async ({ repositoryPath }: { repositoryPath: string }) =>
+  listGitConnections: vi.fn(async () => connections),
+  listGitRepositories: vi.fn(async () => repositories),
+  addProject: vi.fn(async () =>
     ProjectSchema.parse({
       projectId: 'project-03',
+      provider: 'GITHUB',
+      remoteId: '303',
       name: 'new-project',
-      repositoryPath,
+      fullName: 'operator/new-project',
+      cloneUrl: 'https://github.com/operator/new-project.git',
+      webUrl: 'https://github.com/operator/new-project',
+      defaultBranch: 'main',
       availability: 'AVAILABLE',
       createdAt: '2026-08-21T10:02:00Z',
       updatedAt: '2026-08-21T10:02:00Z',
@@ -69,7 +108,7 @@ afterEach(() => {
 })
 
 describe('ProjectSettings', () => {
-  it('shows card skeletons while projects are loading', async () => {
+  it('shows card skeletons while connections and projects are loading', async () => {
     let resolve: ((value: typeof projects) => void) | undefined
     const listProjects = vi.fn(
       () =>
@@ -80,240 +119,207 @@ describe('ProjectSettings', () => {
     render(<ProjectSettings client={createClient({ listProjects })} />)
 
     expect(screen.getByRole('status', { name: 'Loading projects' })).toBeTruthy()
-    expect(screen.getAllByTestId('catalog-card-skeleton')).toHaveLength(3)
-    expect(screen.queryByText('No projects yet')).toBeNull()
-
     await act(async () => resolve?.(projects))
     await waitFor(() =>
       expect(screen.queryByRole('status', { name: 'Loading projects' })).toBeNull(),
     )
   })
 
-  it('shows an explicit empty state before the first repository is added', async () => {
-    render(<ProjectSettings client={createClient({ listProjects: vi.fn(async () => []) })} />)
+  it('requires a Git connection before a project can be added', async () => {
+    render(
+      <ProjectSettings
+        client={createClient({
+          listProjects: vi.fn(async () => []),
+          listGitConnections: vi.fn(async () => []),
+        })}
+      />,
+    )
 
     expect(await screen.findByText('No projects yet')).toBeTruthy()
     expect(
-      screen.getByText('Add a local Git repository to make it available to workflows.'),
+      screen.getByText('Connect GitHub or GitLab in Settings before adding a project.'),
     ).toBeTruthy()
-  })
-
-  it('uses the shared catalog card layout without a view selector', async () => {
-    render(<ProjectSettings client={createClient()} />)
-
-    const catalog = screen.getByRole('region', { name: 'Projects' })
-    const projectGrid = await within(catalog).findByTestId('project-grid')
-    const projectCard = within(catalog).getByRole('button', { name: /slopify, Available/ })
-    const searchSlot = catalog.querySelector('search')
-    if (searchSlot === null) throw new Error('Expected the native search landmark')
-    const add = within(catalog).getByRole('button', { name: 'Add project' })
-
-    expect(catalog.className).toContain('px-6')
-    expect(catalog.className).toContain('pt-6')
-    expect(projectGrid.className).toContain('auto-fill')
-    const projectCardClasses = projectCard.className.split(/\s+/)
-    expect(projectCardClasses).toContain('h-auto')
-    expect(projectCardClasses).toContain('min-h-[140px]')
-    expect(projectCardClasses).not.toContain('h-[140px]')
-    expect(within(catalog).queryByRole('radiogroup', { name: 'View options' })).toBeNull()
-    expect(searchSlot.className).toContain('[--resize-dur:var(--duration-very-slow)]')
-    expect(add.className).toContain('t-resize')
-    expect(add.className).toContain('w-8')
-    expect(add.className).toContain('hover:w-max')
-    expect(add.className).not.toMatch(/hover:w-\d/)
-    expect(add.className).toContain('[--resize-dur:var(--duration-very-slow)]')
-    expect(within(catalog).queryByRole('button', { name: 'Refresh from filesystem' })).toBeNull()
-    const tags = (await within(catalog).findByText('Available')).closest(
-      '[data-slot="catalog-card-tags"]',
+    expect(
+      (screen.getByRole('button', { name: 'Add project' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(screen.getByRole('link', { name: 'Open Settings' }).getAttribute('href')).toBe(
+      '/settings',
     )
-    expect(tags?.className).toContain('justify-end')
-    expect(tags?.className).toContain('pt-2')
   })
 
-  it('filters projects by name and repository path while typing', async () => {
+  it('shows remote identity and retains projects whose connection is missing', async () => {
     render(<ProjectSettings client={createClient()} />)
 
-    await screen.findByRole('button', { name: /slopify, Available/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Open project search' }))
-    const search = screen.getByRole('searchbox', { name: 'Search projects' })
-    expect(document.activeElement).toBe(search)
+    const available = await screen.findByRole('button', { name: 'slopify, Available' })
+    const disconnected = screen.getByRole('button', { name: 'archived, Connection missing' })
 
-    fireEvent.change(search, { target: { value: 'deleted' } })
-    expect(screen.queryByRole('button', { name: /slopify, Available/ })).toBeNull()
-    expect(screen.getByRole('button', { name: /deleted-project/ })).toBeTruthy()
-
-    fireEvent.change(search, { target: { value: '/workspace/slopify' } })
-    expect(screen.getByRole('button', { name: /slopify, Available/ })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /deleted-project/ })).toBeNull()
-
-    fireEvent.change(search, { target: { value: 'no-result' } })
-    expect(screen.getByText('No matching projects')).toBeTruthy()
+    expect(within(available).getByTestId('github-logo')).toBeTruthy()
+    expect(within(available).getByText('GitHub repository')).toBeTruthy()
+    expect(within(available).getByText('operator/slopify')).toBeTruthy()
+    expect(within(disconnected).getByTestId('gitlab-logo')).toBeTruthy()
+    expect(disconnected.className).toContain('opacity-70')
+    expect(within(disconnected).getByText('Connection missing')).toBeTruthy()
   })
 
-  it('keeps a missing project visible, muted, and explicitly labeled', async () => {
-    render(<ProjectSettings client={createClient()} />)
-
-    const missingProject = await screen.findByRole('button', {
-      name: /deleted-project, Can't find in file system/,
-    })
-
-    expect(missingProject.className).toContain('opacity-60')
-    expect(within(missingProject).getByText("Can't find in file system")).toBeTruthy()
-    expect(within(missingProject).getByText('/workspace/deleted-project')).toBeTruthy()
-  })
-
-  it('adds a project using only its absolute local path and refreshes the catalog', async () => {
+  it('adds a repository selected from a connected provider', async () => {
     const client = createClient()
     const addToast = vi.spyOn(toast, 'add')
     render(<ProjectSettings client={client} />)
 
-    await screen.findByRole('button', { name: /slopify, Available/ })
-    fireEvent.click(screen.getByRole('button', { name: 'Add project' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
     const panel = await screen.findByRole('dialog', { name: 'Add project' })
-    fireEvent.change(within(panel).getByLabelText('Absolute local path'), {
-      target: { value: '/workspace/new-project' },
-    })
+    const providerSelect = within(panel).getByRole('combobox', { name: 'Provider' })
+    expect(providerSelect.getAttribute('data-slot')).toBe('select-trigger')
+    const repositorySelect = within(panel).getByRole('combobox', { name: 'Repository' })
+    await waitFor(() =>
+      expect((repositorySelect as HTMLInputElement).value).toBe('operator/new-project'),
+    )
+    expect(repositorySelect.getAttribute('data-slot')).toBe('combobox-input')
     fireEvent.click(within(panel).getByRole('button', { name: 'Add project' }))
 
     await waitFor(() =>
-      expect(client.addProject).toHaveBeenCalledWith({
-        repositoryPath: '/workspace/new-project',
-      }),
+      expect(client.addProject).toHaveBeenCalledWith({ provider: 'GITHUB', remoteId: '303' }),
     )
-    expect(await screen.findByRole('button', { name: /new-project, Available/ })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'new-project, Available' })).toBeTruthy()
     expect(addToast).toHaveBeenCalledWith({
       title: 'Project added',
-      description: 'new-project is now available in Slopify.',
+      description: 'operator/new-project is now available in Slopify.',
       type: 'success',
     })
   })
 
-  it('shows API validation failures without adding a local fallback project', async () => {
+  it('searches repositories and submits the selected match', async () => {
+    const matchingRepository = {
+      provider: 'GITHUB' as const,
+      remoteId: '304',
+      name: 'review-service',
+      fullName: 'operator/review-service',
+      cloneUrl: 'https://github.com/operator/review-service.git',
+      webUrl: 'https://github.com/operator/review-service',
+      visibility: 'PRIVATE' as const,
+      defaultBranch: 'main',
+    }
     const client = createClient({
-      addProject: vi.fn(async () => {
-        throw new Error('Project path must be a Git repository')
-      }),
+      listGitRepositories: vi.fn(async () => [...repositories, matchingRepository]),
     })
     render(<ProjectSettings client={client} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
     const panel = await screen.findByRole('dialog', { name: 'Add project' })
-    fireEvent.change(within(panel).getByLabelText('Absolute local path'), {
-      target: { value: '/workspace/not-git' },
-    })
+    const panelShell = screen.getByTestId('project-panel-shell')
+    await waitFor(() => expect(panelShell.getAttribute('data-open')).toBe('true'))
+    const repositoryCombobox = within(panel).getByRole('combobox', { name: 'Repository' })
+
+    expect(repositoryCombobox.getAttribute('data-slot')).toBe('combobox-input')
+    fireEvent.click(within(panel).getByRole('button', { name: 'Toggle options' }))
+    fireEvent.change(repositoryCombobox, { target: { value: 'review-service' } })
+    const matchingOption = await screen.findByRole('option', { name: 'operator/review-service' })
+    expect(screen.queryByRole('option', { name: 'operator/new-project' })).toBeNull()
+    fireEvent.pointerDown(matchingOption, { pointerType: 'mouse' })
+    fireEvent.click(matchingOption)
+
+    expect(panelShell.getAttribute('data-open')).toBe('true')
+    expect((repositoryCombobox as HTMLInputElement).value).toBe('operator/review-service')
     fireEvent.click(within(panel).getByRole('button', { name: 'Add project' }))
-
-    expect(await screen.findByText('Project path must be a Git repository')).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /not-git, Available/ })).toBeNull()
+    await waitFor(() =>
+      expect(client.addProject).toHaveBeenCalledWith({ provider: 'GITHUB', remoteId: '304' }),
+    )
   })
 
-  it('keeps add and detail panels mounted while their shared close transition plays', async () => {
-    render(<ProjectSettings client={createClient()} />)
-
-    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
-    const addPanel = await screen.findByRole('dialog', { name: 'Add project' })
-    const addShell = screen.getByTestId('project-panel-shell')
-    expect(addShell.className).toContain('floating-panel-shell')
-    fireEvent.click(within(addPanel).getByRole('button', { name: 'Close project details' }))
-    expect(addShell.getAttribute('data-open')).toBe('false')
-    expect(screen.getByRole('dialog', { name: 'Add project', hidden: true })).toBeTruthy()
-    fireEvent.transitionEnd(addShell, { propertyName: 'translate' })
-    expect(screen.queryByRole('dialog', { name: 'Add project', hidden: true })).toBeNull()
-
-    fireEvent.click(screen.getByRole('button', { name: /slopify, Available/ }))
-    const detailPanel = await screen.findByRole('dialog', { name: 'slopify' })
-    const detailShell = screen.getByTestId('project-panel-shell')
-    fireEvent.click(within(detailPanel).getByRole('button', { name: 'Close project details' }))
-    expect(detailShell.getAttribute('data-open')).toBe('false')
-    expect(screen.getByRole('dialog', { name: 'slopify', hidden: true })).toBeTruthy()
-    fireEvent.transitionEnd(detailShell, { propertyName: 'translate' })
-    expect(screen.queryByRole('dialog', { name: 'slopify', hidden: true })).toBeNull()
-  })
-
-  it('requires the exact repository path before deleting a project and offers undo', async () => {
-    const client = createClient()
-    const addToast = vi.spyOn(toast, 'add')
-    const closeToast = vi.spyOn(toast, 'close')
+  it('keeps the drawer open while selecting from a portaled provider menu', async () => {
+    const gitLabConnection = {
+      provider: 'GITLAB' as const,
+      accountUsername: 'operator',
+      connectedAt: '2026-08-24T00:00:00Z',
+      updatedAt: '2026-08-24T00:00:00Z',
+    }
+    const gitLabRepository = {
+      provider: 'GITLAB' as const,
+      remoteId: '404',
+      name: 'review-service',
+      fullName: 'operator/review-service',
+      cloneUrl: 'https://gitlab.com/operator/review-service.git',
+      webUrl: 'https://gitlab.com/operator/review-service',
+      visibility: 'PRIVATE' as const,
+      defaultBranch: 'main',
+    }
+    const client = createClient({
+      listGitConnections: vi.fn(async () => [...connections, gitLabConnection]),
+      listGitRepositories: vi.fn(async (provider: 'GITHUB' | 'GITLAB') =>
+        provider === 'GITHUB' ? repositories : [gitLabRepository],
+      ),
+    })
     render(<ProjectSettings client={client} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /slopify, Available/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
+    const panel = await screen.findByRole('dialog', { name: 'Add project' })
+    const panelShell = screen.getByTestId('project-panel-shell')
+    await waitFor(() => expect(panelShell.getAttribute('data-open')).toBe('true'))
+    fireEvent.click(within(panel).getByRole('combobox', { name: 'Provider' }))
+    const gitLabOption = screen.getByRole('option', { name: 'GitLab' })
+    fireEvent.pointerDown(gitLabOption, { pointerType: 'mouse' })
+    fireEvent.click(gitLabOption)
+
+    expect(panelShell.getAttribute('data-open')).toBe('true')
+    await waitFor(() =>
+      expect(
+        (within(panel).getByRole('combobox', { name: 'Repository' }) as HTMLInputElement).value,
+      ).toBe('operator/review-service'),
+    )
+  })
+
+  it('filters projects by provider and full repository name', async () => {
+    render(<ProjectSettings client={createClient()} />)
+
+    await screen.findByRole('button', { name: 'slopify, Available' })
+    fireEvent.click(screen.getByRole('button', { name: 'Open project search' }))
+    const search = screen.getByRole('searchbox', { name: 'Search projects' })
+    fireEvent.change(search, { target: { value: 'gitlab' } })
+
+    expect(screen.queryByRole('button', { name: 'slopify, Available' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'archived, Connection missing' })).toBeTruthy()
+  })
+
+  it('requires the exact remote name before deleting and supports undo', async () => {
+    const client = createClient()
+    const addToast = vi.spyOn(toast, 'add')
+    render(<ProjectSettings client={client} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'slopify, Available' }))
     const panel = await screen.findByRole('dialog', { name: 'slopify' })
-    expect(within(panel).queryByRole('heading', { name: 'Availability' })).toBeNull()
-    expect(within(panel).getByText('Available')).toBeTruthy()
-    expect(within(panel).queryByRole('separator')).toBeNull()
-
-    const deleteButton = within(panel).getByRole('button', { name: 'Delete project' })
-    expect(deleteButton.className).toContain('ml-auto')
-
-    fireEvent.click(deleteButton)
-    expect(client.deleteProject).not.toHaveBeenCalled()
-    const confirmationPath = within(panel).getByPlaceholderText('Enter the repository path')
-    const confirmation = within(panel).getByRole('button', { name: 'Confirm' })
-
-    expect((confirmation as HTMLButtonElement).disabled).toBe(true)
-    expect(document.activeElement).toBe(confirmationPath)
-    fireEvent.change(confirmationPath, { target: { value: '/workspace/other-project' } })
-    fireEvent.click(confirmation)
-    expect(client.deleteProject).not.toHaveBeenCalled()
-
-    fireEvent.change(confirmationPath, { target: { value: '/workspace/slopify' } })
-    expect((confirmation as HTMLButtonElement).disabled).toBe(false)
-    fireEvent.click(confirmation)
+    fireEvent.click(within(panel).getByRole('button', { name: 'Delete project' }))
+    const confirmation = within(panel).getByLabelText('Repository name confirmation')
+    expect(document.activeElement).toBe(confirmation)
+    fireEvent.change(confirmation, { target: { value: 'operator/slopify' } })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Confirm' }))
 
     await waitFor(() => expect(client.deleteProject).toHaveBeenCalledWith('project-01'))
-    const shell = screen.getByTestId('project-panel-shell')
-    expect(shell.getAttribute('data-open')).toBe('false')
-    expect(shell.style.getPropertyValue('--panel-open-dur')).toBe('350ms')
-    expect(shell.style.getPropertyValue('--panel-close-dur')).toBe('350ms')
-    expect(screen.getByRole('dialog', { name: 'slopify', hidden: true })).toBeTruthy()
-    expect(screen.queryByRole('button', { name: /slopify, Available/ })).toBeNull()
     const deletionToast = addToast.mock.calls.find(
       ([options]) => options.title === 'Project deleted',
     )?.[0]
     expect(deletionToast).toMatchObject({
-      title: 'Project deleted',
-      description: 'slopify was removed from Slopify.',
-      type: 'info',
+      description: 'operator/slopify was removed from Slopify.',
       actionProps: { children: 'Undo' },
     })
-    expect(deletionToast?.timeout).toBeGreaterThan(0)
 
     await act(async () => {
       await deletionToast?.actionProps?.onClick?.({ preventDefault: vi.fn() } as never)
     })
-
-    await waitFor(() => expect(client.undoDeletion).toHaveBeenCalledWith('deletion-project-01'))
-    expect(closeToast).toHaveBeenCalledWith(expect.any(String))
-    expect(addToast).not.toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Project restored' }),
-    )
-    deletionToast?.onRemove?.()
-
-    expect(client.listProjects).toHaveBeenCalledTimes(2)
-    expect(await screen.findByRole('button', { name: /slopify, Available/ })).toBeTruthy()
-    expect(addToast).toHaveBeenCalledWith(
-      expect.objectContaining({ title: 'Project restored', type: 'success' }),
-    )
-    fireEvent.transitionEnd(shell, { propertyName: 'translate' })
-    expect(screen.queryByRole('dialog', { name: 'slopify', hidden: true })).toBeNull()
+    await waitFor(() => expect(client.undoDeletion).toHaveBeenCalled())
   })
 
-  it('resets delete confirmation when the project panel closes', async () => {
+  it('keeps the floating panel mounted until its close transition exits', async () => {
     render(<ProjectSettings client={createClient()} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: /slopify, Available/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'slopify, Available' }))
     const panel = await screen.findByRole('dialog', { name: 'slopify' })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Delete project' }))
-    fireEvent.click(within(panel).getByRole('button', { name: 'Close project details' }))
     const shell = screen.getByTestId('project-panel-shell')
+    expect(shell.className).toContain('top-[4.25rem]')
+    expect(shell.className).toContain('bottom-3')
+    expect(shell.className).not.toContain('inset-y-3')
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close project details' }))
+    expect(shell.getAttribute('data-open')).toBe('false')
     fireEvent.transitionEnd(shell, { propertyName: 'translate' })
-
-    fireEvent.click(screen.getByRole('button', { name: /slopify, Available/ }))
-    const reopenedPanel = within(await screen.findByRole('dialog', { name: 'slopify' }))
-    expect(reopenedPanel.getByRole('button', { name: 'Delete project' })).toBeTruthy()
-    expect(
-      (reopenedPanel.getByPlaceholderText('Enter the repository path') as HTMLInputElement)
-        .disabled,
-    ).toBe(true)
+    expect(screen.queryByRole('dialog', { name: 'slopify', hidden: true })).toBeNull()
   })
 })

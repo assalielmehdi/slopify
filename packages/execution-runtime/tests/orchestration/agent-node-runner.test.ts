@@ -14,14 +14,14 @@ import {
 } from '../../src/index.js'
 import { TEST_RUN_ID, createRun, createPersistenceFixture } from '../persistence/test-fixture.js'
 
-const workspaceRoot = '/Users/operator/.slopify/orchestrator/worktrees/run-01'
+const workspaceRoot = '/Users/operator/.slopify/orchestrator/workspaces/run-01'
 
 const createAgentWorkflow = (prompt: string) =>
   WorkflowSchema.parse({
     schemaVersion: 1,
     workflowId: 'test-workflow',
     name: 'Agent workflow',
-    description: 'Exercises an agent in configured project worktrees.',
+    description: 'Exercises an agent in configured project clones.',
     configuration: {
       projectIds: ['project-api', 'project-web'],
       primaryProjectId: 'project-api',
@@ -48,26 +48,35 @@ const provisionedProjects = [
     projectId: 'project-api',
     position: 0,
     name: 'API',
-    repositoryPath: '/Users/operator/source/api',
-    worktreePath: `${workspaceRoot}/project-api`,
+    provider: 'GITHUB',
+    remoteId: '101',
+    fullName: 'operator/api',
+    cloneUrl: 'https://github.com/operator/api.git',
+    defaultBranch: 'main',
+    workspacePath: `${workspaceRoot}/project-api`,
+    branchName: 'slopify/run-01',
     baseSha: 'a'.repeat(40),
-    sourceBranch: 'main',
     isPrimary: true,
   },
   {
     projectId: 'project-web',
     position: 1,
     name: 'Web',
-    repositoryPath: '/Users/operator/source/web',
-    worktreePath: `${workspaceRoot}/project-web`,
+    provider: 'GITLAB',
+    remoteId: '202',
+    fullName: 'operator/web',
+    cloneUrl: 'https://gitlab.com/operator/web.git',
+    defaultBranch: 'trunk',
+    workspacePath: `${workspaceRoot}/project-web`,
+    branchName: 'slopify/run-01',
     baseSha: 'b'.repeat(40),
-    sourceBranch: null,
     isPrimary: false,
   },
 ] as const
 
 const createWorkspaces = (): RunWorkspaceProvisioner => ({
   ensure: vi.fn(async () => provisionedProjects),
+  cleanup: vi.fn(async () => undefined),
 })
 
 const createAvailableHarnesses = () => ({
@@ -127,7 +136,7 @@ const createSuccessfulAgent = (
 })
 
 describe('agent node runner', () => {
-  it('runs the configured harness from the primary run worktree and traces immutable context', async () => {
+  it('runs the configured harness from the primary run clone and traces immutable context', async () => {
     const fixture = createPersistenceFixture()
     try {
       const workflow = createAgentWorkflow('Plan {{ task }} and leave {{ typo }} literal')
@@ -189,13 +198,16 @@ describe('agent node runner', () => {
         declaredOutcomes: ['completed'],
         timeoutSeconds: 300,
       })
+      expect(received?.renderedPrompt).toContain('Primary project — API (GITHUB operator/api)')
+      expect(received?.renderedPrompt).toContain(`Workspace: ${workspaceRoot}/project-api`)
+      expect(received?.renderedPrompt).toContain('Web (GITLAB operator/web)')
+      expect(received?.renderedPrompt).toContain(`Workspace: ${workspaceRoot}/project-web`)
+      expect(received?.renderedPrompt).toContain('Branch: slopify/run-01')
       expect(received?.renderedPrompt).toContain(
-        `Primary project — API: ${workspaceRoot}/project-api`,
+        'Slopify will not push branches or create pull requests',
       )
-      expect(received?.renderedPrompt).toContain(`Web: ${workspaceRoot}/project-web`)
-      expect(received?.renderedPrompt).not.toContain('/Users/operator/source')
       expect(traces.start).toHaveBeenCalledWith({
-        version: 1,
+        version: 2,
         runId: TEST_RUN_ID,
         nodeExecutionId: 'node-execution-plan',
         attemptId: 'attempt-plan',
@@ -213,16 +225,22 @@ describe('agent node runner', () => {
             {
               projectId: 'project-api',
               name: 'API',
-              worktreePath: `${workspaceRoot}/project-api`,
+              provider: 'GITHUB',
+              fullName: 'operator/api',
+              workspacePath: `${workspaceRoot}/project-api`,
+              branchName: 'slopify/run-01',
               baseSha: 'a'.repeat(40),
-              sourceBranch: 'main',
+              defaultBranch: 'main',
             },
             {
               projectId: 'project-web',
               name: 'Web',
-              worktreePath: `${workspaceRoot}/project-web`,
+              provider: 'GITLAB',
+              fullName: 'operator/web',
+              workspacePath: `${workspaceRoot}/project-web`,
+              branchName: 'slopify/run-01',
               baseSha: 'b'.repeat(40),
-              sourceBranch: null,
+              defaultBranch: 'trunk',
             },
           ],
           timeoutSeconds: 300,
@@ -234,7 +252,7 @@ describe('agent node runner', () => {
     }
   })
 
-  it('fails before starting the harness when a run worktree cannot be prepared', async () => {
+  it('fails before starting the harness when a run workspace cannot be prepared', async () => {
     const fixture = createPersistenceFixture()
     try {
       const workflow = createAgentWorkflow('Inspect the projects')
@@ -245,9 +263,10 @@ describe('agent node runner', () => {
       const workspaces: RunWorkspaceProvisioner = {
         ensure: vi.fn(async () => {
           throw new RunWorkspaceProvisioningError([
-            { projectId: 'project-web', message: 'Git worktree creation failed' },
+            { projectId: 'project-web', message: 'Git clone failed' },
           ])
         }),
+        cleanup: vi.fn(async () => undefined),
       }
       const runner = createAgentNodeRunner({
         harnesses: createAvailableHarnesses(),
@@ -269,7 +288,7 @@ describe('agent node runner', () => {
       ).resolves.toEqual({
         status: 'failed',
         code: 'RUN_WORKSPACE_PROVISIONING_FAILED',
-        message: 'Git worktree creation failed',
+        message: 'Git clone failed',
       })
       expect(spawned).not.toHaveBeenCalled()
     } finally {

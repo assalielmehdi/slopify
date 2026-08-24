@@ -31,13 +31,18 @@ describe('current repositories', () => {
     expect(fixture.workflows.list()).toEqual([updated])
   })
 
-  it('persists current local projects by repository path', () => {
+  it('persists current remote projects by provider repository identity', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
     const project = {
       projectId: 'project-api',
       name: 'API',
-      repositoryPath: '/workspace/api',
+      provider: 'GITHUB',
+      remoteId: '123',
+      fullName: 'operator/api',
+      cloneUrl: 'https://github.com/operator/api.git',
+      webUrl: 'https://github.com/operator/api',
+      defaultBranch: 'main',
       createdAt: '2026-08-23T12:00:00.000Z',
       updatedAt: '2026-08-23T12:00:00.000Z',
     } as const
@@ -45,7 +50,7 @@ describe('current repositories', () => {
     fixture.projects.add(project)
 
     expect(fixture.projects.get(project.projectId)).toEqual(project)
-    expect(fixture.projects.findByPath(project.repositoryPath)).toEqual(project)
+    expect(fixture.projects.findByRemote(project.provider, project.remoteId)).toEqual(project)
     expect(fixture.projects.list()).toEqual([project])
   })
 
@@ -70,9 +75,12 @@ describe('current repositories', () => {
         {
           projectId: 'project-api',
           name: 'API',
-          repositoryPath: '/workspace/api',
+          provider: 'GITHUB',
+          remoteId: '123',
+          fullName: 'operator/api',
+          cloneUrl: 'https://github.com/operator/api.git',
+          defaultBranch: 'main',
           baseSha: 'a'.repeat(40),
-          sourceBranch: 'main',
         },
       ],
     })
@@ -85,7 +93,13 @@ describe('current repositories', () => {
       status: 'PENDING',
     })
     expect(fixture.runs.listRunProjects(TEST_RUN_ID)).toMatchObject([
-      { projectId: 'project-api', isPrimary: true, baseSha: 'a'.repeat(40) },
+      {
+        projectId: 'project-api',
+        provider: 'GITHUB',
+        fullName: 'operator/api',
+        isPrimary: true,
+        baseSha: 'a'.repeat(40),
+      },
     ])
     expect(fixture.events.list({ runId: TEST_RUN_ID, limit: 20 }).events).toMatchObject([
       { type: 'RUN_STARTED', data: { workflowId: workflow.workflowId } },

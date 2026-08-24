@@ -42,9 +42,12 @@ const createServiceFixture = (
   resolveProject: (projectId: string) => Promise<RunProjectResolution> = async (projectId) => ({
     projectId: projectId as RunProjectResolution['projectId'],
     name: 'API',
-    repositoryPath: '/workspace/api',
+    provider: 'GITHUB',
+    remoteId: '123',
+    fullName: 'operator/api',
+    cloneUrl: 'https://github.com/operator/api.git',
+    defaultBranch: 'main',
     baseSha: 'a'.repeat(40) as RunProjectResolution['baseSha'],
-    sourceBranch: 'main',
   }),
   harnesses: Pick<HarnessCatalog, 'requireAvailable'> = {
     requireAvailable: vi.fn(async () => ({
@@ -112,13 +115,16 @@ describe('run service admission', () => {
           projectId: 'project-api',
           position: 0,
           name: 'API',
-          repositoryPath: '/workspace/api',
+          provider: 'GITHUB',
+          remoteId: '123',
+          fullName: 'operator/api',
+          cloneUrl: 'https://github.com/operator/api.git',
+          defaultBranch: 'main',
           baseSha: 'a'.repeat(40),
-          sourceBranch: 'main',
           isPrimary: true,
         },
       ],
-      projectWorktrees: [],
+      projectWorkspaces: [],
     })
   })
 

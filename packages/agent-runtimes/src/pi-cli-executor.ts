@@ -410,7 +410,7 @@ const prompt = (input: AgentExecutionInput): string => {
     path,
     primary: projectId === input.workspace.primaryProjectId,
   }))
-  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun projects: ${JSON.stringify(projects)}\nComplete all work inside these project worktrees. Call slopify_complete_node exactly once with one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Do not finish without calling it.\n</slopify_execution_protocol>`
+  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun projects: ${JSON.stringify(projects)}\nComplete all work inside these run workspaces. Call slopify_complete_node exactly once with one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Do not finish without calling it.\n</slopify_execution_protocol>`
 }
 
 export const createPiCliAgentExecutor = (

@@ -183,7 +183,7 @@ Dark mode is designed independently, not produced by inverting light mode.
 Switching modes uses a 150ms color transition with no movement, scaling, or crossfade.
 When reduced motion is requested, the transition is removed. Slopify defaults to Light,
 stores one shared `Light`, `Dark`, or `System` preference, and exposes the same semantic
-mode switch through the Preferences screen and the global `D` shortcut.
+mode switch through the Settings screen and the global `D` shortcut.
 
 ### Signal colors
 
@@ -269,15 +269,15 @@ text color of their role.
 - The expand control moves to the breadcrumb bar when the sidebar is collapsed.
 - Section labels are visually quieter than navigation destinations.
 - The selected destination uses `selected` plus stronger text, not a chromatic accent.
-- Preferences is a standalone footer destination pinned to the bottom of the sidebar.
+- Settings is a standalone footer destination pinned to the bottom of the sidebar.
   It is not a navigation group. When selected, it uses the same neutral selected state
   as primary navigation.
 - Breadcrumb items are links. The current location uses stronger text and
   `aria-current="page"`.
-- Preferences is a top-level destination, so its breadcrumb contains one clickable
-  `Preferences` item rather than inheriting workflow ancestry.
+- Settings is a top-level destination, so its breadcrumb contains one clickable
+  `Settings` item rather than inheriting workflow ancestry.
 
-### Preferences
+### Settings
 
 - Center preference content in a readable column with generous outer padding.
 - Let the top breadcrumb carry the page identity; begin content with the first category
@@ -294,6 +294,9 @@ text color of their role.
 - Present the three options as an accessible radio group inside a neutral segmented
   control. Selection is communicated by text contrast, a border, and a raised neutral
   surface rather than a chromatic accent.
+- The `Git` category has one row each for GitHub.com and GitLab.com. A disconnected row
+  accepts a write-only personal access token; a connected row shows only the account
+  name and disconnect action. Never render a stored token back to the browser.
 
 ### Theme selector motion
 
@@ -319,17 +322,17 @@ text color of their role.
 
 ### Project catalog
 
-- Projects are local Git repositories identified by one canonical absolute path. The
-  add flow asks only for that path; the API validates that it exists and is the root of
-  a Git repository before persisting it.
+- Projects are GitHub.com or GitLab.com repositories selected from configured provider
+  connections. The add flow first selects a connected provider, then one repository
+  returned by that provider. It never accepts a local path or arbitrary clone URL.
 - After the API confirms a Project was added, close the add drawer and show a success
   toast naming the Project. Never show success before persistence completes.
 - Use a left-aligned responsive card catalog, whole-surface tiles, and the standard
   contained floating drawer.
-- Derive availability from the filesystem whenever Projects are listed or used. Never
-  remove a saved Project merely because its path is unavailable.
-- A missing Project remains in its original catalog position with a muted tile and the
-  explicit status `Can't find in file system`. Color or opacity alone is insufficient.
+- Derive availability from the provider whenever Projects are listed or used. Never
+  remove a saved Project merely because its connection or repository is unavailable.
+- An unavailable Project remains in its original catalog position with a muted tile and
+  the explicit status `Connection missing` or `Repository unavailable`.
 
 ### Workflow editor
 
@@ -443,7 +446,8 @@ text color of their role.
   not shift the graph, overlap the application header, add
   a backdrop, trap focus, or block interaction with the canvas.
 - The panel shows the captured harness and version, optional model and thinking effort,
-  primary Project and run worktree paths, result/timeout data, execution status and
+  primary Project and cloned run workspace paths and branches, result/timeout data,
+  execution status and
   timing, errors or output, and available agent transcript messages.
 - The panel enters from and exits toward the right over 350ms using the catalog drawer
   easing. Clicking elsewhere begins its exit while allowing that underlying
@@ -494,5 +498,5 @@ text color of their role.
 - Do not use excessive rounding, floating cards, heavy shadows, or gradients.
 - Do not use different neutral fills merely to make every content group look like a
   card.
-- Do not create a second theme path for future Preferences controls; all theme entry
+- Do not create a second theme path for future Settings controls; all theme entry
   points must operate on the same semantic tokens and state.

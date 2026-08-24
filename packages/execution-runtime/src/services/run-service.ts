@@ -4,6 +4,7 @@ import {
   WorkflowIdSchema,
   type CreateRunRequest,
   type GitSha,
+  type GitProvider,
   type ProjectId,
   type RunId,
 } from '@slopify/contracts'
@@ -16,7 +17,7 @@ import type {
   NodeExecutionRecord,
   ListRunsInput,
   RunProjectSnapshot,
-  RunProjectWorktree,
+  RunProjectWorkspace,
   RunRecord,
   RunRepository,
 } from '../persistence/run-repository.js'
@@ -51,7 +52,7 @@ export interface RunDetail {
   readonly events: ReturnType<EventStore['list']>['events']
   readonly nodeExecutions: readonly NodeExecutionRecord[]
   readonly projects: readonly RunProjectSnapshot[]
-  readonly projectWorktrees: readonly RunProjectWorktree[]
+  readonly projectWorkspaces: readonly RunProjectWorkspace[]
 }
 
 export interface RunSummary {
@@ -94,9 +95,12 @@ export interface CreateRunServiceOptions {
 export interface RunProjectResolution {
   readonly projectId: ProjectId
   readonly name: string
-  readonly repositoryPath: string
+  readonly provider: GitProvider
+  readonly remoteId: string
+  readonly fullName: string
+  readonly cloneUrl: string
+  readonly defaultBranch: string
   readonly baseSha: GitSha
-  readonly sourceBranch: string | null
 }
 
 const cloneJson = <Value>(value: Value): Value => JSON.parse(JSON.stringify(value)) as Value
@@ -220,7 +224,7 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         events,
         nodeExecutions: options.runs.listNodeExecutions(runId),
         projects: options.runs.listRunProjects(runId),
-        projectWorktrees: options.runs.listRunProjectWorktrees(runId),
+        projectWorkspaces: options.runs.listRunProjectWorkspaces(runId),
       }
     },
 

@@ -43,6 +43,40 @@ export const GitShaSchema = z
   .regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/)
   .brand<'GitSha'>()
 
+export const GitProviderSchema = z.enum(['GITHUB', 'GITLAB'])
+
+export const GitConnectionSchema = z.strictObject({
+  provider: GitProviderSchema,
+  accountUsername: z.string().trim().min(1).max(256),
+  connectedAt: z.iso.datetime({ offset: true }),
+  updatedAt: z.iso.datetime({ offset: true }),
+})
+
+export const GitConnectionCatalogResponseSchema = z.strictObject({
+  connections: z.array(GitConnectionSchema).max(GitProviderSchema.options.length).readonly(),
+})
+
+export const ConfigureGitConnectionRequestSchema = z.strictObject({
+  token: z.string().trim().min(1).max(16_384),
+})
+
+export const GitRepositoryVisibilitySchema = z.enum(['PUBLIC', 'INTERNAL', 'PRIVATE'])
+
+export const GitRepositorySchema = z.strictObject({
+  provider: GitProviderSchema,
+  remoteId: z.string().regex(/^\d+$/u).max(128),
+  name: z.string().trim().min(1).max(256),
+  fullName: z.string().trim().min(1).max(512),
+  cloneUrl: z.url({ protocol: /^https$/u }).max(4_096),
+  webUrl: z.url({ protocol: /^https$/u }).max(4_096),
+  visibility: GitRepositoryVisibilitySchema,
+  defaultBranch: z.string().trim().min(1).max(512),
+})
+
+export const GitRepositoryCatalogResponseSchema = z.strictObject({
+  repositories: z.array(GitRepositorySchema).max(100_000).readonly(),
+})
+
 export const HarnessThinkingLevelSchema = z.enum([
   'off',
   'minimal',
@@ -84,19 +118,29 @@ export const HarnessCatalogResponseSchema = z.strictObject({
   harnesses: z.array(HarnessDescriptorSchema).readonly(),
 })
 
-export const ProjectAvailabilitySchema = z.enum(['AVAILABLE', 'MISSING', 'NOT_GIT_REPOSITORY'])
+export const ProjectAvailabilitySchema = z.enum([
+  'AVAILABLE',
+  'CONNECTION_MISSING',
+  'REPOSITORY_UNAVAILABLE',
+])
 
 export const ProjectSchema = z.strictObject({
   projectId: ProjectIdSchema,
   name: z.string().trim().min(1).max(256),
-  repositoryPath: z.string().trim().min(1).max(4_096),
+  provider: GitProviderSchema,
+  remoteId: z.string().regex(/^\d+$/u).max(128),
+  fullName: z.string().trim().min(1).max(512),
+  cloneUrl: z.url({ protocol: /^https$/u }).max(4_096),
+  webUrl: z.url({ protocol: /^https$/u }).max(4_096),
+  defaultBranch: z.string().trim().min(1).max(512),
   availability: ProjectAvailabilitySchema,
   createdAt: z.iso.datetime({ offset: true }),
   updatedAt: z.iso.datetime({ offset: true }),
 })
 
 export const AddProjectRequestSchema = z.strictObject({
-  repositoryPath: z.string().trim().min(1).max(4_096),
+  provider: GitProviderSchema,
+  remoteId: z.string().regex(/^\d+$/u).max(128),
 })
 
 export const ProjectCatalogResponseSchema = z.strictObject({
@@ -248,21 +292,30 @@ export const AgentTraceEventTypeSchema = z.enum([
   'AGENT_CANCELLED',
 ])
 
-export const AgentTraceHeaderSchema = z.strictObject({
-  version: z.literal(1),
+const agentTraceHeaderFields = {
   runId: RunIdSchema,
   nodeExecutionId: opaqueId,
   attemptId: opaqueId,
   nodeId: NodeIdSchema,
   createdAt: z.iso.datetime({ offset: true }),
+} as const
+
+const agentTraceConfigurationFields = {
+  harnessId: HarnessIdSchema,
+  harnessVersion: z.string().trim().min(1).max(128),
+  model: z.string().trim().min(1).max(256).optional(),
+  thinkingLevel: HarnessThinkingLevelSchema.optional(),
+  renderedPrompt: z.string().min(1).max(1_000_000),
+  workspaceRoot: z.string().trim().min(1).max(4_096),
+  primaryProjectId: ProjectIdSchema,
+  timeoutSeconds: z.number().int().positive().safe(),
+} as const
+
+const LegacyAgentTraceHeaderSchema = z.strictObject({
+  version: z.literal(1),
+  ...agentTraceHeaderFields,
   configuration: z.strictObject({
-    harnessId: HarnessIdSchema,
-    harnessVersion: z.string().trim().min(1).max(128),
-    model: z.string().trim().min(1).max(256).optional(),
-    thinkingLevel: HarnessThinkingLevelSchema.optional(),
-    renderedPrompt: z.string().min(1).max(1_000_000),
-    workspaceRoot: z.string().trim().min(1).max(4_096),
-    primaryProjectId: ProjectIdSchema,
+    ...agentTraceConfigurationFields,
     projects: z
       .array(
         z.strictObject({
@@ -276,9 +329,37 @@ export const AgentTraceHeaderSchema = z.strictObject({
       .min(1)
       .max(32)
       .readonly(),
-    timeoutSeconds: z.number().int().positive().safe(),
   }),
 })
+
+const ClonedWorkspaceAgentTraceHeaderSchema = z.strictObject({
+  version: z.literal(2),
+  ...agentTraceHeaderFields,
+  configuration: z.strictObject({
+    ...agentTraceConfigurationFields,
+    projects: z
+      .array(
+        z.strictObject({
+          projectId: ProjectIdSchema,
+          name: z.string().trim().min(1).max(256),
+          provider: GitProviderSchema,
+          fullName: z.string().trim().min(1).max(512),
+          workspacePath: z.string().trim().min(1).max(4_096),
+          branchName: z.string().trim().min(1).max(512),
+          baseSha: GitShaSchema,
+          defaultBranch: z.string().trim().min(1).max(512),
+        }),
+      )
+      .min(1)
+      .max(32)
+      .readonly(),
+  }),
+})
+
+export const AgentTraceHeaderSchema = z.discriminatedUnion('version', [
+  LegacyAgentTraceHeaderSchema,
+  ClonedWorkspaceAgentTraceHeaderSchema,
+])
 
 export const AgentTraceEventSchema = z.strictObject({
   sequence: z.number().int().positive().safe(),
@@ -304,6 +385,10 @@ export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusSchema>
 export type ApiError = z.infer<typeof ApiErrorSchema>
 export type HealthResponse = z.infer<typeof HealthResponseSchema>
 export type GitSha = z.infer<typeof GitShaSchema>
+export type GitProvider = z.infer<typeof GitProviderSchema>
+export type GitConnection = z.infer<typeof GitConnectionSchema>
+export type GitRepositoryVisibility = z.infer<typeof GitRepositoryVisibilitySchema>
+export type GitRepository = z.infer<typeof GitRepositorySchema>
 export type HarnessThinkingLevel = z.infer<typeof HarnessThinkingLevelSchema>
 export type HarnessModelOption = z.infer<typeof HarnessModelOptionSchema>
 export type HarnessDescriptor = z.infer<typeof HarnessDescriptorSchema>

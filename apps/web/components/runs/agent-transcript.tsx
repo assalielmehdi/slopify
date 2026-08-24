@@ -1,7 +1,7 @@
 'use client'
 
 import type { AgentTraceEvent } from '@slopify/contracts'
-import { BrainIcon, ChevronRightIcon, WrenchIcon } from 'lucide-react'
+import { BrainIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -19,6 +19,8 @@ import {
 } from '@/components/ui/message-scroller'
 import { formatDuration } from '@/lib/run-format'
 
+import { AgentTraceToolBlock, type AgentTraceTool } from './agent-trace-tool'
+
 interface AgentTranscriptProps {
   readonly events: readonly AgentTraceEvent[]
   readonly prompt: string
@@ -33,28 +35,10 @@ type TranscriptItem =
       readonly source: 'reasoning' | 'result'
       content: string
     }
-  | {
+  | ({
       readonly id: string
       readonly kind: 'tool'
-      readonly toolCallId: string
-      toolName: string
-      input?: unknown
-      status: 'running' | 'succeeded' | 'failed'
-      updates: string[]
-      result?: string
-    }
-
-type WorkItem =
-  | {
-      readonly id: string
-      readonly kind: 'reasoning'
-      readonly content: string
-    }
-  | {
-      readonly id: string
-      readonly kind: 'tool-group'
-      readonly tools: readonly Extract<TranscriptItem, { kind: 'tool' }>[]
-    }
+    } & AgentTraceTool)
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -119,6 +103,12 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
     const toolCallId = text(data.toolCallId)
     if (toolCallId === undefined) continue
     if (event.type === 'AGENT_TOOL_STARTED') {
+      const existingTool = tools.get(toolCallId)
+      if (existingTool !== undefined) {
+        existingTool.toolName = text(data.toolName) ?? existingTool.toolName
+        if (data.input !== undefined) existingTool.input = data.input
+        continue
+      }
       const tool: Extract<TranscriptItem, { kind: 'tool' }> = {
         id: `tool-${toolCallId}`,
         kind: 'tool',
@@ -127,8 +117,10 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
         ...(data.input === undefined ? {} : { input: data.input }),
         status: 'running',
         updates: [],
+        startedAt: event.timestamp,
       }
       tools.set(toolCallId, tool)
+      items.push(tool)
     }
     if (event.type === 'AGENT_TOOL_UPDATED') {
       const update = text(data.content)
@@ -148,10 +140,13 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
         } satisfies Extract<TranscriptItem, { kind: 'tool' }>)
       tool.toolName = text(data.toolName) ?? tool.toolName
       tool.status = data.status === 'failed' ? 'failed' : 'succeeded'
+      tool.completedAt = event.timestamp
       const result = text(data.content)
       if (result !== undefined) tool.result = result
-      if (existingTool === undefined) tools.set(toolCallId, tool)
-      items.push(tool)
+      if (existingTool === undefined) {
+        tools.set(toolCallId, tool)
+        items.push(tool)
+      }
     }
   }
   return items
@@ -171,33 +166,6 @@ const durationFrom = (events: readonly AgentTraceEvent[]): number | undefined =>
     return typeof durationMs === 'number' ? durationMs : undefined
   }
   return undefined
-}
-
-const workItemsFrom = (transcript: readonly TranscriptItem[]): readonly WorkItem[] => {
-  const workItems: WorkItem[] = []
-  for (const item of transcript) {
-    if (item.kind === 'text' && item.source === 'reasoning') {
-      workItems.push({ id: item.id, kind: 'reasoning', content: item.content })
-      continue
-    }
-    if (item.kind !== 'tool') continue
-    const previous = workItems.at(-1)
-    if (previous?.kind === 'tool-group') {
-      workItems[workItems.length - 1] = { ...previous, tools: [...previous.tools, item] }
-    } else {
-      workItems.push({ id: item.id, kind: 'tool-group', tools: [item] })
-    }
-  }
-  return workItems
-}
-
-const toolGroupLabel = (tools: readonly Extract<TranscriptItem, { kind: 'tool' }>[]): string => {
-  const counts = new Map<string, number>()
-  for (const tool of tools) counts.set(tool.toolName, (counts.get(tool.toolName) ?? 0) + 1)
-  const labels = [...counts].map(([name, count]) => (count === 1 ? name : `${name} ×${count}`))
-  if (labels.length <= 1) return labels[0] ?? 'Tool'
-  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`
-  return `${labels.slice(0, -1).join(', ')}, and ${labels.at(-1)}`
 }
 
 const liveAnnouncement = (events: readonly AgentTraceEvent[]): string => {
@@ -247,43 +215,26 @@ const plainTextFromMarkdown = (value: string): string =>
     .replace(/([*_])([^*_]+)\1/gu, '$2')
     .trim()
 
-function ToolGroup({
-  tools,
-}: Readonly<{ tools: readonly Extract<TranscriptItem, { kind: 'tool' }>[] }>) {
-  const failedCount = tools.filter(({ status }) => status === 'failed').length
+function ReasoningLine({ content }: Readonly<{ content: string }>) {
   return (
-    <Bubble variant="muted" data-message-kind="tool-group">
-      <BubbleContent className="flex min-h-10 items-center gap-2 text-muted-foreground">
-        <WrenchIcon aria-hidden="true" className="size-4 shrink-0" />
-        <span className="min-w-0 truncate text-sm/5">
-          Used <span className="font-medium text-foreground">{toolGroupLabel(tools)}</span>
-        </span>
-        {failedCount > 0 ? (
-          <span className="shrink-0 text-xs/5 text-destructive">{failedCount} failed</span>
-        ) : null}
-      </BubbleContent>
-    </Bubble>
-  )
-}
-
-function ReasoningBubble({ content }: Readonly<{ content: string }>) {
-  return (
-    <Bubble variant="muted" data-message-kind="reasoning">
-      <BubbleContent className="grid gap-2.5">
-        <div className="flex items-center gap-2 text-xs/5 font-medium text-muted-foreground">
-          <BrainIcon aria-hidden="true" className="size-4" />
-          <span>Reasoning</span>
-        </div>
-        <p className="whitespace-pre-wrap text-sm/6">{plainTextFromMarkdown(content)}</p>
-      </BubbleContent>
-    </Bubble>
+    <div
+      className="flex min-w-0 items-start gap-2 border-b py-3 first:pt-0 last:border-b-0 last:pb-0"
+      data-message-kind="reasoning"
+    >
+      <BrainIcon aria-hidden="true" className="mt-1 size-4 shrink-0 text-muted-foreground" />
+      <p className="min-w-0 whitespace-pre-wrap text-sm/6 wrap-break-word">
+        {plainTextFromMarkdown(content)}
+      </p>
+    </div>
   )
 }
 
 export function AgentTranscript({ events, prompt, result, streaming }: AgentTranscriptProps) {
   const [workOpen, setWorkOpen] = useState(false)
   const transcript = transcriptFrom(events)
-  const workItems = workItemsFrom(transcript)
+  const workItems = transcript.filter(
+    (item) => item.kind === 'tool' || (item.kind === 'text' && item.source === 'reasoning'),
+  )
   const results = transcript.filter(
     (item): item is Extract<TranscriptItem, { kind: 'text' }> =>
       item.kind === 'text' && item.source === 'result',
@@ -338,12 +289,12 @@ export function AgentTranscript({ events, prompt, result, streaming }: AgentTran
                       </CollapsibleTrigger>
                       <CollapsibleContent className="t-acc-panel">
                         <div className="t-acc-panel-inner">
-                          <div className="grid gap-3 pt-3">
+                          <div className="pt-3">
                             {workItems.map((item) =>
-                              item.kind === 'reasoning' ? (
-                                <ReasoningBubble key={item.id} content={item.content} />
+                              item.kind === 'text' ? (
+                                <ReasoningLine key={item.id} content={item.content} />
                               ) : (
-                                <ToolGroup key={item.id} tools={item.tools} />
+                                <AgentTraceToolBlock key={item.id} tool={item} />
                               ),
                             )}
                           </div>

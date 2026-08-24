@@ -101,12 +101,12 @@ const detail = {
     },
   ],
   projects: [],
-  projectWorktrees: [],
+  projectWorkspaces: [],
 } as unknown as RunDetailResponse
 
 const trace = AgentTraceSchema.parse({
   header: {
-    version: 1,
+    version: 2,
     runId: 'run-01',
     nodeExecutionId: 'node-execution-01',
     attemptId: 'attempt-01',
@@ -118,15 +118,18 @@ const trace = AgentTraceSchema.parse({
       model: 'test-model',
       thinkingLevel: 'high',
       renderedPrompt: "Who are you? What's your name?",
-      workspaceRoot: '/Users/developer/.slopify/orchestrator/worktrees/run-01/project-api',
+      workspaceRoot: '/Users/developer/.slopify/orchestrator/workspaces/run-01',
       primaryProjectId: 'project-api',
       projects: [
         {
           projectId: 'project-api',
           name: 'API',
-          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-01/project-api',
+          provider: 'GITHUB',
+          fullName: 'operator/api',
+          workspacePath: '/Users/developer/.slopify/orchestrator/workspaces/run-01/project-api',
+          branchName: 'slopify/run-01',
           baseSha: '0123456789abcdef0123456789abcdef01234567',
-          sourceBranch: 'main',
+          defaultBranch: 'main',
         },
       ],
       timeoutSeconds: 300,

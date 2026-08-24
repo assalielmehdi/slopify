@@ -9,11 +9,11 @@ import { metadata as projectsMetadata } from '../app/projects/page'
 import { generateMetadata as generateRunMetadata } from '../app/runs/[runId]/page'
 import { metadata as newRunMetadata } from '../app/runs/new/page'
 import { metadata as runHistoryMetadata } from '../app/runs/page'
-import { metadata as preferencesMetadata } from '../app/preferences/page'
+import { metadata as settingsMetadata } from '../app/settings/page'
 
 describe('accessible route metadata', () => {
   it('provides every configuration destination as a route', () => {
-    for (const route of ['harnesses', 'projects', 'preferences']) {
+    for (const route of ['harnesses', 'projects', 'settings']) {
       expect(existsSync(resolve(import.meta.dirname, '..', 'app', route, 'page.tsx'))).toBe(true)
     }
   })
@@ -26,7 +26,7 @@ describe('accessible route metadata', () => {
     expect(workflowMetadata.title).toBe('Editor')
     expect(newRunMetadata.title).toBe('Start a run')
     expect(runHistoryMetadata.title).toBe('Runs')
-    expect(preferencesMetadata.title).toBe('Preferences')
+    expect(settingsMetadata.title).toBe('Settings')
     expect(harnessesMetadata.title).toBe('Harnesses')
     expect(projectsMetadata.title).toBe('Projects')
     await expect(

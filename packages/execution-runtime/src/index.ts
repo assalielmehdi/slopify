@@ -1,5 +1,32 @@
 export { createOrchestratedRunService } from './orchestration/orchestrated-run-service.js'
 export {
+  GitConnectionServiceError,
+  createGitConnectionService,
+  type GitConnectionService,
+  type GitConnectionServiceErrorCode,
+} from './git/git-connection-service.js'
+export {
+  createGitCredentialHelperCommand,
+  gitCredentialHelperPath,
+  handleGitCredentialRequest,
+  parseGitCredentialInput,
+  type GitCredentialAction,
+  type GitCredentialInput,
+  type GitCredentialTokenReader,
+} from './git/git-credential-helper.js'
+export {
+  type GitConnectionRecord,
+  type GitConnectionRepository,
+} from './git/git-connection-repository.js'
+export { type GitSecretStore } from './git/git-secret-store.js'
+export { createBunGitSecretStore, type BunSecretsAdapter } from './git/bun-git-secret-store.js'
+export {
+  type RemoteGitAccount,
+  type RemoteGitHost,
+  type RemoteGitRepositoryReference,
+} from './git/remote-git-host.js'
+export { RemoteGitHostError, createFetchRemoteGitHost } from './git/fetch-remote-git-host.js'
+export {
   HarnessCatalogError,
   createHarnessCatalog,
   type AvailableHarnessDescriptor,
@@ -23,6 +50,7 @@ export {
   type WorkbenchDatabase,
 } from './persistence/database.js'
 export { createProjectRepository } from './persistence/project-repository.js'
+export { createGitConnectionRepository } from './persistence/git-connection-repository.js'
 export { createDeletionOperationRepository } from './persistence/deletion-operation-repository.js'
 export {
   DeletionServiceError,
@@ -37,14 +65,11 @@ export {
 export {
   ProjectServiceError,
   createProjectService,
-  type ProjectInspection,
-  type ProjectInspector,
   type ProjectService,
   type ProjectServiceErrorCode,
 } from './projects/project-service.js'
 export { type ProjectRecord, type ProjectRepository } from './projects/project-repository.js'
-export { createNativeGitProjectInspector } from './projects/native-git-project-inspector.js'
-export { createNativeRunProjectResolver } from './projects/native-run-project-resolver.js'
+export { createRemoteRunProjectResolver } from './projects/remote-run-project-resolver.js'
 export {
   createNativeGitRunWorkspaceProvisioner,
   type CreateNativeGitRunWorkspaceProvisionerOptions,
@@ -106,14 +131,15 @@ export {
   type ListRunsInput,
   type NodeExecutionRecord,
   type NodeExecutionStatus,
-  type MarkRunProjectWorktreeFailedInput,
-  type MarkRunProjectWorktreePreparingInput,
-  type MarkRunProjectWorktreeReadyInput,
+  type MarkRunProjectWorkspaceCleanedInput,
+  type MarkRunProjectWorkspaceFailedInput,
+  type MarkRunProjectWorkspacePreparingInput,
+  type MarkRunProjectWorkspaceReadyInput,
   type RunRecord,
   type RunPage,
   type RunProjectSnapshot,
-  type RunProjectWorktree,
-  type RunProjectWorktreeStatus,
+  type RunProjectWorkspace,
+  type RunProjectWorkspaceStatus,
   type RunRepository,
 } from './persistence/run-repository.js'
 export {

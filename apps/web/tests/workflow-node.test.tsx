@@ -50,7 +50,7 @@ describe('WorkflowNode', () => {
   it.each([
     ['SUCCEEDED', 'border-status-success', 'bg-status-success'],
     ['FAILED', 'border-destructive', 'bg-destructive'],
-    ['RUNNING', 'border-status-info', 'bg-status-info'],
+    ['RUNNING', 'border-status-info', 'workflow-node-running-fill'],
   ] as const)(
     'uses a semantic whole-card treatment for %s nodes',
     (status, borderClass, backgroundClass) => {
@@ -75,6 +75,43 @@ describe('WorkflowNode', () => {
       expect(card?.className).toContain(backgroundClass)
     },
   )
+
+  it('animates the background fill only while the agent is running', () => {
+    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (node === undefined) throw new Error('Expected agent node')
+
+    const view = render(
+      <WorkflowNodeContent
+        data={{
+          domainNode: node,
+          isStart: false,
+          isEnd: true,
+          recentRunStatus: 'RUNNING',
+        }}
+        selected={false}
+      />,
+    )
+
+    expect(view.container.querySelector('article')?.className).toContain(
+      'workflow-node-running-fill',
+    )
+
+    view.rerender(
+      <WorkflowNodeContent
+        data={{
+          domainNode: node,
+          isStart: false,
+          isEnd: true,
+          recentRunStatus: 'SUCCEEDED',
+        }}
+        selected={false}
+      />,
+    )
+
+    expect(view.container.querySelector('article')?.className).not.toContain(
+      'workflow-node-running-fill',
+    )
+  })
 
   it('hides the incoming handle on start and keeps every agent connectable onward', () => {
     const node = workflow.nodes.find(({ id }) => id === 'identify-agent')

@@ -3,6 +3,7 @@ import {
   CancellationServiceError,
   AgentTraceStoreError,
   DeletionServiceError,
+  GitConnectionServiceError,
   ProjectServiceError,
   RunEventFeedError,
   RunServiceError,
@@ -10,6 +11,7 @@ import {
   type CancellationService,
   type AgentTraceStore,
   type DeletionService,
+  type GitConnectionService,
   type HarnessCatalog,
   type ProjectService,
   type RunService,
@@ -22,6 +24,7 @@ import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
 import { registerDeletionRoutes } from './routes/deletions.js'
+import { registerGitConnectionRoutes } from './routes/git-connections.js'
 import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerProjectRoutes } from './routes/projects.js'
 import { registerRunRoutes } from './routes/runs.js'
@@ -35,6 +38,7 @@ export interface CreateApiAppOptions {
   readonly traces?: AgentTraceStore
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly deletions?: DeletionService
+  readonly gitConnections?: GitConnectionService
   readonly harnesses?: HarnessCatalog
   readonly projects?: ProjectService
   readonly runs?: RunService
@@ -79,6 +83,7 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   })
 
   if (options.projects !== undefined) registerProjectRoutes(app, options.projects)
+  if (options.gitConnections !== undefined) registerGitConnectionRoutes(app, options.gitConnections)
   if (options.harnesses !== undefined) registerHarnessRoutes(app, options.harnesses)
   if (options.deletions !== undefined) registerDeletionRoutes(app, options.deletions)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
@@ -91,6 +96,17 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   )
 
   app.onError((error, context) => {
+    if (error instanceof GitConnectionServiceError) {
+      const status =
+        error.code === 'GIT_CONNECTION_INVALID'
+          ? 401
+          : error.code === 'GIT_CONNECTION_NOT_FOUND'
+            ? 404
+            : error.code === 'GIT_PROVIDER_UNAVAILABLE'
+              ? 503
+              : 409
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
     if (error instanceof DeletionServiceError) {
       const status =
         error.code === 'DELETION_NOT_FOUND'
@@ -144,13 +160,13 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       const status =
         error.code === 'PROJECT_NOT_FOUND'
           ? 404
-          : error.code === 'PROJECT_PATH_CONFLICT'
+          : error.code === 'PROJECT_REMOTE_CONFLICT'
             ? 409
-            : error.code === 'PROJECT_PATH_NOT_FOUND' ||
-                error.code === 'PROJECT_NOT_GIT_REPOSITORY' ||
-                error.code === 'PROJECT_UNAVAILABLE'
+            : error.code === 'PROJECT_CONNECTION_REQUIRED' || error.code === 'PROJECT_UNAVAILABLE'
               ? 422
-              : 400
+              : error.code === 'PROJECT_REPOSITORY_NOT_FOUND'
+                ? 404
+                : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof ApiApplicationError) {

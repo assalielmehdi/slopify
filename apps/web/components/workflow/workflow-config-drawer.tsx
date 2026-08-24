@@ -107,8 +107,8 @@ function WorkflowProjectsFields({
                     <span className="block text-sm/5 font-medium">{project.name}</span>
                     <span className="block break-all font-mono text-xs/4 text-muted-foreground">
                       {unavailable
-                        ? `${project.repositoryPath} · Can't find in file system`
-                        : project.repositoryPath}
+                        ? `${project.fullName} · ${project.availability === 'CONNECTION_MISSING' ? 'Connection missing' : 'Repository unavailable'}`
+                        : project.fullName}
                     </span>
                   </span>
                 </label>

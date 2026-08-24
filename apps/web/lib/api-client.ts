@@ -7,6 +7,11 @@ import {
   CreateRunRequestSchema,
   HealthResponseSchema,
   HarnessCatalogResponseSchema,
+  ConfigureGitConnectionRequestSchema,
+  GitConnectionCatalogResponseSchema,
+  GitConnectionSchema,
+  GitProviderSchema,
+  GitRepositoryCatalogResponseSchema,
   GitShaSchema,
   NodeIdSchema,
   NodeExecutionStatusSchema,
@@ -22,6 +27,9 @@ import {
   WorkflowIdSchema,
   type HealthResponse,
   type HarnessDescriptor,
+  type GitConnection,
+  type GitProvider,
+  type GitRepository,
   type AgentTrace,
   type Project,
   type DeletionReceipt,
@@ -73,19 +81,24 @@ const RunProjectSnapshotSchema = z.strictObject({
   projectId: ProjectIdSchema,
   position: z.number().int().nonnegative().safe(),
   name: z.string().trim().min(1),
-  repositoryPath: z.string().min(1),
+  provider: GitProviderSchema.nullable(),
+  remoteId: z.string().trim().min(1).nullable(),
+  fullName: z.string().trim().min(1),
+  cloneUrl: z.string().trim().min(1),
+  defaultBranch: z.string().trim().min(1).nullable(),
   baseSha: GitShaSchema,
-  sourceBranch: z.string().trim().min(1).nullable(),
   isPrimary: z.boolean(),
 })
 
-const RunProjectWorktreeSchema = z.strictObject({
+const RunProjectWorkspaceSchema = z.strictObject({
   projectId: ProjectIdSchema,
   position: z.number().int().nonnegative().safe(),
-  status: z.enum(['PREPARING', 'READY', 'FAILED']),
-  worktreePath: z.string().min(1),
+  status: z.enum(['PREPARING', 'READY', 'FAILED', 'CLEANED', 'LEGACY']),
+  workspacePath: z.string().min(1),
+  branchName: z.string().trim().min(1).nullable(),
   errorMessage: z.string().trim().min(1).max(4_096).nullable(),
   preparedAt: z.iso.datetime({ offset: true }).nullable(),
+  cleanedAt: z.iso.datetime({ offset: true }).nullable(),
   updatedAt: z.iso.datetime({ offset: true }),
 })
 
@@ -111,7 +124,7 @@ const RunDetailResponseSchema = z.strictObject({
     )
     .readonly(),
   projects: z.array(RunProjectSnapshotSchema).readonly(),
-  projectWorktrees: z.array(RunProjectWorktreeSchema).readonly(),
+  projectWorkspaces: z.array(RunProjectWorkspaceSchema).readonly(),
 })
 
 export type WorkflowCatalogEntry = Workflow
@@ -138,11 +151,18 @@ export interface ListRunsInput {
 
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>
+  listGitConnections(): Promise<readonly GitConnection[]>
+  configureGitConnection(
+    provider: GitProvider,
+    input: { readonly token: string },
+  ): Promise<GitConnection>
+  disconnectGitConnection(provider: GitProvider): Promise<void>
+  listGitRepositories(provider: GitProvider): Promise<readonly GitRepository[]>
   listHarnesses(): Promise<readonly HarnessDescriptor[]>
   listProjects(): Promise<readonly Project[]>
-  addProject?(input: { readonly repositoryPath: string }): Promise<Project>
-  deleteProject?(projectId: string): Promise<DeletionReceipt>
-  undoDeletion?(deletionId: string): Promise<UndoDeletionResponse>
+  addProject(input: { readonly provider: GitProvider; readonly remoteId: string }): Promise<Project>
+  deleteProject(projectId: string): Promise<DeletionReceipt>
+  undoDeletion(deletionId: string): Promise<UndoDeletionResponse>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   getWorkflow(workflowId: string): Promise<Workflow>
   updateWorkflow(workflowId: string, workflow: Workflow): Promise<Workflow>
@@ -201,9 +221,56 @@ export const createApiClient = (
   const get = <Schema extends z.ZodType>(path: string, schema: Schema) =>
     request(path, { headers: { accept: 'application/json' }, method: 'GET' }, schema)
 
+  const requestEmpty = async (path: string, init: RequestInit): Promise<void> => {
+    const response = await fetchImplementation(path, init)
+    if (response.ok) return
+    const apiError = ApiErrorSchema.parse(await response.json()).error
+    throw new ApiClientError({
+      code: apiError.code,
+      message: apiError.message,
+      status: response.status,
+      ...(apiError.details === undefined ? {} : { details: apiError.details }),
+    })
+  }
+
   return {
     async getHealth() {
       return get('/api/healthz', HealthResponseSchema)
+    },
+
+    async listGitConnections() {
+      return (await get('/api/git/connections', GitConnectionCatalogResponseSchema)).connections
+    },
+
+    async configureGitConnection(providerInput, input) {
+      const provider = GitProviderSchema.parse(providerInput)
+      return request(
+        `/api/git/connections/${provider}`,
+        {
+          body: JSON.stringify(ConfigureGitConnectionRequestSchema.parse(input)),
+          headers: { accept: 'application/json', 'content-type': 'application/json' },
+          method: 'PUT',
+        },
+        GitConnectionSchema,
+      )
+    },
+
+    async disconnectGitConnection(providerInput) {
+      const provider = GitProviderSchema.parse(providerInput)
+      return requestEmpty(`/api/git/connections/${provider}`, {
+        headers: { accept: 'application/json' },
+        method: 'DELETE',
+      })
+    },
+
+    async listGitRepositories(providerInput) {
+      const provider = GitProviderSchema.parse(providerInput)
+      return (
+        await get(
+          `/api/git/connections/${provider}/repositories`,
+          GitRepositoryCatalogResponseSchema,
+        )
+      ).repositories
     },
 
     async listHarnesses() {

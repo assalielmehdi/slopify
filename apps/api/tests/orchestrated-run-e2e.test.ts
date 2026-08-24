@@ -22,6 +22,7 @@ import {
   createWorkflowCoordinator,
   createWorkflowRepository,
   openDatabase,
+  type ProcessRunner,
 } from '@slopify/execution-runtime'
 
 import { createApiApp } from '../src/app.js'
@@ -41,7 +42,7 @@ describe('orchestrated run HTTP flow', () => {
   it('admits, executes, persists, and returns a completed leaf-agent run', async () => {
     const directory = join(tmpdir(), `slopify-api-e2e-${crypto.randomUUID()}`)
     const sourceRepository = join(directory, 'source', 'api')
-    const worktreesRoot = join(directory, 'worktrees')
+    const workspacesRoot = join(directory, 'workspaces')
     mkdirSync(sourceRepository, { recursive: true })
     execFileSync('git', ['init', '--quiet', '--initial-branch=main', sourceRepository])
     execFileSync('git', ['-C', sourceRepository, 'config', 'user.email', 'test@slopify.local'])
@@ -80,8 +81,9 @@ describe('orchestrated run HTTP flow', () => {
           const primary = input.workspace.projects.find(
             ({ projectId }) => projectId === input.workspace.primaryProjectId,
           )
-          if (primary === undefined) throw new Error('Expected a primary worktree')
-          writeFileSync(join(primary.path, 'agent-result.txt'), 'written in the run worktree\n')
+          if (primary === undefined) throw new Error('Expected a primary run workspace')
+          if (!existsSync(join(primary.path, 'README.md'))) throw new Error('Clone was not ready')
+          writeFileSync(join(primary.path, 'agent-result.txt'), 'written in the run clone\n')
           yield AgentExecutionEventSchema.parse({
             executionId: input.executionId,
             runId: input.runId,
@@ -108,10 +110,22 @@ describe('orchestrated run HTTP flow', () => {
       },
       cancel: vi.fn(async () => ({ status: 'cancelled' })),
     }
+    const nativeProcessRunner = createProcessRunner({ maxOutputBytes: 16_384 })
+    const processRunner: ProcessRunner = {
+      run(input) {
+        const arguments_ = input.arguments.includes('clone')
+          ? input.arguments.map((argument) =>
+              argument === 'https://github.com/operator/api.git' ? sourceRepository : argument,
+            )
+          : input.arguments
+        return nativeProcessRunner.run({ ...input, arguments: arguments_ })
+      },
+    }
     const workspaces = createNativeGitRunWorkspaceProvisioner({
       runs,
-      worktreesRoot,
-      processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
+      workspacesRoot,
+      processRunner,
+      credentialHelper: '!true',
       now: () => '2026-08-20T12:00:02.000Z',
     })
     const runner = createAgentNodeRunner({
@@ -131,6 +145,11 @@ describe('orchestrated run HTTP flow', () => {
       worker,
       pollIntervalMs: 1_000,
       recoverExpired: () => undefined,
+      async cleanupTerminalRuns() {
+        for (const runId of runs.listTerminalRunIdsNeedingWorkspaceCleanup()) {
+          await workspaces.cleanup(runId)
+        }
+      },
     })
     const baseRuns = createRunService({
       events,
@@ -140,9 +159,12 @@ describe('orchestrated run HTTP flow', () => {
       resolveProject: async (projectId) => ({
         projectId: ProjectIdSchema.parse(projectId),
         name: 'API',
-        repositoryPath: sourceRepository,
+        provider: 'GITHUB',
+        remoteId: '123',
+        fullName: 'operator/api',
+        cloneUrl: 'https://github.com/operator/api.git',
+        defaultBranch: 'main',
         baseSha: GitShaSchema.parse(baseSha),
-        sourceBranch: 'main',
       }),
       now: () => '2026-08-20T12:00:00.000Z',
       createRunId: () => 'run-e2e',
@@ -190,11 +212,16 @@ describe('orchestrated run HTTP flow', () => {
         'RUN_COMPLETED',
       ]),
     )
-    const worktreePath = join(realpathSync(worktreesRoot), 'run-e2e', 'project-api')
-    expect(existsSync(join(worktreePath, 'agent-result.txt'))).toBe(true)
+    const workspacePath = join(realpathSync(workspacesRoot), 'run-e2e', 'project-api')
+    expect(existsSync(workspacePath)).toBe(false)
     expect(existsSync(join(sourceRepository, 'agent-result.txt'))).toBe(false)
-    expect(runs.listRunProjectWorktrees('run-e2e')).toMatchObject([
-      { projectId: 'project-api', status: 'READY', worktreePath },
+    expect(runs.listRunProjectWorkspaces('run-e2e')).toMatchObject([
+      {
+        projectId: 'project-api',
+        status: 'CLEANED',
+        workspacePath,
+        branchName: 'slopify/run-e2e',
+      },
     ])
     await pump.stop()
   })

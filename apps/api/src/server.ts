@@ -6,20 +6,24 @@ import { createPiCliAgentExecutor, createPiHarnessInspector } from '@slopify/age
 import {
   DatabaseInitializationError,
   createAgentNodeRunner,
+  createBunGitSecretStore,
   createCoordinatorCancellationService,
   createDeletionOperationRepository,
   createDeletionService,
   createEventStore,
   createExecutionWorker,
+  createFetchRemoteGitHost,
   createFilesystemAgentTraceStore,
+  createGitConnectionRepository,
+  createGitConnectionService,
+  createGitCredentialHelperCommand,
   createHarnessCatalog,
-  createNativeGitProjectInspector,
   createNativeGitRunWorkspaceProvisioner,
-  createNativeRunProjectResolver,
   createOrchestratedRunService,
   createProcessRunner,
   createProjectRepository,
   createProjectService,
+  createRemoteRunProjectResolver,
   createRunEventFeed,
   createRunRepository,
   createRunService,
@@ -28,6 +32,7 @@ import {
   createWorkflowCoordinator,
   createWorkflowRepository,
   createWorkflowService,
+  gitCredentialHelperPath,
   openDatabase,
   type WorkflowRepository,
 } from '@slopify/execution-runtime'
@@ -56,7 +61,7 @@ export interface ApiServerConfiguration {
   readonly port: number
   readonly databasePath: string
   readonly tracesRoot: string
-  readonly worktreesRoot: string
+  readonly workspacesRoot: string
   readonly shutdownGracePeriodMs: number
 }
 
@@ -146,8 +151,8 @@ export const resolveApiServerConfiguration = (
     tracesRoot: resolve(
       nonBlank(environment.TRACES_ROOT, join(stateRoot, 'traces'), 'DATABASE_PATH_INVALID'),
     ),
-    worktreesRoot: resolve(
-      nonBlank(environment.WORKTREES_ROOT, join(stateRoot, 'worktrees'), 'DATABASE_PATH_INVALID'),
+    workspacesRoot: resolve(
+      nonBlank(environment.WORKSPACES_ROOT, join(stateRoot, 'workspaces'), 'DATABASE_PATH_INVALID'),
     ),
     shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
   }
@@ -193,6 +198,12 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
   const harnesses = createHarnessCatalog({ inspectors: [createPiHarnessInspector()] })
   const pi = createPiCliAgentExecutor()
+  const remoteGit = createFetchRemoteGitHost()
+  const gitConnections = createGitConnectionService({
+    connections: createGitConnectionRepository(database),
+    secrets: createBunGitSecretStore(),
+    remote: remoteGit,
+  })
   const projectRepository = createProjectRepository(database)
   const workflowRepository = createWorkflowRepository(database)
   ensureDefaultWorkflow(workflowRepository)
@@ -201,7 +212,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const traces = createFilesystemAgentTraceStore({ root: configuration.tracesRoot })
   const projects = createProjectService({
     projects: projectRepository,
-    inspector: createNativeGitProjectInspector({ processRunner }),
+    connections: gitConnections,
+    remote: remoteGit,
   })
   const deletions = createDeletionService({
     operations: createDeletionOperationRepository(database),
@@ -216,7 +228,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const workspaces = createNativeGitRunWorkspaceProvisioner({
     runs: runRepository,
     processRunner,
-    worktreesRoot: configuration.worktreesRoot,
+    workspacesRoot: configuration.workspacesRoot,
+    credentialHelper: createGitCredentialHelperCommand(process.execPath, gitCredentialHelperPath()),
   })
   const agentRunner = createAgentNodeRunner({
     harnesses,
@@ -240,13 +253,22 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       queue.recoverExpired({ destination: 'WORKER', now: timestamp, retry: true })
       queue.recoverExpired({ destination: 'COORDINATOR', now: timestamp, retry: true })
     },
+    async cleanupTerminalRuns() {
+      for (const runId of runRepository.listTerminalRunIdsNeedingWorkspaceCleanup()) {
+        await workspaces.cleanup(runId).catch(() => undefined)
+      }
+    },
   })
   const baseRunService = createRunService({
     events: eventStore,
     runs: runRepository,
     workflows: workflowRepository,
     harnesses,
-    resolveProject: createNativeRunProjectResolver({ projects, processRunner }),
+    resolveProject: createRemoteRunProjectResolver({
+      projects,
+      connections: gitConnections,
+      remote: remoteGit,
+    }),
   })
   const orchestratedRuns = createOrchestratedRunService({
     runs: baseRunService,
@@ -271,6 +293,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       database,
       deletions,
       eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
+      gitConnections,
       harnesses,
       projects,
       runs: runService,

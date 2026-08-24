@@ -36,8 +36,8 @@ export function WorkflowNodeContent({
   return (
     <article
       className={cn(
-        'flex h-30 w-54 flex-col gap-3 rounded-lg border bg-card p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
-        status === 'RUNNING' && 'border-status-info/35 bg-status-info/10',
+        'relative isolate flex h-30 w-54 flex-col gap-3 overflow-hidden rounded-lg border bg-card p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
+        status === 'RUNNING' && 'workflow-node-running-fill border-status-info/35',
         status === 'SUCCEEDED' && 'border-status-success/35 bg-status-success/10',
         status === 'FAILED' && 'border-destructive/35 bg-destructive/10',
         status === 'CANCELLED' && 'border-status-warning/35 bg-status-warning/10',

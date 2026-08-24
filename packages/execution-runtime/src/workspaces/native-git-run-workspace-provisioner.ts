@@ -1,10 +1,10 @@
-import { lstat, mkdir, realpath, rmdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join, resolve } from 'node:path'
+import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
+import { isAbsolute, join, resolve } from 'node:path'
 import { RunIdSchema, type ProjectId, type RunId } from '@slopify/contracts'
 
 import type {
   RunProjectSnapshot,
-  RunProjectWorktree,
+  RunProjectWorkspace,
   RunRepository,
 } from '../persistence/run-repository.js'
 import type { ProcessRunResult, ProcessRunner } from '../processes/process-runner.js'
@@ -19,18 +19,20 @@ export interface CreateNativeGitRunWorkspaceProvisionerOptions {
   readonly runs: Pick<
     RunRepository,
     | 'listRunProjects'
-    | 'listRunProjectWorktrees'
-    | 'markRunProjectWorktreePreparing'
-    | 'markRunProjectWorktreeReady'
-    | 'markRunProjectWorktreeFailed'
+    | 'listRunProjectWorkspaces'
+    | 'markRunProjectWorkspacePreparing'
+    | 'markRunProjectWorkspaceReady'
+    | 'markRunProjectWorkspaceFailed'
+    | 'markRunProjectWorkspaceCleaned'
   >
   readonly processRunner: ProcessRunner
-  readonly worktreesRoot: string
+  readonly workspacesRoot: string
+  readonly credentialHelper: string
   readonly timeoutMs?: number
   readonly now?: () => string
 }
 
-class GitWorktreeError extends Error {}
+class GitWorkspaceError extends Error {}
 
 const pathExists = async (path: string): Promise<boolean> => {
   try {
@@ -42,263 +44,204 @@ const pathExists = async (path: string): Promise<boolean> => {
   }
 }
 
-const processFailure = (operation: string, result: ProcessRunResult): GitWorktreeError => {
-  if (result.status === 'exited') {
-    const detail = result.stderr.trim() || result.stdout.trim()
-    return new GitWorktreeError(detail || `${operation} exited with code ${result.exitCode}`)
-  }
-  if (result.status === 'failed-to-start') {
-    return new GitWorktreeError(`${operation}: ${result.message}`)
-  }
-  if (result.status === 'termination-unconfirmed') {
-    return new GitWorktreeError(`${operation} ${result.reason} and termination was not confirmed`)
-  }
-  return new GitWorktreeError(`${operation} ${result.status}`)
-}
-
-const requireSuccessfulOutput = (operation: string, result: ProcessRunResult): string => {
-  if (result.status !== 'exited' || result.exitCode !== 0) throw processFailure(operation, result)
-  if (result.stdoutTruncated) throw new GitWorktreeError(`${operation} produced truncated output`)
-  return result.stdout
-}
-
-const registeredWorktreePaths = (output: string): ReadonlySet<string> =>
-  new Set(
-    output
-      .split('\0')
-      .filter((field) => field.startsWith('worktree '))
-      .map((field) => resolve(field.slice('worktree '.length))),
-  )
-
 const requireCanonicalDirectory = async (path: string, label: string): Promise<void> => {
   const metadata = await lstat(path)
-  if (metadata.isSymbolicLink()) {
-    throw new GitWorktreeError(`${label} must not be a symbolic link`)
+  if (metadata.isSymbolicLink()) throw new GitWorkspaceError(`${label} must not be a symbolic link`)
+  if (!metadata.isDirectory()) throw new GitWorkspaceError(`${label} must be a directory`)
+  if ((await realpath(path)) !== path)
+    throw new GitWorkspaceError(`${label} path contains a symbolic link`)
+}
+
+const processFailure = (operation: string, result: ProcessRunResult): GitWorkspaceError => {
+  if (result.status === 'exited') {
+    const detail = result.stderr.trim() || result.stdout.trim()
+    return new GitWorkspaceError(detail || `${operation} exited with code ${result.exitCode}`)
   }
-  if (!metadata.isDirectory()) {
-    throw new GitWorktreeError(`${label} must be a directory`)
+  if (result.status === 'failed-to-start') {
+    return new GitWorkspaceError(`${operation}: ${result.message}`)
   }
-  if ((await realpath(path)) !== path) {
-    throw new GitWorktreeError(`${label} path contains a symbolic link`)
+  if (result.status === 'termination-unconfirmed') {
+    return new GitWorkspaceError(`${operation} ${result.reason} and termination was not confirmed`)
   }
+  return new GitWorkspaceError(`${operation} ${result.status}`)
+}
+
+const successfulOutput = (operation: string, result: ProcessRunResult): string => {
+  if (result.status !== 'exited' || result.exitCode !== 0) throw processFailure(operation, result)
+  if (result.stdoutTruncated) throw new GitWorkspaceError(`${operation} produced truncated output`)
+  return result.stdout.trim()
 }
 
 const boundedErrorMessage = (cause: unknown): string => {
-  const message = cause instanceof Error ? cause.message : 'Git worktree preparation failed'
-  return (message.trim() || 'Git worktree preparation failed').slice(0, 4_096)
+  const message = cause instanceof Error ? cause.message : 'Git workspace preparation failed'
+  return (message.trim() || 'Git workspace preparation failed').slice(0, 4_096)
 }
 
 export const createNativeGitRunWorkspaceProvisioner = (
   options: CreateNativeGitRunWorkspaceProvisionerOptions,
 ): RunWorkspaceProvisioner => {
-  if (!isAbsolute(options.worktreesRoot)) {
-    throw new TypeError('worktreesRoot must be an absolute path')
+  if (!isAbsolute(options.workspacesRoot)) {
+    throw new TypeError('workspacesRoot must be an absolute path')
   }
-  const worktreesRoot = resolve(options.worktreesRoot)
-  const timeoutMs = options.timeoutMs ?? 30_000
+  if (options.credentialHelper.trim() === '') {
+    throw new TypeError('credentialHelper must not be blank')
+  }
+  const workspacesRoot = resolve(options.workspacesRoot)
+  const credentialHelper = options.credentialHelper
+  const timeoutMs = options.timeoutMs ?? 120_000
   const now = options.now ?? (() => new Date().toISOString())
-  const pendingByRun = new Map<RunId, Promise<readonly ProvisionedRunProject[]>>()
-  let canonicalWorktreesRoot: Promise<string> | undefined
+  const pendingByRun = new Map<RunId, Promise<unknown>>()
+  let canonicalRoot: Promise<string> | undefined
 
-  const getCanonicalWorktreesRoot = (): Promise<string> => {
-    canonicalWorktreesRoot ??= mkdir(worktreesRoot, { recursive: true }).then(() =>
-      realpath(worktreesRoot),
-    )
-    return canonicalWorktreesRoot
+  const getCanonicalRoot = (): Promise<string> => {
+    canonicalRoot ??= mkdir(workspacesRoot, { recursive: true }).then(async () => {
+      const metadata = await lstat(workspacesRoot)
+      if (metadata.isSymbolicLink())
+        throw new GitWorkspaceError('Run workspaces root must not be a symbolic link')
+      if (!metadata.isDirectory())
+        throw new GitWorkspaceError('Run workspaces root must be a directory')
+      return realpath(workspacesRoot)
+    })
+    return canonicalRoot
   }
 
-  const listRegisteredWorktrees = async (
+  const runGit = (cwd: string, arguments_: readonly string[], operation: string) =>
+    options.processRunner
+      .run({ executable: 'git', arguments: arguments_, cwd, timeoutMs })
+      .then((result) => successfulOutput(operation, result))
+
+  const verifyWorkspace = async (
     project: RunProjectSnapshot,
-  ): Promise<ReadonlySet<string>> => {
-    const result = await options.processRunner.run({
-      executable: 'git',
-      arguments: ['-C', project.repositoryPath, 'worktree', 'list', '--porcelain', '-z'],
-      cwd: project.repositoryPath,
-      timeoutMs,
-    })
-    return registeredWorktreePaths(requireSuccessfulOutput('Git worktree inspection', result))
+    workspacePath: string,
+    branchName: string,
+  ): Promise<boolean> => {
+    if (!(await pathExists(workspacePath))) return false
+    await requireCanonicalDirectory(workspacePath, 'Run project workspace')
+    const topLevel = resolve(
+      await runGit(
+        workspacePath,
+        ['-C', workspacePath, 'rev-parse', '--show-toplevel'],
+        'Git workspace inspection',
+      ),
+    )
+    if (topLevel !== workspacePath)
+      throw new GitWorkspaceError('Git workspace root is not deterministic')
+    const branch = await runGit(
+      workspacePath,
+      ['-C', workspacePath, 'branch', '--show-current'],
+      'Git branch inspection',
+    )
+    if (branch !== branchName)
+      throw new GitWorkspaceError('Run workspace branch is not deterministic')
+    const origin = await runGit(
+      workspacePath,
+      ['-C', workspacePath, 'remote', 'get-url', 'origin'],
+      'Git origin inspection',
+    )
+    if (origin !== project.cloneUrl) throw new GitWorkspaceError('Run workspace origin changed')
+    return true
   }
 
   const prepareProject = async (
     runId: RunId,
     project: RunProjectSnapshot,
-    state: RunProjectWorktree | undefined,
-    canonicalRoot: string,
+    state: RunProjectWorkspace | undefined,
+    root: string,
   ): Promise<ProvisionedRunProject> => {
-    const worktreePath = join(canonicalRoot, runId, project.projectId)
-    if (state !== undefined && resolve(state.worktreePath) !== worktreePath) {
-      throw new GitWorktreeError('Persisted run project worktree path is not deterministic')
+    if (project.provider === null || project.remoteId === null || project.defaultBranch === null) {
+      throw new GitWorkspaceError('Legacy local projects cannot provision cloned workspaces')
+    }
+    const workspacePath = join(root, runId, project.projectId)
+    const branchName = `slopify/${runId}`
+    if (
+      state !== undefined &&
+      (resolve(state.workspacePath) !== workspacePath ||
+        (state.branchName !== null && state.branchName !== branchName))
+    ) {
+      throw new GitWorkspaceError('Persisted run project workspace is not deterministic')
     }
 
     try {
-      await requireCanonicalDirectory(canonicalRoot, 'Run worktrees root')
-      const runDirectory = dirname(worktreePath)
+      await requireCanonicalDirectory(root, 'Run workspaces root')
+      const runDirectory = join(root, runId)
       if (await pathExists(runDirectory)) {
-        await requireCanonicalDirectory(runDirectory, 'Run worktree directory')
+        await requireCanonicalDirectory(runDirectory, 'Run workspace directory')
       }
-    } catch (cause) {
-      if (state === undefined) {
-        options.runs.markRunProjectWorktreePreparing({
-          runId,
-          projectId: project.projectId,
-          worktreePath,
-          timestamp: now(),
-        })
+      if (
+        state?.status === 'READY' &&
+        (await verifyWorkspace(project, workspacePath, branchName))
+      ) {
+        return { ...project, workspacePath, branchName }
       }
-      options.runs.markRunProjectWorktreeFailed({
+
+      options.runs.markRunProjectWorkspacePreparing({
         runId,
         projectId: project.projectId,
-        worktreePath,
-        errorMessage: boundedErrorMessage(cause),
+        workspacePath,
+        branchName,
         timestamp: now(),
       })
-      throw cause
-    }
+      if (await pathExists(workspacePath)) await rm(workspacePath, { recursive: true, force: true })
+      await mkdir(runDirectory, { recursive: true })
+      await requireCanonicalDirectory(runDirectory, 'Run workspace directory')
 
-    let registered: ReadonlySet<string>
-    try {
-      registered = await listRegisteredWorktrees(project)
-    } catch (cause) {
-      if (state === undefined) {
-        options.runs.markRunProjectWorktreePreparing({
-          runId,
-          projectId: project.projectId,
-          worktreePath,
-          timestamp: now(),
-        })
-      }
-      options.runs.markRunProjectWorktreeFailed({
-        runId,
-        projectId: project.projectId,
-        worktreePath,
-        errorMessage: boundedErrorMessage(cause),
-        timestamp: now(),
-      })
-      throw cause
-    }
-
-    const exists = await pathExists(worktreePath)
-    if (exists) {
-      try {
-        await requireCanonicalDirectory(worktreePath, 'Run project worktree')
-      } catch (cause) {
-        options.runs.markRunProjectWorktreeFailed({
-          runId,
-          projectId: project.projectId,
-          worktreePath,
-          errorMessage: boundedErrorMessage(cause),
-          timestamp: now(),
-        })
-        throw cause
-      }
-    }
-    if (registered.has(worktreePath) && exists) {
-      if (state?.status !== 'READY') {
-        options.runs.markRunProjectWorktreePreparing({
-          runId,
-          projectId: project.projectId,
-          worktreePath,
-          timestamp: now(),
-        })
-        options.runs.markRunProjectWorktreeReady({
-          runId,
-          projectId: project.projectId,
-          worktreePath,
-          timestamp: now(),
-        })
-      }
-      return { ...project, worktreePath }
-    }
-
-    if (!registered.has(worktreePath) && exists) {
-      try {
-        if (state?.status !== 'FAILED' && state?.status !== 'PREPARING') {
-          throw new GitWorktreeError(
-            'The deterministic worktree path exists but is not registered to the project repository',
-          )
-        }
-        await rmdir(worktreePath)
-      } catch (cause) {
-        if (state === undefined) {
-          options.runs.markRunProjectWorktreePreparing({
-            runId,
-            projectId: project.projectId,
-            worktreePath,
-            timestamp: now(),
-          })
-        }
-        options.runs.markRunProjectWorktreeFailed({
-          runId,
-          projectId: project.projectId,
-          worktreePath,
-          errorMessage: boundedErrorMessage(cause),
-          timestamp: now(),
-        })
-        throw cause
-      }
-    }
-
-    if (state?.status === 'READY') {
-      options.runs.markRunProjectWorktreeFailed({
-        runId,
-        projectId: project.projectId,
-        worktreePath,
-        errorMessage: 'The ready worktree is no longer registered',
-        timestamp: now(),
-      })
-    }
-    options.runs.markRunProjectWorktreePreparing({
-      runId,
-      projectId: project.projectId,
-      worktreePath,
-      timestamp: now(),
-    })
-
-    try {
-      await mkdir(dirname(worktreePath), { recursive: true })
-      await requireCanonicalDirectory(dirname(worktreePath), 'Run worktree directory')
-      if (registered.has(worktreePath)) {
-        const removal = await options.processRunner.run({
-          executable: 'git',
-          arguments: ['-C', project.repositoryPath, 'worktree', 'remove', '--force', worktreePath],
-          cwd: project.repositoryPath,
-          timeoutMs,
-        })
-        requireSuccessfulOutput('Missing Git worktree registration removal', removal)
-      }
-      const result = await options.processRunner.run({
-        executable: 'git',
-        arguments: [
-          '-C',
-          project.repositoryPath,
-          'worktree',
-          'add',
-          '--detach',
-          worktreePath,
-          project.baseSha,
+      await runGit(
+        runDirectory,
+        [
+          '-c',
+          `credential.helper=${credentialHelper}`,
+          'clone',
+          '--no-checkout',
+          '--origin',
+          'origin',
+          project.cloneUrl,
+          workspacePath,
         ],
-        cwd: project.repositoryPath,
-        timeoutMs,
-      })
-      requireSuccessfulOutput('Git worktree creation', result)
-
-      const updatedRegistration = await listRegisteredWorktrees(project)
-      if (!updatedRegistration.has(worktreePath)) {
-        throw new GitWorktreeError('Git did not register the created run project worktree')
-      }
-      await requireCanonicalDirectory(worktreePath, 'Run project worktree')
-      options.runs.markRunProjectWorktreeReady({
+        'Git clone',
+      )
+      await requireCanonicalDirectory(workspacePath, 'Run project workspace')
+      await runGit(
+        workspacePath,
+        ['-C', workspacePath, 'checkout', '-b', branchName, project.baseSha],
+        'Git run branch creation',
+      )
+      await runGit(
+        workspacePath,
+        ['-C', workspacePath, 'remote', 'set-url', 'origin', project.cloneUrl],
+        'Git origin configuration',
+      )
+      await runGit(
+        workspacePath,
+        ['-C', workspacePath, 'config', '--local', 'credential.helper', credentialHelper],
+        'Git credential configuration',
+      )
+      await verifyWorkspace(project, workspacePath, branchName)
+      options.runs.markRunProjectWorkspaceReady({
         runId,
         projectId: project.projectId,
-        worktreePath,
+        workspacePath,
+        branchName,
         timestamp: now(),
       })
-      return { ...project, worktreePath }
+      return { ...project, workspacePath, branchName }
     } catch (cause) {
-      options.runs.markRunProjectWorktreeFailed({
+      const existing = options.runs
+        .listRunProjectWorkspaces(runId)
+        .find(({ projectId }) => projectId === project.projectId)
+      if (existing === undefined) {
+        options.runs.markRunProjectWorkspacePreparing({
+          runId,
+          projectId: project.projectId,
+          workspacePath,
+          branchName,
+          timestamp: now(),
+        })
+      }
+      options.runs.markRunProjectWorkspaceFailed({
         runId,
         projectId: project.projectId,
-        worktreePath,
+        workspacePath,
+        branchName,
         errorMessage: boundedErrorMessage(cause),
         timestamp: now(),
       })
@@ -307,19 +250,23 @@ export const createNativeGitRunWorkspaceProvisioner = (
   }
 
   const prepareRun = async (runId: RunId): Promise<readonly ProvisionedRunProject[]> => {
-    const canonicalRoot = await getCanonicalWorktreesRoot()
     const projects = options.runs.listRunProjects(runId)
-    const states = new Map<ProjectId, RunProjectWorktree>(
-      options.runs.listRunProjectWorktrees(runId).map((state) => [state.projectId, state]),
+    let root: string
+    try {
+      root = await getCanonicalRoot()
+    } catch (cause) {
+      throw new RunWorkspaceProvisioningError(
+        projects.map(({ projectId }) => ({ projectId, message: boundedErrorMessage(cause) })),
+      )
+    }
+    const states = new Map<ProjectId, RunProjectWorkspace>(
+      options.runs.listRunProjectWorkspaces(runId).map((state) => [state.projectId, state]),
     )
     const workspaces: ProvisionedRunProject[] = []
     const failures: RunWorkspaceProvisioningFailure[] = []
-
     for (const project of projects) {
       try {
-        workspaces.push(
-          await prepareProject(runId, project, states.get(project.projectId), canonicalRoot),
-        )
+        workspaces.push(await prepareProject(runId, project, states.get(project.projectId), root))
       } catch (cause) {
         failures.push({ projectId: project.projectId, message: boundedErrorMessage(cause) })
       }
@@ -328,23 +275,42 @@ export const createNativeGitRunWorkspaceProvisioner = (
     return workspaces
   }
 
+  const cleanupRun = async (runId: RunId): Promise<void> => {
+    const root = await getCanonicalRoot()
+    await requireCanonicalDirectory(root, 'Run workspaces root')
+    const runDirectory = join(root, runId)
+    if (await pathExists(runDirectory)) await rm(runDirectory, { recursive: true, force: true })
+    const timestamp = now()
+    for (const workspace of options.runs.listRunProjectWorkspaces(runId)) {
+      if (workspace.status === 'LEGACY') continue
+      options.runs.markRunProjectWorkspaceCleaned({
+        runId,
+        projectId: workspace.projectId,
+        timestamp,
+      })
+    }
+  }
+
+  const serialize = <Value>(runId: RunId, operation: () => Promise<Value>): Promise<Value> => {
+    const preceding = pendingByRun.get(runId)
+    const current = (preceding ?? Promise.resolve()).catch(() => undefined).then(operation)
+    pendingByRun.set(runId, current)
+    void current
+      .finally(() => {
+        if (pendingByRun.get(runId) === current) pendingByRun.delete(runId)
+      })
+      .catch(() => undefined)
+    return current
+  }
+
   return {
     ensure(runIdInput) {
       const runId = RunIdSchema.parse(runIdInput)
-      const preceding = pendingByRun.get(runId)
-      const operation = (preceding ?? Promise.resolve([]))
-        .catch(() => [])
-        .then(() => prepareRun(runId))
-      pendingByRun.set(runId, operation)
-      void operation.then(
-        () => {
-          if (pendingByRun.get(runId) === operation) pendingByRun.delete(runId)
-        },
-        () => {
-          if (pendingByRun.get(runId) === operation) pendingByRun.delete(runId)
-        },
-      )
-      return operation
+      return serialize(runId, () => prepareRun(runId))
+    },
+    cleanup(runIdInput) {
+      const runId = RunIdSchema.parse(runIdInput)
+      return serialize(runId, () => cleanupRun(runId))
     },
   }
 }

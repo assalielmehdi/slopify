@@ -4,7 +4,6 @@ import {
   mkdirSync,
   mkdtempSync,
   realpathSync,
-  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -21,7 +20,7 @@ import {
 } from '../../src/index.js'
 import { createPersistenceFixture, createTestAgentWorkflow } from '../persistence/test-fixture.js'
 
-const timestamp = '2026-08-23T14:00:00Z'
+const timestamp = '2026-08-24T00:00:00Z'
 const directories: string[] = []
 
 afterEach(() => {
@@ -34,308 +33,238 @@ const createDirectory = (name: string): string => {
   return directory
 }
 
-const createRepository = (parent: string, name: string) => {
-  const repositoryPath = join(parent, name)
-  mkdirSync(repositoryPath, { recursive: true })
-  execFileSync('git', ['init', '--quiet', '--initial-branch=main', repositoryPath])
-  execFileSync('git', ['-C', repositoryPath, 'config', 'user.email', 'test@slopify.local'])
-  execFileSync('git', ['-C', repositoryPath, 'config', 'user.name', 'Slopify Test'])
-  writeFileSync(join(repositoryPath, 'README.md'), `${name}\n`)
-  execFileSync('git', ['-C', repositoryPath, 'add', 'README.md'])
-  execFileSync('git', ['-C', repositoryPath, 'commit', '--quiet', '-m', 'initial'])
+const createRemote = () => {
+  const parent = createDirectory('slopify-remote')
+  const source = join(parent, 'source')
+  const remote = join(parent, 'api.git')
+  execFileSync('git', ['init', '--quiet', '--initial-branch=main', source])
+  execFileSync('git', ['-C', source, 'config', 'user.email', 'test@slopify.local'])
+  execFileSync('git', ['-C', source, 'config', 'user.name', 'Slopify Test'])
+  writeFileSync(join(source, 'README.md'), 'api\n')
+  execFileSync('git', ['-C', source, 'add', 'README.md'])
+  execFileSync('git', ['-C', source, 'commit', '--quiet', '-m', 'initial'])
+  execFileSync('git', ['clone', '--quiet', '--bare', source, remote])
   return {
-    repositoryPath,
-    baseSha: execFileSync('git', ['-C', repositoryPath, 'rev-parse', 'HEAD'], {
+    remote,
+    baseSha: execFileSync('git', ['-C', source, 'rev-parse', 'HEAD'], {
       encoding: 'utf8',
     }).trim(),
   }
 }
 
-const createWorkflow = (projectIds: readonly string[]) =>
-  createTestAgentWorkflow({
-    createdAt: timestamp,
-    projectIds,
-    primaryProjectId: projectIds[0] ?? null,
-  })
-
 const createRun = (
   fixture: ReturnType<typeof createPersistenceFixture>,
-  projects: readonly {
-    projectId: string
-    name: string
-    repositoryPath: string
-    baseSha: string
-  }[],
-) => {
+  runId: string,
+  baseSha: string,
+) =>
   fixture.runs.create({
-    runId: 'run-worktrees',
+    runId,
     workflowId: fixture.workflow.workflowId,
     workflowSnapshot: fixture.workflow,
     variables: {},
     createdAt: timestamp,
-    projects: projects.map((project) => ({ ...project, sourceBranch: 'main' })),
+    projects: [
+      {
+        projectId: 'project-api',
+        name: 'API',
+        provider: 'GITHUB',
+        remoteId: '123',
+        fullName: 'operator/api',
+        cloneUrl: 'https://github.com/operator/api.git',
+        defaultBranch: 'main',
+        baseSha,
+      },
+    ],
   })
+
+const localCloneRunner = (remote: string): ProcessRunner => {
+  const native = createProcessRunner({ maxOutputBytes: 16_384 })
+  return {
+    run(input) {
+      const arguments_ = input.arguments.includes('clone')
+        ? input.arguments.map((argument) =>
+            argument === 'https://github.com/operator/api.git' ? remote : argument,
+          )
+        : input.arguments
+      return native.run({ ...input, arguments: arguments_ })
+    },
+  }
 }
 
 describe('native Git run workspace provisioner', () => {
-  it('creates deterministic detached worktrees and serializes concurrent requests', async () => {
-    const root = createDirectory('slopify-run-worktrees')
-    const repositories = createDirectory('slopify-run-repositories')
-    const project = createRepository(repositories, 'api')
-    const fixture = createPersistenceFixture(createWorkflow(['project-api']))
+  it('creates one deterministic clone and branch shared by every agent in a run', async () => {
+    const root = createDirectory('slopify-workspaces')
+    const remote = createRemote()
+    const workflow = createTestAgentWorkflow({
+      createdAt: timestamp,
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
+    })
+    const fixture = createPersistenceFixture(workflow)
 
     try {
-      createRun(fixture, [{ projectId: 'project-api', name: 'API', ...project }])
+      createRun(fixture, 'run-clone', remote.baseSha)
       const provisioner = createNativeGitRunWorkspaceProvisioner({
         runs: fixture.runs,
-        worktreesRoot: root,
-        processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
+        workspacesRoot: root,
+        credentialHelper: '!bun /opt/slopify/git-credential-helper.js',
+        processRunner: localCloneRunner(remote.remote),
         now: () => timestamp,
       })
 
       const [first, second] = await Promise.all([
-        provisioner.ensure('run-worktrees'),
-        provisioner.ensure('run-worktrees'),
+        provisioner.ensure('run-clone'),
+        provisioner.ensure('run-clone'),
       ])
-
-      const expectedPath = join(root, 'run-worktrees', 'project-api')
+      const workspacePath = join(root, 'run-clone', 'project-api')
       expect(first).toEqual(second)
-      expect(first).toEqual([
+      expect(first).toMatchObject([
         {
-          projectId: 'project-api',
-          position: 0,
-          name: 'API',
-          repositoryPath: project.repositoryPath,
-          worktreePath: expectedPath,
-          baseSha: project.baseSha,
-          sourceBranch: 'main',
-          isPrimary: true,
+          workspacePath,
+          branchName: 'slopify/run-clone',
+          baseSha: remote.baseSha,
         },
       ])
       expect(
-        execFileSync('git', ['-C', expectedPath, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-      ).toBe(project.baseSha)
-      expect(() =>
-        execFileSync('git', ['-C', expectedPath, 'symbolic-ref', '-q', 'HEAD']),
-      ).toThrow()
-      expect(fixture.runs.listRunProjectWorktrees('run-worktrees')).toMatchObject([
-        { projectId: 'project-api', status: 'READY', worktreePath: expectedPath },
-      ])
-    } finally {
-      fixture.cleanup()
-    }
-  })
-
-  it('accepts a registered ready worktree after its HEAD moves beyond the captured base', async () => {
-    const root = createDirectory('slopify-run-worktrees')
-    const repositories = createDirectory('slopify-run-repositories')
-    const project = createRepository(repositories, 'api')
-    const fixture = createPersistenceFixture(createWorkflow(['project-api']))
-
-    try {
-      createRun(fixture, [{ projectId: 'project-api', name: 'API', ...project }])
-      const provisioner = createNativeGitRunWorkspaceProvisioner({
-        runs: fixture.runs,
-        worktreesRoot: root,
-        processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
-        now: () => timestamp,
-      })
-      const [workspace] = await provisioner.ensure('run-worktrees')
-      if (workspace === undefined) throw new Error('Expected a worktree')
-
-      writeFileSync(join(workspace.worktreePath, 'change.txt'), 'agent change\n')
-      execFileSync('git', ['-C', workspace.worktreePath, 'add', 'change.txt'])
-      execFileSync('git', ['-C', workspace.worktreePath, 'commit', '--quiet', '-m', 'agent change'])
-      const changedHead = execFileSync('git', ['-C', workspace.worktreePath, 'rev-parse', 'HEAD'], {
-        encoding: 'utf8',
-      }).trim()
-
-      await expect(provisioner.ensure('run-worktrees')).resolves.toEqual([workspace])
-      expect(
-        execFileSync('git', ['-C', workspace.worktreePath, 'rev-parse', 'HEAD'], {
+        execFileSync('git', ['-C', workspacePath, 'branch', '--show-current'], {
           encoding: 'utf8',
         }).trim(),
-      ).toBe(changedHead)
-      expect(changedHead).not.toBe(project.baseSha)
-
-      rmSync(workspace.worktreePath, { force: true, recursive: true })
-      await expect(provisioner.ensure('run-worktrees')).resolves.toEqual([workspace])
+      ).toBe('slopify/run-clone')
       expect(
-        execFileSync('git', ['-C', workspace.worktreePath, 'rev-parse', 'HEAD'], {
+        execFileSync('git', ['-C', workspacePath, 'config', '--local', 'credential.helper'], {
           encoding: 'utf8',
         }).trim(),
-      ).toBe(project.baseSha)
+      ).toBe('!bun /opt/slopify/git-credential-helper.js')
+
+      writeFileSync(join(workspacePath, 'agent-change.txt'), 'visible to the next agent\n')
+      await expect(provisioner.ensure('run-clone')).resolves.toEqual(first)
+      expect(existsSync(join(workspacePath, 'agent-change.txt'))).toBe(true)
     } finally {
       fixture.cleanup()
     }
   })
 
-  it('rejects a registered ready worktree replaced by a symbolic link', async () => {
-    const root = createDirectory('slopify-run-worktrees')
-    const repositories = createDirectory('slopify-run-repositories')
-    const relocated = createDirectory('slopify-relocated-worktree')
-    const project = createRepository(repositories, 'api')
-    const fixture = createPersistenceFixture(createWorkflow(['project-api']))
+  it('isolates concurrent runs in different clones and branches', async () => {
+    const root = createDirectory('slopify-workspaces')
+    const remote = createRemote()
+    const workflow = createTestAgentWorkflow({
+      createdAt: timestamp,
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
+    })
+    const fixture = createPersistenceFixture(workflow)
 
     try {
-      createRun(fixture, [{ projectId: 'project-api', name: 'API', ...project }])
+      createRun(fixture, 'run-one', remote.baseSha)
+      createRun(fixture, 'run-two', remote.baseSha)
       const provisioner = createNativeGitRunWorkspaceProvisioner({
         runs: fixture.runs,
-        worktreesRoot: root,
-        processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
+        workspacesRoot: root,
+        credentialHelper: '!bun /opt/slopify/git-credential-helper.js',
+        processRunner: localCloneRunner(remote.remote),
+      })
+
+      const [[one], [two]] = await Promise.all([
+        provisioner.ensure('run-one'),
+        provisioner.ensure('run-two'),
+      ])
+      expect(one?.workspacePath).not.toBe(two?.workspacePath)
+      expect(one?.branchName).toBe('slopify/run-one')
+      expect(two?.branchName).toBe('slopify/run-two')
+    } finally {
+      fixture.cleanup()
+    }
+  })
+
+  it('cleans the deterministic run directory and persists cleaned state', async () => {
+    const root = createDirectory('slopify-workspaces')
+    const remote = createRemote()
+    const workflow = createTestAgentWorkflow({
+      createdAt: timestamp,
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
+    })
+    const fixture = createPersistenceFixture(workflow)
+
+    try {
+      createRun(fixture, 'run-cleanup', remote.baseSha)
+      const provisioner = createNativeGitRunWorkspaceProvisioner({
+        runs: fixture.runs,
+        workspacesRoot: root,
+        credentialHelper: '!bun /opt/slopify/git-credential-helper.js',
+        processRunner: localCloneRunner(remote.remote),
         now: () => timestamp,
       })
-      const [workspace] = await provisioner.ensure('run-worktrees')
-      if (workspace === undefined) throw new Error('Expected a worktree')
+      await provisioner.ensure('run-cleanup')
 
-      const relocatedWorktree = join(relocated, 'api')
-      renameSync(workspace.worktreePath, relocatedWorktree)
-      symlinkSync(relocatedWorktree, workspace.worktreePath, 'dir')
+      await provisioner.cleanup('run-cleanup')
 
-      await expect(provisioner.ensure('run-worktrees')).rejects.toBeInstanceOf(
-        RunWorkspaceProvisioningError,
-      )
-      expect(fixture.runs.listRunProjectWorktrees('run-worktrees')).toMatchObject([
-        {
-          projectId: 'project-api',
-          status: 'FAILED',
-          errorMessage: expect.stringContaining('symbolic link'),
-        },
+      expect(existsSync(join(root, 'run-cleanup'))).toBe(false)
+      expect(fixture.runs.listRunProjectWorkspaces('run-cleanup')).toMatchObject([
+        { status: 'CLEANED', cleanedAt: timestamp },
       ])
     } finally {
       fixture.cleanup()
     }
   })
 
-  it('rejects a registered ready worktree whose run directory is replaced by a link', async () => {
-    const root = createDirectory('slopify-run-worktrees')
-    const repositories = createDirectory('slopify-run-repositories')
-    const relocated = createDirectory('slopify-relocated-run')
-    const project = createRepository(repositories, 'api')
-    const fixture = createPersistenceFixture(createWorkflow(['project-api']))
+  it('rejects a linked deterministic run directory', async () => {
+    const root = createDirectory('slopify-workspaces')
+    const relocated = createDirectory('slopify-relocated')
+    const remote = createRemote()
+    const workflow = createTestAgentWorkflow({
+      createdAt: timestamp,
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
+    })
+    const fixture = createPersistenceFixture(workflow)
+    mkdirSync(root, { recursive: true })
+    symlinkSync(relocated, join(root, 'run-linked'), 'dir')
 
     try {
-      createRun(fixture, [{ projectId: 'project-api', name: 'API', ...project }])
+      createRun(fixture, 'run-linked', remote.baseSha)
       const provisioner = createNativeGitRunWorkspaceProvisioner({
         runs: fixture.runs,
-        worktreesRoot: root,
-        processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
-        now: () => timestamp,
-      })
-      const [workspace] = await provisioner.ensure('run-worktrees')
-      if (workspace === undefined) throw new Error('Expected a worktree')
-
-      const runDirectory = join(root, 'run-worktrees')
-      const relocatedRunDirectory = join(relocated, 'run-worktrees')
-      renameSync(runDirectory, relocatedRunDirectory)
-      symlinkSync(relocatedRunDirectory, runDirectory, 'dir')
-
-      await expect(provisioner.ensure('run-worktrees')).rejects.toBeInstanceOf(
-        RunWorkspaceProvisioningError,
-      )
-      expect(fixture.runs.listRunProjectWorktrees('run-worktrees')).toMatchObject([
-        {
-          projectId: 'project-api',
-          status: 'FAILED',
-          errorMessage: expect.stringContaining('symbolic link'),
-        },
-      ])
-    } finally {
-      fixture.cleanup()
-    }
-  })
-
-  it('rejects a linked run directory before creating a worktree through it', async () => {
-    const root = createDirectory('slopify-run-worktrees')
-    const repositories = createDirectory('slopify-run-repositories')
-    const relocated = createDirectory('slopify-relocated-run')
-    const project = createRepository(repositories, 'api')
-    const fixture = createPersistenceFixture(createWorkflow(['project-api']))
-    const runDirectory = join(root, 'run-worktrees')
-    symlinkSync(relocated, runDirectory, 'dir')
-
-    try {
-      createRun(fixture, [{ projectId: 'project-api', name: 'API', ...project }])
-      const provisioner = createNativeGitRunWorkspaceProvisioner({
-        runs: fixture.runs,
-        worktreesRoot: root,
-        processRunner: createProcessRunner({ maxOutputBytes: 16_384 }),
-        now: () => timestamp,
+        workspacesRoot: root,
+        credentialHelper: '!bun /opt/slopify/git-credential-helper.js',
+        processRunner: localCloneRunner(remote.remote),
       })
 
-      await expect(provisioner.ensure('run-worktrees')).rejects.toBeInstanceOf(
+      await expect(provisioner.ensure('run-linked')).rejects.toBeInstanceOf(
         RunWorkspaceProvisioningError,
       )
       expect(existsSync(join(relocated, 'project-api'))).toBe(false)
-      expect(fixture.runs.listRunProjectWorktrees('run-worktrees')).toMatchObject([
-        {
-          projectId: 'project-api',
-          status: 'FAILED',
-          errorMessage: expect.stringContaining('symbolic link'),
-        },
-      ])
     } finally {
       fixture.cleanup()
     }
   })
 
-  it('retains successful worktrees and retries only failed or missing projects', async () => {
-    const root = createDirectory('slopify-run-worktrees')
-    const repositories = createDirectory('slopify-run-repositories')
-    const api = createRepository(repositories, 'api')
-    const web = createRepository(repositories, 'web')
-    const fixture = createPersistenceFixture(createWorkflow(['project-api', 'project-web']))
-    const nativeRunner = createProcessRunner({ maxOutputBytes: 16_384 })
-    let failWebOnce = true
-    const processRunner: ProcessRunner = {
-      async run(input) {
-        if (
-          failWebOnce &&
-          input.arguments.includes('add') &&
-          input.arguments.includes(join(root, 'run-worktrees', 'project-web'))
-        ) {
-          failWebOnce = false
-          mkdirSync(join(root, 'run-worktrees', 'project-web'))
-          return {
-            status: 'exited',
-            exitCode: 1,
-            signal: undefined,
-            durationMs: 1,
-            stdout: '',
-            stderr: 'planned failure',
-            stdoutTruncated: false,
-            stderrTruncated: false,
-          }
-        }
-        return nativeRunner.run(input)
-      },
-    }
+  it('rejects a linked workspaces root', async () => {
+    const parent = createDirectory('slopify-workspaces-parent')
+    const relocated = createDirectory('slopify-relocated-root')
+    const linkedRoot = join(parent, 'workspaces')
+    symlinkSync(relocated, linkedRoot, 'dir')
+    const remote = createRemote()
+    const workflow = createTestAgentWorkflow({
+      createdAt: timestamp,
+      projectIds: ['project-api'],
+      primaryProjectId: 'project-api',
+    })
+    const fixture = createPersistenceFixture(workflow)
 
     try {
-      createRun(fixture, [
-        { projectId: 'project-api', name: 'API', ...api },
-        { projectId: 'project-web', name: 'Web', ...web },
-      ])
+      createRun(fixture, 'run-linked-root', remote.baseSha)
       const provisioner = createNativeGitRunWorkspaceProvisioner({
         runs: fixture.runs,
-        worktreesRoot: root,
-        processRunner,
-        now: () => timestamp,
+        workspacesRoot: linkedRoot,
+        credentialHelper: '!bun /opt/slopify/git-credential-helper.js',
+        processRunner: localCloneRunner(remote.remote),
       })
 
-      await expect(provisioner.ensure('run-worktrees')).rejects.toBeInstanceOf(
+      await expect(provisioner.ensure('run-linked-root')).rejects.toBeInstanceOf(
         RunWorkspaceProvisioningError,
       )
-      expect(fixture.runs.listRunProjectWorktrees('run-worktrees')).toMatchObject([
-        { projectId: 'project-api', status: 'READY' },
-        { projectId: 'project-web', status: 'FAILED', errorMessage: 'planned failure' },
-      ])
-
-      await expect(provisioner.ensure('run-worktrees')).resolves.toHaveLength(2)
-      expect(fixture.runs.listRunProjectWorktrees('run-worktrees')).toMatchObject([
-        { projectId: 'project-api', status: 'READY' },
-        { projectId: 'project-web', status: 'READY', errorMessage: null },
-      ])
+      expect(existsSync(join(relocated, 'run-linked-root'))).toBe(false)
     } finally {
       fixture.cleanup()
     }

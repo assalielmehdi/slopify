@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 
 export function CatalogToolbar({
+  addDisabled = false,
   children,
   onAdd,
   onQueryChange,
@@ -15,6 +16,7 @@ export function CatalogToolbar({
   query,
   singular,
 }: Readonly<{
+  addDisabled?: boolean
   children?: ReactNode
   onAdd: () => void
   onQueryChange: (query: string) => void
@@ -73,6 +75,7 @@ export function CatalogToolbar({
         type="button"
         size="icon-sm"
         aria-label={`Add ${singular}`}
+        disabled={addDisabled}
         onClick={onAdd}
         className="t-resize t-resize-intrinsic group/add w-8 justify-start gap-2 overflow-hidden px-2 [--resize-dur:var(--duration-very-slow)] hover:w-max focus:w-max"
       >

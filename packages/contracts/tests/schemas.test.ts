@@ -6,6 +6,8 @@ import {
   ApiErrorSchema,
   CreateRunRequestSchema,
   DeletionReceiptSchema,
+  GitConnectionCatalogResponseSchema,
+  GitRepositoryCatalogResponseSchema,
   HarnessCatalogResponseSchema,
   HarnessIdSchema,
   HealthResponseSchema,
@@ -103,13 +105,57 @@ describe('harness and project catalogs', () => {
     ).toMatchObject({ availability: 'UNAVAILABLE', models: [] })
   })
 
-  it('exposes only current local project records', () => {
+  it('exposes connected Git providers without their credentials', () => {
+    const response = {
+      connections: [
+        {
+          provider: 'GITHUB',
+          accountUsername: 'operator',
+          connectedAt: '2026-08-23T10:00:00.000Z',
+          updatedAt: '2026-08-23T10:00:00.000Z',
+        },
+      ],
+    }
+
+    expect(GitConnectionCatalogResponseSchema.parse(response)).toEqual(response)
+    expect(
+      GitConnectionCatalogResponseSchema.safeParse({
+        connections: [{ ...response.connections[0], token: 'secret' }],
+      }).success,
+    ).toBe(false)
+  })
+
+  it('describes repositories selectable from a connected provider', () => {
+    const response = {
+      repositories: [
+        {
+          provider: 'GITLAB',
+          remoteId: '42',
+          name: 'api',
+          fullName: 'platform/api',
+          cloneUrl: 'https://gitlab.com/platform/api.git',
+          webUrl: 'https://gitlab.com/platform/api',
+          visibility: 'PRIVATE',
+          defaultBranch: 'main',
+        },
+      ],
+    }
+
+    expect(GitRepositoryCatalogResponseSchema.parse(response)).toEqual(response)
+  })
+
+  it('exposes only current remote project records', () => {
     const response = {
       projects: [
         {
           projectId: 'slopify',
           name: 'slopify',
-          repositoryPath: '/Users/operator/workspace/slopify',
+          provider: 'GITHUB',
+          remoteId: '123',
+          fullName: 'operator/slopify',
+          cloneUrl: 'https://github.com/operator/slopify.git',
+          webUrl: 'https://github.com/operator/slopify',
+          defaultBranch: 'main',
           availability: 'AVAILABLE',
           createdAt: '2026-08-23T10:00:00.000Z',
           updatedAt: '2026-08-23T10:00:00.000Z',
@@ -242,7 +288,7 @@ describe('run events', () => {
 
 describe('agent traces', () => {
   const header = {
-    version: 1,
+    version: 2,
     runId: 'run-01',
     nodeExecutionId: 'node-execution-01',
     attemptId: 'attempt-01',
@@ -253,24 +299,48 @@ describe('agent traces', () => {
       harnessVersion: '0.84.2',
       model: 'openai-codex/gpt-5.4',
       thinkingLevel: 'medium',
-      renderedPrompt: 'Inspect the primary worktree.',
-      workspaceRoot: '/Users/operator/.slopify/orchestrator/worktrees/run-01',
+      renderedPrompt: 'Inspect the primary workspace.',
+      workspaceRoot: '/Users/operator/.slopify/orchestrator/workspaces/run-01',
       primaryProjectId: 'slopify',
       projects: [
         {
           projectId: 'slopify',
           name: 'Slopify',
-          worktreePath: '/Users/operator/.slopify/orchestrator/worktrees/run-01/slopify',
+          provider: 'GITHUB',
+          fullName: 'operator/slopify',
+          workspacePath: '/Users/operator/.slopify/orchestrator/workspaces/run-01/slopify',
+          branchName: 'slopify/run-01',
           baseSha: '0123456789abcdef0123456789abcdef01234567',
-          sourceBranch: 'main',
+          defaultBranch: 'main',
         },
       ],
       timeoutSeconds: 600,
     },
   }
 
-  it('captures only the current harness and worktree configuration', () => {
+  it('captures only the current harness and cloned workspace configuration', () => {
     expect(AgentTraceHeaderSchema.parse(header)).toEqual(header)
+  })
+
+  it('continues to parse immutable version 1 worktree traces', () => {
+    expect(
+      AgentTraceHeaderSchema.parse({
+        ...header,
+        version: 1,
+        configuration: {
+          ...header.configuration,
+          projects: [
+            {
+              projectId: 'project-api',
+              name: 'API',
+              worktreePath: '/worktrees/run-01/project-api',
+              baseSha: 'a'.repeat(40),
+              sourceBranch: 'main',
+            },
+          ],
+        },
+      }).version,
+    ).toBe(1)
   })
 
   it('keeps trace headers and event types strict', () => {

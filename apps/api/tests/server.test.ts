@@ -55,7 +55,7 @@ describe('API server configuration', () => {
     expect(save).not.toHaveBeenCalled()
   })
 
-  it('configures only the database, traces, and worktrees under owner-local state', () => {
+  it('configures only the database, traces, and cloned workspaces under owner-local state', () => {
     expect(
       resolveApiServerConfiguration({
         API_HOST: '127.0.0.2',
@@ -63,7 +63,7 @@ describe('API server configuration', () => {
         API_SHUTDOWN_GRACE_MS: '2500',
         DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
         TRACES_ROOT: '/var/lib/workbench/traces',
-        WORKTREES_ROOT: '/var/lib/workbench/worktrees',
+        WORKSPACES_ROOT: '/var/lib/workbench/workspaces',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
@@ -71,14 +71,14 @@ describe('API server configuration', () => {
       shutdownGracePeriodMs: 2_500,
       databasePath: '/var/lib/workbench/workbench.sqlite',
       tracesRoot: '/var/lib/workbench/traces',
-      worktreesRoot: '/var/lib/workbench/worktrees',
+      workspacesRoot: '/var/lib/workbench/workspaces',
     })
     expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
       hostname: '127.0.0.1',
       port: 3001,
       databasePath: '/tmp/slopify-test/slopify.db',
       tracesRoot: '/tmp/slopify-test/traces',
-      worktreesRoot: '/tmp/slopify-test/worktrees',
+      workspacesRoot: '/tmp/slopify-test/workspaces',
     })
     expect(resolveApiServerConfiguration({}).databasePath).toMatch(
       /\.slopify\/orchestrator\/slopify\.db$/u,
@@ -118,7 +118,7 @@ describe('API server configuration', () => {
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
         tracesRoot: '/traces',
-        worktreesRoot: '/worktrees',
+        workspacesRoot: '/workspaces',
         shutdownGracePeriodMs: 10_000,
       },
       serve,
@@ -158,7 +158,7 @@ describe('API server configuration', () => {
         port: 0,
         databasePath: '/unused-in-this-test.sqlite',
         tracesRoot: '/traces',
-        worktreesRoot: '/worktrees',
+        workspacesRoot: '/workspaces',
         shutdownGracePeriodMs: 10_000,
       },
       serve,

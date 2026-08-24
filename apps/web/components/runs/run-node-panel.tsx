@@ -63,6 +63,24 @@ export function RunNodePanel({
   const displayedModel = harnessConfiguration?.model ?? node.harness.modelId ?? 'Harness default'
   const displayedThinking =
     harnessConfiguration?.thinkingLevel ?? node.harness.thinkingLevel ?? 'Harness default'
+  const workspaceProjects =
+    trace === undefined
+      ? []
+      : trace.header.version === 2
+        ? trace.header.configuration.projects.map((project) => ({
+            projectId: project.projectId,
+            name: project.name,
+            workspacePath: project.workspacePath,
+            branchLabel: `${project.branchName} · ${project.defaultBranch} at ${project.baseSha}`,
+            repositoryLabel: `${project.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${project.fullName}`,
+          }))
+        : trace.header.configuration.projects.map((project) => ({
+            projectId: project.projectId,
+            name: project.name,
+            workspacePath: project.worktreePath,
+            branchLabel: `${project.sourceBranch ?? 'Detached'} · ${project.baseSha}`,
+            repositoryLabel: 'Legacy local project',
+          }))
   const configurationItems: (readonly [string, string])[] = [
     ['Harness', displayedHarness],
     ...(harnessConfiguration === undefined
@@ -71,8 +89,8 @@ export function RunNodePanel({
     ['Model', displayedModel],
     ['Thinking', displayedThinking],
   ]
-  const primaryProject = harnessConfiguration?.projects.find(
-    ({ projectId }) => projectId === harnessConfiguration.primaryProjectId,
+  const primaryProject = workspaceProjects.find(
+    ({ projectId }) => projectId === harnessConfiguration?.primaryProjectId,
   )
 
   return (
@@ -90,16 +108,18 @@ export function RunNodePanel({
         </section>
 
         {harnessConfiguration === undefined ? null : (
-          <section className="grid gap-3" aria-label="Run worktrees">
+          <section className="grid gap-3" aria-label="Run workspaces">
             <div>
-              <h3 className="text-sm/5 font-semibold">Run worktrees</h3>
+              <h3 className="text-sm/5 font-semibold">Run workspaces</h3>
               <p className="mt-1 text-xs/4 text-muted-foreground">
                 The agent started in {primaryProject?.name ?? 'the primary project'} and shared
-                these isolated worktrees with the run.
+                {trace?.header.version === 1
+                  ? ' these legacy local Git worktrees with the run.'
+                  : ' these fresh repository clones with the run.'}
               </p>
             </div>
             <ul className="grid gap-2">
-              {harnessConfiguration.projects.map((project) => (
+              {workspaceProjects.map((project) => (
                 <li className="rounded-md border border-border p-3" key={project.projectId}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm/5 font-medium">{project.name}</p>
@@ -108,10 +128,13 @@ export function RunNodePanel({
                     ) : null}
                   </div>
                   <p className="mt-1 break-all font-mono text-xs/4 text-muted-foreground">
-                    {project.worktreePath}
+                    {project.workspacePath}
                   </p>
                   <p className="mt-1 truncate font-mono text-xs/4 text-muted-foreground">
-                    {project.sourceBranch ?? 'Detached'} · {project.baseSha}
+                    {project.branchLabel}
+                  </p>
+                  <p className="mt-1 truncate text-xs/4 text-muted-foreground">
+                    {project.repositoryLabel}
                   </p>
                 </li>
               ))}
