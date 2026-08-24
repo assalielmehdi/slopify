@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
 import { RunConfigurationFields } from '@/components/runs/run-configuration-fields'
 import { useStartRun } from '@/components/runs/use-start-run'
@@ -21,6 +22,11 @@ export interface StartRunFormProps {
 export function StartRunForm({ client = defaultClient, initialWorkflowId }: StartRunFormProps) {
   const router = useRouter()
   const state = useStartRun(client, { initialWorkflowId })
+
+  useEffect(() => {
+    if (state.loading || state.workflowId === '' || state.workflowId === initialWorkflowId) return
+    router.replace(`/runs/new?workflowId=${encodeURIComponent(state.workflowId)}`)
+  }, [initialWorkflowId, router, state.loading, state.workflowId])
 
   if (state.loading) {
     return <p className="text-xs text-muted-foreground">Loading run configuration…</p>

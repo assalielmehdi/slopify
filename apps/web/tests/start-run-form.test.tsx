@@ -122,6 +122,15 @@ describe('StartRunForm', () => {
     expect(replace).toHaveBeenCalledWith('/runs/new?workflowId=default-workflow')
   })
 
+  it('normalizes an unavailable URL workflow to the displayed fallback', async () => {
+    render(<StartRunForm client={createClient()} initialWorkflowId="missing-workflow" />)
+
+    expect(((await screen.findByLabelText('Workflow')) as HTMLSelectElement).value).toBe(
+      'default-workflow',
+    )
+    expect(replace).toHaveBeenCalledWith('/runs/new?workflowId=default-workflow')
+  })
+
   it('prelists only workflow-configured variables', async () => {
     render(<StartRunForm client={createClient()} />)
 

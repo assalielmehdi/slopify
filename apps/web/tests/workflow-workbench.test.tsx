@@ -338,6 +338,41 @@ describe('WorkflowWorkbench', () => {
     expect(navigation.replace).toHaveBeenCalledWith('/?workflowId=release-workflow')
   })
 
+  it('keeps the current graph and reports an error when workflow switching fails', async () => {
+    const releaseWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      workflowId: 'release-workflow',
+      name: 'Release workflow',
+    })
+    const client = {
+      listWorkflows: vi.fn(async () => [releaseWorkflow, workflow]),
+      getWorkflow: vi.fn(async (workflowId: string) => {
+        if (workflowId === releaseWorkflow.workflowId) throw new Error('Workflow could not load')
+        return workflow
+      }),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
+      startRun: vi.fn(),
+    }
+
+    render(
+      <WorkflowWorkbench
+        client={{ createWorkflow: vi.fn(), ...client }}
+        selectedWorkflowId={workflow.workflowId}
+      />,
+    )
+    await screen.findByText('Graph 1 nodes, 0 edges')
+
+    fireEvent.change(screen.getByRole('combobox', { name: 'Workflow' }), {
+      target: { value: releaseWorkflow.workflowId },
+    })
+
+    expect((await screen.findByRole('alert')).textContent).toContain('Workflow could not load')
+    expect(screen.getByText('Graph 1 nodes, 0 edges')).toBeTruthy()
+    expect(navigation.replace).toHaveBeenCalledWith('/?workflowId=default-workflow')
+  })
+
   it('disables switching while saving and ignores a late save after URL navigation', async () => {
     const firstAgent = workflow.nodes[0]
     if (firstAgent === undefined) throw new Error('Expected an agent fixture')
@@ -452,6 +487,7 @@ describe('WorkflowWorkbench', () => {
         }),
       ),
     )
+    expect(screen.getByRole('option', { name: /Renamed workflow.*API/u })).toBeTruthy()
   })
 
   it('persists a created agent and a directed completed edge', async () => {

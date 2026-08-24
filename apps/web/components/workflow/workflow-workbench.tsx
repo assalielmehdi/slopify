@@ -102,6 +102,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
   const [state, update] = useReducer(updateWorkflowWorkbench, initialWorkflowWorkbenchState)
   const loadSequence = useRef(0)
   const activeWorkflowId = useRef<string | undefined>(undefined)
+  const loadedWorkflowId = useRef<string | undefined>(undefined)
   const requestedWorkflowId = selectedWorkflowId
 
   useEffect(() => {
@@ -125,6 +126,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
           workflows.find(({ workflowId }) => workflowId === requestedWorkflowId) ?? workflows[0]
         if (catalogEntry === undefined) {
           activeWorkflowId.current = undefined
+          loadedWorkflowId.current = undefined
           if (active && sequence === loadSequence.current) {
             update({ workflow: undefined, workflows, harnesses, projects, error: undefined })
           }
@@ -137,9 +139,17 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
 
         const current = await client.getWorkflow(catalogEntry.workflowId)
         if (!active || sequence !== loadSequence.current) return
+        loadedWorkflowId.current = current.workflowId
         update({ workflow: current, workflows, harnesses, projects, error: undefined })
       } catch (cause) {
-        if (active && sequence === loadSequence.current) update({ error: errorMessage(cause) })
+        if (active && sequence === loadSequence.current) {
+          const previousWorkflowId = loadedWorkflowId.current
+          activeWorkflowId.current = previousWorkflowId
+          if (previousWorkflowId !== undefined) {
+            router.replace(`/?workflowId=${encodeURIComponent(previousWorkflowId)}`)
+          }
+          update({ error: errorMessage(cause) })
+        }
       } finally {
         if (active && sequence === loadSequence.current) update({ loading: false })
       }
@@ -157,6 +167,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
       const created = await client.createWorkflow(input)
       ++loadSequence.current
       activeWorkflowId.current = created.workflowId
+      loadedWorkflowId.current = created.workflowId
       update((current) => ({
         workflow: created,
         workflows: [created, ...current.workflows],
@@ -211,7 +222,14 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     update({ saving: true, saveError: undefined })
     try {
       const saved = await client.updateWorkflow(workflow.workflowId, next)
-      if (activeWorkflowId.current === saved.workflowId) update({ workflow: saved })
+      if (activeWorkflowId.current === saved.workflowId) {
+        update((current) => ({
+          workflow: saved,
+          workflows: current.workflows.map((candidate) =>
+            candidate.workflowId === saved.workflowId ? saved : candidate,
+          ),
+        }))
+      }
       return saved
     } catch (cause) {
       update({ saveError: errorMessage(cause) })
@@ -413,9 +431,14 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     try {
       const selected = await client.getWorkflow(workflowId)
       if (sequence !== loadSequence.current || activeWorkflowId.current !== workflowId) return
+      loadedWorkflowId.current = selected.workflowId
       update({ workflow: selected })
     } catch (cause) {
-      if (sequence === loadSequence.current) update({ error: errorMessage(cause) })
+      if (sequence === loadSequence.current) {
+        activeWorkflowId.current = workflow.workflowId
+        router.replace(`/?workflowId=${encodeURIComponent(workflow.workflowId)}`)
+        update({ error: errorMessage(cause) })
+      }
     } finally {
       if (sequence === loadSequence.current) update({ switching: false })
     }
@@ -569,6 +592,12 @@ export function WorkflowWorkbench({
         selectedWorkflowId={state.workflow.workflowId}
         workflows={state.workflows}
       />
+      {state.error === undefined ? null : (
+        <Alert className="mx-4 mt-4" variant="destructive">
+          <AlertTitle>Workflow not switched</AlertTitle>
+          <AlertDescription>{state.error}</AlertDescription>
+        </Alert>
+      )}
       <div className="relative min-h-0 flex-1">
         <WorkflowCanvas
           addAgentDisabledReason={state.addAgentDisabledReason}
