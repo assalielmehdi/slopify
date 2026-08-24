@@ -49,10 +49,15 @@ describe('WorkflowConfigDrawer', () => {
 
     render(
       <WorkflowConfigDrawer
-        configuration={{
-          projectIds: projects.slice(0, 1).map(({ projectId }) => projectId),
-          primaryProjectId: apiProject.projectId,
-          variables: ['topic'],
+        mode="edit"
+        value={{
+          name: 'Delivery workflow',
+          description: 'Coordinate delivery.',
+          configuration: {
+            projectIds: projects.slice(0, 1).map(({ projectId }) => projectId),
+            primaryProjectId: apiProject.projectId,
+            variables: ['topic'],
+          },
         }}
         projects={projects}
         onClose={vi.fn()}
@@ -75,9 +80,13 @@ describe('WorkflowConfigDrawer', () => {
 
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith({
-        projectIds: ['project-api', 'project-web'],
-        primaryProjectId: 'project-web',
-        variables: ['topic', 'release context'],
+        name: 'Delivery workflow',
+        description: 'Coordinate delivery.',
+        configuration: {
+          projectIds: ['project-api', 'project-web'],
+          primaryProjectId: 'project-web',
+          variables: ['topic', 'release context'],
+        },
       }),
     )
   })
@@ -85,7 +94,12 @@ describe('WorkflowConfigDrawer', () => {
   it('does not allow duplicate or blank variable names to be saved', async () => {
     render(
       <WorkflowConfigDrawer
-        configuration={{ projectIds: [], primaryProjectId: null, variables: ['topic'] }}
+        mode="edit"
+        value={{
+          name: 'Delivery workflow',
+          description: 'Coordinate delivery.',
+          configuration: { projectIds: [], primaryProjectId: null, variables: ['topic'] },
+        }}
         projects={projects}
         onClose={vi.fn()}
         onSubmit={vi.fn(async () => true)}
@@ -104,10 +118,15 @@ describe('WorkflowConfigDrawer', () => {
   it('does not treat project catalog order as a configuration change', async () => {
     render(
       <WorkflowConfigDrawer
-        configuration={{
-          projectIds: [webProject.projectId, apiProject.projectId],
-          primaryProjectId: webProject.projectId,
-          variables: [],
+        mode="edit"
+        value={{
+          name: 'Delivery workflow',
+          description: 'Coordinate delivery.',
+          configuration: {
+            projectIds: [webProject.projectId, apiProject.projectId],
+            primaryProjectId: webProject.projectId,
+            variables: [],
+          },
         }}
         projects={projects}
         onClose={vi.fn()}
@@ -124,7 +143,12 @@ describe('WorkflowConfigDrawer', () => {
     const onSubmit = vi.fn(async () => true)
     render(
       <WorkflowConfigDrawer
-        configuration={{ projectIds: [], primaryProjectId: null, variables: [] }}
+        mode="edit"
+        value={{
+          name: 'Delivery workflow',
+          description: 'Coordinate delivery.',
+          configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+        }}
         projects={projects}
         onClose={vi.fn()}
         onSubmit={onSubmit}
@@ -144,10 +168,59 @@ describe('WorkflowConfigDrawer', () => {
 
     await waitFor(() =>
       expect(onSubmit).toHaveBeenCalledWith({
-        projectIds: ['project-web'],
-        primaryProjectId: 'project-web',
-        variables: [],
+        name: 'Delivery workflow',
+        description: 'Coordinate delivery.',
+        configuration: {
+          projectIds: ['project-web'],
+          primaryProjectId: 'project-web',
+          variables: [],
+        },
       }),
     )
+  })
+
+  it('uses the same details and configuration fields when creating a workflow', async () => {
+    const onSubmit = vi.fn(async () => false)
+    render(
+      <WorkflowConfigDrawer
+        error="Workflow could not be created"
+        mode="create"
+        value={{
+          name: '',
+          description: '',
+          configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+        }}
+        projects={projects}
+        onClose={vi.fn()}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    const create = await screen.findByRole('button', { name: 'Create workflow' })
+    expect((create as HTMLButtonElement).disabled).toBe(true)
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), {
+      target: { value: 'Release workflow' },
+    })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Description' }), {
+      target: { value: 'Prepare and review a release.' },
+    })
+    fireEvent.click(screen.getByRole('checkbox', { name: /API/ }))
+    fireEvent.click(create)
+
+    await waitFor(() =>
+      expect(onSubmit).toHaveBeenCalledWith({
+        name: 'Release workflow',
+        description: 'Prepare and review a release.',
+        configuration: {
+          projectIds: ['project-api'],
+          primaryProjectId: 'project-api',
+          variables: [],
+        },
+      }),
+    )
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe(
+      'Release workflow',
+    )
+    expect(screen.getByRole('alert').textContent).toContain('Workflow could not be created')
   })
 })

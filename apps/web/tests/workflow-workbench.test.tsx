@@ -66,18 +66,29 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
 }))
 
 vi.mock('../components/workflow/workflow-config-drawer', () => ({
-  WorkflowConfigDrawer: ({ onSubmit }: { onSubmit: (value: unknown) => Promise<boolean> }) => (
-    <aside aria-label="Workflow configuration">
+  WorkflowConfigDrawer: ({
+    mode,
+    onSubmit,
+  }: {
+    mode: 'create' | 'edit'
+    onSubmit: (value: unknown) => Promise<boolean>
+  }) => (
+    <aside aria-label={mode === 'create' ? 'Create workflow' : 'Workflow configuration'}>
       <button
         onClick={() =>
           void onSubmit({
-            projectIds: ['project-api'],
-            primaryProjectId: 'project-api',
-            variables: ['topic', 'release'],
+            name: mode === 'create' ? 'Release workflow' : 'Renamed workflow',
+            description:
+              mode === 'create' ? 'Prepare and review a release.' : 'Updated workflow details.',
+            configuration: {
+              projectIds: ['project-api'],
+              primaryProjectId: 'project-api',
+              variables: ['topic', 'release'],
+            },
           })
         }
       >
-        Save workflow configuration
+        {mode === 'create' ? 'Create workflow' : 'Save workflow configuration'}
       </button>
     </aside>
   ),
@@ -186,6 +197,76 @@ afterEach(() => {
 })
 
 describe('WorkflowWorkbench', () => {
+  it('creates a workflow, adds it to the catalog, and selects it after persistence', async () => {
+    const created = WorkflowSchema.parse({
+      ...workflow,
+      workflowId: 'release-workflow',
+      name: 'Release workflow',
+      description: 'Prepare and review a release.',
+      startNodeId: null,
+      nodes: [],
+      edges: [],
+      updatedAt: '2026-08-24T15:00:00.000Z',
+    })
+    const createWorkflow = vi.fn(async () => created)
+    const client = {
+      listWorkflows: vi.fn(async () => catalog),
+      createWorkflow,
+      getWorkflow: vi.fn(async () => workflow),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
+      startRun: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} selectedWorkflowId={workflow.workflowId} />)
+
+    await screen.findByText('Graph 1 nodes, 0 edges')
+    fireEvent.click(screen.getByRole('button', { name: 'New workflow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Create workflow' }))
+
+    await waitFor(() =>
+      expect(createWorkflow).toHaveBeenCalledWith({
+        name: 'Release workflow',
+        description: 'Prepare and review a release.',
+        configuration: {
+          projectIds: ['project-api'],
+          primaryProjectId: 'project-api',
+          variables: ['topic', 'release'],
+        },
+      }),
+    )
+    expect(await screen.findByText('Graph 0 nodes, 0 edges')).toBeTruthy()
+    expect(screen.getByRole('option', { name: /Release workflow.*API/u })).toBeTruthy()
+    expect(navigation.push).toHaveBeenCalledWith('/?workflowId=release-workflow')
+  })
+
+  it('shows a creation action for an empty workflow catalog', async () => {
+    const created = WorkflowSchema.parse({
+      ...workflow,
+      workflowId: 'first-workflow',
+      name: 'First workflow',
+      startNodeId: null,
+      nodes: [],
+      edges: [],
+    })
+    const client = {
+      listWorkflows: vi.fn(async () => []),
+      createWorkflow: vi.fn(async () => created),
+      getWorkflow: vi.fn(),
+      updateWorkflow: vi.fn(),
+      listHarnesses: vi.fn(async () => harnesses),
+      listProjects: vi.fn(async () => projects),
+      startRun: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} />)
+
+    expect(await screen.findByText('Create your first workflow')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'New workflow' }))
+    expect(screen.getByRole('complementary', { name: 'Create workflow' })).toBeTruthy()
+  })
+
   it('loads the URL-selected workflow and switches the graph with URL navigation', async () => {
     const firstAgent = workflow.nodes[0]
     if (firstAgent === undefined) throw new Error('Expected an agent fixture')
@@ -210,7 +291,12 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} selectedWorkflowId="release-workflow" />)
+    render(
+      <WorkflowWorkbench
+        client={{ createWorkflow: vi.fn(), ...client }}
+        selectedWorkflowId="release-workflow"
+      />,
+    )
 
     expect(await screen.findByText('Graph 2 nodes, 0 edges')).toBeTruthy()
     expect(client.getWorkflow).toHaveBeenCalledWith('release-workflow')
@@ -240,7 +326,12 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} selectedWorkflowId="missing-workflow" />)
+    render(
+      <WorkflowWorkbench
+        client={{ createWorkflow: vi.fn(), ...client }}
+        selectedWorkflowId="missing-workflow"
+      />,
+    )
 
     expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
     expect(client.getWorkflow).toHaveBeenCalledWith('release-workflow')
@@ -275,7 +366,10 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
     const view = render(
-      <WorkflowWorkbench client={client} selectedWorkflowId={workflow.workflowId} />,
+      <WorkflowWorkbench
+        client={{ createWorkflow: vi.fn(), ...client }}
+        selectedWorkflowId={workflow.workflowId}
+      />,
     )
 
     await screen.findByText('Graph 1 nodes, 0 edges')
@@ -287,7 +381,10 @@ describe('WorkflowWorkbench', () => {
     )
 
     view.rerender(
-      <WorkflowWorkbench client={client} selectedWorkflowId={releaseWorkflow.workflowId} />,
+      <WorkflowWorkbench
+        client={{ createWorkflow: vi.fn(), ...client }}
+        selectedWorkflowId={releaseWorkflow.workflowId}
+      />,
     )
     expect(await screen.findByText('Graph 2 nodes, 0 edges')).toBeTruthy()
 
@@ -305,7 +402,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
 
     expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
     expect(client.getWorkflow).toHaveBeenCalledWith('default-workflow')
@@ -334,7 +431,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
 
     await screen.findByText('Graph 1 nodes, 0 edges')
     fireEvent.click(screen.getByRole('button', { name: 'Configure workflow' }))
@@ -345,6 +442,8 @@ describe('WorkflowWorkbench', () => {
       expect(updateWorkflow).toHaveBeenCalledWith(
         workflow.workflowId,
         expect.objectContaining({
+          name: 'Renamed workflow',
+          description: 'Updated workflow details.',
           configuration: {
             projectIds: ['project-api'],
             primaryProjectId: 'project-api',
@@ -366,7 +465,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
     await screen.findByText('Graph 1 nodes, 0 edges')
     fireEvent.click(screen.getByRole('button', { name: 'Add connected agent' }))
     fireEvent.click(screen.getByRole('button', { name: 'Submit agent' }))
@@ -420,7 +519,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
     await screen.findByText('Graph 2 nodes, 1 edges')
     fireEvent.click(screen.getByRole('button', { name: 'Select agent' }))
     fireEvent.click(screen.getByRole('button', { name: 'Delete agent' }))
@@ -499,7 +598,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
     await screen.findByText('Graph 3 nodes, 2 edges')
     fireEvent.click(screen.getByRole('button', { name: 'Select middle agent' }))
     fireEvent.click(screen.getByRole('button', { name: 'Delete agent' }))
@@ -518,9 +617,12 @@ describe('WorkflowWorkbench', () => {
     )
   })
 
-  it('shows a structured error state when no workflow is available', async () => {
+  it('shows a structured error state when the workflow catalog cannot be loaded', async () => {
     const client = {
-      listWorkflows: vi.fn(async () => []),
+      listWorkflows: vi.fn(async () => {
+        throw new Error('Workflow catalog unavailable')
+      }),
+      createWorkflow: vi.fn(),
       getWorkflow: vi.fn(),
       updateWorkflow: vi.fn(),
       listHarnesses: vi.fn(async () => harnesses),
@@ -530,7 +632,7 @@ describe('WorkflowWorkbench', () => {
 
     render(<WorkflowWorkbench client={client} />)
 
-    expect((await screen.findByRole('alert')).textContent).toContain('No workflows available')
+    expect((await screen.findByRole('alert')).textContent).toContain('Workflow catalog unavailable')
   })
 
   it('renders a zero-node workflow as an empty non-runnable canvas', async () => {
@@ -549,7 +651,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
 
     expect(await screen.findByText('Graph 0 nodes, 0 edges')).toBeTruthy()
     expect((screen.getByRole('button', { name: 'Run' }) as HTMLButtonElement).disabled).toBe(true)
@@ -579,7 +681,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
 
     await screen.findByText('Graph 1 nodes, 0 edges')
     const add = screen.getByRole('button', { name: 'Add connected agent' })
@@ -604,7 +706,7 @@ describe('WorkflowWorkbench', () => {
       startRun: vi.fn(),
     }
 
-    render(<WorkflowWorkbench client={client} />)
+    render(<WorkflowWorkbench client={{ createWorkflow: vi.fn(), ...client }} />)
 
     await screen.findByText('Graph 1 nodes, 0 edges')
     const run = screen.getByRole('button', { name: 'Run' })
