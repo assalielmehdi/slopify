@@ -36,7 +36,7 @@ import {
   openDatabase,
   type WorkflowRepository,
 } from '@slopify/execution-runtime'
-import { DEFAULT_WORKFLOW_ID, createDefaultWorkflow } from '@slopify/workflow-model'
+import { createDefaultWorkflow } from '@slopify/workflow-model'
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
@@ -90,11 +90,11 @@ const createBunApiServer: ApiServerFactory = (options) => {
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
 
-export const ensureDefaultWorkflow = (
-  workflows: Pick<WorkflowRepository, 'get' | 'save'>,
+export const ensureInitialWorkflow = (
+  workflows: Pick<WorkflowRepository, 'insert' | 'list'>,
 ): void => {
-  if (workflows.get(DEFAULT_WORKFLOW_ID) !== undefined) return
-  workflows.save(createDefaultWorkflow({ createdAt: new Date().toISOString() }))
+  if (workflows.list().length > 0) return
+  workflows.insert(createDefaultWorkflow({ createdAt: new Date().toISOString() }))
 }
 
 const nonBlank = (
@@ -206,7 +206,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   })
   const projectRepository = createProjectRepository(database)
   const workflowRepository = createWorkflowRepository(database)
-  ensureDefaultWorkflow(workflowRepository)
+  ensureInitialWorkflow(workflowRepository)
   const runRepository = createRunRepository(database)
   const eventStore = createEventStore(database)
   const traces = createFilesystemAgentTraceStore({ root: configuration.tracesRoot })

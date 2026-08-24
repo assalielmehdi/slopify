@@ -16,6 +16,25 @@ afterEach(() => {
 })
 
 describe('current repositories', () => {
+  it('inserts multiple workflows without overwriting an existing identity', () => {
+    const fixture = createPersistenceFixture()
+    fixtures.push(fixture)
+    const second = createTestAgentWorkflow({
+      workflowId: 'release-workflow',
+      createdAt: '2026-08-23T12:01:00.000Z',
+    })
+
+    fixture.workflows.insert(second)
+
+    expect(fixture.workflows.get(fixture.workflow.workflowId)).toEqual(fixture.workflow)
+    expect(fixture.workflows.get(second.workflowId)).toEqual(second)
+    expect(fixture.workflows.list()).toEqual([second, fixture.workflow])
+    expect(() => fixture.workflows.insert(second)).toThrowError(
+      expect.objectContaining({ code: 'PERSISTENCE_CONFLICT' }),
+    )
+    expect(fixture.workflows.get(second.workflowId)).toEqual(second)
+  })
+
   it('saves and replaces the current workflow', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)

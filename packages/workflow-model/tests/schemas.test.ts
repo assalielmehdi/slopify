@@ -1,6 +1,13 @@
 import { describe, expect, expectTypeOf, it } from 'vitest'
 
-import { AgentNodeSchema, WorkflowEdgeSchema, WorkflowSchema, type Workflow } from '../src/index.js'
+import {
+  AgentNodeSchema,
+  CreateWorkflowInputSchema,
+  WorkflowEdgeSchema,
+  WorkflowSchema,
+  type CreateWorkflowInput,
+  type Workflow,
+} from '../src/index.js'
 
 const agentNode = {
   type: 'agent',
@@ -64,6 +71,28 @@ describe('workflow node contracts', () => {
 })
 
 describe('workflow document contract', () => {
+  it('accepts only editable fields when creating a workflow', () => {
+    const input = {
+      name: 'Release workflow',
+      description: 'Prepare and review a release.',
+      configuration: {
+        projectIds: ['project-api'],
+        primaryProjectId: 'project-api',
+        variables: ['release'],
+      },
+    } as const
+
+    expect(CreateWorkflowInputSchema.parse(input)).toEqual(input)
+    expectTypeOf(CreateWorkflowInputSchema.parse(input)).toEqualTypeOf<CreateWorkflowInput>()
+    expect(
+      CreateWorkflowInputSchema.safeParse({ ...input, workflowId: 'client-owned' }).success,
+    ).toBe(false)
+    expect(CreateWorkflowInputSchema.safeParse({ ...input, name: ' ' }).success).toBe(false)
+    expect(CreateWorkflowInputSchema.safeParse({ ...input, description: undefined }).success).toBe(
+      false,
+    )
+  })
+
   it('parses the complete workflow document', () => {
     expect(WorkflowSchema.parse(workflow)).toEqual(workflow)
   })

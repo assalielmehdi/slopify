@@ -92,6 +92,14 @@ export const WorkflowConfigurationSchema = z
   })
   .readonly()
 
+export const CreateWorkflowInputSchema = z
+  .strictObject({
+    name: nonBlankString,
+    description: nonBlankString,
+    configuration: WorkflowConfigurationSchema,
+  })
+  .readonly()
+
 export const WorkflowSchema = z
   .strictObject({
     schemaVersion: z.literal(1),
