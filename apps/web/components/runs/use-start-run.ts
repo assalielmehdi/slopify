@@ -53,7 +53,12 @@ export type StartRunClient = Pick<
   'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'
 >
 
-export function useStartRun(client: StartRunClient) {
+export interface UseStartRunOptions {
+  readonly initialWorkflowId?: string | undefined
+  readonly requireInitialWorkflow?: boolean | undefined
+}
+
+export function useStartRun(client: StartRunClient, options: UseStartRunOptions = {}) {
   const [workflows, setWorkflows] = useState<readonly WorkflowCatalogEntry[]>([])
   const [harnesses, setHarnesses] = useState<readonly HarnessDescriptor[]>([])
   const [projects, setProjects] = useState<readonly Project[]>([])
@@ -77,10 +82,20 @@ export function useStartRun(client: StartRunClient) {
         setWorkflows(nextWorkflows)
         setHarnesses(nextHarnesses)
         setProjects(nextProjects)
-        const workflow = nextWorkflows[0]
+        const requestedWorkflow = nextWorkflows.find(
+          ({ workflowId: candidateId }) => candidateId === options.initialWorkflowId,
+        )
+        const workflow =
+          requestedWorkflow ??
+          (options.initialWorkflowId === undefined || options.requireInitialWorkflow !== true
+            ? nextWorkflows[0]
+            : undefined)
         if (workflow !== undefined) {
           setWorkflowId(workflow.workflowId)
           setRows(requiredRows(workflow))
+        } else if (options.initialWorkflowId !== undefined) {
+          setWorkflowId(options.initialWorkflowId)
+          setRows([])
         }
       } catch (cause) {
         if (active) {
@@ -97,7 +112,7 @@ export function useStartRun(client: StartRunClient) {
     return () => {
       active = false
     }
-  }, [client])
+  }, [client, options.initialWorkflowId, options.requireInitialWorkflow])
 
   const selectedWorkflow = workflows.find((workflow) => workflow.workflowId === workflowId)
   const runDisabledReason =

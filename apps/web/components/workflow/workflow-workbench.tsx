@@ -633,7 +633,11 @@ export function WorkflowWorkbench({
       ) : null}
 
       {state.runDrawerOpen ? (
-        <StartRunDrawer client={client} onClose={state.closeRunDrawer} />
+        <StartRunDrawer
+          client={client}
+          onClose={state.closeRunDrawer}
+          workflowId={state.workflow.workflowId}
+        />
       ) : null}
     </section>
   )

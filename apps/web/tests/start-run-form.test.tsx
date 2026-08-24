@@ -10,6 +10,10 @@ import { StartRunForm } from '../components/runs/start-run-form'
 import { ApiClientError, type ApiClient, type StartRunResponse } from '../lib/api-client'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
+const replace = vi.fn()
+
+vi.mock('next/navigation', () => ({ useRouter: () => ({ replace }) }))
+
 const baseWorkflow = createAgentWorkflowFixture({
   createdAt: '2026-08-20T10:00:00Z',
   modelId: 'test-model',
@@ -27,6 +31,12 @@ const workflow = WorkflowSchema.parse({
     ...node,
     prompt: 'Deliver {{ task }} in {{ iterations }} passes. Keep \\{{ escaped }} literal.',
   })),
+})
+const releaseWorkflow = WorkflowSchema.parse({
+  ...workflow,
+  workflowId: 'release-workflow',
+  name: 'Release workflow',
+  configuration: { ...workflow.configuration, variables: ['release'] },
 })
 
 const harnesses = HarnessDescriptorSchema.array().parse([
@@ -79,7 +89,10 @@ const createClient = (overrides: Partial<ApiClient> = {}) =>
     ...overrides,
   }) as unknown as ApiClient
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  replace.mockReset()
+})
 
 const fillRequiredVariables = async () => {
   fireEvent.change(await screen.findByLabelText('Variable value for task'), {
@@ -91,6 +104,24 @@ const fillRequiredVariables = async () => {
 }
 
 describe('StartRunForm', () => {
+  it('loads the URL-selected workflow and retains later selection in the URL', async () => {
+    render(
+      <StartRunForm
+        client={createClient({ listWorkflows: vi.fn(async () => [workflow, releaseWorkflow]) })}
+        initialWorkflowId={releaseWorkflow.workflowId}
+      />,
+    )
+
+    const selector = (await screen.findByLabelText('Workflow')) as HTMLSelectElement
+    expect(selector.value).toBe('release-workflow')
+    expect(screen.getByText('release')).toBeTruthy()
+    expect(screen.queryByText('task')).toBeNull()
+
+    fireEvent.change(selector, { target: { value: workflow.workflowId } })
+    expect(await screen.findByText('task')).toBeTruthy()
+    expect(replace).toHaveBeenCalledWith('/runs/new?workflowId=default-workflow')
+  })
+
   it('prelists only workflow-configured variables', async () => {
     render(<StartRunForm client={createClient()} />)
 

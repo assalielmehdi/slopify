@@ -29,6 +29,12 @@ const workflow = WorkflowSchema.parse({
   },
   nodes: baseWorkflow.nodes.map((node) => ({ ...node, prompt: 'Process {{ topic }}' })),
 })
+const firstWorkflow = WorkflowSchema.parse({
+  ...workflow,
+  workflowId: 'first-workflow',
+  name: 'First workflow',
+  configuration: { ...workflow.configuration, variables: ['wrong'] },
+})
 const harnesses = HarnessDescriptorSchema.array().parse([
   {
     harnessId: 'pi',
@@ -68,14 +74,21 @@ describe('StartRunDrawer', () => {
   it('starts the current workflow from a variables-only floating panel', async () => {
     const startRun = vi.fn(async () => startedRun)
     const client = {
-      listWorkflows: vi.fn(async () => [workflow]),
+      listWorkflows: vi.fn(async () => [firstWorkflow, workflow]),
       listHarnesses: vi.fn(async () => harnesses),
       listProjects: vi.fn(async () => projects),
       startRun,
     } as Pick<ApiClient, 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'>
     const onStarted = vi.fn()
 
-    render(<StartRunDrawer client={client} onClose={vi.fn()} onStarted={onStarted} />)
+    render(
+      <StartRunDrawer
+        client={client}
+        onClose={vi.fn()}
+        onStarted={onStarted}
+        workflowId={workflow.workflowId}
+      />,
+    )
 
     expect(await screen.findByRole('complementary', { name: 'Run' })).toBeTruthy()
     expect(screen.queryByLabelText('Workflow')).toBeNull()
@@ -112,7 +125,7 @@ describe('StartRunDrawer', () => {
     } as Pick<ApiClient, 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'>
     const onClose = vi.fn()
 
-    render(<StartRunDrawer client={client} onClose={onClose} />)
+    render(<StartRunDrawer client={client} onClose={onClose} workflowId={workflow.workflowId} />)
 
     const panel = await screen.findByRole('complementary', { name: 'Run' })
     const shell = panel.parentElement
