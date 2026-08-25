@@ -27,7 +27,7 @@ export const connectResourceEventStream = (
   handlers: ResourceEventStreamHandlers,
   options: ResourceEventStreamOptions = {},
 ): (() => void) => {
-  const reconcileIntervalMs = options.reconcileIntervalMs ?? 5_000
+  const reconcileIntervalMs = options.reconcileIntervalMs ?? 30_000
   if (
     !Number.isSafeInteger(reconcileIntervalMs) ||
     reconcileIntervalMs < 1 ||

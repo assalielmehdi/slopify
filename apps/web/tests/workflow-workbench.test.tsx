@@ -519,5 +519,6 @@ describe('WorkflowWorkbench', () => {
     )
 
     expect(await screen.findByText('Graph 2 nodes, 0 edges')).toBeTruthy()
+    expect(client.listHarnesses).toHaveBeenCalledOnce()
   })
 })

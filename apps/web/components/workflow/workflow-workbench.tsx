@@ -109,12 +109,15 @@ function useWorkflowWorkbench(
 
     const load = async () => {
       try {
+        const refreshingLoadedWorkflow = loadedWorkflowId.current !== undefined
         const [workflows, harnesses, repositories] = await Promise.all([
           client.listWorkflows(),
-          client.listHarnesses().catch((cause: unknown) => {
-            if (active) update({ harnessError: errorMessage(cause) })
-            return [] as readonly HarnessDescriptor[]
-          }),
+          refreshingLoadedWorkflow
+            ? Promise.resolve(stateRef.current.harnesses)
+            : client.listHarnesses().catch((cause: unknown) => {
+                if (active) update({ harnessError: errorMessage(cause) })
+                return [] as readonly HarnessDescriptor[]
+              }),
           client.listRepositories().catch((cause: unknown) => {
             if (active) update({ repositoryCatalogError: errorMessage(cause) })
             return [] as const
