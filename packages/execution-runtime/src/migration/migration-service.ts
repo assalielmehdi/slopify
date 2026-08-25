@@ -6,7 +6,11 @@ import { basename, join, resolve } from 'node:path'
 import { z } from 'zod'
 
 import type { SlopifyPaths } from '../filesystem/slopify-home.js'
-import { LegacySqliteReaderError, openLegacySqliteReader } from './legacy-sqlite-reader.js'
+import {
+  LegacySqliteReaderError,
+  openLegacySqliteReader,
+  type LegacyDatabaseInspection,
+} from './legacy-sqlite-reader.js'
 
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/)
 const MigrationFileSchema = z.object({
@@ -280,44 +284,73 @@ export const createLegacyMigrationService = (
         'The legacy database must be a regular file.',
       )
 
-    const sourceHashBefore = await calculateFileSha256(databasePath)
-    const sidecarsBeforeInspection = await readSidecars(databasePath)
-    const hasWalFrames = sidecarsBeforeInspection.some(
-      (sidecar) => sidecar.kind === 'WAL' && sidecar.sizeBytes > 0,
-    )
-    const reader = (() => {
+    let sourceHashBefore: string | undefined
+    let sourceSidecars: readonly SidecarSnapshot[] | undefined
+    let inspection: LegacyDatabaseInspection | undefined
+    for (let attempt = 1; attempt <= 3; attempt += 1) {
+      const observedHash = await calculateFileSha256(databasePath)
+      const observedSidecars = await readSidecars(databasePath)
+      const hasWalFrames = observedSidecars.some(
+        (sidecar) => sidecar.kind === 'WAL' && sidecar.sizeBytes > 0,
+      )
+      const inspectionDirectory = join(
+        options.paths.migrationsDirectory,
+        `.inspect-${crypto.randomUUID()}`,
+      )
+      const inspectionDatabasePath = join(inspectionDirectory, 'slopify.db')
+      let observedInspection: LegacyDatabaseInspection
       try {
-        return openLegacySqliteReader(databasePath, { immutable: !hasWalFrames })
+        await mkdir(inspectionDirectory, { recursive: true, mode: 0o700 })
+        await copyFile(databasePath, inspectionDatabasePath)
+        await Promise.all(
+          observedSidecars.map((sidecar) =>
+            copyFile(sidecar.path, `${inspectionDatabasePath}${sidecar.suffix}`),
+          ),
+        )
+        const reader = openLegacySqliteReader(inspectionDatabasePath, {
+          immutable: !hasWalFrames,
+        })
+        try {
+          observedInspection = reader.inspect()
+        } finally {
+          reader.close()
+        }
       } catch (error) {
         if (error instanceof LegacySqliteReaderError)
           throw new LegacyMigrationError('INVALID_DATABASE', error.message, { cause: error })
         throw error
+      } finally {
+        await rm(inspectionDirectory, { recursive: true, force: true })
       }
-    })()
-    let inspection
-    try {
-      inspection = reader.inspect()
-    } catch (error) {
-      if (error instanceof LegacySqliteReaderError)
-        throw new LegacyMigrationError('INVALID_DATABASE', error.message, { cause: error })
-      throw error
-    } finally {
-      reader.close()
+      const [hashAfterInspection, sidecarsAfterInspection] = await Promise.all([
+        calculateFileSha256(databasePath),
+        readSidecars(databasePath),
+      ])
+      if (
+        hashAfterInspection === observedHash &&
+        JSON.stringify(sidecarsAfterInspection) === JSON.stringify(observedSidecars)
+      ) {
+        sourceHashBefore = observedHash
+        sourceSidecars = observedSidecars
+        inspection = observedInspection
+        break
+      }
+      if (attempt === 3)
+        throw new LegacyMigrationError(
+          'SOURCE_CHANGED',
+          'The legacy database changed during preflight.',
+        )
     }
+    if (sourceHashBefore === undefined || sourceSidecars === undefined || inspection === undefined)
+      throw new LegacyMigrationError(
+        'SOURCE_CHANGED',
+        'The legacy database could not be captured consistently.',
+      )
     if (inspection.activeRuns.length > 0)
       throw new LegacyMigrationError(
         'ACTIVE_RUNS',
         'Legacy migration requires all workflow runs to be terminal.',
       )
-    const sourceSidecars = await readSidecars(databasePath)
-
-    const sourceHashAfterInspection = await calculateFileSha256(databasePath)
-    if (sourceHashAfterInspection !== sourceHashBefore)
-      throw new LegacyMigrationError(
-        'SOURCE_CHANGED',
-        'The legacy database changed during preflight.',
-      )
-
     const stagingDirectory = join(
       options.paths.migrationsDirectory,
       `.${migrationId}.tmp-${crypto.randomUUID()}`,
