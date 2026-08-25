@@ -127,6 +127,33 @@ describe('repositories API', () => {
     })
   })
 
+  it('serves the same Repository resources through the deprecated projects alias', async () => {
+    const fixture = createFixture()
+    const created = await fixture.app.request('/api/projects', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ provider: 'GITHUB', remoteId: '123' }),
+    })
+    const canonical = await fixture.app.request('/api/repositories')
+    const legacy = await fixture.app.request('/api/projects')
+    const deleted = await fixture.app.request('/api/projects/repository-01', {
+      method: 'DELETE',
+    })
+
+    expect(created.status).toBe(201)
+    expect(await created.json()).toMatchObject({
+      repositoryId: 'repository-01',
+      provider: 'GITHUB',
+      remoteId: '123',
+    })
+    expect(legacy.status).toBe(200)
+    expect(await legacy.json()).toEqual(await canonical.json())
+    expect(deleted.status).toBe(200)
+    await expect(
+      fixture.app.request('/api/repositories').then((response) => response.json()),
+    ).resolves.toEqual({ repositories: [] })
+  })
+
   it('deletes a repository immediately and cannot restore it through the legacy undo endpoint', async () => {
     const fixture = createFixture()
     await addRepository(fixture.app)
