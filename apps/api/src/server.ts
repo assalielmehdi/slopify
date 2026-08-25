@@ -15,6 +15,7 @@ import {
   createFetchRemoteGitHost,
   createFilesystemAgentTraceStore,
   createFilesystemGitConnectionRepository,
+  createFilesystemRepositoryStore,
   createFilesystemSettingsStore,
   createGitConnectionService,
   createGitCredentialHelperCommand,
@@ -22,7 +23,6 @@ import {
   createNativeGitRunWorkspaceProvisioner,
   createOrchestratedRunService,
   createProcessRunner,
-  createRepositoryStore,
   createRepositoryService,
   createRemoteRunRepositoryResolver,
   createRunEventFeed,
@@ -181,7 +181,8 @@ export const startApiServer = (input: {
 
 export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): ApiServer => {
   const configuration = resolveApiServerConfiguration(environment)
-  const settings = createFilesystemSettingsStore({ paths: resolveSlopifyPaths({ environment }) })
+  const paths = resolveSlopifyPaths({ environment })
+  const settings = createFilesystemSettingsStore({ paths })
   let database
   try {
     database = openDatabase({ path: configuration.databasePath })
@@ -207,7 +208,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     secrets: createBunGitSecretStore(),
     remote: remoteGit,
   })
-  const repositoryStore = createRepositoryStore(database)
+  const repositoryStore = createFilesystemRepositoryStore({ paths })
   const workflowRepository = createWorkflowRepository(database)
   ensureInitialWorkflow(workflowRepository)
   const runRepository = createRunRepository(database)

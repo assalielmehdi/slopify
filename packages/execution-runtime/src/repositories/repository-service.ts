@@ -14,7 +14,11 @@ import {
 } from '../git/git-connection-service.js'
 import type { RemoteGitHost } from '../git/remote-git-host.js'
 import { PersistenceError } from '../persistence/errors.js'
-import type { RepositoryRecord, RepositoryStore } from './repository-store.js'
+import {
+  RepositoryStoreError,
+  type RepositoryRecord,
+  type RepositoryStore,
+} from './repository-store.js'
 
 export type RepositoryServiceErrorCode =
   | 'REPOSITORY_INVALID'
@@ -64,8 +68,6 @@ export const createRepositoryService = (
   const now = options.now ?? (() => new Date().toISOString())
   const undoWindowMs = options.undoWindowMs ?? 10_000
 
-  const purgeExpired = () => options.repositories.purgeExpired(now())
-
   const inspectRecord = async (record: RepositoryRecord): Promise<Repository> => {
     let token: string
     try {
@@ -99,7 +101,6 @@ export const createRepositoryService = (
   return {
     subjectType: 'REPOSITORY',
     async add(input) {
-      await purgeExpired()
       const result = AddRepositoryRequestSchema.safeParse(input)
       if (!result.success)
         throw new RepositoryServiceError('REPOSITORY_INVALID', 'Repository is invalid')
@@ -143,7 +144,10 @@ export const createRepositoryService = (
       try {
         await options.repositories.add(record)
       } catch (cause) {
-        if (cause instanceof PersistenceError && cause.code === 'PERSISTENCE_CONFLICT') {
+        if (
+          (cause instanceof PersistenceError && cause.code === 'PERSISTENCE_CONFLICT') ||
+          (cause instanceof RepositoryStoreError && cause.code === 'REPOSITORY_CONFLICT')
+        ) {
           throw new RepositoryServiceError(
             'REPOSITORY_REMOTE_CONFLICT',
             'Repository already exists',
@@ -155,12 +159,10 @@ export const createRepositoryService = (
     },
 
     async list() {
-      await purgeExpired()
       return Promise.all((await options.repositories.list()).map(inspectRecord))
     },
 
     async delete(repositoryIdInput) {
-      await purgeExpired()
       const repositoryId = RepositoryIdSchema.parse(repositoryIdInput)
       const deletedAt = now()
       const receipt = DeletionReceiptSchema.parse({
@@ -169,14 +171,13 @@ export const createRepositoryService = (
         deletedAt,
         undoExpiresAt: new Date(Date.parse(deletedAt) + undoWindowMs).toISOString(),
       })
-      if (!(await options.repositories.stageDeletion(receipt))) {
+      if (!(await options.repositories.delete(repositoryId))) {
         throw new RepositoryServiceError('REPOSITORY_NOT_FOUND', 'Repository was not found')
       }
       return receipt
     },
 
     async requireAvailable(repositoryIdInput) {
-      await purgeExpired()
       const repositoryId = RepositoryIdSchema.parse(repositoryIdInput)
       const record = await options.repositories.get(repositoryId)
       if (record === undefined) {
@@ -188,7 +189,8 @@ export const createRepositoryService = (
     },
 
     async undoDeletion(deletionId) {
-      return options.repositories.restoreDeletion(DeletionIdSchema.parse(deletionId), now())
+      DeletionIdSchema.parse(deletionId)
+      return 'NOT_FOUND'
     },
   }
 }

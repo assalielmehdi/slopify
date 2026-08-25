@@ -1,9 +1,10 @@
 import type { GitProvider, GitRepository } from '@slopify/contracts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import {
   GitConnectionServiceError,
   RepositoryServiceError,
+  RepositoryStoreError,
   createRepositoryService,
   type GitConnectionService,
   type RepositoryRecord,
@@ -37,30 +38,35 @@ const storedRepository = (): RepositoryRecord => ({
 
 const createRepository = (): RepositoryStore & { records: RepositoryRecord[] } => {
   const records: RepositoryRecord[] = []
-  const deleted = new Map<string, RepositoryRecord>()
   return {
     records,
-    add: (record) => void records.push(record),
-    get: (repositoryId) => records.find((record) => record.repositoryId === repositoryId),
-    findByRemote: (provider, remoteId) =>
-      records.find((record) => record.provider === provider && record.remoteId === remoteId),
-    list: () => [...records],
-    stageDeletion(input) {
-      const index = records.findIndex(({ repositoryId }) => repositoryId === input.subject.id)
+    async add(record) {
+      records.push(record)
+    },
+    async get(repositoryId) {
+      return records.find((record) => record.repositoryId === repositoryId)
+    },
+    async findByRemote(provider, remoteId) {
+      return records.find((record) => record.provider === provider && record.remoteId === remoteId)
+    },
+    async list() {
+      return [...records]
+    },
+    async delete(repositoryId) {
+      const index = records.findIndex((record) => record.repositoryId === repositoryId)
       if (index < 0) return false
-      const [record] = records.splice(index, 1)
-      if (record === undefined) return false
-      deleted.set(input.deletionId, record)
+      records.splice(index, 1)
       return true
     },
-    restoreDeletion(deletionId) {
-      const record = deleted.get(deletionId)
-      if (record === undefined) return 'NOT_FOUND'
-      records.push(record)
-      deleted.delete(deletionId)
-      return 'UNDONE'
+    async stageDeletion() {
+      throw new Error('Repository service must not stage deletion')
     },
-    purgeExpired: () => undefined,
+    async restoreDeletion() {
+      throw new Error('Repository service must not restore deletion')
+    },
+    async purgeExpired() {
+      throw new Error('Repository service must not purge repository deletions')
+    },
   }
 }
 
@@ -149,9 +155,25 @@ describe('repository service', () => {
     })
   })
 
+  it('maps an atomic store collision to the stable duplicate repository error', async () => {
+    const repositories = createRepository()
+    repositories.add = vi.fn(async () => {
+      throw new RepositoryStoreError('REPOSITORY_CONFLICT', 'Repository already exists')
+    })
+    const service = createRepositoryService({
+      repositories,
+      connections: createConnections(),
+      remote: createRemote(),
+    })
+
+    await expect(service.add({ provider: 'GITHUB', remoteId: '123' })).rejects.toMatchObject({
+      code: 'REPOSITORY_REMOTE_CONFLICT',
+    })
+  })
+
   it('retains repositories when their provider disconnects and rejects them for run admission', async () => {
     const repositories = createRepository()
-    repositories.add(storedRepository())
+    await repositories.add(storedRepository())
     const service = createRepositoryService({
       repositories,
       connections: createConnections(new Map()),
@@ -171,7 +193,7 @@ describe('repository service', () => {
 
   it('uses current remote metadata when a repository is renamed', async () => {
     const repositories = createRepository()
-    repositories.add(storedRepository())
+    await repositories.add(storedRepository())
     const renamedRepository: GitRepository = {
       ...remoteRepository,
       name: 'renamed',
@@ -196,9 +218,9 @@ describe('repository service', () => {
     })
   })
 
-  it('stages and restores repository deletion', async () => {
+  it('immediately deletes a repository and cannot restore it', async () => {
     const repositories = createRepository()
-    repositories.add(storedRepository())
+    await repositories.add(storedRepository())
     const service = createRepositoryService({
       repositories,
       connections: createConnections(),
@@ -211,7 +233,7 @@ describe('repository service', () => {
       deletionId: 'deletion-01',
       subject: { type: 'REPOSITORY', id: 'repository-01' },
     })
-    await expect(service.undoDeletion('deletion-01')).resolves.toBe('UNDONE')
-    expect(repositories.records).toHaveLength(1)
+    await expect(service.undoDeletion('deletion-01')).resolves.toBe('NOT_FOUND')
+    expect(repositories.records).toEqual([])
   })
 })

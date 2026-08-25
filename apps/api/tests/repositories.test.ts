@@ -33,7 +33,7 @@ const createFixture = () => {
   const fixture = createPersistenceFixture()
   fixtures.push(fixture)
   let repositoryAvailable = true
-  let timestamp = '2026-08-21T10:00:00Z'
+  const timestamp = '2026-08-21T10:00:00Z'
   const connected = new Set<GitProvider>(['GITHUB'])
   const remote: RemoteGitHost = {
     authenticate: async (provider) => ({ provider, accountUsername: 'operator' }),
@@ -68,9 +68,6 @@ const createFixture = () => {
     },
     setRepositoryAvailable(available: boolean) {
       repositoryAvailable = available
-    },
-    setNow(next: string) {
-      timestamp = next
     },
   }
 }
@@ -130,7 +127,7 @@ describe('repositories API', () => {
     })
   })
 
-  it('deletes a repository, returns an undo receipt, and restores it through the generic endpoint', async () => {
+  it('deletes a repository immediately and cannot restore it through the legacy undo endpoint', async () => {
     const fixture = createFixture()
     await addRepository(fixture.app)
 
@@ -149,33 +146,13 @@ describe('repositories API', () => {
       undoExpiresAt: '2026-08-21T10:00:10.000Z',
     })
     expect(await listedAfterDelete.json()).toEqual({ repositories: [] })
-    expect(undone.status).toBe(200)
-    expect(await undone.json()).toMatchObject({ deletionId: 'deletion-01', state: 'UNDONE' })
-    expect(await listedAfterUndo.json()).toMatchObject({
-      repositories: [expect.objectContaining({ repositoryId: 'repository-01' })],
-    })
-    const undoneAgain = await fixture.app.request('/api/deletions/deletion-01/undo', {
-      method: 'POST',
-    })
-    expect(undoneAgain.status).toBe(200)
-  })
-
-  it('rejects undo after the server-authoritative window expires', async () => {
-    const fixture = createFixture()
-    await addRepository(fixture.app)
-    await fixture.app.request('/api/repositories/repository-01', { method: 'DELETE' })
-    fixture.setNow('2026-08-21T10:00:10Z')
-
-    const expired = await fixture.app.request('/api/deletions/deletion-01/undo', {
-      method: 'POST',
-    })
-
-    expect(expired.status).toBe(410)
-    expect(await expired.json()).toEqual({
+    expect(undone.status).toBe(404)
+    expect(await undone.json()).toEqual({
       error: {
-        code: 'DELETION_UNDO_EXPIRED',
-        message: 'The undo window has expired',
+        code: 'DELETION_NOT_FOUND',
+        message: 'Deletion was not found',
       },
     })
+    expect(await listedAfterUndo.json()).toEqual({ repositories: [] })
   })
 })
