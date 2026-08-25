@@ -202,6 +202,67 @@ describe('workflow coordinator', () => {
     expect(state.get('run-independent-leaves')?.status).toBe('SUCCEEDED')
   })
 
+  it('allows cycles and stops them at the workflow transition limit', () => {
+    const queue = createInMemoryExecutionMessageQueue()
+    const state = createInMemoryCoordinatorStateStore()
+    let nextId = 0
+    const coordinator = createWorkflowCoordinator({
+      coordinatorId: 'coordinator-01',
+      queue,
+      state,
+      now: () => timestamp,
+      createId: (prefix) => `${prefix}-${++nextId}`,
+    })
+    coordinator.start({
+      runId: 'run-cycle',
+      workflow: {
+        ...workflow,
+        name: 'Bounded cycle',
+        startNodeId: 'first',
+        nodes: [agent('first'), agent('second')],
+        edges: [
+          { sourceNodeId: 'first', outcome: 'next', targetNodeId: 'second', label: 'Second' },
+          { sourceNodeId: 'second', outcome: 'next', targetNodeId: 'first', label: 'First' },
+        ],
+        maxTransitions: 2,
+      },
+    })
+
+    for (let executionIndex = 0; executionIndex < 3; executionIndex += 1) {
+      const execution = state.get('run-cycle')?.executions[executionIndex]
+      if (execution === undefined) throw new Error(`execution ${executionIndex} missing`)
+      queue.enqueue({
+        id: `success-${executionIndex}`,
+        destination: 'COORDINATOR',
+        type: 'NODE_EXECUTION_SUCCEEDED',
+        runId: 'run-cycle',
+        nodeExecutionId: execution.nodeExecutionId,
+        attemptId: execution.attemptId,
+        payload: {
+          version: 1,
+          outcome: 'next',
+          output: {},
+          completedAt: timestamp,
+          durationMs: 1,
+        },
+        availableAt: timestamp,
+        createdAt: timestamp,
+      })
+      coordinator.runOnce()
+    }
+
+    expect(state.get('run-cycle')).toMatchObject({
+      status: 'FAILED',
+      transitionCount: 2,
+      failureCode: 'TRANSITION_LIMIT_EXCEEDED',
+      executions: [
+        expect.objectContaining({ nodeId: 'first', status: 'SUCCEEDED' }),
+        expect.objectContaining({ nodeId: 'second', status: 'SUCCEEDED' }),
+        expect.objectContaining({ nodeId: 'first', status: 'SUCCEEDED' }),
+      ],
+    })
+  })
+
   it('fails deterministically when fan-out would exceed the transition limit', () => {
     const queue = createInMemoryExecutionMessageQueue()
     const state = createInMemoryCoordinatorStateStore()
