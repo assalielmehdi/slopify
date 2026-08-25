@@ -4,11 +4,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
-import {
-  DeletionReceiptSchema,
-  HarnessDescriptorSchema,
-  RepositorySchema,
-} from '@slopify/contracts'
+import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/contracts'
 
 import { WorkflowWorkbench } from '../components/workflow/workflow-workbench'
 import type { ResourceEventStreamHandlers } from '../lib/resource-event-stream'
@@ -300,14 +296,7 @@ describe('WorkflowWorkbench', () => {
       workflowId: 'remaining-workflow',
       name: 'remaining-workflow',
     })
-    const deleteWorkflow = vi.fn(async () =>
-      DeletionReceiptSchema.parse({
-        deletionId: 'deletion-workflow-01',
-        subject: { type: 'WORKFLOW', id: workflow.workflowId },
-        deletedAt: '2026-08-25T10:00:00Z',
-        undoExpiresAt: '2026-08-25T10:00:10Z',
-      }),
-    )
+    const deleteWorkflow = vi.fn(async () => undefined)
     const client = {
       deleteWorkflow,
       listWorkflows: vi

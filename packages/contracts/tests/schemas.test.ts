@@ -5,7 +5,6 @@ import {
   AgentTraceHeaderSchema,
   ApiErrorSchema,
   CreateRunRequestSchema,
-  DeletionReceiptSchema,
   GitConnectionCatalogResponseSchema,
   GitRepositoryCatalogResponseSchema,
   HarnessCatalogResponseSchema,
@@ -20,7 +19,6 @@ import {
   RunPaginationQuerySchema,
   SettingsSchema,
   ThemePreferenceSchema,
-  UndoDeletionResponseSchema,
   UpdateSettingsRequestSchema,
   WorkflowIdSchema,
   type HarnessId,
@@ -266,38 +264,6 @@ describe('public API records', () => {
         token: 'github_pat_secret',
       }).success,
     ).toBe(false)
-  })
-
-  it('keeps repository deletion receipts closed', () => {
-    const receipt = {
-      deletionId: 'deletion-01',
-      subject: { type: 'REPOSITORY', id: 'repository-01' },
-      deletedAt: '2026-08-22T10:00:00Z',
-      undoExpiresAt: '2026-08-22T10:00:10Z',
-    }
-
-    expect(DeletionReceiptSchema.parse(receipt)).toEqual(receipt)
-    expect(UndoDeletionResponseSchema.parse({ ...receipt, state: 'UNDONE' })).toEqual({
-      ...receipt,
-      state: 'UNDONE',
-    })
-    expect(
-      DeletionReceiptSchema.safeParse({
-        ...receipt,
-        subject: { type: 'UNKNOWN', id: 'unknown-01' },
-      }).success,
-    ).toBe(false)
-  })
-
-  it('accepts workflow deletion receipts', () => {
-    const receipt = {
-      deletionId: 'deletion-workflow-01',
-      subject: { type: 'WORKFLOW', id: 'workflow-01' },
-      deletedAt: '2026-08-25T10:00:00Z',
-      undoExpiresAt: '2026-08-25T10:00:10Z',
-    }
-
-    expect(DeletionReceiptSchema.parse(receipt)).toEqual(receipt)
   })
 
   it('uses strict error and health envelopes', () => {

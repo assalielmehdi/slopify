@@ -1,9 +1,4 @@
-import {
-  DeletionIdSchema,
-  DeletionReceiptSchema,
-  GitProviderSchema,
-  RepositoryIdSchema,
-} from '@slopify/contracts'
+import { GitProviderSchema, RepositoryIdSchema } from '@slopify/contracts'
 
 import {
   createAtomicJsonResourceIO,
@@ -159,21 +154,5 @@ export const createFilesystemRepositoryStore = (
     },
 
     delete: (repositoryId) => mutate(() => deleteRepository(repositoryId)),
-
-    async stageDeletion(input) {
-      const receipt = DeletionReceiptSchema.parse(input)
-      return receipt.subject.type === 'REPOSITORY'
-        ? mutate(() => deleteRepository(receipt.subject.id))
-        : false
-    },
-
-    async restoreDeletion(deletionId) {
-      DeletionIdSchema.parse(deletionId)
-      return 'NOT_FOUND'
-    },
-
-    async purgeExpired(now) {
-      void now
-    },
   }
 }

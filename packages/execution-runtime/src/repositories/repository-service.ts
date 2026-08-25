@@ -1,10 +1,7 @@
 import {
   AddRepositoryRequestSchema,
-  DeletionIdSchema,
-  DeletionReceiptSchema,
   RepositoryIdSchema,
   RepositorySchema,
-  type DeletionReceipt,
   type Repository,
 } from '@slopify/contracts'
 
@@ -39,12 +36,10 @@ export class RepositoryServiceError extends Error {
 }
 
 export interface RepositoryService {
-  readonly subjectType: 'REPOSITORY'
   add(input: unknown): Promise<Repository>
-  delete(repositoryId: string): Promise<DeletionReceipt>
+  delete(repositoryId: string): Promise<void>
   list(): Promise<readonly Repository[]>
   requireAvailable(repositoryId: string): Promise<Repository>
-  undoDeletion(deletionId: string): Promise<'UNDONE' | 'EXPIRED' | 'NOT_FOUND'>
 }
 
 export interface CreateRepositoryServiceOptions {
@@ -52,9 +47,7 @@ export interface CreateRepositoryServiceOptions {
   readonly connections: Pick<GitConnectionService, 'requireToken'>
   readonly remote: RemoteGitHost
   readonly createId?: () => string
-  readonly createDeletionId?: () => string
   readonly now?: () => string
-  readonly undoWindowMs?: number
 }
 
 const unavailableError = () =>
@@ -64,9 +57,7 @@ export const createRepositoryService = (
   options: CreateRepositoryServiceOptions,
 ): RepositoryService => {
   const createId = options.createId ?? (() => `repository-${crypto.randomUUID()}`)
-  const createDeletionId = options.createDeletionId ?? (() => `deletion-${crypto.randomUUID()}`)
   const now = options.now ?? (() => new Date().toISOString())
-  const undoWindowMs = options.undoWindowMs ?? 10_000
 
   const inspectRecord = async (record: RepositoryRecord): Promise<Repository> => {
     let token: string
@@ -99,7 +90,6 @@ export const createRepositoryService = (
   }
 
   return {
-    subjectType: 'REPOSITORY',
     async add(input) {
       const result = AddRepositoryRequestSchema.safeParse(input)
       if (!result.success)
@@ -164,17 +154,9 @@ export const createRepositoryService = (
 
     async delete(repositoryIdInput) {
       const repositoryId = RepositoryIdSchema.parse(repositoryIdInput)
-      const deletedAt = now()
-      const receipt = DeletionReceiptSchema.parse({
-        deletionId: DeletionIdSchema.parse(createDeletionId()),
-        subject: { type: 'REPOSITORY', id: repositoryId },
-        deletedAt,
-        undoExpiresAt: new Date(Date.parse(deletedAt) + undoWindowMs).toISOString(),
-      })
       if (!(await options.repositories.delete(repositoryId))) {
         throw new RepositoryServiceError('REPOSITORY_NOT_FOUND', 'Repository was not found')
       }
-      return receipt
     },
 
     async requireAvailable(repositoryIdInput) {
@@ -186,11 +168,6 @@ export const createRepositoryService = (
       const repository = await inspectRecord(record)
       if (repository.availability !== 'AVAILABLE') throw unavailableError()
       return repository
-    },
-
-    async undoDeletion(deletionId) {
-      DeletionIdSchema.parse(deletionId)
-      return 'NOT_FOUND'
     },
   }
 }

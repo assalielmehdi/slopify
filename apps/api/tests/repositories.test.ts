@@ -1,21 +1,21 @@
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+
 import type { GitProvider, GitRepository } from '@slopify/contracts'
 import {
+  createFilesystemRepositoryStore,
   GitConnectionServiceError,
-  createDeletionOperationRepository,
-  createDeletionService,
-  createRepositoryStore,
   createRepositoryService,
+  resolveSlopifyPaths,
   type RemoteGitHost,
 } from '@slopify/execution-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import {
-  createPersistenceFixture,
-  createTestAgentWorkflow,
-} from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import { createTestAgentWorkflow } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
-const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
+const directories: string[] = []
 
 const repository: GitRepository = {
   provider: 'GITHUB',
@@ -29,7 +29,7 @@ const repository: GitRepository = {
 }
 
 afterEach(() => {
-  for (const fixture of fixtures.splice(0)) fixture.cleanup()
+  for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
 const createFixture = () => {
@@ -37,8 +37,8 @@ const createFixture = () => {
     repositoryIds: ['repository-01'],
     primaryRepositoryId: 'repository-01',
   })
-  const fixture = createPersistenceFixture(workflow)
-  fixtures.push(fixture)
+  const home = mkdtempSync(join(tmpdir(), 'slopify-api-repositories-'))
+  directories.push(home)
   let repositoryAvailable = true
   const timestamp = '2026-08-21T10:00:00Z'
   const connected = new Set<GitProvider>(['GITHUB'])
@@ -52,7 +52,9 @@ const createFixture = () => {
     getDefaultBranchSha: async () => 'a'.repeat(40) as never,
   }
   const repositories = createRepositoryService({
-    repositories: createRepositoryStore(fixture.database),
+    repositories: createFilesystemRepositoryStore({
+      paths: resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } }),
+    }),
     connections: {
       requireToken: async (provider) => {
         if (connected.has(provider)) return 'token'
@@ -61,22 +63,17 @@ const createFixture = () => {
     },
     remote,
     createId: () => 'repository-01',
-    createDeletionId: () => 'deletion-01',
     now: () => timestamp,
   })
-  const deletions = createDeletionService({
-    operations: createDeletionOperationRepository(fixture.database),
-    handlers: [repositories],
-  })
   return {
-    app: createApiApp({ database: fixture.database, deletions, repositories }),
+    app: createApiApp({ repositories }),
     disconnect(provider: GitProvider) {
       connected.delete(provider)
     },
     setRepositoryAvailable(available: boolean) {
       repositoryAvailable = available
     },
-    getWorkflow: () => fixture.workflows.get(workflow.workflowId),
+    getWorkflow: () => workflow,
   }
 }
 
@@ -156,13 +153,13 @@ describe('repositories API', () => {
     })
     expect(legacy.status).toBe(200)
     expect(await legacy.json()).toEqual(await canonical.json())
-    expect(deleted.status).toBe(200)
+    expect(deleted.status).toBe(204)
     await expect(
       fixture.app.request('/api/repositories').then((response) => response.json()),
     ).resolves.toEqual({ repositories: [] })
   })
 
-  it('deletes a repository immediately and cannot restore it through the legacy undo endpoint', async () => {
+  it('deletes a repository immediately without exposing an undo endpoint', async () => {
     const fixture = createFixture()
     await addRepository(fixture.app)
 
@@ -171,24 +168,17 @@ describe('repositories API', () => {
     })
     const listedAfterDelete = await fixture.app.request('/api/repositories')
     const undone = await fixture.app.request('/api/deletions/deletion-01/undo', { method: 'POST' })
-    const listedAfterUndo = await fixture.app.request('/api/repositories')
 
-    expect(deleted.status).toBe(200)
-    expect(await deleted.json()).toEqual({
-      deletionId: 'deletion-01',
-      subject: { type: 'REPOSITORY', id: 'repository-01' },
-      deletedAt: '2026-08-21T10:00:00Z',
-      undoExpiresAt: '2026-08-21T10:00:10.000Z',
-    })
+    expect(deleted.status).toBe(204)
+    expect(await deleted.text()).toBe('')
     expect(await listedAfterDelete.json()).toEqual({ repositories: [] })
     expect(undone.status).toBe(404)
     expect(await undone.json()).toEqual({
       error: {
-        code: 'DELETION_NOT_FOUND',
-        message: 'Deletion was not found',
+        code: 'NOT_FOUND',
+        message: 'Route not found',
       },
     })
-    expect(await listedAfterUndo.json()).toEqual({ repositories: [] })
     expect(fixture.getWorkflow()?.configuration).toEqual({
       repositoryIds: ['repository-01'],
       primaryRepositoryId: 'repository-01',

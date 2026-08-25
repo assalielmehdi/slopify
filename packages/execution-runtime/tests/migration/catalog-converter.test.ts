@@ -10,7 +10,6 @@ import {
   createFilesystemWorkflowStore,
   createLegacyCatalogConverter,
   createLegacyMigrationService,
-  createRepositoryStore,
   openDatabase,
   resolveSlopifyPaths,
 } from '../../src/index.js'
@@ -58,18 +57,25 @@ const createFixture = async (workflowDefinition: unknown = legacyWorkflow) => {
        ) VALUES (?, ?, ?, ?)`,
     )
     .run('GITHUB', 'operator', '2026-08-20T10:00:00.000Z', '2026-08-21T10:00:00.000Z')
-  await createRepositoryStore(database).add({
-    repositoryId: 'repository-api',
-    name: 'API',
-    provider: 'GITHUB',
-    remoteId: '100',
-    fullName: 'operator/api',
-    cloneUrl: 'https://github.com/operator/api.git',
-    webUrl: 'https://github.com/operator/api',
-    defaultBranch: 'main',
-    createdAt: '2026-08-20T11:00:00.000Z',
-    updatedAt: '2026-08-21T11:00:00.000Z',
-  })
+  connection
+    .prepare(
+      `INSERT INTO repositories (
+         repository_id, name, provider, remote_id, repository_full_name,
+         clone_url, web_url, default_branch, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      'repository-api',
+      'API',
+      'GITHUB',
+      '100',
+      'operator/api',
+      'https://github.com/operator/api.git',
+      'https://github.com/operator/api',
+      'main',
+      '2026-08-20T11:00:00.000Z',
+      '2026-08-21T11:00:00.000Z',
+    )
   connection
     .prepare('INSERT INTO workflows (workflow_id, definition_json) VALUES (?, json(?))')
     .run(legacyWorkflow.workflowId, JSON.stringify(workflowDefinition))

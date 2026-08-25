@@ -15,7 +15,6 @@ export const RunIdSchema = opaqueId.brand<'RunId'>()
 export const HarnessIdSchema = opaqueId.brand<'HarnessId'>()
 export const NodeIdSchema = kebabCaseId.brand<'NodeId'>()
 export const RepositoryIdSchema = opaqueId.brand<'RepositoryId'>()
-export const DeletionIdSchema = opaqueId.brand<'DeletionId'>()
 export const OutcomeNameSchema = kebabCaseId.brand<'OutcomeName'>()
 
 export const RunStatusSchema = z.enum(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'])
@@ -194,22 +193,6 @@ export const ResourceChangeEventSchema = z.strictObject({
     .string()
     .regex(/^[0-9a-f]{64}$/u)
     .nullable(),
-})
-
-export const DeletionSubjectSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('REPOSITORY'), id: RepositoryIdSchema }),
-  z.strictObject({ type: z.literal('WORKFLOW'), id: WorkflowIdSchema }),
-])
-
-export const DeletionReceiptSchema = z.strictObject({
-  deletionId: DeletionIdSchema,
-  subject: DeletionSubjectSchema,
-  deletedAt: z.iso.datetime({ offset: true }),
-  undoExpiresAt: z.iso.datetime({ offset: true }),
-})
-
-export const UndoDeletionResponseSchema = DeletionReceiptSchema.extend({
-  state: z.literal('UNDONE'),
 })
 
 export const CreateRunRequestSchema = z.strictObject({
@@ -484,8 +467,6 @@ export type Repository = z.infer<typeof RepositorySchema>
 export type ResourceChangeType = z.infer<typeof ResourceChangeTypeSchema>
 export type EditableResource = z.infer<typeof EditableResourceSchema>
 export type ResourceChangeEvent = z.infer<typeof ResourceChangeEventSchema>
-export type DeletionReceipt = z.infer<typeof DeletionReceiptSchema>
-export type UndoDeletionResponse = z.infer<typeof UndoDeletionResponseSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
 export type CancelRunRequest = z.infer<typeof CancelRunRequestSchema>
 export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>

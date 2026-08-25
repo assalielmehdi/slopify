@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { DeletionReceiptSchema, RepositorySchema } from '@slopify/contracts'
+import { RepositorySchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RepositorySettings } from '../components/settings/repository-settings'
@@ -78,15 +78,7 @@ const createClient = (overrides: Record<string, unknown> = {}) => ({
       updatedAt: '2026-08-21T10:02:00Z',
     }),
   ),
-  deleteRepository: vi.fn(async (repositoryId: string) => {
-    const deletedAt = new Date()
-    return DeletionReceiptSchema.parse({
-      deletionId: `deletion-${repositoryId}`,
-      subject: { type: 'REPOSITORY', id: repositoryId },
-      deletedAt: deletedAt.toISOString(),
-      undoExpiresAt: new Date(deletedAt.getTime() + 10_000).toISOString(),
-    })
-  }),
+  deleteRepository: vi.fn(async () => undefined),
   ...overrides,
 })
 

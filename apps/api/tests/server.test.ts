@@ -9,7 +9,6 @@ import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
   createEditableResourceWatcher,
-  ensureInitialWorkflow,
   resolveApiServerConfiguration,
   startApiServer,
   startConfiguredApiServer,
@@ -32,42 +31,6 @@ const database = {
 }
 
 describe('API server configuration', () => {
-  it('seeds one empty workflow draft exactly once', () => {
-    const insert = vi.fn()
-    const workflows = {
-      insert,
-      list: vi.fn(() => []),
-    }
-
-    ensureInitialWorkflow(workflows)
-
-    expect(insert).toHaveBeenCalledTimes(1)
-    expect(insert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        workflowId: 'default-workflow',
-        startNodeId: null,
-        nodes: [],
-        edges: [],
-      }),
-    )
-
-    workflows.list.mockReturnValue([insert.mock.calls[0]?.[0]])
-    ensureInitialWorkflow(workflows)
-    expect(insert).toHaveBeenCalledTimes(1)
-  })
-
-  it('never adds the default workflow to a non-empty catalog', () => {
-    const insert = vi.fn()
-    const workflows = {
-      insert,
-      list: vi.fn(() => [{ workflowId: 'release-workflow' }]),
-    }
-
-    ensureInitialWorkflow(workflows)
-
-    expect(insert).not.toHaveBeenCalled()
-  })
-
   it('configures only the database, traces, and cloned workspaces under owner-local state', () => {
     expect(
       resolveApiServerConfiguration({

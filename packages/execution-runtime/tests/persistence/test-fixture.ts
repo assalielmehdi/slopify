@@ -6,14 +6,16 @@ import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import {
   type HarnessCatalog,
+  type LegacyWorkflowCatalog,
+  type RepositoryRecord,
   type RunRepositoryResolution,
   createEventStore,
-  createRepositoryStore,
   createRunRepository,
-  createWorkflowRepository,
   openDatabase,
   type JsonValue,
+  type WorkbenchDatabase,
 } from '../../src/index.js'
+import { getDatabaseHandle } from '../../src/persistence/database.js'
 
 export const TEST_TIMESTAMP = '2026-08-23T12:00:00.000Z'
 export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('test-workflow')
@@ -112,23 +114,67 @@ export const createTestRunRepositories = (workflow: Workflow): readonly RunRepos
         : `https://github.com/operator/${repositoryId}.git`,
   }))
 
+export const insertLegacyRepository = (
+  database: WorkbenchDatabase,
+  repository: RepositoryRecord,
+): void => {
+  getDatabaseHandle(database)
+    .prepare(
+      `INSERT INTO repositories (
+         repository_id, name, provider, remote_id, repository_full_name,
+         clone_url, web_url, default_branch, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      repository.repositoryId,
+      repository.name,
+      repository.provider,
+      repository.remoteId,
+      repository.fullName,
+      repository.cloneUrl,
+      repository.webUrl,
+      repository.defaultBranch,
+      repository.createdAt,
+      repository.updatedAt,
+    )
+}
+
+export const insertLegacyWorkflow = (database: WorkbenchDatabase, workflow: Workflow): void => {
+  getDatabaseHandle(database)
+    .prepare('INSERT INTO workflows (workflow_id, definition_json) VALUES (?, json(?))')
+    .run(workflow.workflowId, JSON.stringify(workflow))
+}
+
+type TestWorkflowCatalog = LegacyWorkflowCatalog & {
+  save(workflow: Workflow): void
+}
+
+const createTestWorkflowCatalog = (initial: Workflow): TestWorkflowCatalog => {
+  const workflows = new Map([[initial.workflowId, structuredClone(initial)]])
+  return {
+    get: (workflowId) => workflows.get(workflowId),
+    save(workflow) {
+      workflows.set(workflow.workflowId, structuredClone(workflow))
+    },
+  }
+}
+
 export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) => {
   const directory = join(tmpdir(), `slopify-persistence-${crypto.randomUUID()}`)
   const path = join(directory, 'state', 'workbench.sqlite')
   const database = openDatabase({ path })
-  const workflows = createWorkflowRepository(database)
-  const repositories = createRepositoryStore(database)
+  const workflows = createTestWorkflowCatalog(workflow)
   const runs = createRunRepository(database)
   const events = createEventStore(database)
 
-  workflows.save(workflow)
+  insertLegacyWorkflow(database, workflow)
 
   const cleanup = (): void => {
     if (database.isOpen) database.close()
     rmSync(directory, { force: true, recursive: true })
   }
 
-  return { database, events, path, repositories, workflow, runs, workflows, cleanup }
+  return { database, events, path, workflow, runs, workflows, cleanup }
 }
 
 export const createRun = (

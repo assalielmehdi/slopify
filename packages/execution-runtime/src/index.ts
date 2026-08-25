@@ -246,19 +246,6 @@ export {
   type OpenDatabaseOptions,
   type WorkbenchDatabase,
 } from './persistence/database.js'
-export { createRepositoryStore } from './persistence/repository-store.js'
-export { createGitConnectionRepository } from './persistence/git-connection-repository.js'
-export { createDeletionOperationRepository } from './persistence/deletion-operation-repository.js'
-export {
-  DeletionServiceError,
-  createDeletionService,
-  type DeletionOperation,
-  type DeletionOperationRepository,
-  type DeletionOperationState,
-  type DeletionService,
-  type DeletionServiceErrorCode,
-  type ReversibleDeletionHandler,
-} from './deletions/deletion-service.js'
 export {
   RepositoryServiceError,
   createRepositoryService,
@@ -394,10 +381,6 @@ export {
   type RunRepository,
 } from './persistence/run-repository.js'
 export {
-  createWorkflowRepository,
-  type WorkflowRepository,
-} from './persistence/workflow-repository.js'
-export {
   createProcessRunner,
   type CreateProcessRunnerOptions,
   type ProcessRunInput,
@@ -425,6 +408,7 @@ export {
   type CreateRunServiceOptions,
   type FilesystemRunAdmissionService,
   type FilesystemRunRepositoryResolution,
+  type LegacyWorkflowCatalog,
   type RunDetail,
   type RunService,
   type RunServiceErrorCode,
@@ -432,12 +416,7 @@ export {
   type RunSummaryPage,
   type RunRepositoryResolution,
 } from './services/run-service.js'
-export {
-  WorkflowServiceError,
-  createWorkflowService,
-  type WorkflowService,
-  type WorkflowServiceErrorCode,
-} from './services/workflow-service.js'
+export { WorkflowServiceError, type WorkflowServiceErrorCode } from './services/workflow-error.js'
 export {
   createWorkflowDefinitionService,
   type WorkflowDefinitionCatalogEntry,

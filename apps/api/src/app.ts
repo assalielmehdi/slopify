@@ -2,7 +2,6 @@ import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/co
 import {
   CancellationServiceError,
   AgentTraceStoreError,
-  DeletionServiceError,
   GitConnectionServiceError,
   JournalCancellationServiceError,
   JournalCoordinatorError,
@@ -14,7 +13,6 @@ import {
   WorkflowServiceError,
   type CancellationService,
   type AgentTraceStore,
-  type DeletionService,
   type GitConnectionService,
   type FilesystemRunEventFeed,
   type HarnessCatalog,
@@ -30,7 +28,6 @@ import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
-import { registerDeletionRoutes } from './routes/deletions.js'
 import { registerGitConnectionRoutes } from './routes/git-connections.js'
 import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerRepositoryRoutes } from './routes/repositories.js'
@@ -48,7 +45,6 @@ export interface CreateApiAppOptions {
   readonly traces?: AgentTraceStore
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly filesystemHealth?: FilesystemHealth
-  readonly deletions?: DeletionService
   readonly gitConnections?: GitConnectionService
   readonly harnesses?: HarnessCatalog
   readonly repositories?: RepositoryService
@@ -127,7 +123,6 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.repositories !== undefined) registerRepositoryRoutes(app, options.repositories)
   if (options.gitConnections !== undefined) registerGitConnectionRoutes(app, options.gitConnections)
   if (options.harnesses !== undefined) registerHarnessRoutes(app, options.harnesses)
-  if (options.deletions !== undefined) registerDeletionRoutes(app, options.deletions)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
   if (options.runs !== undefined)
     registerRunRoutes(app, options.runs, options.cancellation, options.traces)
@@ -159,15 +154,6 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
             : error.code === 'GIT_PROVIDER_UNAVAILABLE'
               ? 503
               : 409
-      return context.json(errorBody({ code: error.code, message: error.message }), status)
-    }
-    if (error instanceof DeletionServiceError) {
-      const status =
-        error.code === 'DELETION_NOT_FOUND'
-          ? 404
-          : error.code === 'DELETION_UNDO_EXPIRED'
-            ? 410
-            : 409
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof AgentTraceStoreError) {

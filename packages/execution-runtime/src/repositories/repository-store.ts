@@ -1,4 +1,4 @@
-import { RepositorySchema, type DeletionReceipt, type GitProvider } from '@slopify/contracts'
+import { RepositorySchema, type GitProvider } from '@slopify/contracts'
 import { z } from 'zod'
 
 export const RepositoryRecordSchema = RepositorySchema.omit({ availability: true })
@@ -57,7 +57,4 @@ export interface RepositoryStore {
   findByRemote(provider: GitProvider, remoteId: string): Promise<RepositoryRecord | undefined>
   list(): Promise<readonly RepositoryRecord[]>
   delete(repositoryId: string): Promise<boolean>
-  stageDeletion(receipt: DeletionReceipt): Promise<boolean>
-  restoreDeletion(deletionId: string, now: string): Promise<'UNDONE' | 'EXPIRED' | 'NOT_FOUND'>
-  purgeExpired(now: string): Promise<void>
 }

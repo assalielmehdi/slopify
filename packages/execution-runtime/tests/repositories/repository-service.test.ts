@@ -58,15 +58,6 @@ const createRepository = (): RepositoryStore & { records: RepositoryRecord[] } =
       records.splice(index, 1)
       return true
     },
-    async stageDeletion() {
-      throw new Error('Repository service must not stage deletion')
-    },
-    async restoreDeletion() {
-      throw new Error('Repository service must not restore deletion')
-    },
-    async purgeExpired() {
-      throw new Error('Repository service must not purge repository deletions')
-    },
   }
 }
 
@@ -218,22 +209,16 @@ describe('repository service', () => {
     })
   })
 
-  it('immediately deletes a repository and cannot restore it', async () => {
+  it('immediately deletes a repository', async () => {
     const repositories = createRepository()
     await repositories.add(storedRepository())
     const service = createRepositoryService({
       repositories,
       connections: createConnections(),
       remote: createRemote(),
-      createDeletionId: () => 'deletion-01',
-      now: () => '2026-08-22T10:00:00Z',
     })
 
-    await expect(service.delete('repository-01')).resolves.toMatchObject({
-      deletionId: 'deletion-01',
-      subject: { type: 'REPOSITORY', id: 'repository-01' },
-    })
-    await expect(service.undoDeletion('deletion-01')).resolves.toBe('NOT_FOUND')
+    await expect(service.delete('repository-01')).resolves.toBeUndefined()
     expect(repositories.records).toEqual([])
   })
 })

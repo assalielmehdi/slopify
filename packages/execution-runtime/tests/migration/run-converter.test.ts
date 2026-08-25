@@ -23,6 +23,7 @@ import {
   createPersistenceFixture,
   createRun,
   createTestAgentWorkflow,
+  insertLegacyRepository,
 } from '../persistence/test-fixture.js'
 
 const cleanups: (() => void)[] = []
@@ -39,7 +40,7 @@ describe('legacy terminal run converter', () => {
     })
     const fixture = createPersistenceFixture(workflow)
     cleanups.push(fixture.cleanup)
-    await fixture.repositories.add({
+    insertLegacyRepository(fixture.database, {
       repositoryId: TEST_RUN_REPOSITORY.repositoryId,
       name: TEST_RUN_REPOSITORY.name,
       provider: TEST_RUN_REPOSITORY.provider,

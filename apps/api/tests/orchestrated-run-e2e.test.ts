@@ -20,7 +20,6 @@ import {
   createSqliteCoordinatorStateStore,
   createSqliteExecutionMessageQueue,
   createWorkflowCoordinator,
-  createWorkflowRepository,
   openDatabase,
   type ProcessRunner,
 } from '@slopify/execution-runtime'
@@ -30,6 +29,7 @@ import { createExecutionPump } from '../src/execution-pump.js'
 import {
   createTestAgentWorkflow,
   createTestHarnessCatalog,
+  insertLegacyWorkflow,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 
 const cleanups: (() => void)[] = []
@@ -58,13 +58,15 @@ describe('orchestrated run HTTP flow', () => {
       database.close()
       rmSync(directory, { recursive: true, force: true })
     })
-    const workflows = createWorkflowRepository(database)
     const workflow = createTestAgentWorkflow({
       createdAt: '2026-08-20T12:00:00.000Z',
       repositoryIds: ['repository-api'],
       primaryRepositoryId: 'repository-api',
     })
-    workflows.save(workflow)
+    const workflows = {
+      get: (workflowId: string) => (workflowId === workflow.workflowId ? workflow : undefined),
+    }
+    insertLegacyWorkflow(database, workflow)
     const runs = createRunRepository(database)
     const events = createEventStore(database)
     const queue = createSqliteExecutionMessageQueue(database)

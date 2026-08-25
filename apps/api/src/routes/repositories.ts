@@ -1,6 +1,5 @@
 import {
   AddRepositoryRequestSchema,
-  DeletionReceiptSchema,
   RepositoryCatalogResponseSchema,
   RepositorySchema,
 } from '@slopify/contracts'
@@ -27,10 +26,8 @@ const registerRepositoryPath = (
   })
 
   app.delete(`${path}/:repositoryId`, async (context) => {
-    return context.json(
-      DeletionReceiptSchema.parse(await repositories.delete(context.req.param('repositoryId'))),
-      200,
-    )
+    await repositories.delete(context.req.param('repositoryId'))
+    return context.body(null, 204)
   })
 }
 

@@ -15,7 +15,7 @@ import {
 import { ResourceRevisionSchema, type ResourceRevision } from '../filesystem/resource-revision.js'
 import { WorkflowStoreError, type WorkflowStore } from '../workflows/workflow-store.js'
 import type { WorkflowDiagnostic, WorkflowSource } from '../workflows/workflow-source.js'
-import { WorkflowServiceError } from './workflow-service.js'
+import { WorkflowServiceError } from './workflow-error.js'
 
 const CreateWorkflowDefinitionInputSchema = z
   .strictObject({

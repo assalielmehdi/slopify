@@ -21,7 +21,6 @@ import type {
   RunRecord,
   RunRepository,
 } from '../persistence/run-repository.js'
-import type { WorkflowRepository } from '../persistence/workflow-repository.js'
 import type { FilesystemRunStore } from '../runs/filesystem-run-store.js'
 import type { RunProjection } from '../runs/run-artifacts.js'
 import type { WorkflowStore } from '../workflows/workflow-store.js'
@@ -89,11 +88,15 @@ export interface RunService {
 export interface CreateRunServiceOptions {
   readonly events: EventStore
   readonly runs: RunRepository
-  readonly workflows: WorkflowRepository
+  readonly workflows: LegacyWorkflowCatalog
   readonly harnesses: Pick<HarnessCatalog, 'requireAvailable'>
   readonly resolveRepository: (repositoryId: string) => Promise<RunRepositoryResolution>
   readonly now?: () => string
   readonly createRunId?: () => string
+}
+
+export interface LegacyWorkflowCatalog {
+  get(workflowId: string): import('@slopify/workflow-model').Workflow | undefined
 }
 
 export interface RunRepositoryResolution {

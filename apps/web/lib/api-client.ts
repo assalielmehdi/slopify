@@ -1,7 +1,6 @@
 import {
   ApiErrorSchema,
   AddRepositoryRequestSchema,
-  DeletionReceiptSchema,
   AgentTraceSchema,
   CancelRunRequestSchema,
   CreateRunRequestSchema,
@@ -15,7 +14,6 @@ import {
   RepositoryCatalogResponseSchema,
   RepositorySchema,
   SettingsSchema,
-  UndoDeletionResponseSchema,
   UpdateSettingsRequestSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
@@ -29,8 +27,6 @@ import {
   type Repository,
   type Settings,
   type UpdateSettingsRequest,
-  type DeletionReceipt,
-  type UndoDeletionResponse,
   type RunStatus,
 } from '@slopify/contracts'
 import {
@@ -163,11 +159,10 @@ export interface ApiClient {
     readonly provider: GitProvider
     readonly remoteId: string
   }): Promise<Repository>
-  deleteRepository(repositoryId: string): Promise<DeletionReceipt>
-  undoDeletion(deletionId: string): Promise<UndoDeletionResponse>
+  deleteRepository(repositoryId: string): Promise<void>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   createWorkflow(input: CreateWorkflowDefinitionInput): Promise<Workflow>
-  deleteWorkflow(workflowId: string): Promise<DeletionReceipt>
+  deleteWorkflow(workflowId: string): Promise<void>
   getWorkflow(
     workflowId: string,
     options?: { readonly preserveRevision?: boolean },
@@ -379,19 +374,10 @@ export const createApiClient = (
     },
 
     async deleteRepository(repositoryId) {
-      return request(
-        `/api/repositories/${encodeURIComponent(repositoryId)}`,
-        { method: 'DELETE', headers: { accept: 'application/json' } },
-        DeletionReceiptSchema,
-      )
-    },
-
-    async undoDeletion(deletionId) {
-      return request(
-        `/api/deletions/${encodeURIComponent(deletionId)}/undo`,
-        { method: 'POST', headers: { accept: 'application/json' } },
-        UndoDeletionResponseSchema,
-      )
+      return requestEmpty(`/api/repositories/${encodeURIComponent(repositoryId)}`, {
+        method: 'DELETE',
+        headers: { accept: 'application/json' },
+      })
     },
 
     async listWorkflows() {
@@ -409,10 +395,9 @@ export const createApiClient = (
     },
 
     async deleteWorkflow(workflowId) {
-      return request(
+      return requestEmpty(
         `/api/workflows/${encodeURIComponent(WorkflowIdSchema.parse(workflowId))}`,
         { headers: { accept: 'application/json' }, method: 'DELETE' },
-        DeletionReceiptSchema,
       )
     },
 

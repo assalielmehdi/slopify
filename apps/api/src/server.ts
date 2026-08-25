@@ -25,9 +25,8 @@ import {
   type ResourceWatcher,
   type SlopifyPaths,
   type WatchedResource,
-  type WorkflowRepository,
 } from '@slopify/execution-runtime'
-import { createDefaultWorkflow, WorkflowSlugSchema } from '@slopify/workflow-model'
+import { WorkflowSlugSchema } from '@slopify/workflow-model'
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
@@ -147,13 +146,6 @@ export const createEditableResourceWatcher = (options: {
     reconcile: () => watcher.reconcile(),
     stop: () => watcher.stop(),
   }
-}
-
-export const ensureInitialWorkflow = (
-  workflows: Pick<WorkflowRepository, 'insert' | 'list'>,
-): void => {
-  if (workflows.list().length > 0) return
-  workflows.insert(createDefaultWorkflow({ createdAt: new Date().toISOString() }))
 }
 
 const nonBlank = (

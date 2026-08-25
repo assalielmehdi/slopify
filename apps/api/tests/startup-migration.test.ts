@@ -22,6 +22,7 @@ import {
   createPersistenceFixture,
   createRun,
   createTestAgentWorkflow,
+  insertLegacyRepository,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { prepareFilesystemStartup } from '../src/startup-state.js'
 import { startConfiguredApiServer } from '../src/server.js'
@@ -42,7 +43,7 @@ const createLegacyFixture = async () => {
   })
   const fixture = createPersistenceFixture(workflow)
   roots.push(dirname(dirname(fixture.path)))
-  await fixture.repositories.add({
+  insertLegacyRepository(fixture.database, {
     repositoryId: TEST_RUN_REPOSITORY.repositoryId,
     name: TEST_RUN_REPOSITORY.name,
     provider: TEST_RUN_REPOSITORY.provider,
