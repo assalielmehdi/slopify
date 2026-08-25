@@ -24,7 +24,7 @@ const repository = {
 const createConnections = (): GitConnectionService => ({
   configure: vi.fn(async () => connection),
   disconnect: vi.fn(async () => undefined),
-  list: vi.fn(() => [connection]),
+  list: vi.fn(async () => [connection]),
   listRepositories: vi.fn(async () => [repository]),
   requireToken: vi.fn(async () => 'secret-token'),
 })

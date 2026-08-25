@@ -8,8 +8,8 @@ export interface GitConnectionRecord {
 }
 
 export interface GitConnectionRepository {
-  get(provider: GitProvider): GitConnectionRecord | undefined
-  list(): readonly GitConnectionRecord[]
-  save(connection: GitConnectionRecord): void
-  delete(provider: GitProvider): boolean
+  get(provider: GitProvider): Promise<GitConnectionRecord | undefined>
+  list(): Promise<readonly GitConnectionRecord[]>
+  save(connection: GitConnectionRecord): Promise<void>
+  delete(provider: GitProvider): Promise<boolean>
 }

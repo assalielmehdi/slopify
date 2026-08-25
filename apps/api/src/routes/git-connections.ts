@@ -10,9 +10,9 @@ import type { Hono } from 'hono'
 import { parseJsonBody } from '../api-error.js'
 
 export const registerGitConnectionRoutes = (app: Hono, connections: GitConnectionService): void => {
-  app.get('/api/git/connections', (context) =>
+  app.get('/api/git/connections', async (context) =>
     context.json(
-      GitConnectionCatalogResponseSchema.parse({ connections: connections.list() }),
+      GitConnectionCatalogResponseSchema.parse({ connections: await connections.list() }),
       200,
     ),
   )

@@ -14,8 +14,8 @@ import {
   createExecutionWorker,
   createFetchRemoteGitHost,
   createFilesystemAgentTraceStore,
+  createFilesystemGitConnectionRepository,
   createFilesystemSettingsStore,
-  createGitConnectionRepository,
   createGitConnectionService,
   createGitCredentialHelperCommand,
   createHarnessCatalog,
@@ -203,7 +203,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
   const pi = createPiCliAgentExecutor()
   const remoteGit = createFetchRemoteGitHost()
   const gitConnections = createGitConnectionService({
-    connections: createGitConnectionRepository(database),
+    connections: createFilesystemGitConnectionRepository({ settings }),
     secrets: createBunGitSecretStore(),
     remote: remoteGit,
   })

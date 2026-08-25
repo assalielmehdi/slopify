@@ -10,7 +10,7 @@ afterEach(() => {
 })
 
 describe('SQLite Git connection repository', () => {
-  it('upserts and deletes non-secret provider metadata', () => {
+  it('upserts and deletes non-secret provider metadata', async () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
     const connections = createGitConnectionRepository(fixture.database)
@@ -21,19 +21,19 @@ describe('SQLite Git connection repository', () => {
       updatedAt: '2026-08-24T00:00:00Z',
     }
 
-    connections.save(connection)
-    expect(connections.get('GITHUB')).toEqual(connection)
-    expect(connections.list()).toEqual([connection])
-    connections.save({
+    await connections.save(connection)
+    await expect(connections.get('GITHUB')).resolves.toEqual(connection)
+    await expect(connections.list()).resolves.toEqual([connection])
+    await connections.save({
       ...connection,
       accountUsername: 'renamed',
       updatedAt: '2026-08-24T01:00:00Z',
     })
-    expect(connections.get('GITHUB')).toMatchObject({
+    await expect(connections.get('GITHUB')).resolves.toMatchObject({
       accountUsername: 'renamed',
       connectedAt: connection.connectedAt,
     })
-    expect(connections.delete('GITHUB')).toBe(true)
-    expect(connections.list()).toEqual([])
+    await expect(connections.delete('GITHUB')).resolves.toBe(true)
+    await expect(connections.list()).resolves.toEqual([])
   })
 })

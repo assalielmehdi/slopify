@@ -31,7 +31,7 @@ export class GitConnectionServiceError extends Error {
 export interface GitConnectionService {
   configure(provider: unknown, input: unknown): Promise<GitConnection>
   disconnect(provider: unknown): Promise<void>
-  list(): readonly GitConnection[]
+  list(): Promise<readonly GitConnection[]>
   listRepositories(provider: unknown): Promise<readonly GitRepository[]>
   requireToken(provider: GitProvider): Promise<string>
 }
@@ -46,8 +46,13 @@ export const createGitConnectionService = (
 ): GitConnectionService => {
   const now = options.now ?? (() => new Date().toISOString())
 
+  const restoreSecret = async (provider: GitProvider, token: string | null): Promise<void> => {
+    if (token === null) await options.secrets.delete(provider)
+    else await options.secrets.set(provider, token)
+  }
+
   const requireToken = async (provider: GitProvider): Promise<string> => {
-    if (options.connections.get(provider) === undefined) {
+    if ((await options.connections.get(provider)) === undefined) {
       throw new GitConnectionServiceError(
         'GIT_CONNECTION_NOT_FOUND',
         `${provider === 'GITHUB' ? 'GitHub' : 'GitLab'} is not connected`,
@@ -76,7 +81,8 @@ export const createGitConnectionService = (
           `${provider === 'GITHUB' ? 'GitHub' : 'GitLab'} rejected the personal access token`,
         )
       }
-      const previous = options.connections.get(provider)
+      const previous = await options.connections.get(provider)
+      const previousToken = await options.secrets.get(provider)
       const timestamp = now()
       const connection = GitConnectionSchema.parse({
         provider,
@@ -85,18 +91,38 @@ export const createGitConnectionService = (
         updatedAt: timestamp,
       })
       await options.secrets.set(provider, token)
-      options.connections.save(connection)
+      try {
+        await options.connections.save(connection)
+      } catch (cause) {
+        await restoreSecret(provider, previousToken)
+        throw cause
+      }
       return connection
     },
 
     async disconnect(providerInput) {
       const provider = GitProviderSchema.parse(providerInput)
-      await options.secrets.delete(provider)
-      options.connections.delete(provider)
+      const previous = await options.connections.get(provider)
+      const previousToken = await options.secrets.get(provider)
+      if (previous === undefined) {
+        await options.secrets.delete(provider)
+        return
+      }
+
+      const deleted = await options.connections.delete(provider)
+      try {
+        await options.secrets.delete(provider)
+      } catch (cause) {
+        if (deleted) await options.connections.save(previous)
+        await restoreSecret(provider, previousToken)
+        throw cause
+      }
     },
 
-    list() {
-      return options.connections.list().map((connection) => GitConnectionSchema.parse(connection))
+    async list() {
+      return (await options.connections.list()).map((connection) =>
+        GitConnectionSchema.parse(connection),
+      )
     },
 
     async listRepositories(providerInput) {

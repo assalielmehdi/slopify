@@ -63,6 +63,7 @@ export {
   type WriteSettingsInput,
 } from './settings/settings-store.js'
 export { createFilesystemSettingsStore } from './settings/filesystem-settings-store.js'
+export { createFilesystemGitConnectionRepository } from './settings/filesystem-git-connection-repository.js'
 export {
   GitConnectionServiceError,
   createGitConnectionService,

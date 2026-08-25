@@ -28,7 +28,7 @@ export const createGitConnectionRepository = (
 ): GitConnectionRepository => {
   const connection = getDatabaseHandle(database)
   return {
-    get(providerInput) {
+    async get(providerInput) {
       const row = connection
         .prepare(
           `SELECT provider, account_username, connected_at, updated_at
@@ -37,7 +37,7 @@ export const createGitConnectionRepository = (
         .get(GitProviderSchema.parse(providerInput)) as GitConnectionRow | undefined
       return row === undefined ? undefined : parseRow(row)
     },
-    list() {
+    async list() {
       return (
         connection
           .prepare(
@@ -47,7 +47,7 @@ export const createGitConnectionRepository = (
           .all() as GitConnectionRow[]
       ).map(parseRow)
     },
-    save(input) {
+    async save(input) {
       const record = GitConnectionSchema.parse(input)
       try {
         connection
@@ -64,7 +64,7 @@ export const createGitConnectionRepository = (
         throw mapPersistenceError(cause, 'Could not persist Git connection')
       }
     },
-    delete(providerInput) {
+    async delete(providerInput) {
       try {
         return (
           connection
