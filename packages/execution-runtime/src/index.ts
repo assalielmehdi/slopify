@@ -31,6 +31,18 @@ export {
   type LegacyRunConverter,
 } from './migration/run-converter.js'
 export {
+  LegacyMigrationInstallerError,
+  createLegacyMigrationInstaller,
+  type LegacyMigrationInstaller,
+  type LegacyMigrationInstallerErrorCode,
+} from './migration/migration-installer.js'
+export {
+  LegacyMigrationCountsSchema,
+  LegacyMigrationInstallationManifestSchema,
+  type LegacyMigrationCounts,
+  type LegacyMigrationInstallationManifest,
+} from './migration/migration-manifest.js'
+export {
   createLegacyTraceConverter,
   type LegacyTraceConversionInput,
   type LegacyTraceConverter,
