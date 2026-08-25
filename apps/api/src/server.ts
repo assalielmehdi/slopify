@@ -1,8 +1,11 @@
+import { mkdirSync } from 'node:fs'
+import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { createPiCliAgentExecutor, createPiHarnessInspector } from '@slopify/agent-runtimes'
+import { WorkflowIdSchema } from '@slopify/contracts'
 import {
   DatabaseInitializationError,
   createAgentNodeRunner,
@@ -24,6 +27,8 @@ import {
   createNativeGitRunWorkspaceProvisioner,
   createOrchestratedRunService,
   createProcessRunner,
+  createResourceEventFeed,
+  createResourceWatcher,
   createRepositoryService,
   createRemoteRunRepositoryResolver,
   createRunEventFeed,
@@ -38,9 +43,13 @@ import {
   gitCredentialHelperPath,
   openDatabase,
   resolveSlopifyPaths,
+  type ResourceEventFeed,
+  type ResourceWatcher,
+  type SlopifyPaths,
+  type WatchedResource,
   type WorkflowRepository,
 } from '@slopify/execution-runtime'
-import { createDefaultWorkflow } from '@slopify/workflow-model'
+import { createDefaultWorkflow, WorkflowSlugSchema } from '@slopify/workflow-model'
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
@@ -93,6 +102,69 @@ const createBunApiServer: ApiServerFactory = (options) => {
 }
 
 type ApiEnvironment = Readonly<Record<string, string | undefined>>
+
+export interface EditableResourceWatcher {
+  start(): Promise<void>
+  reconcile(): Promise<void>
+  stop(): Promise<void>
+}
+
+const workflowResources = async (paths: SlopifyPaths): Promise<readonly WatchedResource[]> => {
+  let entries
+  try {
+    entries = await readdir(paths.workflowsDirectory, { withFileTypes: true })
+  } catch (cause) {
+    if ((cause as NodeJS.ErrnoException).code === 'ENOENT') return []
+    throw cause
+  }
+  return entries.flatMap((entry) => {
+    if (!entry.isDirectory() || !WorkflowSlugSchema.safeParse(entry.name).success) return []
+    return [
+      {
+        resourceId: `workflow:${entry.name}`,
+        path: paths.workflow(entry.name).definitionFile,
+      },
+    ]
+  })
+}
+
+export const createEditableResourceWatcher = (options: {
+  readonly paths: SlopifyPaths
+  readonly events: ResourceEventFeed
+  readonly onError?: (error: unknown) => void
+}): EditableResourceWatcher => {
+  const watcher: ResourceWatcher = createResourceWatcher({
+    directories: [options.paths.home],
+    resources: async () => [
+      { resourceId: 'settings', path: options.paths.settingsFile },
+      { resourceId: 'repositories', path: options.paths.repositoriesFile },
+      ...(await workflowResources(options.paths)),
+    ],
+    ...(options.onError === undefined ? {} : { onError: options.onError }),
+  })
+
+  return {
+    start: () =>
+      watcher.start((event) => {
+        const resource =
+          event.resourceId === 'settings'
+            ? ({ type: 'SETTINGS' } as const)
+            : event.resourceId === 'repositories'
+              ? ({ type: 'REPOSITORIES' } as const)
+              : ({
+                  type: 'WORKFLOW',
+                  workflowId: WorkflowIdSchema.parse(event.resourceId.slice('workflow:'.length)),
+                } as const)
+        options.events.publish({
+          change: event.type,
+          resource,
+          revision: event.revision,
+        })
+      }),
+    reconcile: () => watcher.reconcile(),
+    stop: () => watcher.stop(),
+  }
+}
 
 export const ensureInitialWorkflow = (
   workflows: Pick<WorkflowRepository, 'insert' | 'list'>,
@@ -171,7 +243,8 @@ export const startApiServer = (input: {
     fetch(request, server) {
       if (
         request.method === 'GET' &&
-        /^\/api\/runs\/[^/]+\/events$/u.test(new URL(request.url).pathname)
+        (/^\/api\/runs\/[^/]+\/events$/u.test(new URL(request.url).pathname) ||
+          new URL(request.url).pathname === '/api/resource-events')
       ) {
         server.timeout(request, 0)
       }
@@ -184,6 +257,29 @@ export const startApiServer = (input: {
 export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): ApiServer => {
   const configuration = resolveApiServerConfiguration(environment)
   const paths = resolveSlopifyPaths({ environment })
+  mkdirSync(paths.home, { recursive: true, mode: 0o700 })
+  mkdirSync(paths.workflowsDirectory, { recursive: true, mode: 0o700 })
+  const resourceEvents = createResourceEventFeed()
+  const resourceWatcher = createEditableResourceWatcher({
+    paths,
+    events: resourceEvents,
+    onError: (error) => console.error('Editable resource reconciliation failed', error),
+  })
+  const startWithResourceWatcher = (app: Hono): ApiServer => {
+    const server = startApiServer({ app, configuration })
+    const ready = resourceWatcher
+      .start()
+      .catch((error) => console.error('Editable resource watcher failed to start', error))
+    return {
+      hostname: server.hostname,
+      port: server.port,
+      async stop(closeActiveConnections) {
+        await ready
+        await resourceWatcher.stop()
+        await server.stop(closeActiveConnections)
+      },
+    }
+  }
   const settings = createFilesystemSettingsStore({ paths })
   let database
   try {
@@ -198,7 +294,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     database = undefined
   }
   if (database === undefined) {
-    return startApiServer({ app: createApiApp({ settings }), configuration })
+    return startWithResourceWatcher(createApiApp({ resourceEvents, settings }))
   }
 
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
@@ -298,8 +394,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     coordinator,
     worker,
   })
-  const server = startApiServer({
-    app: createApiApp({
+  const server = startWithResourceWatcher(
+    createApiApp({
       cancellation,
       database,
       deletions,
@@ -307,13 +403,13 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       gitConnections,
       harnesses,
       repositories,
+      resourceEvents,
       runs: runService,
       settings,
       traces,
       workflows,
     }),
-    configuration,
-  })
+  )
   pump.start()
   registerShutdownSignals({
     coordinator: createShutdownCoordinator({

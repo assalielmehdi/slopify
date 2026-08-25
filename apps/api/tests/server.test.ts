@@ -1,12 +1,24 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import { resolveSlopifyPaths, type ResourceEventFeed } from '@slopify/execution-runtime'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
+  createEditableResourceWatcher,
   ensureInitialWorkflow,
   resolveApiServerConfiguration,
   startApiServer,
 } from '../src/server.js'
+
+const directories: string[] = []
+
+afterEach(() => {
+  for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
+})
 
 const database = {
   isOpen: true,
@@ -133,7 +145,7 @@ describe('API server configuration', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
-  it('disables the idle timeout only for exact GET run event streams', async () => {
+  it('disables the idle timeout only for exact GET event streams', async () => {
     type ServeFactory = NonNullable<Parameters<typeof startApiServer>[0]['serve']>
     type ServeOptions = Parameters<ServeFactory>[0]
 
@@ -173,6 +185,12 @@ describe('API server configuration', () => {
     expect(timeout).toHaveBeenCalledWith(eventRequest, 0)
 
     timeout.mockClear()
+    const resourceEventRequest = new Request('http://localhost/api/resource-events')
+    await fetch(resourceEventRequest, requestServer)
+    expect(timeout).toHaveBeenCalledOnce()
+    expect(timeout).toHaveBeenCalledWith(resourceEventRequest, 0)
+
+    timeout.mockClear()
     await fetch(new Request('http://localhost/healthz'), requestServer)
     await fetch(
       new Request('http://localhost/api/runs/run-123/events', { method: 'POST' }),
@@ -180,5 +198,38 @@ describe('API server configuration', () => {
     )
     await fetch(new Request('http://localhost/api/runs/run-123/events/next'), requestServer)
     expect(timeout).not.toHaveBeenCalled()
+  })
+
+  it('maps changing files to credential-free editable resource events', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'slopify-api-resource-watcher-'))
+    directories.push(home)
+    const paths = resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } })
+    mkdirSync(paths.workflowsDirectory, { recursive: true })
+    const publish = vi.fn()
+    const events = {
+      publish,
+      subscribe: vi.fn(),
+    } as unknown as ResourceEventFeed
+    const watcher = createEditableResourceWatcher({ paths, events })
+
+    await watcher.start()
+    writeFileSync(paths.settingsFile, '{"schemaVersion":1}\n')
+    const workflow = paths.workflow('review-code')
+    mkdirSync(workflow.directory)
+    writeFileSync(workflow.definitionFile, '{"schemaVersion":1}\n')
+    await watcher.reconcile()
+
+    expect(publish).toHaveBeenCalledWith({
+      change: 'CREATED',
+      resource: { type: 'SETTINGS' },
+      revision: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    })
+    expect(publish).toHaveBeenCalledWith({
+      change: 'CREATED',
+      resource: { type: 'WORKFLOW', workflowId: 'review-code' },
+      revision: expect.stringMatching(/^[0-9a-f]{64}$/u),
+    })
+    expect(JSON.stringify(publish.mock.calls)).not.toMatch(/path|token|credential/iu)
+    await watcher.stop()
   })
 })

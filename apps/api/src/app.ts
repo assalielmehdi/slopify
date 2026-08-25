@@ -6,6 +6,7 @@ import {
   GitConnectionServiceError,
   RepositoryServiceError,
   RunEventFeedError,
+  ResourceEventFeedError,
   RunServiceError,
   SettingsStoreError,
   WorkflowServiceError,
@@ -17,6 +18,7 @@ import {
   type RepositoryService,
   type RunService,
   type RunEventFeed,
+  type ResourceEventFeed,
   type SettingsStore,
   type WorkbenchDatabase,
   type WorkflowDefinitionService,
@@ -31,6 +33,7 @@ import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerRepositoryRoutes } from './routes/repositories.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
+import { registerResourceEventRoutes } from './routes/resource-events.js'
 import { registerSettingsRoutes } from './routes/settings.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
@@ -47,6 +50,7 @@ export interface CreateApiAppOptions {
   readonly runs?: RunService
   readonly settings?: SettingsStore
   readonly eventFeed?: RunEventFeed
+  readonly resourceEvents?: ResourceEventFeed
   readonly workflows?: WorkflowDefinitionService
 }
 
@@ -94,6 +98,7 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.runs !== undefined)
     registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
+  if (options.resourceEvents !== undefined) registerResourceEventRoutes(app, options.resourceEvents)
   if (options.settings !== undefined) registerSettingsRoutes(app, options.settings)
 
   app.notFound((context) =>
@@ -145,6 +150,9 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
         errorBody({ code: error.code, message: error.message }),
         error.code === 'RUN_NOT_FOUND' ? 404 : 400,
       )
+    }
+    if (error instanceof ResourceEventFeedError) {
+      return context.json(errorBody({ code: error.code, message: error.message }), 400)
     }
     if (error instanceof RunServiceError) {
       const status =
