@@ -60,6 +60,7 @@ export {
   type VersionedSettingsRecord,
   type WriteSettingsInput,
 } from './settings/settings-store.js'
+export { createFilesystemSettingsStore } from './settings/filesystem-settings-store.js'
 export {
   GitConnectionServiceError,
   createGitConnectionService,

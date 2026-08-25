@@ -1,7 +1,10 @@
 import { GitConnectionSchema, GitProviderSchema, ThemePreferenceSchema } from '@slopify/contracts'
 import { z } from 'zod'
 
-export const SettingsRevisionSchema = z.string().min(1).max(128).brand<'SettingsRevision'>()
+export const SettingsRevisionSchema = z
+  .string()
+  .regex(/^[a-f0-9]{64}$/u)
+  .brand<'SettingsRevision'>()
 
 export const SettingsCredentialReferenceSchema = z
   .string()
