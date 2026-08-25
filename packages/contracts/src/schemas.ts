@@ -56,6 +56,32 @@ export const GitConnectionCatalogResponseSchema = z.strictObject({
   connections: z.array(GitConnectionSchema).max(GitProviderSchema.options.length).readonly(),
 })
 
+export const ThemePreferenceSchema = z.enum(['light', 'dark', 'system'])
+
+const SettingsGitConnectionsSchema = z
+  .array(GitConnectionSchema)
+  .max(GitProviderSchema.options.length)
+  .superRefine((connections, context) => {
+    const providers = new Set<GitProvider>()
+    for (const [index, connection] of connections.entries()) {
+      if (providers.has(connection.provider)) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Git connection providers must be unique',
+          path: [index, 'provider'],
+        })
+      }
+      providers.add(connection.provider)
+    }
+  })
+  .readonly()
+
+export const SettingsSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  appearance: z.strictObject({ theme: ThemePreferenceSchema }),
+  git: z.strictObject({ connections: SettingsGitConnectionsSchema }),
+})
+
 export const ConfigureGitConnectionRequestSchema = z.strictObject({
   token: z.string().trim().min(1).max(16_384),
 })
@@ -420,6 +446,8 @@ export type HealthResponse = z.infer<typeof HealthResponseSchema>
 export type GitSha = z.infer<typeof GitShaSchema>
 export type GitProvider = z.infer<typeof GitProviderSchema>
 export type GitConnection = z.infer<typeof GitConnectionSchema>
+export type ThemePreference = z.infer<typeof ThemePreferenceSchema>
+export type Settings = z.infer<typeof SettingsSchema>
 export type GitRepositoryVisibility = z.infer<typeof GitRepositoryVisibilitySchema>
 export type GitRepository = z.infer<typeof GitRepositorySchema>
 export type HarnessThinkingLevel = z.infer<typeof HarnessThinkingLevelSchema>

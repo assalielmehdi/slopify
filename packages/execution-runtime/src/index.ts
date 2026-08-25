@@ -48,6 +48,19 @@ export {
   type WatchedResource,
 } from './filesystem/resource-watcher.js'
 export {
+  SettingsCredentialReferenceSchema,
+  SettingsGitConnectionRecordSchema,
+  SettingsRecordSchema,
+  SettingsRevisionSchema,
+  type SettingsCredentialReference,
+  type SettingsGitConnectionRecord,
+  type SettingsRecord,
+  type SettingsRevision,
+  type SettingsStore,
+  type VersionedSettingsRecord,
+  type WriteSettingsInput,
+} from './settings/settings-store.js'
+export {
   GitConnectionServiceError,
   createGitConnectionService,
   type GitConnectionService,

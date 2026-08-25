@@ -17,6 +17,8 @@ import {
   RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
+  SettingsSchema,
+  ThemePreferenceSchema,
   UndoDeletionResponseSchema,
   WorkflowIdSchema,
   type HarnessId,
@@ -164,6 +166,59 @@ describe('harness and repository catalogs', () => {
     }
 
     expect(RepositoryCatalogResponseSchema.parse(response)).toEqual(response)
+  })
+})
+
+describe('settings', () => {
+  const settings = {
+    schemaVersion: 1,
+    appearance: { theme: 'system' },
+    git: {
+      connections: [
+        {
+          provider: 'GITHUB',
+          accountUsername: 'operator',
+          connectedAt: '2026-08-25T10:00:00.000Z',
+          updatedAt: '2026-08-25T10:00:00.000Z',
+        },
+      ],
+    },
+  }
+
+  it('limits the appearance theme to light, dark, or system', () => {
+    expect(ThemePreferenceSchema.options).toEqual(['light', 'dark', 'system'])
+    expect(SettingsSchema.parse(settings)).toEqual(settings)
+    expect(
+      SettingsSchema.safeParse({
+        ...settings,
+        appearance: { theme: 'automatic' },
+      }).success,
+    ).toBe(false)
+  })
+
+  it.each([{ token: 'github_pat_secret' }, { credentialReference: 'credential://github' }])(
+    'rejects secret-bearing public Git metadata %j',
+    (secretField) => {
+      expect(
+        SettingsSchema.safeParse({
+          ...settings,
+          git: {
+            connections: [{ ...settings.git.connections[0], ...secretField }],
+          },
+        }).success,
+      ).toBe(false)
+    },
+  )
+
+  it('allows at most one connection per supported provider', () => {
+    expect(
+      SettingsSchema.safeParse({
+        ...settings,
+        git: {
+          connections: [settings.git.connections[0], settings.git.connections[0]],
+        },
+      }).success,
+    ).toBe(false)
   })
 })
 
