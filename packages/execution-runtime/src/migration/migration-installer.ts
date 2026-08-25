@@ -125,9 +125,10 @@ const inspectTarget = async (
   }))
 }
 
-const readManifest = async (
-  path: string,
+export const readLegacyMigrationInstallationManifest = async (
+  preparation: LegacyMigrationPreparation,
 ): Promise<LegacyMigrationInstallationManifest | undefined> => {
+  const path = join(preparation.directory, 'installation.json')
   try {
     return LegacyMigrationInstallationManifestSchema.parse(JSON.parse(await readFile(path, 'utf8')))
   } catch (error) {
@@ -276,7 +277,7 @@ export const createLegacyMigrationInstaller = (options: {
 
   return {
     async install() {
-      const existing = await readManifest(manifestPath)
+      const existing = await readLegacyMigrationInstallationManifest(options.preparation)
       if (existing?.state === 'INSTALLED') return existing
       if (existing?.state === 'ROLLED_BACK')
         throw new LegacyMigrationInstallerError(
@@ -332,7 +333,7 @@ export const createLegacyMigrationInstaller = (options: {
     },
 
     async rollback() {
-      const manifest = await readManifest(manifestPath)
+      const manifest = await readLegacyMigrationInstallationManifest(options.preparation)
       if (manifest === undefined || manifest.state === 'READY')
         throw new LegacyMigrationInstallerError(
           'NOT_INSTALLED',

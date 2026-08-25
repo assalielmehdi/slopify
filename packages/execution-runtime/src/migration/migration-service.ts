@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createReadStream } from 'node:fs'
-import { copyFile, lstat, mkdir, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { basename, join, resolve } from 'node:path'
 
 import { z } from 'zod'
@@ -73,6 +73,41 @@ export interface CreateLegacyMigrationServiceOptions {
   readonly paths: SlopifyPaths
   readonly createMigrationId?: () => string
   readonly now?: () => string
+}
+
+export const loadLegacyMigrationPreparation = async (options: {
+  readonly paths: SlopifyPaths
+  readonly migrationId: string
+}): Promise<LegacyMigrationPreparation | undefined> => {
+  const migrationId = LegacyMigrationManifestSchema.shape.migrationId.parse(options.migrationId)
+  const directory = join(options.paths.migrationsDirectory, migrationId)
+  const manifestPath = join(directory, 'manifest.json')
+  let manifest
+  try {
+    manifest = LegacyMigrationManifestSchema.parse(JSON.parse(await readFile(manifestPath, 'utf8')))
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined
+    throw new LegacyMigrationError(
+      'INVALID_DATABASE',
+      'The legacy migration manifest is invalid.',
+      {
+        cause: error,
+      },
+    )
+  }
+  const backupPath = join(directory, 'slopify.db')
+  if (manifest.migrationId !== migrationId || resolve(manifest.backup.path) !== resolve(backupPath))
+    throw new LegacyMigrationError(
+      'INVALID_DATABASE',
+      'The legacy migration manifest does not match its filesystem location.',
+    )
+  return {
+    directory,
+    backupPath,
+    exportDirectory: join(directory, 'export'),
+    manifestPath,
+    manifest,
+  }
 }
 
 const exists = async (path: string): Promise<boolean> => {

@@ -1,4 +1,3 @@
-import { mkdirSync } from 'node:fs'
 import { readdir } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -7,41 +6,20 @@ import { pathToFileURL } from 'node:url'
 import { createPiCliAgentExecutor, createPiHarnessInspector } from '@slopify/agent-runtimes'
 import { WorkflowIdSchema } from '@slopify/contracts'
 import {
-  DatabaseInitializationError,
-  createAgentNodeRunner,
   createBunGitSecretStore,
-  createCoordinatorCancellationService,
-  createDeletionOperationRepository,
-  createDeletionService,
-  createEventStore,
-  createExecutionWorker,
   createFetchRemoteGitHost,
-  createFilesystemAgentTraceStore,
   createFilesystemGitConnectionRepository,
   createFilesystemRepositoryStore,
   createFilesystemSettingsStore,
-  createFilesystemWorkflowStore,
   createGitConnectionService,
   createGitCredentialHelperCommand,
   createHarnessCatalog,
-  createNativeGitRunWorkspaceProvisioner,
-  createOrchestratedRunService,
   createProcessRunner,
   createResourceEventFeed,
   createResourceWatcher,
   createRepositoryService,
   createRemoteRunRepositoryResolver,
-  createRunEventFeed,
-  createRunRepository,
-  createRunService,
-  createSqliteCoordinatorStateStore,
-  createSqliteExecutionMessageQueue,
-  createWorkflowCoordinator,
-  createWorkflowDefinitionService,
-  createWorkflowRepository,
-  createWorkflowService,
   gitCredentialHelperPath,
-  openDatabase,
   resolveSlopifyPaths,
   type ResourceEventFeed,
   type ResourceWatcher,
@@ -53,8 +31,13 @@ import { createDefaultWorkflow, WorkflowSlugSchema } from '@slopify/workflow-mod
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
-import { createExecutionPump } from './execution-pump.js'
-import { createShutdownCoordinator, registerShutdownSignals } from './shutdown.js'
+import { createFilesystemRuntime, startFilesystemRuntime } from './filesystem-runtime.js'
+import {
+  createFilesystemShutdownCoordinator,
+  registerShutdownSignals,
+  type ShutdownCoordinator,
+} from './shutdown.js'
+import { prepareFilesystemStartup } from './startup-state.js'
 
 export type ServerConfigurationErrorCode =
   'API_HOST_INVALID' | 'API_PORT_INVALID' | 'API_SHUTDOWN_GRACE_INVALID' | 'DATABASE_PATH_INVALID'
@@ -254,11 +237,21 @@ export const startApiServer = (input: {
     port: input.configuration.port,
   })
 
-export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): ApiServer => {
+export const startConfiguredApiServer = async (
+  environment: ApiEnvironment = process.env,
+  infrastructure: Readonly<{
+    serve?: ApiServerFactory
+    registerSignals?: (input: { readonly coordinator: ShutdownCoordinator }) => () => void
+    pollIntervalMs?: number
+  }> = {},
+): Promise<ApiServer> => {
   const configuration = resolveApiServerConfiguration(environment)
   const paths = resolveSlopifyPaths({ environment })
-  mkdirSync(paths.home, { recursive: true, mode: 0o700 })
-  mkdirSync(paths.workflowsDirectory, { recursive: true, mode: 0o700 })
+  await prepareFilesystemStartup({
+    paths,
+    databasePath: configuration.databasePath,
+    legacyTracesRoot: configuration.tracesRoot,
+  })
   const resourceEvents = createResourceEventFeed()
   const resourceWatcher = createEditableResourceWatcher({
     paths,
@@ -266,7 +259,11 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     onError: (error) => console.error('Editable resource reconciliation failed', error),
   })
   const startWithResourceWatcher = (app: Hono): ApiServer => {
-    const server = startApiServer({ app, configuration })
+    const server = startApiServer({
+      app,
+      configuration,
+      ...(infrastructure.serve === undefined ? {} : { serve: infrastructure.serve }),
+    })
     const ready = resourceWatcher
       .start()
       .catch((error) => console.error('Editable resource watcher failed to start', error))
@@ -281,28 +278,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     }
   }
   const settings = createFilesystemSettingsStore({ paths })
-  let database
-  try {
-    database = openDatabase({ path: configuration.databasePath })
-  } catch (cause) {
-    if (
-      cause instanceof DatabaseInitializationError &&
-      cause.code === 'DATABASE_SCHEMA_INCOMPATIBLE'
-    ) {
-      throw cause
-    }
-    database = undefined
-  }
-  if (database === undefined) {
-    return startWithResourceWatcher(createApiApp({ resourceEvents, settings }))
-  }
-
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
   const harnesses = createHarnessCatalog({ inspectors: [createPiHarnessInspector()] })
-  const workflows = createWorkflowDefinitionService({
-    workflows: createFilesystemWorkflowStore({ paths }),
-    harnesses,
-  })
   const pi = createPiCliAgentExecutor()
   const remoteGit = createFetchRemoteGitHost()
   const gitConnections = createGitConnectionService({
@@ -311,120 +288,84 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     remote: remoteGit,
   })
   const repositoryStore = createFilesystemRepositoryStore({ paths })
-  const workflowRepository = createWorkflowRepository(database)
-  ensureInitialWorkflow(workflowRepository)
-  const runRepository = createRunRepository(database)
-  const eventStore = createEventStore(database)
-  const traces = createFilesystemAgentTraceStore({ root: configuration.tracesRoot })
   const repositories = createRepositoryService({
     repositories: repositoryStore,
     connections: gitConnections,
     remote: remoteGit,
   })
-  const legacyWorkflows = createWorkflowService({ workflows: workflowRepository, harnesses })
-  const deletions = createDeletionService({
-    operations: createDeletionOperationRepository(database),
-    handlers: [repositories, legacyWorkflows],
-  })
-  const queue = createSqliteExecutionMessageQueue(database)
-  const coordinator = createWorkflowCoordinator({
-    coordinatorId: `coordinator-${process.pid}`,
-    queue,
-    state: createSqliteCoordinatorStateStore(database),
-  })
-  const workspaces = createNativeGitRunWorkspaceProvisioner({
-    runs: runRepository,
-    processRunner,
-    workspacesRoot: configuration.workspacesRoot,
-    credentialHelper: createGitCredentialHelperCommand(process.execPath, gitCredentialHelperPath()),
-  })
-  const agentRunner = createAgentNodeRunner({
+  const runtime = createFilesystemRuntime({
+    paths,
     harnesses,
     resolveHarness: (harnessId) => (harnessId === 'pi' ? pi : undefined),
-    workspaces,
-    runs: runRepository,
-    traces,
-  })
-  const worker = createExecutionWorker({
-    workerId: `worker-${process.pid}`,
-    queue,
-    runner: agentRunner,
-    concurrency: 2,
-  })
-  const pump = createExecutionPump({
-    coordinator,
-    worker,
-    pollIntervalMs: 100,
-    recoverExpired() {
-      const timestamp = new Date().toISOString()
-      queue.recoverExpired({ destination: 'WORKER', now: timestamp, retry: true })
-      queue.recoverExpired({ destination: 'COORDINATOR', now: timestamp, retry: true })
-    },
-    async cleanupTerminalRuns() {
-      for (const runId of runRepository.listTerminalRunIdsNeedingWorkspaceCleanup()) {
-        await workspaces.cleanup(runId).catch(() => undefined)
-      }
-    },
-  })
-  const baseRunService = createRunService({
-    events: eventStore,
-    runs: runRepository,
-    workflows: workflowRepository,
-    harnesses,
     resolveRepository: createRemoteRunRepositoryResolver({
       repositories,
       connections: gitConnections,
       remote: remoteGit,
     }),
+    processRunner,
+    credentialHelper: createGitCredentialHelperCommand(process.execPath, gitCredentialHelperPath()),
   })
-  const orchestratedRuns = createOrchestratedRunService({
-    runs: baseRunService,
-    coordinator,
+  const lifecycle = await startFilesystemRuntime({
+    runtime,
+    pollIntervalMs: infrastructure.pollIntervalMs ?? 100,
+    onError: (error) => console.error('Filesystem execution recovery failed', error),
   })
-  const runService = {
-    ...orchestratedRuns,
-    async create(input: Parameters<typeof orchestratedRuns.create>[0]) {
-      const run = await orchestratedRuns.create(input)
-      void pump.wake()
-      return run
-    },
+  let transport: ApiServer
+  try {
+    transport = startWithResourceWatcher(
+      createApiApp({
+        ...runtime.api,
+        filesystemHealth: lifecycle.health,
+        gitConnections,
+        harnesses,
+        repositories,
+        resourceEvents,
+        settings,
+      }),
+    )
+  } catch (cause) {
+    await lifecycle.stop()
+    throw cause
   }
-  const cancellation = createCoordinatorCancellationService({
-    runs: runRepository,
-    coordinator,
-    worker,
-  })
-  const server = startWithResourceWatcher(
-    createApiApp({
-      cancellation,
-      database,
-      deletions,
-      eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
-      gitConnections,
-      harnesses,
-      repositories,
-      resourceEvents,
-      runs: runService,
-      settings,
-      traces,
-      workflows,
-    }),
-  )
-  pump.start()
-  registerShutdownSignals({
-    coordinator: createShutdownCoordinator({
-      server,
-      runs: runService,
-      cancellation,
-      execution: pump,
-      database,
+
+  const activeRuns = async () => {
+    const active: { workflowId: string; runId: string }[] = []
+    for (let page = 1; ; page += 1) {
+      const indexed = await runtime.index.list({
+        page,
+        pageSize: 100,
+        statuses: ['PENDING', 'RUNNING'],
+      })
+      active.push(...indexed.data.map(({ locator }) => locator))
+      if (page >= indexed.pagination.totalPages) return active
+    }
+  }
+  const removeSignals = (infrastructure.registerSignals ?? registerShutdownSignals)({
+    coordinator: createFilesystemShutdownCoordinator({
+      server: transport,
+      runs: runtime.admissions,
+      activeRuns,
+      cancellation: runtime.cancellation,
+      execution: lifecycle.pump,
+      ownership: { release: () => lifecycle.stop() },
       gracePeriodMs: configuration.shutdownGracePeriodMs,
     }),
   })
-  return server
+  let stopped = false
+  return {
+    hostname: transport.hostname,
+    port: transport.port,
+    async stop(closeActiveConnections) {
+      if (stopped) return
+      stopped = true
+      runtime.admissions.stopAdmissions()
+      removeSignals()
+      await Promise.all([transport.stop(closeActiveConnections), lifecycle.stop()])
+    },
+  }
 }
 
 const executable = process.argv[1]
 if (executable !== undefined && pathToFileURL(executable).href === import.meta.url) {
-  startConfiguredApiServer()
+  await startConfiguredApiServer()
 }

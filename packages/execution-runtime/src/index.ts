@@ -12,6 +12,7 @@ export {
   LegacyMigrationManifestSchema,
   createLegacyMigrationReadSnapshot,
   createLegacyMigrationService,
+  loadLegacyMigrationPreparation,
   verifyLegacyMigrationBackup,
   type CreateLegacyMigrationServiceOptions,
   type LegacyMigrationErrorCode,
@@ -33,6 +34,7 @@ export {
 export {
   LegacyMigrationInstallerError,
   createLegacyMigrationInstaller,
+  readLegacyMigrationInstallationManifest,
   type LegacyMigrationInstaller,
   type LegacyMigrationInstallerErrorCode,
 } from './migration/migration-installer.js'

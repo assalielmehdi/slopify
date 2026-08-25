@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -12,6 +12,7 @@ import {
   ensureInitialWorkflow,
   resolveApiServerConfiguration,
   startApiServer,
+  startConfiguredApiServer,
 } from '../src/server.js'
 
 const directories: string[] = []
@@ -143,6 +144,48 @@ describe('API server configuration', () => {
 
     await server.stop()
     expect(stop).toHaveBeenCalledOnce()
+  })
+
+  it('starts the configured application exclusively from filesystem state', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'slopify-configured-filesystem-'))
+    directories.push(home)
+    let fetchHandler:
+      | ((
+          request: Request,
+          server: Pick<Bun.Server<unknown>, 'timeout'>,
+        ) => Response | Promise<Response>)
+      | undefined
+    const stop = vi.fn(async () => undefined)
+    const serve = vi.fn((options) => {
+      fetchHandler = options.fetch
+      return { hostname: options.hostname, port: options.port, stop }
+    })
+    const registerSignals = vi.fn(() => () => undefined)
+
+    const server = await startConfiguredApiServer(
+      {
+        SLOPIFY_HOME: home,
+        DATABASE_PATH: join(home, 'legacy.db'),
+        TRACES_ROOT: join(home, 'legacy-traces'),
+        API_PORT: '4310',
+      },
+      { serve, registerSignals, pollIntervalMs: 1_000 },
+    )
+
+    expect(fetchHandler).toBeDefined()
+    const response = await fetchHandler?.(new Request('http://localhost/healthz'), {
+      timeout: vi.fn(),
+    } as unknown as Pick<Bun.Server<unknown>, 'timeout'>)
+    expect(response?.status).toBe(200)
+    expect(await Bun.file(join(home, 'legacy.db')).exists()).toBe(false)
+    expect(
+      readdirSync(home, { recursive: true }).some((path) => String(path).endsWith('.db')),
+    ).toBe(false)
+    expect(registerSignals).toHaveBeenCalledOnce()
+
+    await server.stop()
+    expect(stop).toHaveBeenCalledOnce()
+    expect(await Bun.file(join(home, 'runtime/instance.lock')).exists()).toBe(false)
   })
 
   it('disables the idle timeout only for exact GET event streams', async () => {
