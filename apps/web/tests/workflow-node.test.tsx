@@ -1,17 +1,9 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 
-vi.mock('@xyflow/react', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('@xyflow/react')>()
-  return {
-    ...actual,
-    Handle: ({ type }: { type: string }) => <span data-testid={`${type}-handle`} />,
-  }
-})
-
-import { WorkflowNode, WorkflowNodeContent } from '../components/workflow/workflow-node'
+import { WorkflowNodeContent } from '../components/workflow/workflow-node'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const workflow = createAgentWorkflowFixture({
@@ -69,7 +61,7 @@ describe('WorkflowNode', () => {
         />,
       )
 
-      const card = container.querySelector('article')
+      const card = container.querySelector('[data-status]')
       expect(card?.getAttribute('data-status')).toBe(status)
       expect(card?.className).toContain(borderClass)
       expect(card?.className).toContain(backgroundClass)
@@ -92,7 +84,7 @@ describe('WorkflowNode', () => {
       />,
     )
 
-    expect(view.container.querySelector('article')?.className).toContain(
+    expect(view.container.querySelector('[data-status]')?.className).toContain(
       'workflow-node-running-fill',
     )
 
@@ -108,53 +100,8 @@ describe('WorkflowNode', () => {
       />,
     )
 
-    expect(view.container.querySelector('article')?.className).not.toContain(
+    expect(view.container.querySelector('[data-status]')?.className).not.toContain(
       'workflow-node-running-fill',
     )
-  })
-
-  it('hides the incoming handle on start and keeps every agent connectable onward', () => {
-    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
-    if (node === undefined) throw new Error('Expected agent node')
-
-    const startProps = {
-      data: { domainNode: node, isStart: true, isEnd: false },
-      selected: false,
-      isConnectable: true,
-    } as unknown as Parameters<typeof WorkflowNode>[0]
-    const view = render(<WorkflowNode {...startProps} />)
-
-    expect(screen.queryByTestId('target-handle')).toBeNull()
-    expect(screen.getByTestId('source-handle')).toBeTruthy()
-
-    const endProps = {
-      data: { domainNode: node, isStart: false, isEnd: true },
-      selected: false,
-      isConnectable: true,
-    } as unknown as Parameters<typeof WorkflowNode>[0]
-    view.rerender(<WorkflowNode {...endProps} />)
-    expect(screen.getByTestId('target-handle')).toBeTruthy()
-    expect(screen.getByTestId('source-handle')).toBeTruthy()
-  })
-
-  it('describes why adding after an agent is unavailable', () => {
-    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
-    if (node === undefined) throw new Error('Expected agent node')
-    const props = {
-      data: {
-        domainNode: node,
-        isStart: true,
-        isEnd: true,
-        onAddAgent: vi.fn(),
-        addAgentDisabledReason: 'Pi is unavailable.',
-      },
-      selected: true,
-      isConnectable: true,
-    } as unknown as Parameters<typeof WorkflowNode>[0]
-
-    render(<WorkflowNode {...props} />)
-
-    const add = screen.getByRole('button', { name: 'Add agent after Who are you?' })
-    expect(add.getAttribute('aria-describedby')).toBe('workflow-action-status')
   })
 })

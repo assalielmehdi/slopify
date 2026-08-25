@@ -1,32 +1,21 @@
 'use client'
 
 import type { NodeExecutionStatus } from '@slopify/contracts'
-import type { Workflow, WorkflowEdge } from '@slopify/workflow-model'
+import type { Workflow } from '@slopify/workflow-model'
 import { PlayIcon, Settings2Icon } from 'lucide-react'
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  ReactFlow,
-  type Connection,
-  type Edge,
-  type IsValidConnection,
-  type NodeMouseHandler,
-  type NodeTypes,
-  type OnConnect,
-  type OnEdgesDelete,
-  type OnNodesChange,
-} from '@xyflow/react'
-import { useCallback, useEffect, useMemo, useRef } from 'react'
-
-import '@xyflow/react/dist/style.css'
+import { useEffect, useId, useMemo, useRef } from 'react'
 
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { layoutWorkflowGraph } from '@/lib/workflow-graph-layout'
+import {
+  layoutWorkflowGraph,
+  WORKFLOW_NODE_HEIGHT,
+  WORKFLOW_NODE_WIDTH,
+  type WorkflowGraphEdge,
+} from '@/lib/workflow-graph-layout'
 
-import { WorkflowNode, type WorkflowCanvasNode } from './workflow-node'
+import { WorkflowNodeContent } from './workflow-node'
 
 const runActionClassName =
   't-resize t-resize-intrinsic group/run w-8 justify-start gap-2 overflow-hidden px-2 hover:w-max focus:w-max'
@@ -49,91 +38,47 @@ function isEditableShortcutTarget(target: EventTarget | null) {
   )
 }
 
+function edgePath(edge: WorkflowGraphEdge) {
+  return edge.points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ')
+}
+
+function edgeMidpoint(edge: WorkflowGraphEdge) {
+  return edge.points[Math.floor(edge.points.length / 2)]
+}
+
 export interface WorkflowCanvasProps {
   readonly workflow: Workflow
   readonly selectedNodeId?: string | null | undefined
   readonly onNodeSelect: (nodeId: string) => void
-  readonly onAddAgent?: ((sourceNodeId?: string) => void) | undefined
-  readonly onConnect?: ((sourceNodeId: string, targetNodeId: string) => void) | undefined
-  readonly onEdgeDelete?: ((edge: WorkflowEdge) => void) | undefined
   readonly recentRunStatuses?: Readonly<Record<string, NodeExecutionStatus>>
   readonly onRun?: (() => void) | undefined
   readonly onConfigure?: (() => void) | undefined
   readonly runnable?: boolean | undefined
-  readonly addAgentDisabledReason?: string | undefined
   readonly runDisabledReason?: string | undefined
 }
-
-const nodeTypes = { workflow: WorkflowNode } satisfies NodeTypes
 
 export function WorkflowCanvas({
   workflow,
   selectedNodeId,
   onNodeSelect,
-  onAddAgent,
-  onConnect,
-  onEdgeDelete,
   recentRunStatuses,
   onRun,
   onConfigure,
   runnable = false,
-  addAgentDisabledReason,
   runDisabledReason,
 }: WorkflowCanvasProps) {
-  const editable = onConnect !== undefined
   const runButtonRef = useRef<HTMLButtonElement>(null)
+  const markerId = `workflow-arrow-${useId().replaceAll(':', '')}`
   const graph = useMemo(
     () =>
       layoutWorkflowGraph(workflow, {
-        selectedNodeId,
-        editable,
-        ...(onAddAgent === undefined ? {} : { onAddAgent }),
-        ...(addAgentDisabledReason === undefined ? {} : { addAgentDisabledReason }),
         ...(recentRunStatuses === undefined ? {} : { recentRunStatuses }),
       }),
-    [addAgentDisabledReason, editable, onAddAgent, recentRunStatuses, selectedNodeId, workflow],
+    [recentRunStatuses, workflow],
   )
-  const handleNodeClick = useCallback<NodeMouseHandler<WorkflowCanvasNode>>(
-    (_event, node) => onNodeSelect(node.id),
-    [onNodeSelect],
-  )
-  const handleNodesChange = useCallback<OnNodesChange<WorkflowCanvasNode>>(
-    (changes) => {
-      for (const change of changes) {
-        if (change.type === 'select' && change.selected) {
-          onNodeSelect(change.id)
-          return
-        }
-      }
-    },
-    [onNodeSelect],
-  )
-  const handleConnect = useCallback<OnConnect>(
-    (connection) => {
-      if (connection.source === null || connection.target === null) return
-      onConnect?.(connection.source, connection.target)
-    },
-    [onConnect],
-  )
-  const handleEdgesDelete = useCallback<OnEdgesDelete>(
-    (edges) => {
-      for (const edge of edges) {
-        const domainEdge = edge.data?.domainEdge as WorkflowEdge | undefined
-        if (domainEdge !== undefined) onEdgeDelete?.(domainEdge)
-      }
-    },
-    [onEdgeDelete],
-  )
-  const isValidConnection = useCallback<IsValidConnection>(
-    (candidate: Edge | Connection) => {
-      const { source, target } = candidate
-      if (source === null || target === null || source === target) return false
-      if (target === workflow.startNodeId) return false
-      return !workflow.edges.some(
-        (edge) => edge.sourceNodeId === source && edge.targetNodeId === target,
-      )
-    },
-    [workflow.edges, workflow.startNodeId],
+  const nodeNames = useMemo(
+    () => new Map<string, string>(workflow.nodes.map(({ id, name }) => [id, name])),
+    [workflow.nodes],
   )
 
   useEffect(() => {
@@ -160,7 +105,74 @@ export function WorkflowCanvas({
     return () => window.removeEventListener('keydown', handleRunShortcut)
   }, [onRun, runnable])
 
-  const actionDisabledReason = addAgentDisabledReason ?? (runnable ? undefined : runDisabledReason)
+  const actions =
+    onRun === undefined && onConfigure === undefined ? null : (
+      <div className="absolute top-3 right-3 z-20 grid justify-items-end gap-2">
+        <div className="flex items-center gap-2">
+          {onConfigure === undefined ? null : (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    onClick={onConfigure}
+                    size="icon-sm"
+                    variant="outline"
+                    aria-label="Configure workflow"
+                  />
+                }
+              >
+                <Settings2Icon aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" sideOffset={6}>
+                Configure workflow
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {onRun === undefined ? null : runnable ? (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    ref={runButtonRef}
+                    onClick={onRun}
+                    size="icon-sm"
+                    aria-label="Run"
+                    aria-keyshortcuts="R"
+                    className={runActionClassName}
+                  />
+                }
+              >
+                <RunActionContent />
+              </TooltipTrigger>
+              <TooltipContent side="bottom" align="end" sideOffset={6}>
+                Run <Kbd>R</Kbd>
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <Button
+              size="icon-sm"
+              aria-label="Run"
+              aria-describedby={runDisabledReason ? 'workflow-action-status' : undefined}
+              className={runActionClassName}
+              disabled
+              title={runDisabledReason ?? 'Define at least one agent before starting a run.'}
+            >
+              <RunActionContent />
+            </Button>
+          )}
+        </div>
+        {runDisabledReason === undefined ? null : (
+          <p
+            id="workflow-action-status"
+            role="status"
+            aria-label="Workflow actions unavailable"
+            className="max-w-80 rounded-md border border-border bg-card px-3 py-2 text-xs/4 text-muted-foreground shadow-[var(--shadow-raised)]"
+          >
+            {runDisabledReason}
+          </p>
+        )}
+      </div>
+    )
 
   if (graph.nodes.length === 0) {
     return (
@@ -169,62 +181,12 @@ export function WorkflowCanvas({
         role="region"
         aria-label="Workflow graph"
       >
-        {onRun === undefined && onConfigure === undefined ? null : (
-          <div className="absolute top-3 right-3 z-10 grid justify-items-end gap-2">
-            <div className="flex items-center gap-2">
-              {onConfigure === undefined ? null : (
-                <Button
-                  size="icon-sm"
-                  variant="outline"
-                  aria-label="Configure workflow"
-                  onClick={onConfigure}
-                >
-                  <Settings2Icon aria-hidden="true" />
-                </Button>
-              )}
-              {onRun === undefined ? null : (
-                <Button
-                  size="icon-sm"
-                  aria-label="Run"
-                  aria-describedby={actionDisabledReason ? 'workflow-action-status' : undefined}
-                  className={runActionClassName}
-                  disabled
-                  title={runDisabledReason ?? 'Add an agent before starting a run.'}
-                >
-                  <RunActionContent />
-                </Button>
-              )}
-            </div>
-            {actionDisabledReason === undefined ? null : (
-              <p
-                id="workflow-action-status"
-                role="status"
-                aria-label="Workflow actions unavailable"
-                className="max-w-80 rounded-md border border-border bg-card px-3 py-2 text-xs/4 text-muted-foreground shadow-[var(--shadow-raised)]"
-              >
-                {actionDisabledReason}
-              </p>
-            )}
-          </div>
-        )}
+        {actions}
         <div className="max-w-sm px-6 text-center">
           <p className="text-sm/5 font-medium">No agents</p>
           <p className="mt-1 text-sm/5 text-muted-foreground">
-            This workflow is empty and cannot be run yet.
+            Define the graph JSON in workflow configuration before starting a run.
           </p>
-          {onAddAgent === undefined ? null : (
-            <Button
-              className="mt-4"
-              aria-describedby={
-                addAgentDisabledReason === undefined ? undefined : 'workflow-action-status'
-              }
-              disabled={addAgentDisabledReason !== undefined}
-              title={addAgentDisabledReason}
-              onClick={() => onAddAgent()}
-            >
-              Add your first agent
-            </Button>
-          )}
         </div>
       </div>
     )
@@ -232,117 +194,86 @@ export function WorkflowCanvas({
 
   return (
     <div
-      className="workflow-graph relative h-full min-h-0 min-w-0 overflow-hidden bg-background"
+      className="workflow-graph relative h-full min-h-0 min-w-0 overflow-auto bg-background"
       role="region"
       aria-label="Workflow graph"
     >
-      {onRun === undefined && onConfigure === undefined ? null : (
-        <div className="absolute top-3 right-3 z-10 grid justify-items-end gap-2">
-          <div className="flex items-center gap-2">
-            {onConfigure === undefined ? null : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      onClick={onConfigure}
-                      size="icon-sm"
-                      variant="outline"
-                      aria-label="Configure workflow"
-                    />
-                  }
-                >
-                  <Settings2Icon aria-hidden="true" />
-                </TooltipTrigger>
-                <TooltipContent side="bottom" align="end" sideOffset={6}>
-                  Configure workflow
-                </TooltipContent>
-              </Tooltip>
-            )}
-            {onRun === undefined ? null : runnable ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      ref={runButtonRef}
-                      onClick={onRun}
-                      size="icon-sm"
-                      aria-label="Run"
-                      aria-keyshortcuts="R"
-                      className={runActionClassName}
-                    />
-                  }
-                >
-                  <RunActionContent />
-                </TooltipTrigger>
-                <TooltipContent side="bottom" align="end" sideOffset={6}>
-                  Run <Kbd>R</Kbd>
-                </TooltipContent>
-              </Tooltip>
-            ) : (
-              <Button
-                size="icon-sm"
-                aria-label="Run"
-                aria-describedby={actionDisabledReason ? 'workflow-action-status' : undefined}
-                className={runActionClassName}
-                disabled
-                title={runDisabledReason ?? 'Connect every agent to make this workflow runnable.'}
+      {actions}
+      <div className="grid min-h-full min-w-full place-items-center p-8">
+        <div className="relative" style={{ height: graph.height, width: graph.width }}>
+          <svg
+            aria-hidden="true"
+            className="absolute inset-0 overflow-visible text-muted-foreground"
+            height={graph.height}
+            width={graph.width}
+          >
+            <defs>
+              <marker
+                id={markerId}
+                markerHeight="7"
+                markerWidth="7"
+                orient="auto-start-reverse"
+                refX="6"
+                refY="3.5"
               >
-                <RunActionContent />
-              </Button>
-            )}
-          </div>
-          {actionDisabledReason === undefined ? null : (
-            <p
-              id="workflow-action-status"
-              role="status"
-              aria-label="Workflow actions unavailable"
-              className="max-w-80 rounded-md border border-border bg-card px-3 py-2 text-xs/4 text-muted-foreground shadow-[var(--shadow-raised)]"
+                <path d="M 0 0 L 7 3.5 L 0 7 z" fill="currentColor" />
+              </marker>
+            </defs>
+            {graph.edges.map((edge) => {
+              const midpoint = edgeMidpoint(edge)
+              return (
+                <g key={edge.id}>
+                  <path
+                    d={edgePath(edge)}
+                    fill="none"
+                    markerEnd={`url(#${markerId})`}
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                  {midpoint === undefined ? null : (
+                    <text
+                      className="fill-muted-foreground text-[11px]"
+                      textAnchor="middle"
+                      x={midpoint.x + 8}
+                      y={midpoint.y - 8}
+                    >
+                      {edge.label}
+                    </text>
+                  )}
+                </g>
+              )
+            })}
+          </svg>
+
+          {graph.nodes.map((node) => (
+            <button
+              key={node.id}
+              type="button"
+              aria-label={node.ariaLabel}
+              aria-pressed={node.id === selectedNodeId}
+              className="absolute rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
+              onClick={() => onNodeSelect(node.id)}
+              style={{
+                height: WORKFLOW_NODE_HEIGHT,
+                left: node.position.x,
+                top: node.position.y,
+                width: WORKFLOW_NODE_WIDTH,
+              }}
             >
-              {actionDisabledReason}
-            </p>
-          )}
+              <WorkflowNodeContent data={node.data} selected={node.id === selectedNodeId} />
+            </button>
+          ))}
         </div>
-      )}
-      <ReactFlow
-        nodes={graph.nodes}
-        edges={graph.edges}
-        nodeTypes={nodeTypes}
-        nodesDraggable={false}
-        nodesConnectable={editable}
-        edgesReconnectable={false}
-        elementsSelectable
-        nodesFocusable
-        edgesFocusable
-        deleteKeyCode={editable ? ['Backspace', 'Delete'] : null}
-        minZoom={0.25}
-        maxZoom={1.5}
-        fitView
-        fitViewOptions={{ nodes: graph.nodes.slice(0, 4), padding: 0.16, maxZoom: 0.75 }}
-        onNodeClick={handleNodeClick}
-        onNodesChange={handleNodesChange}
-        {...(editable
-          ? {
-              onConnect: handleConnect,
-              onEdgesDelete: handleEdgesDelete,
-              isValidConnection,
-            }
-          : {})}
-        ariaLabelConfig={{
-          'node.a11yDescription.default': editable
-            ? 'Press Enter or Space to select this agent. Use the add control on the end agent to append another agent.'
-            : 'Press Enter or Space to inspect this workflow node.',
-          'edge.a11yDescription.default': editable
-            ? 'Press Enter or Space to select this transition. Press Delete to remove it.'
-            : 'Workflow transition.',
-        }}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={24} size={1} />
-        <Controls
-          showInteractive={false}
-          fitViewOptions={{ padding: 0.16 }}
-          aria-label="Workflow viewport controls"
-        />
-      </ReactFlow>
+      </div>
+
+      <ol className="sr-only" aria-label="Workflow transitions">
+        {graph.edges.map((edge) => (
+          <li key={edge.id}>
+            {nodeNames.get(edge.sourceNodeId) ?? edge.sourceNodeId} to{' '}
+            {nodeNames.get(edge.targetNodeId) ?? edge.targetNodeId}: {edge.label} ({edge.outcome})
+          </li>
+        ))}
+      </ol>
     </div>
   )
 }

@@ -93,7 +93,6 @@ describe('the application design foundation', () => {
   })
 
   it.each([
-    'components/workflow/agent-drawer.tsx',
     'components/settings/repository-settings.tsx',
     'components/runs/run-node-details-dialog.tsx',
     'components/ui/sheet.tsx',

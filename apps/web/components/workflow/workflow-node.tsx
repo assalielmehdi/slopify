@@ -1,10 +1,8 @@
 import type { NodeExecutionStatus } from '@slopify/contracts'
 import type { AgentNode } from '@slopify/workflow-model'
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
-import { BotIcon, PlusIcon } from 'lucide-react'
+import { BotIcon } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export interface WorkflowNodeData extends Record<string, unknown> {
@@ -12,11 +10,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   readonly isStart: boolean
   readonly isEnd: boolean
   readonly recentRunStatus?: NodeExecutionStatus
-  readonly onAddAgent?: (() => void) | undefined
-  readonly addAgentDisabledReason?: string | undefined
 }
-
-export type WorkflowCanvasNode = Node<WorkflowNodeData, 'workflow'>
 
 const statusLabels: Readonly<Record<NodeExecutionStatus, string>> = {
   PENDING: 'Pending',
@@ -34,7 +28,7 @@ export function WorkflowNodeContent({
   const status = data.recentRunStatus
 
   return (
-    <article
+    <div
       className={cn(
         'relative isolate flex h-30 w-54 flex-col gap-3 overflow-hidden rounded-lg border bg-card p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
         status === 'RUNNING' && 'workflow-node-running-fill border-status-info/35',
@@ -60,52 +54,6 @@ export function WorkflowNodeContent({
         <h3 className="truncate text-sm/5 font-semibold tracking-[-0.01em]">{domainNode.name}</h3>
         <p className="truncate font-mono text-xs/4 text-muted-foreground">{domainNode.id}</p>
       </div>
-    </article>
-  )
-}
-
-export function WorkflowNode({ data, selected, isConnectable }: NodeProps<WorkflowCanvasNode>) {
-  return (
-    <div className="group/node relative">
-      {data.isStart ? null : (
-        <Handle
-          type="target"
-          position={Position.Top}
-          isConnectable={isConnectable}
-          aria-label={`Connect into ${data.domainNode.name}`}
-        />
-      )}
-      <WorkflowNodeContent data={data} selected={selected} />
-      <Handle
-        type="source"
-        position={Position.Bottom}
-        isConnectable={isConnectable}
-        aria-label={`Connect from ${data.domainNode.name}`}
-      />
-      {data.onAddAgent === undefined ? null : (
-        <Button
-          type="button"
-          size="icon-xs"
-          variant="outline"
-          aria-label={`Add agent after ${data.domainNode.name}`}
-          aria-describedby={
-            data.addAgentDisabledReason === undefined ? undefined : 'workflow-action-status'
-          }
-          title={data.addAgentDisabledReason ?? `Add agent after ${data.domainNode.name}`}
-          disabled={data.addAgentDisabledReason !== undefined}
-          className={cn(
-            'nodrag nopan absolute top-full left-1/2 z-10 mt-2 translate-x-3 bg-background opacity-0 shadow-[var(--shadow-raised)] transition-[opacity,background-color,box-shadow,transform] group-hover/node:opacity-100 group-focus-within/node:opacity-100 hover:shadow-[var(--shadow-raised-hover)]',
-            selected && 'opacity-100',
-          )}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation()
-            data.onAddAgent?.()
-          }}
-        >
-          <PlusIcon aria-hidden="true" />
-        </Button>
-      )}
     </div>
   )
 }

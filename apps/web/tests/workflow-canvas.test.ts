@@ -13,8 +13,8 @@ const workflow = createAgentWorkflowFixture({
 
 describe('workflow graph layout', () => {
   it('renders agent nodes with stable positions', () => {
-    const first = layoutWorkflowGraph(workflow, { editable: true })
-    const second = layoutWorkflowGraph(workflow, { editable: true })
+    const first = layoutWorkflowGraph(workflow)
+    const second = layoutWorkflowGraph(workflow)
 
     expect(first.nodes).toHaveLength(1)
     expect(first.edges).toHaveLength(0)
@@ -22,11 +22,12 @@ describe('workflow graph layout', () => {
     expect(first.nodes.map(({ position }) => position)).toEqual(
       second.nodes.map(({ position }) => position),
     )
-    expect(first.nodes.every(({ draggable, connectable }) => !draggable && connectable)).toBe(true)
     expect(first.nodes[0]?.data).toMatchObject({ isStart: true, isEnd: true })
+    expect(first.width).toBeGreaterThan(0)
+    expect(first.height).toBeGreaterThan(0)
   })
 
-  it('marks only the leaf as end, exposes branching actions, and omits edge labels', () => {
+  it('marks only the leaf as end and lays out labelled transitions', () => {
     const firstAgent = workflow.nodes[0]
     if (firstAgent === undefined) throw new Error('Expected an agent fixture')
     const secondAgent = AgentNodeSchema.parse({
@@ -46,17 +47,19 @@ describe('workflow graph layout', () => {
         }),
       ],
     } as Workflow
-    const onAddAgent = () => undefined
-
-    const graph = layoutWorkflowGraph(connectedWorkflow, { onAddAgent })
+    const graph = layoutWorkflowGraph(connectedWorkflow)
     const start = graph.nodes.find(({ id }) => id === firstAgent.id)
     const end = graph.nodes.find(({ id }) => id === secondAgent.id)
 
     expect(start?.data).toMatchObject({ isStart: true, isEnd: false })
-    expect(start?.data.onAddAgent).toBeTypeOf('function')
     expect(end?.data).toMatchObject({ isStart: false, isEnd: true })
-    expect(end?.data.onAddAgent).toBeTypeOf('function')
-    expect(graph.edges[0]?.label).toBeUndefined()
+    expect(graph.edges[0]).toMatchObject({
+      sourceNodeId: firstAgent.id,
+      targetNodeId: secondAgent.id,
+      outcome: 'completed',
+      label: 'Completed',
+    })
+    expect(graph.edges[0]?.points.length).toBeGreaterThan(1)
   })
 
   it('returns an empty graph for a zero-node workflow', () => {
@@ -67,6 +70,11 @@ describe('workflow graph layout', () => {
       edges: [],
     } as unknown as Workflow
 
-    expect(layoutWorkflowGraph(emptyWorkflow)).toEqual({ nodes: [], edges: [] })
+    expect(layoutWorkflowGraph(emptyWorkflow)).toEqual({
+      nodes: [],
+      edges: [],
+      width: 0,
+      height: 0,
+    })
   })
 })
