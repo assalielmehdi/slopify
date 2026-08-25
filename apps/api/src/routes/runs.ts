@@ -8,6 +8,9 @@ import {
   RunServiceError,
   type AgentTraceStore,
   type CancellationService,
+  type FilesystemRunAdmissionService,
+  type FilesystemRunIndex,
+  type FilesystemRunReader,
   type RunService,
 } from '@slopify/execution-runtime'
 import type { Context, Hono } from 'hono'
@@ -91,4 +94,42 @@ export const registerRunRoutes = (
       return context.json(await traces.read({ runId, nodeExecutionId, attemptId }), 200)
     })
   }
+}
+
+export interface FilesystemRunRouteServices {
+  readonly admissions: FilesystemRunAdmissionService
+  readonly index: Pick<FilesystemRunIndex, 'list'>
+  readonly reader: Pick<FilesystemRunReader, 'get'>
+}
+
+export const registerFilesystemRunRoutes = (
+  app: Hono,
+  services: FilesystemRunRouteServices,
+): void => {
+  app.post('/api/runs', async (context) => {
+    const input = CreateRunRequestSchema.parse(await parseRunBody(context))
+    return context.json(await services.admissions.create(input), 202)
+  })
+
+  app.get('/api/runs', async (context) => {
+    const query = RunPaginationQuerySchema.parse({
+      page: context.req.query('page'),
+      pageSize: context.req.query('pageSize'),
+      runId: context.req.query('runId'),
+      statuses: context.req.queries('status'),
+      startedFrom: context.req.query('startedFrom'),
+      startedTo: context.req.query('startedTo'),
+      durationMinMs: context.req.query('durationMinMs'),
+      durationMaxMs: context.req.query('durationMaxMs'),
+    })
+    return context.json(await services.index.list(query), 200)
+  })
+
+  app.get('/api/runs/:runId', async (context) => {
+    const detail = await services.reader.get(context.req.param('runId'))
+    if (detail === undefined) {
+      throw new RunServiceError('RUN_NOT_FOUND', 'Run was not found')
+    }
+    return context.json(detail, 200)
+  })
 }

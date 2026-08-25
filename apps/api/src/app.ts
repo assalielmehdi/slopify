@@ -32,6 +32,7 @@ import { registerGitConnectionRoutes } from './routes/git-connections.js'
 import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerRepositoryRoutes } from './routes/repositories.js'
 import { registerRunRoutes } from './routes/runs.js'
+import { registerFilesystemRunRoutes, type FilesystemRunRouteServices } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
 import { registerResourceEventRoutes } from './routes/resource-events.js'
 import { registerSettingsRoutes } from './routes/settings.js'
@@ -48,6 +49,7 @@ export interface CreateApiAppOptions {
   readonly harnesses?: HarnessCatalog
   readonly repositories?: RepositoryService
   readonly runs?: RunService
+  readonly filesystemRuns?: FilesystemRunRouteServices
   readonly settings?: SettingsStore
   readonly eventFeed?: RunEventFeed
   readonly resourceEvents?: ResourceEventFeed
@@ -77,6 +79,9 @@ const persistenceUnavailable = (context: Context): Response =>
   )
 
 export const createApiApp = (options: CreateApiAppOptions): Hono => {
+  if (options.runs !== undefined && options.filesystemRuns !== undefined) {
+    throw new TypeError('Only one run persistence API may be registered')
+  }
   const app = new Hono()
 
   app.get('/healthz', (context) => {
@@ -97,6 +102,7 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
   if (options.runs !== undefined)
     registerRunRoutes(app, options.runs, options.cancellation, options.traces)
+  if (options.filesystemRuns !== undefined) registerFilesystemRunRoutes(app, options.filesystemRuns)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
   if (options.resourceEvents !== undefined) registerResourceEventRoutes(app, options.resourceEvents)
   if (options.settings !== undefined) registerSettingsRoutes(app, options.settings)
