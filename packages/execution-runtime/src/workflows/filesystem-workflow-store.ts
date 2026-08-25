@@ -106,6 +106,27 @@ export const createFilesystemWorkflowStore = (
 ): WorkflowStore => {
   const resources = options.resources ?? createAtomicJsonResourceIO()
 
+  const inspectCatalogDirectory = async (missingAllowed: boolean): Promise<boolean> => {
+    try {
+      const metadata = await lstat(options.paths.workflowsDirectory)
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new WorkflowStoreError(
+          'WORKFLOW_UNAVAILABLE',
+          'Workflow catalog must be a regular directory',
+        )
+      }
+      return true
+    } catch (cause) {
+      if (cause instanceof WorkflowStoreError) throw cause
+      if (missingAllowed && errorCode(cause) === 'ENOENT') return false
+      throw new WorkflowStoreError(
+        'WORKFLOW_UNAVAILABLE',
+        'Workflow catalog could not be inspected',
+        cause,
+      )
+    }
+  }
+
   const readEntry = async (workflowId: string): Promise<WorkflowStoreEntry | undefined> => {
     const parsedId = WorkflowSlugSchema.safeParse(workflowId)
     if (!parsedId.success) {
@@ -183,7 +204,16 @@ export const createFilesystemWorkflowStore = (
         )
       }
       const paths = options.paths.workflow(workflow.workflowId)
-      await mkdir(options.paths.workflowsDirectory, { recursive: true, mode: 0o700 })
+      try {
+        await mkdir(options.paths.workflowsDirectory, { recursive: true, mode: 0o700 })
+      } catch (cause) {
+        throw new WorkflowStoreError(
+          'WORKFLOW_UNAVAILABLE',
+          'Workflow catalog could not be created',
+          cause,
+        )
+      }
+      await inspectCatalogDirectory(false)
       try {
         await mkdir(paths.directory, { mode: 0o700 })
       } catch (cause) {
@@ -212,6 +242,7 @@ export const createFilesystemWorkflowStore = (
     },
 
     async list() {
+      if (!(await inspectCatalogDirectory(true))) return []
       let entries
       try {
         entries = await readdir(options.paths.workflowsDirectory, { withFileTypes: true })
@@ -219,22 +250,23 @@ export const createFilesystemWorkflowStore = (
         if (errorCode(cause) === 'ENOENT') return []
         throw new WorkflowStoreError('WORKFLOW_UNAVAILABLE', 'Workflows are unavailable', cause)
       }
-      const results = await Promise.all(
-        entries
-          .toSorted((left, right) => left.name.localeCompare(right.name))
-          .map(async (entry) => {
-            if (!entry.isDirectory()) {
-              return invalidEntry(entry.name, [
-                diagnostic(
-                  'WORKFLOW_DIRECTORY_INVALID',
-                  'Workflow entry must be a regular directory',
-                ),
-              ])
-            }
-            return readEntry(entry.name)
-          }),
-      )
-      return Object.freeze(results.filter((entry) => entry !== undefined))
+      const results: WorkflowStoreEntry[] = []
+      for (const entry of entries.toSorted((left, right) => left.name.localeCompare(right.name))) {
+        if (!entry.isDirectory()) {
+          results.push(
+            invalidEntry(entry.name, [
+              diagnostic(
+                'WORKFLOW_DIRECTORY_INVALID',
+                'Workflow entry must be a regular directory',
+              ),
+            ]),
+          )
+          continue
+        }
+        const stored = await readEntry(entry.name)
+        if (stored !== undefined) results.push(stored)
+      }
+      return Object.freeze(results)
     },
   }
 }

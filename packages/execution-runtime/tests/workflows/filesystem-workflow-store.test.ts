@@ -1,4 +1,12 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -202,5 +210,18 @@ describe('filesystem workflow store', () => {
         diagnostics: [expect.objectContaining({ code: 'WORKFLOW_DIRECTORY_INVALID' })],
       }),
     ])
+  })
+
+  it('refuses a symlinked workflow catalog root without reading or writing outside home', async () => {
+    const fixture = createFixture()
+    const outside = mkdtempSync(join(tmpdir(), 'slopify-workflows-root-outside-'))
+    directories.push(outside)
+    symlinkSync(outside, fixture.paths.workflowsDirectory)
+
+    await expect(fixture.workflows.list()).rejects.toMatchObject({ code: 'WORKFLOW_UNAVAILABLE' })
+    await expect(fixture.workflows.create(workflow())).rejects.toMatchObject({
+      code: 'WORKFLOW_UNAVAILABLE',
+    })
+    expect(existsSync(join(outside, 'release-review'))).toBe(false)
   })
 })
