@@ -4,6 +4,8 @@ import {
   AgentTraceStoreError,
   DeletionServiceError,
   GitConnectionServiceError,
+  JournalCancellationServiceError,
+  JournalCoordinatorError,
   RepositoryServiceError,
   RunEventFeedError,
   ResourceEventFeedError,
@@ -14,6 +16,7 @@ import {
   type AgentTraceStore,
   type DeletionService,
   type GitConnectionService,
+  type FilesystemRunEventFeed,
   type HarnessCatalog,
   type RepositoryService,
   type RunService,
@@ -51,7 +54,7 @@ export interface CreateApiAppOptions {
   readonly runs?: RunService
   readonly filesystemRuns?: FilesystemRunRouteServices
   readonly settings?: SettingsStore
-  readonly eventFeed?: RunEventFeed
+  readonly eventFeed?: RunEventFeed | FilesystemRunEventFeed
   readonly resourceEvents?: ResourceEventFeed
   readonly workflows?: WorkflowDefinitionService
 }
@@ -151,11 +154,24 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
         error.code === 'RUN_NOT_FOUND' ? 404 : 409,
       )
     }
+    if (error instanceof JournalCancellationServiceError) {
+      return context.json(errorBody({ code: error.code, message: error.message }), 409)
+    }
+    if (error instanceof JournalCoordinatorError) {
+      const status =
+        error.code === 'RUN_NOT_FOUND'
+          ? 404
+          : error.code === 'WORKFLOW_NOT_RUNNABLE'
+            ? 422
+            : error.code === 'JOURNAL_RECONCILE_LIMIT_EXCEEDED'
+              ? 503
+              : 409
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
     if (error instanceof RunEventFeedError) {
-      return context.json(
-        errorBody({ code: error.code, message: error.message }),
-        error.code === 'RUN_NOT_FOUND' ? 404 : 400,
-      )
+      const status =
+        error.code === 'RUN_NOT_FOUND' ? 404 : error.code === 'RUN_JOURNAL_CORRUPT' ? 409 : 400
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof ResourceEventFeedError) {
       return context.json(errorBody({ code: error.code, message: error.message }), 400)

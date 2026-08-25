@@ -11,9 +11,13 @@ import {
   type FilesystemRunAdmissionService,
   type FilesystemRunIndex,
   type FilesystemRunReader,
+  type JournalCancellationService,
+  type RunAgentTraceStore,
   type RunService,
 } from '@slopify/execution-runtime'
 import type { Context, Hono } from 'hono'
+
+import { ApiApplicationError } from '../api-error.js'
 
 const parseRunBody = async (context: Context): Promise<unknown> => {
   try {
@@ -98,8 +102,10 @@ export const registerRunRoutes = (
 
 export interface FilesystemRunRouteServices {
   readonly admissions: FilesystemRunAdmissionService
-  readonly index: Pick<FilesystemRunIndex, 'list'>
+  readonly index: Pick<FilesystemRunIndex, 'get' | 'list'>
   readonly reader: Pick<FilesystemRunReader, 'get'>
+  readonly cancellation?: JournalCancellationService
+  readonly traces?: RunAgentTraceStore
 }
 
 export const registerFilesystemRunRoutes = (
@@ -132,4 +138,58 @@ export const registerFilesystemRunRoutes = (
     }
     return context.json(detail, 200)
   })
+
+  if (services.cancellation !== undefined) {
+    const cancellation = services.cancellation
+    app.post('/api/runs/:runId/cancel', async (context) => {
+      const input = CancelRunRequestSchema.parse(await parseOptionalRunBody(context))
+      const indexed = await services.index.get(context.req.param('runId'))
+      if (indexed === undefined) {
+        throw new RunServiceError('RUN_NOT_FOUND', 'Run was not found')
+      }
+      if (indexed.status === 'CORRUPT') {
+        throw new ApiApplicationError({
+          status: 409,
+          code: 'RUN_CORRUPT',
+          message: 'Run artifacts are corrupt',
+          details: indexed.diagnostic,
+        })
+      }
+      const projection = await cancellation.cancel({
+        ...indexed.locator,
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
+      })
+      return context.json(projection.run, 200)
+    })
+  }
+
+  if (services.traces !== undefined) {
+    const traces = services.traces
+    app.get('/api/runs/:runId/node-executions/:nodeExecutionId/trace', async (context) => {
+      const runId = context.req.param('runId')
+      const nodeExecutionId = context.req.param('nodeExecutionId')
+      const attemptId = context.req.query('attemptId')
+      const detail = await services.reader.get(runId)
+      const execution =
+        detail?.status === 'READY' && attemptId !== undefined
+          ? detail.executions.find(
+              (candidate) =>
+                candidate.nodeExecutionId === nodeExecutionId && candidate.attemptId === attemptId,
+            )
+          : undefined
+      if (execution === undefined || detail?.status !== 'READY' || attemptId === undefined) {
+        throw new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found')
+      }
+      return context.json(
+        await traces.read({
+          workflowId: detail.run.workflowId,
+          executionIndex: execution.executionIndex,
+          runId,
+          nodeExecutionId,
+          attemptId,
+        }),
+        200,
+      )
+    })
+  }
 }
