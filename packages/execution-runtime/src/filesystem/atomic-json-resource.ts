@@ -35,7 +35,9 @@ export interface VersionedJsonResource<Output> {
 
 export interface AtomicJsonResourceIO {
   read<Output>(input: ReadJsonResourceInput<Output>): Promise<Output>
-  readVersioned<Output>(input: ReadJsonResourceInput<Output>): Promise<VersionedJsonResource<Output>>
+  readVersioned<Output>(
+    input: ReadJsonResourceInput<Output>,
+  ): Promise<VersionedJsonResource<Output>>
   write<Output>(input: WriteJsonResourceInput<Output>): Promise<Output>
   writeVersioned<Output>(
     input: WriteVersionedJsonResourceInput<Output>,

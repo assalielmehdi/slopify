@@ -57,7 +57,8 @@ export const createResourceWatcher = (
   for (const resource of options.resources) {
     if (resource.resourceId.trim() === '') throw new TypeError('resourceId must not be blank')
     if (!isAbsolute(resource.path)) throw new TypeError('Watched resource paths must be absolute')
-    if (resourceIds.has(resource.resourceId)) throw new TypeError('resourceId values must be unique')
+    if (resourceIds.has(resource.resourceId))
+      throw new TypeError('resourceId values must be unique')
     if (paths.has(resource.path)) throw new TypeError('Watched resource paths must be unique')
     resourceIds.add(resource.resourceId)
     paths.add(resource.path)

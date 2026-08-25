@@ -105,8 +105,7 @@ describe('append-only JSONL', () => {
 
   it('surfaces and preserves corruption before the trailing record', async () => {
     const path = createPath()
-    const contents =
-      '{"sequence":1,"type":"FIRST"}\n{"sequence":2\n{"sequence":3,"type":"PARTIAL"'
+    const contents = '{"sequence":1,"type":"FIRST"}\n{"sequence":2\n{"sequence":3,"type":"PARTIAL"'
     writeFileSync(path, contents)
     const journal = createAppendOnlyJsonl({ path, schema: recordSchema })
 

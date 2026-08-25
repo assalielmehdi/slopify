@@ -13,10 +13,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import {
-  createAtomicJsonResourceIO,
-  type FilesystemResourceError,
-} from '../../src/index.js'
+import { createAtomicJsonResourceIO, type FilesystemResourceError } from '../../src/index.js'
 
 const directories: string[] = []
 const schema = z.strictObject({ schemaVersion: z.literal(1), name: z.string().min(1) })
@@ -131,8 +128,6 @@ describe('atomic JSON resources', () => {
       resources.write({ path: link, schema, value: { schemaVersion: 1, name: 'Replacement' } }),
       'RESOURCE_SYMLINK_NOT_ALLOWED',
     )
-    expect(readFileSync(target, 'utf8')).toBe(
-      JSON.stringify({ schemaVersion: 1, name: 'Target' }),
-    )
+    expect(readFileSync(target, 'utf8')).toBe(JSON.stringify({ schemaVersion: 1, name: 'Target' }))
   })
 })

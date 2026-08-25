@@ -36,12 +36,10 @@ describe('Slopify filesystem paths', () => {
       variablesFile: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/variables.json',
       repositoriesSnapshotFile:
         '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/repositories.snapshot.json',
-      workspacesFile:
-        '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/workspaces.json',
+      workspacesFile: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/workspaces.json',
       eventsFile: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/events.jsonl',
       nodesDirectory: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/nodes',
-      workspacesDirectory:
-        '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/workspaces',
+      workspacesDirectory: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/workspaces',
     })
   })
 

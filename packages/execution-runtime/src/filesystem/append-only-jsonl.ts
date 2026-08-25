@@ -69,11 +69,7 @@ export const createAppendOnlyJsonl = <Record extends { readonly sequence: number
     flush?: Flush
   }>,
 ): AppendOnlyJsonl<Record> => {
-  const maxFileBytes = byteLimit(
-    'maxFileBytes',
-    options.maxFileBytes,
-    DEFAULT_MAX_FILE_BYTES,
-  )
+  const maxFileBytes = byteLimit('maxFileBytes', options.maxFileBytes, DEFAULT_MAX_FILE_BYTES)
   const maxRecordBytes = byteLimit(
     'maxRecordBytes',
     options.maxRecordBytes,

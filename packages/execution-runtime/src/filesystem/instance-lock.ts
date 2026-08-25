@@ -18,9 +18,7 @@ export const InstanceLockOwnerSchema = z.strictObject({
 
 export type InstanceLockOwner = z.infer<typeof InstanceLockOwnerSchema>
 export type InstanceLockErrorCode =
-  | 'INSTANCE_ALREADY_RUNNING'
-  | 'INSTANCE_LOCK_LOST'
-  | 'INSTANCE_LOCK_ACQUIRE_FAILED'
+  'INSTANCE_ALREADY_RUNNING' | 'INSTANCE_LOCK_LOST' | 'INSTANCE_LOCK_ACQUIRE_FAILED'
 
 export class InstanceLockError extends Error {
   readonly code: InstanceLockErrorCode
@@ -201,7 +199,10 @@ export const createInstanceLockManager = (
           owner,
           async heartbeat() {
             if (released)
-              throw new InstanceLockError('INSTANCE_LOCK_LOST', 'Slopify instance lock was released')
+              throw new InstanceLockError(
+                'INSTANCE_LOCK_LOST',
+                'Slopify instance lock was released',
+              )
             const current = await requireOwnership()
             await resources.write({
               path: ownerFile,
