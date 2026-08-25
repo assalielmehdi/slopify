@@ -11,7 +11,7 @@ import {
   type SettingsStore,
 } from './settings-store.js'
 
-const credentialReference = (provider: GitProvider) =>
+export const gitCredentialReference = (provider: GitProvider) =>
   SettingsCredentialReferenceSchema.parse(
     `credential://dev.slopify.git/${provider === 'GITHUB' ? 'github.com' : 'gitlab.com'}`,
   )
@@ -50,7 +50,7 @@ export const createFilesystemGitConnectionRepository = (
     const record = SettingsGitConnectionRecordSchema.parse({
       ...connection,
       connectedAt: previous?.connectedAt ?? connection.connectedAt,
-      credentialReference: credentialReference(connection.provider),
+      credentialReference: gitCredentialReference(connection.provider),
     })
     const connections = [
       ...snapshot.value.git.connections.filter(

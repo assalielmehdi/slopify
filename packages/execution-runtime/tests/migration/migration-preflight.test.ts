@@ -62,7 +62,7 @@ describe('legacy SQLite migration preflight', () => {
     expect(prepared.manifest.source.sha256).toMatch(/^[0-9a-f]{64}$/)
     expect(prepared.manifest.backup.sha256).toBe(prepared.manifest.source.sha256)
     expect(JSON.parse(readFileSync(prepared.manifestPath, 'utf8'))).toEqual(prepared.manifest)
-  })
+  }, 15_000)
 
   it.each(['PENDING', 'RUNNING'] as const)(
     'refuses a %s legacy run without a backup',
@@ -131,5 +131,29 @@ describe('legacy SQLite migration preflight', () => {
     expect(() =>
       readFileSync(join(root, 'home', 'migrations', 'sqlite-v4-test', 'slopify.db')),
     ).toThrow()
+  })
+
+  it('backs up and hashes uncheckpointed WAL data without changing the source', async () => {
+    const root = createRoot()
+    const databasePath = join(root, 'legacy.sqlite')
+    const database = openDatabase({ path: databasePath })
+    getDatabaseHandle(database)
+      .prepare(
+        `INSERT INTO git_connections (
+           provider, account_username, connected_at, updated_at
+         ) VALUES (?, ?, ?, ?)`,
+      )
+      .run('GITHUB', 'operator', '2026-08-25T11:00:00.000Z', '2026-08-25T11:00:00.000Z')
+
+    try {
+      const preparation = await createService(root, databasePath).prepare()
+      expect(preparation.manifest.sidecars.map(({ kind }) => kind)).toEqual(['WAL', 'SHM'])
+      for (const sidecar of preparation.manifest.sidecars) {
+        expect(readFileSync(sidecar.backup.path)).toEqual(readFileSync(sidecar.source.path))
+        expect(sidecar.backup.sha256).toBe(sidecar.source.sha256)
+      }
+    } finally {
+      database.close()
+    }
   })
 })

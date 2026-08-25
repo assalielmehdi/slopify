@@ -2,6 +2,7 @@ export { createOrchestratedRunService } from './orchestration/orchestrated-run-s
 export {
   LegacySqliteReaderError,
   openLegacySqliteReader,
+  type LegacyCatalogSnapshot,
   type LegacyDatabaseInspection,
   type LegacySqliteReader,
 } from './migration/legacy-sqlite-reader.js'
@@ -15,6 +16,11 @@ export {
   type LegacyMigrationPreparation,
   type LegacyMigrationService,
 } from './migration/migration-service.js'
+export {
+  createLegacyCatalogConverter,
+  type LegacyCatalogConversionResult,
+  type LegacyCatalogConverter,
+} from './migration/catalog-converter.js'
 export {
   resolveSlopifyPaths,
   type SlopifyPaths,
@@ -154,7 +160,10 @@ export {
   type WriteSettingsInput,
 } from './settings/settings-store.js'
 export { createFilesystemSettingsStore } from './settings/filesystem-settings-store.js'
-export { createFilesystemGitConnectionRepository } from './settings/filesystem-git-connection-repository.js'
+export {
+  createFilesystemGitConnectionRepository,
+  gitCredentialReference,
+} from './settings/filesystem-git-connection-repository.js'
 export {
   GitConnectionServiceError,
   createGitConnectionService,

@@ -9,6 +9,11 @@ import type { SlopifyPaths } from '../filesystem/slopify-home.js'
 import { LegacySqliteReaderError, openLegacySqliteReader } from './legacy-sqlite-reader.js'
 
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/)
+const MigrationFileSchema = z.object({
+  path: z.string().min(1),
+  sizeBytes: z.number().int().nonnegative(),
+  sha256: Sha256Schema,
+})
 
 export const LegacyMigrationManifestSchema = z.object({
   schemaVersion: z.literal(1),
@@ -16,16 +21,17 @@ export const LegacyMigrationManifestSchema = z.object({
   state: z.literal('BACKED_UP'),
   createdAt: z.string().datetime({ offset: true }),
   legacySchemaVersion: z.number().int().min(1).max(4),
-  source: z.object({
-    path: z.string().min(1),
-    sizeBytes: z.number().int().nonnegative(),
-    sha256: Sha256Schema,
-  }),
-  backup: z.object({
-    path: z.string().min(1),
-    sizeBytes: z.number().int().nonnegative(),
-    sha256: Sha256Schema,
-  }),
+  source: MigrationFileSchema,
+  backup: MigrationFileSchema,
+  sidecars: z
+    .array(
+      z.object({
+        kind: z.enum(['WAL', 'SHM']),
+        source: MigrationFileSchema,
+        backup: MigrationFileSchema,
+      }),
+    )
+    .max(2),
 })
 
 export type LegacyMigrationManifest = z.infer<typeof LegacyMigrationManifestSchema>
@@ -73,6 +79,41 @@ const exists = async (path: string): Promise<boolean> => {
   }
 }
 
+interface SidecarSnapshot {
+  readonly kind: 'WAL' | 'SHM'
+  readonly suffix: '-wal' | '-shm'
+  readonly path: string
+  readonly sizeBytes: number
+  readonly sha256: string
+}
+
+const readSidecars = async (databasePath: string): Promise<readonly SidecarSnapshot[]> => {
+  const sidecars: SidecarSnapshot[] = []
+  for (const entry of [
+    { kind: 'WAL' as const, suffix: '-wal' as const },
+    { kind: 'SHM' as const, suffix: '-shm' as const },
+  ]) {
+    const path = `${databasePath}${entry.suffix}`
+    try {
+      const metadata = await lstat(path)
+      if (!metadata.isFile() || metadata.isSymbolicLink())
+        throw new LegacyMigrationError(
+          'INVALID_DATABASE',
+          'Legacy SQLite sidecars must be regular files.',
+        )
+      sidecars.push({
+        ...entry,
+        path,
+        sizeBytes: metadata.size,
+        sha256: await calculateFileSha256(path),
+      })
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+    }
+  }
+  return sidecars
+}
+
 const isNonEmptyDirectory = async (path: string): Promise<boolean> => {
   try {
     return (await readdir(path)).length > 0
@@ -82,7 +123,7 @@ const isNonEmptyDirectory = async (path: string): Promise<boolean> => {
   }
 }
 
-const hashFile = async (path: string): Promise<string> => {
+export const calculateFileSha256 = async (path: string): Promise<string> => {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest('hex')
@@ -129,10 +170,14 @@ export const createLegacyMigrationService = (
         'The legacy database must be a regular file.',
       )
 
-    const sourceHashBefore = await hashFile(databasePath)
+    const sourceHashBefore = await calculateFileSha256(databasePath)
+    const sidecarsBeforeInspection = await readSidecars(databasePath)
+    const hasWalFrames = sidecarsBeforeInspection.some(
+      (sidecar) => sidecar.kind === 'WAL' && sidecar.sizeBytes > 0,
+    )
     const reader = (() => {
       try {
-        return openLegacySqliteReader(databasePath)
+        return openLegacySqliteReader(databasePath, { immutable: !hasWalFrames })
       } catch (error) {
         if (error instanceof LegacySqliteReaderError)
           throw new LegacyMigrationError('INVALID_DATABASE', error.message, { cause: error })
@@ -154,8 +199,9 @@ export const createLegacyMigrationService = (
         'ACTIVE_RUNS',
         'Legacy migration requires all workflow runs to be terminal.',
       )
+    const sourceSidecars = await readSidecars(databasePath)
 
-    const sourceHashAfterInspection = await hashFile(databasePath)
+    const sourceHashAfterInspection = await calculateFileSha256(databasePath)
     if (sourceHashAfterInspection !== sourceHashBefore)
       throw new LegacyMigrationError(
         'SOURCE_CHANGED',
@@ -173,15 +219,47 @@ export const createLegacyMigrationService = (
       await mkdir(join(stagingDirectory, 'export'), { recursive: true, mode: 0o700 })
       const stagedBackupPath = join(stagingDirectory, 'slopify.db')
       await copyFile(databasePath, stagedBackupPath)
+      await Promise.all(
+        sourceSidecars.map((sidecar) =>
+          copyFile(sidecar.path, `${stagedBackupPath}${sidecar.suffix}`),
+        ),
+      )
       const [sourceHashAfterCopy, backupHash, backupStat] = await Promise.all([
-        hashFile(databasePath),
-        hashFile(stagedBackupPath),
+        calculateFileSha256(databasePath),
+        calculateFileSha256(stagedBackupPath),
         lstat(stagedBackupPath),
       ])
       if (sourceHashAfterCopy !== sourceHashBefore || backupHash !== sourceHashBefore)
         throw new LegacyMigrationError(
           'SOURCE_CHANGED',
           'The legacy database changed while its backup was created.',
+        )
+      const [sourceSidecarsAfterCopy, backupSidecars] = await Promise.all([
+        readSidecars(databasePath),
+        Promise.all(
+          sourceSidecars.map(async (sidecar) => {
+            const path = `${stagedBackupPath}${sidecar.suffix}`
+            const metadata = await lstat(path)
+            return {
+              kind: sidecar.kind,
+              path,
+              sizeBytes: metadata.size,
+              sha256: await calculateFileSha256(path),
+            }
+          }),
+        ),
+      ])
+      if (
+        JSON.stringify(sourceSidecarsAfterCopy) !== JSON.stringify(sourceSidecars) ||
+        backupSidecars.some(
+          (backup, index) =>
+            backup.sizeBytes !== sourceSidecars[index]?.sizeBytes ||
+            backup.sha256 !== sourceSidecars[index]?.sha256,
+        )
+      )
+        throw new LegacyMigrationError(
+          'SOURCE_CHANGED',
+          'The legacy database journal changed while its backup was created.',
         )
 
       const manifest = LegacyMigrationManifestSchema.parse({
@@ -200,6 +278,19 @@ export const createLegacyMigrationService = (
           sizeBytes: backupStat.size,
           sha256: backupHash,
         },
+        sidecars: sourceSidecars.map((source, index) => ({
+          kind: source.kind,
+          source: {
+            path: source.path,
+            sizeBytes: source.sizeBytes,
+            sha256: source.sha256,
+          },
+          backup: {
+            path: `${backupPath}${source.suffix}`,
+            sizeBytes: backupSidecars[index]?.sizeBytes,
+            sha256: backupSidecars[index]?.sha256,
+          },
+        })),
       })
       await writeFile(
         join(stagingDirectory, basename(manifestPath)),
