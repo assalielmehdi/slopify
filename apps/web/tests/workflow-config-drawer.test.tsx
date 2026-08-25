@@ -4,6 +4,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/re
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RepositorySchema } from '@slopify/contracts'
+import { createWorkflowDraft, type Workflow } from '@slopify/workflow-model'
 
 import { WorkflowConfigDrawer } from '../components/workflow/workflow-config-drawer'
 
@@ -41,6 +42,17 @@ if (apiRepository === undefined || webRepository === undefined) {
   throw new Error('Expected two repository fixtures')
 }
 
+const drawerWorkflow = (overrides: Partial<Workflow> = {}): Workflow => ({
+  ...createWorkflowDraft({
+    workflowId: 'delivery-workflow',
+    name: 'Delivery workflow',
+    description: 'Coordinate delivery.',
+    configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+    createdAt: '2026-08-25T10:00:00.000Z',
+  }),
+  ...overrides,
+})
+
 afterEach(cleanup)
 
 describe('WorkflowConfigDrawer', () => {
@@ -48,11 +60,7 @@ describe('WorkflowConfigDrawer', () => {
     const onDelete = vi.fn(async () => true)
     render(
       <WorkflowConfigDrawer
-        value={{
-          name: 'delivery-workflow',
-          description: 'Coordinate delivery.',
-          configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
-        }}
+        value={drawerWorkflow({ name: 'delivery-workflow' })}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={onDelete}
@@ -81,15 +89,13 @@ describe('WorkflowConfigDrawer', () => {
 
     render(
       <WorkflowConfigDrawer
-        value={{
-          name: 'Delivery workflow',
-          description: 'Coordinate delivery.',
+        value={drawerWorkflow({
           configuration: {
             repositoryIds: repositories.slice(0, 1).map(({ repositoryId }) => repositoryId),
             primaryRepositoryId: apiRepository.repositoryId,
             variables: ['topic'],
           },
-        }}
+        })}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -111,26 +117,24 @@ describe('WorkflowConfigDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith({
-        name: 'Delivery workflow',
-        description: 'Coordinate delivery.',
-        configuration: {
-          repositoryIds: ['repository-api', 'repository-web'],
-          primaryRepositoryId: 'repository-web',
-          variables: ['topic', 'release context'],
-        },
-      }),
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          configuration: {
+            repositoryIds: ['repository-api', 'repository-web'],
+            primaryRepositoryId: 'repository-web',
+            variables: ['topic', 'release context'],
+          },
+        }),
+      ),
     )
   })
 
   it('does not allow duplicate or blank variable names to be saved', async () => {
     render(
       <WorkflowConfigDrawer
-        value={{
-          name: 'Delivery workflow',
-          description: 'Coordinate delivery.',
+        value={drawerWorkflow({
           configuration: { repositoryIds: [], primaryRepositoryId: null, variables: ['topic'] },
-        }}
+        })}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -150,15 +154,13 @@ describe('WorkflowConfigDrawer', () => {
   it('does not treat repository catalog order as a configuration change', async () => {
     render(
       <WorkflowConfigDrawer
-        value={{
-          name: 'Delivery workflow',
-          description: 'Coordinate delivery.',
+        value={drawerWorkflow({
           configuration: {
             repositoryIds: [webRepository.repositoryId, apiRepository.repositoryId],
             primaryRepositoryId: webRepository.repositoryId,
             variables: [],
           },
-        }}
+        })}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -175,11 +177,7 @@ describe('WorkflowConfigDrawer', () => {
     const onSubmit = vi.fn(async () => true)
     render(
       <WorkflowConfigDrawer
-        value={{
-          name: 'Delivery workflow',
-          description: 'Coordinate delivery.',
-          configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
-        }}
+        value={drawerWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -199,15 +197,58 @@ describe('WorkflowConfigDrawer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Save changes' }))
 
     await waitFor(() =>
-      expect(onSubmit).toHaveBeenCalledWith({
-        name: 'Delivery workflow',
-        description: 'Coordinate delivery.',
-        configuration: {
-          repositoryIds: ['repository-web'],
-          primaryRepositoryId: 'repository-web',
-          variables: [],
-        },
-      }),
+      expect(onSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          configuration: {
+            repositoryIds: ['repository-web'],
+            primaryRepositoryId: 'repository-web',
+            variables: [],
+          },
+        }),
+      ),
     )
+  })
+
+  it('blocks invalid graph JSON and saves a valid edited graph', async () => {
+    const onSubmit = vi.fn(async () => true)
+    render(
+      <WorkflowConfigDrawer
+        value={drawerWorkflow()}
+        repositories={repositories}
+        onClose={vi.fn()}
+        onDelete={vi.fn(async () => true)}
+        onSubmit={onSubmit}
+      />,
+    )
+
+    const editor = await screen.findByRole('textbox', { name: 'Workflow graph JSON' })
+    const save = screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement
+    fireEvent.change(editor, { target: { value: '{' } })
+    expect(screen.getByRole('alert').textContent).toContain('Graph definition is not valid JSON')
+    expect(save.disabled).toBe(true)
+
+    fireEvent.change(editor, {
+      target: {
+        value: JSON.stringify({
+          startNodeId: null,
+          nodes: 'invalid',
+          edges: [],
+          maxTransitions: 42,
+        }),
+      },
+    })
+    expect(save.disabled).toBe(true)
+
+    const graph = {
+      startNodeId: null,
+      nodes: [],
+      edges: [],
+      maxTransitions: 42,
+    }
+    fireEvent.change(editor, { target: { value: JSON.stringify(graph) } })
+    expect(save.disabled).toBe(false)
+    fireEvent.click(save)
+
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining(graph)))
   })
 })

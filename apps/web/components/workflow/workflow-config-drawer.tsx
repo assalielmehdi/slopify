@@ -1,7 +1,11 @@
 'use client'
 
 import type { Repository } from '@slopify/contracts'
-import type { CreateWorkflowInput, WorkflowConfiguration } from '@slopify/workflow-model'
+import {
+  workflowToWorkflowFile,
+  type Workflow,
+  type WorkflowConfiguration,
+} from '@slopify/workflow-model'
 import {
   BracesIcon,
   FolderGit2Icon,
@@ -17,6 +21,11 @@ import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import {
+  WorkflowGraphJsonEditor,
+  formatWorkflowGraphSource,
+  parseWorkflowGraphSource,
+} from '@/components/workflow/workflow-graph-json-editor'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -26,13 +35,13 @@ interface VariableRow {
 }
 
 export interface WorkflowConfigDrawerProps {
-  readonly value: CreateWorkflowInput
+  readonly value: Workflow
   readonly repositories: readonly Repository[]
   readonly error?: string | undefined
   readonly saving?: boolean | undefined
   readonly onClose: () => void
   readonly onDelete: () => Promise<boolean>
-  readonly onSubmit: (value: CreateWorkflowInput) => Promise<boolean>
+  readonly onSubmit: (value: Workflow) => Promise<boolean>
 }
 
 const prefersReducedMotion = (): boolean =>
@@ -222,6 +231,8 @@ export function WorkflowConfigDrawer({
   onSubmit,
 }: WorkflowConfigDrawerProps) {
   const { configuration } = value
+  const workflowFile = workflowToWorkflowFile(value)
+  const initialGraphSource = formatWorkflowGraphSource(workflowFile.graph)
   const shellRef = useRef<HTMLDivElement>(null)
   const openFrameRef = useRef<number | undefined>(undefined)
   const closeTimerRef = useRef<number | undefined>(undefined)
@@ -234,6 +245,7 @@ export function WorkflowConfigDrawer({
   const [deleting, setDeleting] = useState(false)
   const [name, setName] = useState(value.name)
   const [description, setDescription] = useState(value.description)
+  const [graphSource, setGraphSource] = useState(initialGraphSource)
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<
     Set<Repository['repositoryId']>
   >(() => new Set(configuration.repositoryIds))
@@ -298,7 +310,9 @@ export function WorkflowConfigDrawer({
     trimmedDescription !== value.description ||
     !sameMembers(selectedRepositories, configuration.repositoryIds) ||
     primaryRepositoryId !== configuration.primaryRepositoryId ||
-    !sameValues(trimmedVariables, configuration.variables)
+    !sameValues(trimmedVariables, configuration.variables) ||
+    graphSource !== initialGraphSource
+  const graphResult = parseWorkflowGraphSource(graphSource, workflowFile)
   const repositoriesValid =
     (selectedRepositories.length === 0 && primaryRepositoryId === null) ||
     (primaryRepositoryId !== null && selectedRepositories.includes(primaryRepositoryId))
@@ -310,10 +324,13 @@ export function WorkflowConfigDrawer({
       trimmedDescription.length === 0 ||
       !variablesValid ||
       !repositoriesValid ||
+      graphResult.status === 'INVALID' ||
       !isDirty
     )
       return
+    const graph = graphResult.value
     const saved = await onSubmit({
+      ...value,
       name: trimmedName,
       description: trimmedDescription,
       configuration: {
@@ -321,11 +338,15 @@ export function WorkflowConfigDrawer({
         primaryRepositoryId,
         variables: trimmedVariables,
       },
+      startNodeId: graph.startNodeId,
+      nodes: graph.nodes,
+      edges: graph.edges,
+      maxTransitions: graph.maxTransitions,
     })
     if (!saved) return
     toast.add({
       title: 'Workflow saved',
-      description: 'Details, repositories, and run variables were saved.',
+      description: 'Details, repositories, run variables, and graph were saved.',
       type: 'success',
     })
     requestClose()
@@ -464,6 +485,12 @@ export function WorkflowConfigDrawer({
               variables={variables}
             />
 
+            <WorkflowGraphJsonEditor
+              onChange={setGraphSource}
+              source={graphSource}
+              workflow={workflowFile}
+            />
+
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
               <div
                 aria-hidden={!confirmingDelete}
@@ -506,6 +533,7 @@ export function WorkflowConfigDrawer({
                   trimmedDescription.length === 0 ||
                   !variablesValid ||
                   !repositoriesValid ||
+                  graphResult.status === 'INVALID' ||
                   !isDirty
                 }
               >

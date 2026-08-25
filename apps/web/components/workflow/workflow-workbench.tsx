@@ -7,7 +7,6 @@ import type { HarnessDescriptor, Repository } from '@slopify/contracts'
 import {
   AgentNodeSchema,
   WorkflowEdgeSchema,
-  type CreateWorkflowInput,
   type Workflow,
   type WorkflowEdge,
 } from '@slopify/workflow-model'
@@ -257,8 +256,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     return true
   }
 
-  const saveWorkflowConfiguration = async (value: CreateWorkflowInput) =>
-    (await persist({ ...workflow, ...value })) !== undefined
+  const saveWorkflowConfiguration = async (value: Workflow) => (await persist(value)) !== undefined
 
   const deleteWorkflow = async () => {
     update({ saving: true, saveError: undefined })
@@ -540,11 +538,7 @@ export function WorkflowWorkbench({
           onSubmit={state.saveWorkflowConfiguration}
           repositories={state.repositories}
           saving={state.saving}
-          value={{
-            name: state.workflow.name,
-            description: state.workflow.description,
-            configuration: state.workflow.configuration,
-          }}
+          value={state.workflow}
         />
       ) : null}
 

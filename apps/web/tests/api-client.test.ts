@@ -8,9 +8,19 @@ import {
   SettingsSchema,
   UndoDeletionResponseSchema,
 } from '@slopify/contracts'
+import { workflowToWorkflowFile, type Workflow } from '@slopify/workflow-model'
 
 import { ApiClientError, createApiClient } from '../lib/api-client'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
+
+const workflowEntry = (workflow: Workflow, revision = 'a'.repeat(64)) => ({
+  status: 'VALID' as const,
+  workflowId: workflow.workflowId,
+  value: workflowToWorkflowFile(workflow),
+  revision,
+  runnable: workflow.nodes.length > 0,
+  readiness: [],
+})
 
 describe('API client', () => {
   it('loads the host-discovered harness catalog', async () => {
@@ -265,10 +275,12 @@ describe('API client', () => {
       .fn<typeof fetch>()
       .mockResolvedValueOnce(
         Response.json({
-          workflows: [workflow],
+          workflows: [workflowEntry(workflow)],
         }),
       )
-      .mockResolvedValueOnce(Response.json(workflow))
+      .mockResolvedValueOnce(
+        Response.json(workflowEntry(workflow), { headers: { etag: `"${'a'.repeat(64)}"` } }),
+      )
       .mockResolvedValueOnce(
         Response.json({
           deletionId: 'deletion-workflow-01',
@@ -305,16 +317,24 @@ describe('API client', () => {
       thinkingLevel: 'high',
     })
     const input = {
+      workflowId: 'release-workflow',
       name: 'release-workflow',
       description: 'Prepare and review a release.',
-      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     } as const
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(workflow))
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(workflowEntry(workflow), { headers: { etag: `"${'a'.repeat(64)}"` } }),
+      )
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(client.createWorkflow(input)).resolves.toEqual(workflow)
     expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows', {
-      body: JSON.stringify(input),
+      body: JSON.stringify({
+        workflowId: 'release-workflow',
+        name: 'release-workflow',
+        description: 'Prepare and review a release.',
+      }),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       method: 'POST',
     })
@@ -329,13 +349,23 @@ describe('API client', () => {
     const canonical = { ...workflow, updatedAt: '2026-08-22T12:00:00.000Z' }
     const fetchImplementation = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(canonical))
+      .mockResolvedValueOnce(Response.json({ workflows: [workflowEntry(workflow)] }))
+      .mockResolvedValueOnce(
+        Response.json(workflowEntry(canonical, 'b'.repeat(64)), {
+          headers: { etag: `"${'b'.repeat(64)}"` },
+        }),
+      )
     const client = createApiClient({ fetch: fetchImplementation })
 
+    await client.listWorkflows()
     await expect(client.updateWorkflow(workflow.workflowId, workflow)).resolves.toEqual(canonical)
-    expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows/default-workflow', {
-      body: JSON.stringify(workflow),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/default-workflow', {
+      body: JSON.stringify(workflowToWorkflowFile(workflow)),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'if-match': `"${'a'.repeat(64)}"`,
+      },
       method: 'PUT',
     })
   })

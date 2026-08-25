@@ -73,15 +73,18 @@ vi.mock('../components/workflow/workflow-config-drawer', () => ({
   WorkflowConfigDrawer: ({
     onDelete,
     onSubmit,
+    value,
   }: {
     onDelete: () => Promise<boolean>
     onSubmit: (value: unknown) => Promise<boolean>
+    value: Workflow
   }) => (
     <aside aria-label="Workflow configuration">
       <button onClick={() => void onDelete()}>Delete workflow</button>
       <button
         onClick={() =>
           void onSubmit({
+            ...value,
             name: 'renamed-workflow',
             description: 'Updated workflow details.',
             configuration: {

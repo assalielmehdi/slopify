@@ -199,13 +199,13 @@ describe('AppShell', () => {
 
     fireEvent.change(input, { target: { value: 'Review Workflow' } })
     expect(screen.getByRole('alert').textContent).toContain(
-      'Use 1–100 lowercase letters, numbers, and single hyphens',
+      'Use 1–64 lowercase letters, numbers, and single hyphens',
     )
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(workflowClient.createWorkflow).not.toHaveBeenCalled()
 
     fireEvent.change(input, { target: { value: 'default-workflow' } })
-    expect(screen.getByRole('alert').textContent).toBe('A workflow with this name already exists.')
+    expect(screen.getByRole('alert').textContent).toBe('A workflow with this slug already exists.')
 
     fireEvent.keyDown(input, { key: 'Escape' })
     expect(screen.queryByRole('textbox', { name: 'New workflow name' })).toBeNull()
@@ -217,9 +217,9 @@ describe('AppShell', () => {
 
     await waitFor(() =>
       expect(workflowClient.createWorkflow).toHaveBeenCalledWith({
+        workflowId: 'review-workflow',
         name: 'review-workflow',
         description: 'review-workflow workflow.',
-        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       }),
     )
     expect(

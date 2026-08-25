@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 import { ChevronRightIcon, PlusIcon, WorkflowIcon } from 'lucide-react'
 
-import { WorkflowNameSchema } from '@slopify/workflow-model'
+import { WorkflowSlugSchema } from '@slopify/workflow-model'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'
@@ -114,10 +114,10 @@ export function WorkflowSidebarMenu({
   }, [editorActive, onSelectedWorkflowChange, selectedWorkflow])
 
   const validateName = (name: string): string | undefined => {
-    const parsed = WorkflowNameSchema.safeParse(name)
+    const parsed = WorkflowSlugSchema.safeParse(name)
     if (!parsed.success) return parsed.error.issues[0]?.message
-    if (workflows.some((workflow) => workflow.name === name)) {
-      return 'A workflow with this name already exists.'
+    if (workflows.some((workflow) => workflow.workflowId === name)) {
+      return 'A workflow with this slug already exists.'
     }
     return undefined
   }
@@ -143,17 +143,17 @@ export function WorkflowSidebarMenu({
     setSaving(true)
     try {
       const created = await client.createWorkflow({
+        workflowId: creatingName,
         name: creatingName,
         description: `${creatingName} workflow.`,
-        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       })
       setWorkflows((current) => [created, ...current])
       cancelCreating()
       router.push(`/?workflowId=${encodeURIComponent(created.workflowId)}`)
     } catch (cause) {
       setCreatingError(
-        cause instanceof ApiClientError && cause.code === 'WORKFLOW_NAME_CONFLICT'
-          ? 'A workflow with this name already exists.'
+        cause instanceof ApiClientError && cause.code === 'WORKFLOW_ID_CONFLICT'
+          ? 'A workflow with this slug already exists.'
           : cause instanceof Error
             ? cause.message
             : 'Workflow could not be created.',
@@ -239,7 +239,7 @@ export function WorkflowSidebarMenu({
                 className="h-8 px-2 font-mono text-[13px]/4"
                 disabled={saving}
                 id="new-workflow-name"
-                maxLength={100}
+                maxLength={64}
                 onChange={(event) => {
                   const value = event.currentTarget.value
                   setCreatingName(value)

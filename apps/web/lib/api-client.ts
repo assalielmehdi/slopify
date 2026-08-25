@@ -41,18 +41,75 @@ import {
   type RunStatus,
 } from '@slopify/contracts'
 import {
-  CreateWorkflowInputSchema,
+  WorkflowFileSchema,
   WorkflowSchema,
-  type CreateWorkflowInput,
+  WorkflowSlugSchema,
+  workflowFileToWorkflow,
+  workflowToWorkflowFile,
   type Workflow,
 } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()
 const SettingsEtagSchema = z.string().regex(/^"(?:missing|[a-f0-9]{64})"$/)
+const WorkflowRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/u)
+const WorkflowEtagSchema = z.string().regex(/^"(?:missing|[a-f0-9]{64})"$/u)
+
+const WorkflowDiagnosticSchema = z.strictObject({
+  code: z.enum([
+    'WORKFLOW_DIRECTORY_INVALID',
+    'WORKFLOW_FILE_MISSING',
+    'WORKFLOW_FILE_MALFORMED',
+    'WORKFLOW_FILE_INVALID',
+    'WORKFLOW_ID_MISMATCH',
+    'WORKFLOW_GRAPH_INVALID',
+    'WORKFLOW_ENTRY_UNAVAILABLE',
+  ]),
+  message: z.string(),
+  path: z.array(z.union([z.string(), z.number()])).readonly(),
+})
+
+const WorkflowReadinessFindingSchema = z.strictObject({
+  code: z.enum([
+    'WORKFLOW_EMPTY_GRAPH',
+    'HARNESS_NOT_FOUND',
+    'HARNESS_UNAVAILABLE',
+    'HARNESS_MODEL_UNAVAILABLE',
+    'HARNESS_THINKING_UNAVAILABLE',
+  ]),
+  message: z.string(),
+  path: z.array(z.union([z.string(), z.number()])).readonly(),
+})
+
+const ValidWorkflowCatalogEntrySchema = z.strictObject({
+  status: z.literal('VALID'),
+  workflowId: WorkflowSlugSchema,
+  value: WorkflowFileSchema,
+  revision: WorkflowRevisionSchema,
+  runnable: z.boolean(),
+  readiness: z.array(WorkflowReadinessFindingSchema).readonly(),
+})
+
+const InvalidWorkflowCatalogEntrySchema = z.strictObject({
+  status: z.literal('INVALID'),
+  workflowId: z.string().min(1),
+  revision: WorkflowRevisionSchema.nullable(),
+  diagnostics: z.array(WorkflowDiagnosticSchema).readonly(),
+})
+
+const WorkflowCatalogEntrySchema = z.discriminatedUnion('status', [
+  ValidWorkflowCatalogEntrySchema,
+  InvalidWorkflowCatalogEntrySchema,
+])
 
 const WorkflowCatalogResponseSchema = z.strictObject({
-  workflows: z.array(WorkflowSchema).readonly(),
+  workflows: z.array(WorkflowCatalogEntrySchema).readonly(),
+})
+
+const CreateWorkflowDefinitionInputSchema = z.strictObject({
+  workflowId: WorkflowSlugSchema,
+  name: z.string().trim().min(1).max(100),
+  description: z.string().trim().min(1).max(4096),
 })
 
 const StartRunResponseSchema = z.strictObject({
@@ -153,6 +210,8 @@ export interface SettingsSnapshot {
   readonly etag: string
 }
 
+export type CreateWorkflowDefinitionInput = z.infer<typeof CreateWorkflowDefinitionInputSchema>
+
 export interface ListRunsInput {
   readonly page: number
   readonly pageSize: number
@@ -184,7 +243,7 @@ export interface ApiClient {
   deleteRepository(repositoryId: string): Promise<DeletionReceipt>
   undoDeletion(deletionId: string): Promise<UndoDeletionResponse>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
-  createWorkflow(input: CreateWorkflowInput): Promise<Workflow>
+  createWorkflow(input: CreateWorkflowDefinitionInput): Promise<Workflow>
   deleteWorkflow(workflowId: string): Promise<DeletionReceipt>
   getWorkflow(workflowId: string): Promise<Workflow>
   updateWorkflow(workflowId: string, workflow: Workflow): Promise<Workflow>
@@ -218,6 +277,7 @@ export const createApiClient = (
   options: Readonly<{ fetch?: typeof globalThis.fetch }> = {},
 ): ApiClient => {
   const fetchImplementation = options.fetch ?? globalThis.fetch
+  const workflowEtags = new Map<string, string>()
 
   const request = async <Schema extends z.ZodType>(
     path: string,
@@ -273,6 +333,38 @@ export const createApiClient = (
       status: response.status,
       ...(apiError.details === undefined ? {} : { details: apiError.details }),
     })
+  }
+
+  const validWorkflow = (
+    entry: z.infer<typeof WorkflowCatalogEntrySchema>,
+    etag?: string,
+  ): Workflow => {
+    if (entry.status === 'INVALID') {
+      throw new ApiClientError({
+        code: 'WORKFLOW_FILE_INVALID',
+        message: entry.diagnostics[0]?.message ?? 'Workflow definition is invalid',
+        status: 409,
+        details: { diagnostics: entry.diagnostics },
+      })
+    }
+    workflowEtags.set(entry.workflowId, etag ?? `"${entry.revision}"`)
+    return workflowFileToWorkflow(entry.value)
+  }
+
+  const requestWorkflow = async (path: string, init: RequestInit): Promise<Workflow> => {
+    const response = await fetchImplementation(path, init)
+    const body: unknown = await response.json()
+    if (!response.ok) {
+      const apiError = ApiErrorSchema.parse(body).error
+      throw new ApiClientError({
+        code: apiError.code,
+        message: apiError.message,
+        status: response.status,
+        ...(apiError.details === undefined ? {} : { details: apiError.details }),
+      })
+    }
+    const entry = WorkflowCatalogEntrySchema.parse(body)
+    return validWorkflow(entry, WorkflowEtagSchema.parse(response.headers.get('etag')))
   }
 
   return {
@@ -368,19 +460,17 @@ export const createApiClient = (
     },
 
     async listWorkflows() {
-      return (await get('/api/workflows', WorkflowCatalogResponseSchema)).workflows
+      const { workflows } = await get('/api/workflows', WorkflowCatalogResponseSchema)
+      return workflows.flatMap((entry) => (entry.status === 'VALID' ? [validWorkflow(entry)] : []))
     },
 
     async createWorkflow(input) {
-      return request(
-        '/api/workflows',
-        {
-          body: JSON.stringify(CreateWorkflowInputSchema.parse(input)),
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          method: 'POST',
-        },
-        WorkflowSchema,
-      )
+      const parsed = CreateWorkflowDefinitionInputSchema.parse(input)
+      return requestWorkflow('/api/workflows', {
+        body: JSON.stringify(parsed),
+        headers: { accept: 'application/json', 'content-type': 'application/json' },
+        method: 'POST',
+      })
     },
 
     async deleteWorkflow(workflowId) {
@@ -392,19 +482,32 @@ export const createApiClient = (
     },
 
     async getWorkflow(workflowId) {
-      return get(`/api/workflows/${encodeURIComponent(workflowId)}`, WorkflowSchema)
+      const parsedId = WorkflowSlugSchema.parse(workflowId)
+      return requestWorkflow(`/api/workflows/${encodeURIComponent(parsedId)}`, {
+        headers: { accept: 'application/json' },
+        method: 'GET',
+      })
     },
 
     async updateWorkflow(workflowId, workflow) {
-      return request(
-        `/api/workflows/${encodeURIComponent(WorkflowIdSchema.parse(workflowId))}`,
-        {
-          body: JSON.stringify(WorkflowSchema.parse(workflow)),
-          headers: { accept: 'application/json', 'content-type': 'application/json' },
-          method: 'PUT',
+      const parsedId = WorkflowSlugSchema.parse(workflowId)
+      const expectedEtag = workflowEtags.get(parsedId)
+      if (expectedEtag === undefined) {
+        throw new ApiClientError({
+          code: 'WORKFLOW_PRECONDITION_REQUIRED',
+          message: 'Reload the workflow before saving changes',
+          status: 428,
+        })
+      }
+      return requestWorkflow(`/api/workflows/${encodeURIComponent(parsedId)}`, {
+        body: JSON.stringify(workflowToWorkflowFile(WorkflowSchema.parse(workflow))),
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'if-match': WorkflowEtagSchema.parse(expectedEtag),
         },
-        WorkflowSchema,
-      )
+        method: 'PUT',
+      })
     },
 
     async startRun(input) {
