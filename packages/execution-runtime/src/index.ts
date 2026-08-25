@@ -35,6 +35,17 @@ export {
 export { RunDomainEventSchema, type RunDomainEvent } from './runs/run-events.js'
 export { createFilesystemRunJournal } from './runs/filesystem-run-journal.js'
 export {
+  createFilesystemRunIndex,
+  createFilesystemRunReader,
+  type FilesystemRunDetail,
+  type FilesystemRunDiagnostic,
+  type FilesystemRunIndex,
+  type FilesystemRunIndexEntry,
+  type FilesystemRunIndexPage,
+  type FilesystemRunLocator,
+  type FilesystemRunReader,
+} from './runs/run-index.js'
+export {
   RunJournalError,
   type NewRunDomainEvent,
   type RunJournal,
@@ -383,8 +394,11 @@ export {
 } from './services/workflow-definition-service.js'
 export {
   RunEventFeedError,
+  createFilesystemRunEventFeed,
   createRunEventFeed,
+  type CreateFilesystemRunEventFeedOptions,
   type CreateRunEventFeedOptions,
+  type FilesystemRunEventFeed,
   type RunEventFeed,
   type SubscribeToRunEventsInput,
 } from './services/run-event-feed.js'
