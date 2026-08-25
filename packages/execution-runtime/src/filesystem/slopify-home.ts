@@ -1,7 +1,8 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
+import { RunIdSchema } from '@slopify/contracts'
+import { WorkflowSlugSchema } from '@slopify/workflow-model'
 import type { z } from 'zod'
 
 export interface SlopifyWorkflowPaths {
@@ -56,7 +57,7 @@ export const resolveSlopifyPaths = (
   const workflowsDirectory = join(home, 'workflows')
 
   const workflow = (workflowId: string): SlopifyWorkflowPaths => {
-    const safeWorkflowId = identifier('Workflow ID', WorkflowIdSchema, workflowId)
+    const safeWorkflowId = identifier('Workflow ID', WorkflowSlugSchema, workflowId)
     const directory = join(workflowsDirectory, safeWorkflowId)
     return {
       directory,

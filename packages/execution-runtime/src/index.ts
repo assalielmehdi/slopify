@@ -148,6 +148,16 @@ export {
   type RepositoryStoreErrorCode,
 } from './repositories/repository-store.js'
 export { createFilesystemRepositoryStore } from './repositories/filesystem-repository-store.js'
+export {
+  WorkflowStoreError,
+  type VersionedWorkflowFile,
+  type WorkflowDiagnostic,
+  type WorkflowDiagnosticCode,
+  type WorkflowStore,
+  type WorkflowStoreEntry,
+  type WorkflowStoreErrorCode,
+} from './workflows/workflow-store.js'
+export { createFilesystemWorkflowStore } from './workflows/filesystem-workflow-store.js'
 export { createRemoteRunRepositoryResolver } from './repositories/remote-run-repository-resolver.js'
 export {
   createNativeGitRunWorkspaceProvisioner,

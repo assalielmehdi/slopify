@@ -46,6 +46,8 @@ describe('Slopify filesystem paths', () => {
   it.each([
     ['workflow', () => resolveSlopifyPaths().workflow('../escape')],
     ['workflow', () => resolveSlopifyPaths().workflow('nested/workflow')],
+    ['workflow', () => resolveSlopifyPaths().workflow('invalid_workflow')],
+    ['workflow', () => resolveSlopifyPaths().workflow('a'.repeat(65))],
     ['run', () => resolveSlopifyPaths().run('workflow-01', '../../escape')],
     ['run', () => resolveSlopifyPaths().run('workflow-01', '/absolute')],
   ])('rejects an invalid %s identifier before constructing a path', (_kind, resolvePath) => {
