@@ -44,7 +44,7 @@ const isConstraintError = (cause: unknown): boolean =>
 export const createRepositoryStore = (database: WorkbenchDatabase): RepositoryStore => {
   const connection = getDatabaseHandle(database)
   return {
-    add(repository) {
+    async add(repository) {
       try {
         connection
           .prepare(
@@ -76,7 +76,7 @@ export const createRepositoryStore = (database: WorkbenchDatabase): RepositorySt
         throw mapPersistenceError(cause, 'Could not persist repository')
       }
     },
-    get(repositoryId) {
+    async get(repositoryId) {
       const row = connection
         .prepare(
           `SELECT ${selection} FROM repositories WHERE repository_id = ? AND deletion_id IS NULL`,
@@ -84,7 +84,7 @@ export const createRepositoryStore = (database: WorkbenchDatabase): RepositorySt
         .get(RepositoryIdSchema.parse(repositoryId)) as RepositoryRow | undefined
       return row === undefined ? undefined : parseRow(row)
     },
-    findByRemote(provider, remoteId) {
+    async findByRemote(provider, remoteId) {
       const row = connection
         .prepare(
           `SELECT ${selection} FROM repositories
@@ -93,7 +93,7 @@ export const createRepositoryStore = (database: WorkbenchDatabase): RepositorySt
         .get(GitProviderSchema.parse(provider), remoteId) as RepositoryRow | undefined
       return row === undefined ? undefined : parseRow(row)
     },
-    list() {
+    async list() {
       return (
         connection
           .prepare(
@@ -103,7 +103,18 @@ export const createRepositoryStore = (database: WorkbenchDatabase): RepositorySt
           .all() as RepositoryRow[]
       ).map(parseRow)
     },
-    stageDeletion(input) {
+    async delete(repositoryId) {
+      try {
+        return (
+          connection
+            .prepare('DELETE FROM repositories WHERE repository_id = ?')
+            .run(RepositoryIdSchema.parse(repositoryId)).changes > 0
+        )
+      } catch (cause) {
+        throw mapPersistenceError(cause, 'Could not delete repository')
+      }
+    },
+    async stageDeletion(input) {
       const receipt = DeletionReceiptSchema.parse(input)
       if (receipt.subject.type !== 'REPOSITORY') return false
       const stage = connection.transaction(() => {
@@ -130,7 +141,7 @@ export const createRepositoryStore = (database: WorkbenchDatabase): RepositorySt
         throw mapPersistenceError(cause, 'Could not stage repository deletion')
       }
     },
-    restoreDeletion(deletionId, now) {
+    async restoreDeletion(deletionId, now) {
       const restore = connection.transaction(() => {
         const operation = connection
           .prepare(
@@ -171,7 +182,7 @@ export const createRepositoryStore = (database: WorkbenchDatabase): RepositorySt
         throw mapPersistenceError(cause, 'Could not restore repository deletion')
       }
     },
-    purgeExpired(now) {
+    async purgeExpired(now) {
       const purge = connection.transaction(() => {
         connection
           .prepare(

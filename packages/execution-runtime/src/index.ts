@@ -133,7 +133,16 @@ export {
   type RepositoryService,
   type RepositoryServiceErrorCode,
 } from './repositories/repository-service.js'
-export { type RepositoryRecord, type RepositoryStore } from './repositories/repository-store.js'
+export {
+  RepositoryCollectionSchema,
+  RepositoryRecordSchema,
+  RepositoryStoreError,
+  type RepositoryCollection,
+  type RepositoryRecord,
+  type RepositoryStore,
+  type RepositoryStoreErrorCode,
+} from './repositories/repository-store.js'
+export { createFilesystemRepositoryStore } from './repositories/filesystem-repository-store.js'
 export { createRemoteRunRepositoryResolver } from './repositories/remote-run-repository-resolver.js'
 export {
   createNativeGitRunWorkspaceProvisioner,

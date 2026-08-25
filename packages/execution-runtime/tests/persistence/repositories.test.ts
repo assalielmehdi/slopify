@@ -73,7 +73,7 @@ describe('current repositories', () => {
     expect(fixture.workflows.get(fixture.workflow.workflowId)).toEqual(fixture.workflow)
   })
 
-  it('persists current remote repositories by provider repository identity', () => {
+  it('persists current remote repositories by provider repository identity', async () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
     const repository = {
@@ -89,13 +89,13 @@ describe('current repositories', () => {
       updatedAt: '2026-08-23T12:00:00.000Z',
     } as const
 
-    fixture.repositories.add(repository)
+    await fixture.repositories.add(repository)
 
-    expect(fixture.repositories.get(repository.repositoryId)).toEqual(repository)
-    expect(fixture.repositories.findByRemote(repository.provider, repository.remoteId)).toEqual(
-      repository,
-    )
-    expect(fixture.repositories.list()).toEqual([repository])
+    await expect(fixture.repositories.get(repository.repositoryId)).resolves.toEqual(repository)
+    await expect(
+      fixture.repositories.findByRemote(repository.provider, repository.remoteId),
+    ).resolves.toEqual(repository)
+    await expect(fixture.repositories.list()).resolves.toEqual([repository])
   })
 
   it('atomically stores immutable workflow, variable, and repository snapshots', () => {
