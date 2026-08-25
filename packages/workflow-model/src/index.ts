@@ -1,5 +1,6 @@
 export * from './graph-queries.js'
 export * from './default-workflow.js'
+export * from './json-schema.js'
 export * from './prompt-variables.js'
 export * from './schemas.js'
 export * from './types.js'

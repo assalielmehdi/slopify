@@ -48,6 +48,11 @@ export {
   type WatchedResource,
 } from './filesystem/resource-watcher.js'
 export {
+  createManagedJsonSchemas,
+  publishManagedJsonSchemas,
+  type ManagedJsonSchema,
+} from './filesystem/schema-publisher.js'
+export {
   SettingsCredentialReferenceSchema,
   SettingsGitConnectionRecordSchema,
   SettingsRecordSchema,

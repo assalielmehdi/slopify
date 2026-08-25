@@ -130,7 +130,7 @@ export const WorkflowGraphSchema = z
     startNodeId: NodeIdSchema.nullable(),
     nodes: z.array(AgentNodeSchema).readonly(),
     edges: z.array(WorkflowEdgeSchema).readonly(),
-    maxTransitions: z.number().int().nonnegative().safe(),
+    maxTransitions: z.number().int().safe().nonnegative(),
   })
   .readonly()
 
@@ -152,7 +152,7 @@ export const WorkflowSchema = z
     startNodeId: NodeIdSchema.nullable(),
     nodes: z.array(AgentNodeSchema).readonly(),
     edges: z.array(WorkflowEdgeSchema).readonly(),
-    maxTransitions: z.number().int().nonnegative().safe(),
+    maxTransitions: z.number().int().safe().nonnegative(),
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
   })
