@@ -16,6 +16,15 @@ export {
   type WriteJsonResourceInput,
 } from './filesystem/atomic-json-resource.js'
 export {
+  InstanceLockError,
+  InstanceLockOwnerSchema,
+  createInstanceLockManager,
+  type InstanceLockErrorCode,
+  type InstanceLockHandle,
+  type InstanceLockManager,
+  type InstanceLockOwner,
+} from './filesystem/instance-lock.js'
+export {
   GitConnectionServiceError,
   createGitConnectionService,
   type GitConnectionService,
