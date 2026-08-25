@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   RunDomainEventSchema,
+  createJournalExecutionWorker,
   createJournalWorkflowCoordinator,
   createRunProjectionState,
   reduceRunEvents,
@@ -89,12 +90,13 @@ const createFixture = (definition: Workflow = workflow) => {
       }
     },
   }
-  const coordinator = createJournalWorkflowCoordinator({
-    runs: {
-      async load({ runId }) {
-        return runId === 'run-01' ? { workflow: definition, journal } : undefined
-      },
+  const runs = {
+    async load({ runId }: { readonly runId: string }) {
+      return runId === 'run-01' ? { workflow: definition, journal } : undefined
     },
+  }
+  const coordinator = createJournalWorkflowCoordinator({
+    runs,
     now: () => timestamp,
   })
   const succeed = async (nodeId: string, outcome: string) => {
@@ -116,7 +118,7 @@ const createFixture = (definition: Workflow = workflow) => {
     })
     return coordinator.reconcile({ workflowId: definition.workflowId, runId: 'run-01' })
   }
-  return { coordinator, events, projection, succeed }
+  return { coordinator, events, journal, projection, runs, succeed }
 }
 
 describe('journal workflow coordinator', () => {
@@ -203,5 +205,41 @@ describe('journal workflow coordinator', () => {
       transitionCount: 0,
       failureCode: 'TRANSITION_LIMIT_EXCEEDED',
     })
+  })
+
+  it('completes an in-memory harness run once from journal facts', async () => {
+    const fixture = createFixture({
+      ...workflow,
+      name: 'Leaf review',
+      startNodeId: 'leaf',
+      nodes: [agent('leaf')],
+      edges: [],
+      maxTransitions: 0,
+    })
+    await fixture.coordinator.start({ workflowId: 'parallel-review', runId: 'run-01' })
+    let executions = 0
+    const worker = createJournalExecutionWorker({
+      runs: fixture.runs,
+      coordinator: fixture.coordinator,
+      runner: {
+        async run() {
+          executions += 1
+          return { status: 'succeeded', outcome: 'completed', output: { summary: 'Done' } }
+        },
+        async cancel() {
+          return { status: 'cancelled' }
+        },
+      },
+      now: () => timestamp,
+    })
+
+    await expect(worker.drain([{ workflowId: 'parallel-review', runId: 'run-01' }])).resolves.toBe(
+      1,
+    )
+    expect(fixture.projection().run.status).toBe('SUCCEEDED')
+    await expect(worker.drain([{ workflowId: 'parallel-review', runId: 'run-01' }])).resolves.toBe(
+      0,
+    )
+    expect(executions).toBe(1)
   })
 })

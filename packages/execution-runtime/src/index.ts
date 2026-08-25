@@ -273,6 +273,18 @@ export {
   type JournalWorkflowCoordinator,
 } from './orchestration/journal-workflow-coordinator.js'
 export {
+  JournalExecutionWorkerError,
+  createJournalExecutionWorker,
+  type JournalExecutionWorker,
+  type JournalExecutionWorkerErrorCode,
+  type JournalRunLocator,
+} from './orchestration/journal-execution-worker.js'
+export {
+  createScheduledNodeClaims,
+  type ScheduledNodeClaim,
+  type ScheduledNodeClaims,
+} from './orchestration/scheduled-node-claims.js'
+export {
   createEventStore,
   type EventPage,
   type EventStore,
