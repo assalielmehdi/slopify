@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
-import { createFilesystemRuntime } from '../src/filesystem-runtime.js'
+import { createFilesystemRuntime, startFilesystemRuntime } from '../src/filesystem-runtime.js'
 
 const timestamp = '2026-08-25T10:00:00.000Z'
 const directories: string[] = []
@@ -149,9 +149,12 @@ describe('filesystem runtime composition', () => {
       body: JSON.stringify({ workflowId: 'runtime-review', variables: { release: 'v1.0.0' } }),
     })
     const locator = { workflowId: 'runtime-review', runId: 'run-runtime-1' }
-    await runtime.coordinator.start(locator)
-    await runtime.worker.drain([locator])
+    const lifecycle = await startFilesystemRuntime({ runtime, pollIntervalMs: 1_000 })
     const detail = await runtime.reader.get(locator.runId)
+    const health = await createApiApp({
+      ...runtime.api,
+      filesystemHealth: lifecycle.health,
+    }).request('/healthz')
 
     expect(admitted.status).toBe(202)
     expect(detail).toMatchObject({
@@ -170,8 +173,18 @@ describe('filesystem runtime composition', () => {
         attemptId: execution.attemptId,
       }),
     ).resolves.toMatchObject({ complete: true, events: [{ type: 'AGENT_RESULT' }] })
+    expect(health.status).toBe(200)
+    expect(existsSync(join(runtime.paths.schemasDirectory, 'workflow.v2.schema.json'))).toBe(true)
+    expect(existsSync(join(runtime.paths.runtimeDirectory, 'instance.lock'))).toBe(true)
+    await expect(startFilesystemRuntime({ runtime, pollIntervalMs: 1_000 })).rejects.toMatchObject({
+      code: 'INSTANCE_ALREADY_RUNNING',
+    })
     expect(
       existsSync(runtime.paths.run(locator.workflowId, locator.runId).workspacesDirectory),
-    ).toBe(true)
+    ).toBe(false)
+    expect(existsSync(runtime.paths.run(locator.workflowId, locator.runId).runFile)).toBe(true)
+
+    await lifecycle.stop()
+    expect(existsSync(join(runtime.paths.runtimeDirectory, 'instance.lock'))).toBe(false)
   })
 })

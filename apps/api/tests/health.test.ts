@@ -76,4 +76,31 @@ describe('GET /healthz', () => {
     expect(response.status).toBe(503)
     expect(await response.json()).toMatchObject({ error: { code: 'DATABASE_UNAVAILABLE' } })
   })
+
+  it('reports filesystem health without requiring a database', async () => {
+    const response = await createApiApp({
+      filesystemHealth: { status: async () => ({ owned: true, writable: true }) },
+    }).request('/healthz')
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: 'ok' })
+  })
+
+  it('does not expose filesystem paths when ownership or writability is lost', async () => {
+    const privatePath = '/Users/operator/.slopify/runtime/instance.lock'
+    const response = await createApiApp({
+      filesystemHealth: {
+        status: async () => {
+          throw new Error(privatePath)
+        },
+      },
+    }).request('/healthz')
+    const body = await response.text()
+
+    expect(response.status).toBe(503)
+    expect(body).not.toContain(privatePath)
+    expect(JSON.parse(body)).toEqual({
+      error: { code: 'FILESYSTEM_UNAVAILABLE', message: 'Local persistence is unavailable' },
+    })
+  })
 })

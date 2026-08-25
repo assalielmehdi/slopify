@@ -1,3 +1,6 @@
+import { constants } from 'node:fs'
+import { access, mkdir } from 'node:fs/promises'
+
 import type { AgentExecutor } from '@slopify/contracts'
 import {
   createAgentNodeRunner,
@@ -9,11 +12,14 @@ import {
   createFilesystemRunReader,
   createFilesystemRunStore,
   createFilesystemWorkflowStore,
+  createInstanceLockManager,
   createJournalCancellationService,
   createJournalExecutionWorker,
   createJournalWorkflowCoordinator,
+  createRunRecoveryService,
   createRunFilesystemAgentTraceStore,
   createWorkflowDefinitionService,
+  publishManagedJsonSchemas,
   resolveSlopifyPaths,
   type AgentTraceStore,
   type FilesystemRunAdmissionService,
@@ -25,11 +31,13 @@ import {
   type HarnessCatalog,
   type JournalCancellationService,
   type JournalExecutionWorker,
+  type JournalRunLocator,
   type JournalWorkflowCoordinator,
   type NodeRunner,
   type ProcessRunner,
   type RunAgentTraceStore,
   type RunRecord,
+  type RunRecoveryService,
   type RunWorkspaceProvisioner,
   type SlopifyPaths,
   type WorkflowDefinitionService,
@@ -38,6 +46,7 @@ import {
 import { workflowFileToWorkflow } from '@slopify/workflow-model'
 
 import type { CreateApiAppOptions } from './app.js'
+import { createFilesystemExecutionPump, type FilesystemExecutionPump } from './execution-pump.js'
 
 type RuntimeEnvironment = Readonly<Record<string, string | undefined>>
 
@@ -67,7 +76,18 @@ export interface FilesystemRuntime {
   readonly coordinator: JournalWorkflowCoordinator
   readonly worker: JournalExecutionWorker
   readonly cancellation: JournalCancellationService
+  readonly recovery: RunRecoveryService
   readonly api: CreateApiAppOptions
+}
+
+export interface FilesystemRuntimeHealth {
+  status(): Promise<Readonly<{ owned: boolean; writable: boolean }>>
+}
+
+export interface FilesystemRuntimeLifecycle {
+  readonly health: FilesystemRuntimeHealth
+  readonly pump: FilesystemExecutionPump
+  stop(): Promise<void>
 }
 
 const legacyRunRecord = (
@@ -234,6 +254,24 @@ export const createFilesystemRuntime = (
     ...(options.now === undefined ? {} : { now: options.now }),
   })
   const cancellation = createJournalCancellationService({ coordinator, worker })
+  const recoveryStore = {
+    ...coordinatorStore,
+    async list(): Promise<readonly JournalRunLocator[]> {
+      const locators: JournalRunLocator[] = []
+      for (let page = 1; ; page += 1) {
+        const indexed = await index.list({ page, pageSize: 100 })
+        locators.push(...indexed.data.map(({ locator }) => locator))
+        if (page >= indexed.pagination.totalPages) return locators
+      }
+    },
+  }
+  const recovery = createRunRecoveryService({
+    runs: recoveryStore,
+    coordinator,
+    worker,
+    workspaces,
+    ...(options.now === undefined ? {} : { now: options.now }),
+  })
   return {
     paths,
     workflowStore,
@@ -247,10 +285,52 @@ export const createFilesystemRuntime = (
     coordinator,
     worker,
     cancellation,
+    recovery,
     api: {
       filesystemRuns: { admissions, index, reader, cancellation, traces },
       eventFeed,
       workflows,
     },
+  }
+}
+
+export const startFilesystemRuntime = async (options: {
+  readonly runtime: FilesystemRuntime
+  readonly pollIntervalMs: number
+  readonly onError?: (error: unknown) => void
+}): Promise<FilesystemRuntimeLifecycle> => {
+  await mkdir(options.runtime.paths.home, { recursive: true, mode: 0o700 })
+  const ownership = await createInstanceLockManager({ paths: options.runtime.paths }).acquire()
+  try {
+    await publishManagedJsonSchemas({ paths: options.runtime.paths })
+    const health: FilesystemRuntimeHealth = {
+      async status() {
+        await access(options.runtime.paths.home, constants.W_OK)
+        await ownership.heartbeat()
+        return { owned: true, writable: true }
+      },
+    }
+    const pump = createFilesystemExecutionPump({
+      pollIntervalMs: options.pollIntervalMs,
+      recovery: options.runtime.recovery,
+      heartbeat: () => ownership.heartbeat(),
+      ...(options.onError === undefined ? {} : { onError: options.onError }),
+    })
+    pump.start()
+    await pump.wake()
+    let stopped = false
+    return {
+      health,
+      pump,
+      async stop() {
+        if (stopped) return
+        stopped = true
+        await pump.stop()
+        await ownership.release()
+      },
+    }
+  } catch (cause) {
+    await ownership.release().catch(() => undefined)
+    throw cause
   }
 }

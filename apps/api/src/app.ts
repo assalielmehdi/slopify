@@ -47,6 +47,7 @@ export interface CreateApiAppOptions {
   readonly cancellation?: CancellationService
   readonly traces?: AgentTraceStore
   readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
+  readonly filesystemHealth?: FilesystemHealth
   readonly deletions?: DeletionService
   readonly gitConnections?: GitConnectionService
   readonly harnesses?: HarnessCatalog
@@ -57,6 +58,10 @@ export interface CreateApiAppOptions {
   readonly eventFeed?: RunEventFeed | FilesystemRunEventFeed
   readonly resourceEvents?: ResourceEventFeed
   readonly workflows?: WorkflowDefinitionService
+}
+
+export interface FilesystemHealth {
+  status(): Promise<Readonly<{ owned: boolean; writable: boolean }>>
 }
 
 const errorBody = (input: {
@@ -81,13 +86,34 @@ const persistenceUnavailable = (context: Context): Response =>
     503,
   )
 
+const filesystemUnavailable = (context: Context): Response =>
+  context.json(
+    errorBody({
+      code: 'FILESYSTEM_UNAVAILABLE',
+      message: 'Local persistence is unavailable',
+    }),
+    503,
+  )
+
 export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.runs !== undefined && options.filesystemRuns !== undefined) {
     throw new TypeError('Only one run persistence API may be registered')
   }
+  if (options.database !== undefined && options.filesystemHealth !== undefined) {
+    throw new TypeError('Only one persistence health source may be registered')
+  }
   const app = new Hono()
 
-  app.get('/healthz', (context) => {
+  app.get('/healthz', async (context) => {
+    if (options.filesystemHealth !== undefined) {
+      try {
+        const status = await options.filesystemHealth.status()
+        if (!status.owned || !status.writable) return filesystemUnavailable(context)
+        return context.json(HealthResponseSchema.parse({ status: 'ok' }), 200)
+      } catch {
+        return filesystemUnavailable(context)
+      }
+    }
     if (options.database?.isOpen !== true) return persistenceUnavailable(context)
 
     try {

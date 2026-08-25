@@ -83,6 +83,68 @@ export const createShutdownCoordinator = (
   }
 }
 
+export interface CreateFilesystemShutdownCoordinatorOptions {
+  readonly server: ShutdownServer
+  readonly runs: Readonly<{ stopAdmissions(): void }>
+  readonly activeRuns: () => Promise<
+    readonly Readonly<{ readonly workflowId: string; readonly runId: string }>[]
+  >
+  readonly cancellation: Readonly<{
+    cancel(input: {
+      readonly workflowId: string
+      readonly runId: string
+      readonly reason?: string
+    }): Promise<unknown>
+  }>
+  readonly execution: Readonly<{ stop(): Promise<void> }>
+  readonly ownership: Readonly<{ release(): Promise<void> }>
+  readonly gracePeriodMs: number
+}
+
+export const createFilesystemShutdownCoordinator = (
+  options: CreateFilesystemShutdownCoordinatorOptions,
+): ShutdownCoordinator => {
+  if (!Number.isSafeInteger(options.gracePeriodMs) || options.gracePeriodMs < 1) {
+    throw new RangeError('Shutdown grace period must be a positive safe integer')
+  }
+  let inFlight: Promise<ShutdownResult> | undefined
+
+  return {
+    shutdown(signal) {
+      if (inFlight !== undefined) return inFlight
+      options.runs.stopAdmissions()
+      const serverStopped = options.server.stop().catch(() => undefined)
+      const graceful = (async (): Promise<ShutdownResult> => {
+        let cancellationConfirmed = true
+        for (const run of await options.activeRuns()) {
+          try {
+            await options.cancellation.cancel({ ...run, reason: `Process received ${signal}` })
+          } catch {
+            cancellationConfirmed = false
+          }
+        }
+        await options.execution.stop()
+        await serverStopped
+        if (!cancellationConfirmed) return { signal, forced: true }
+        await options.ownership.release()
+        return { signal, forced: false }
+      })()
+
+      let deadline: ReturnType<typeof setTimeout>
+      const forced = new Promise<ShutdownResult>((resolve) => {
+        deadline = setTimeout(() => {
+          void options.server.stop(true).then(
+            () => resolve({ signal, forced: true }),
+            () => resolve({ signal, forced: true }),
+          )
+        }, options.gracePeriodMs)
+      })
+      inFlight = Promise.race([graceful, forced]).finally(() => clearTimeout(deadline))
+      return inFlight
+    },
+  }
+}
+
 export const registerShutdownSignals = (input: {
   readonly coordinator: ShutdownCoordinator
   readonly target?: ShutdownProcess

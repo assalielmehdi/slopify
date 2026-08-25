@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createExecutionPump } from '../src/execution-pump.js'
+import { createExecutionPump, createFilesystemExecutionPump } from '../src/execution-pump.js'
 
 describe('execution pump', () => {
   it('drains worker commands and coordinator facts until the durable queue is idle', async () => {
@@ -68,6 +68,38 @@ describe('execution pump', () => {
     release?.()
     await Promise.all([first, second])
     expect(worker.drain).toHaveBeenCalledTimes(1)
+    await pump.stop()
+  })
+})
+
+describe('filesystem execution pump', () => {
+  it('coalesces journal recovery cycles and heartbeats after durable work settles', async () => {
+    const order: string[] = []
+    let finishRecovery: (() => void) | undefined
+    const recovery = {
+      recover: vi.fn(
+        () =>
+          new Promise<void>((resolve) => {
+            order.push('recover')
+            finishRecovery = resolve
+          }),
+      ),
+    }
+    const pump = createFilesystemExecutionPump({
+      pollIntervalMs: 1_000,
+      recovery,
+      heartbeat: vi.fn(async () => {
+        order.push('heartbeat')
+      }),
+    })
+
+    const first = pump.wake()
+    const second = pump.wake()
+    expect(recovery.recover).toHaveBeenCalledOnce()
+    finishRecovery?.()
+    await Promise.all([first, second])
+
+    expect(order).toEqual(['recover', 'heartbeat'])
     await pump.stop()
   })
 })
