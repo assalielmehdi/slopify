@@ -278,4 +278,81 @@ describe('journal workflow coordinator', () => {
     ])
     expect(fixture.events[1]).toMatchObject({ data: { reason: 'Stopped by user' } })
   })
+
+  it('makes every captured repository ready before scheduling the start node', async () => {
+    const configured = createFixture({
+      ...workflow,
+      configuration: {
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
+        variables: [],
+      },
+      name: 'Workspace review',
+      startNodeId: 'leaf',
+      nodes: [agent('leaf')],
+      edges: [],
+      maxTransitions: 0,
+    })
+    const coordinator = createJournalWorkflowCoordinator({
+      runs: configured.runs,
+      workspaces: {
+        async ensure() {
+          expect(configured.events).toEqual([])
+          await configured.journal.append({
+            eventId: 'workspace-preparing',
+            timestamp,
+            type: 'WORKSPACE_PREPARING',
+            data: {
+              repositoryId: 'repository-api',
+              position: 0,
+              workspacePath: '/tmp/slopify/run-01/repository-api',
+              branchName: 'slopify/run-01',
+            },
+          })
+          await configured.journal.append({
+            eventId: 'workspace-ready',
+            timestamp,
+            type: 'WORKSPACE_READY',
+            data: { repositoryId: 'repository-api' },
+          })
+          return []
+        },
+      },
+      now: () => timestamp,
+    })
+
+    await coordinator.start({ workflowId: 'parallel-review', runId: 'run-01' })
+    expect(configured.events.map(({ type }) => type)).toEqual([
+      'WORKSPACE_PREPARING',
+      'WORKSPACE_READY',
+      'RUN_STARTED',
+      'NODE_SCHEDULED',
+    ])
+
+    const incomplete = createFixture({
+      ...workflow,
+      configuration: {
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
+        variables: [],
+      },
+      name: 'Incomplete workspace review',
+      startNodeId: 'leaf',
+      nodes: [agent('leaf')],
+      edges: [],
+      maxTransitions: 0,
+    })
+    const failed = createJournalWorkflowCoordinator({
+      runs: incomplete.runs,
+      workspaces: { ensure: async () => [] },
+      now: () => timestamp,
+    })
+
+    await failed.start({ workflowId: 'parallel-review', runId: 'run-01' })
+    expect(incomplete.projection().run).toMatchObject({
+      status: 'FAILED',
+      failureCode: 'WORKSPACE_PREPARATION_FAILED',
+    })
+    expect(incomplete.events.some(({ type }) => type === 'NODE_SCHEDULED')).toBe(false)
+  })
 })

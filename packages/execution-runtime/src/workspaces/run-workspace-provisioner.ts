@@ -1,6 +1,11 @@
 import type { RepositoryId, RunId } from '@slopify/contracts'
 
 import type { RunRepositorySnapshot } from '../persistence/run-repository.js'
+import type { JournalRunLocator } from '../orchestration/journal-execution-worker.js'
+import type {
+  RunRepositorySnapshotArtifact,
+  RunWorkspaceProjection,
+} from '../runs/run-artifacts.js'
 
 export interface ProvisionedRunRepository extends RunRepositorySnapshot {
   readonly workspacePath: string
@@ -10,6 +15,19 @@ export interface ProvisionedRunRepository extends RunRepositorySnapshot {
 export interface RunWorkspaceProvisioner {
   ensure(runId: RunId): Promise<readonly ProvisionedRunRepository[]>
   cleanup(runId: RunId): Promise<void>
+}
+
+export interface ProvisionedFilesystemRunRepository extends RunRepositorySnapshotArtifact {
+  readonly workspacePath: string
+  readonly branchName: string
+}
+
+export interface FilesystemRunWorkspaceProvisioner {
+  ensure(run: JournalRunLocator): Promise<readonly ProvisionedFilesystemRunRepository[]>
+  cleanup(input: {
+    readonly run: JournalRunLocator
+    readonly workspaces: readonly RunWorkspaceProjection[]
+  }): Promise<readonly string[]>
 }
 
 export interface RunWorkspaceProvisioningFailure {

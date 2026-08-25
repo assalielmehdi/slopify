@@ -6,6 +6,7 @@ import { WorkflowSchema } from '@slopify/workflow-model'
 import type { RunDomainEvent } from '../runs/run-events.js'
 import type { RunJournal } from '../runs/run-journal.js'
 import type { RunProjectionState } from '../runs/run-projection.js'
+import type { FilesystemRunWorkspaceProvisioner } from '../workspaces/run-workspace-provisioner.js'
 import type { JournalCoordinatorStore } from './journal-coordinator-store.js'
 
 export type JournalCoordinatorErrorCode =
@@ -106,6 +107,7 @@ const lastReleaseSequence = (events: readonly RunDomainEvent[], targetNodeId: st
 
 export const createJournalWorkflowCoordinator = (options: {
   readonly runs: JournalCoordinatorStore
+  readonly workspaces?: Pick<FilesystemRunWorkspaceProvisioner, 'ensure'>
   readonly now?: () => string
 }): JournalWorkflowCoordinator => {
   const now = options.now ?? (() => new Date().toISOString())
@@ -349,7 +351,37 @@ export const createJournalWorkflowCoordinator = (options: {
   return {
     start(input) {
       return serialize(input, async () => {
-        const { journal, startNodeId } = await requireRun(options.runs, input)
+        const { journal, workflow, startNodeId } = await requireRun(options.runs, input)
+        const initial = await requireProjection(journal)
+        if (initial.run.status !== 'PENDING') return reconcileUnlocked(input)
+        if (workflow.configuration.repositoryIds.length > 0) {
+          let workspaceFailure = false
+          try {
+            if (options.workspaces === undefined)
+              throw new Error('Workspace provisioner is missing')
+            await options.workspaces.ensure(input)
+            const prepared = await requireProjection(journal)
+            const ready = new Set(
+              prepared.workspaces.workspaces
+                .filter(({ status }) => status === 'READY')
+                .map(({ repositoryId }) => repositoryId),
+            )
+            workspaceFailure = workflow.configuration.repositoryIds.some(
+              (repositoryId) => !ready.has(repositoryId),
+            )
+          } catch {
+            workspaceFailure = true
+          }
+          if (workspaceFailure) {
+            await appendFailure(
+              journal,
+              stableId('workspace-preparation', input.runId),
+              'WORKSPACE_PREPARATION_FAILED',
+              now(),
+            )
+            return requireProjection(journal)
+          }
+        }
         const replayed = await journal.replay()
         if (replayed.status === 'CORRUPT') {
           throw new JournalCoordinatorError('RUN_JOURNAL_CORRUPT', replayed.diagnostic.message)

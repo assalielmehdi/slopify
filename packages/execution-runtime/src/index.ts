@@ -229,7 +229,13 @@ export {
   type CreateNativeGitRunWorkspaceProvisionerOptions,
 } from './workspaces/native-git-run-workspace-provisioner.js'
 export {
+  createFilesystemGitRunWorkspaceProvisioner,
+  type CreateFilesystemGitRunWorkspaceProvisionerOptions,
+} from './workspaces/filesystem-git-run-workspace-provisioner.js'
+export {
   RunWorkspaceProvisioningError,
+  type FilesystemRunWorkspaceProvisioner,
+  type ProvisionedFilesystemRunRepository,
   type ProvisionedRunRepository,
   type RunWorkspaceProvisioner,
   type RunWorkspaceProvisioningFailure,

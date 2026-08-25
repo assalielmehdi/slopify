@@ -1,5 +1,5 @@
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
-import { isAbsolute, join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RunIdSchema, type RepositoryId, type RunId } from '@slopify/contracts'
 
 import type {
@@ -16,17 +16,29 @@ import {
 } from './run-workspace-provisioner.js'
 
 export interface CreateNativeGitRunWorkspaceProvisionerOptions {
-  readonly runs: Pick<
-    RunRepository,
-    | 'listRunRepositories'
-    | 'listRunRepositoryWorkspaces'
-    | 'markRunRepositoryWorkspacePreparing'
-    | 'markRunRepositoryWorkspaceReady'
-    | 'markRunRepositoryWorkspaceFailed'
-    | 'markRunRepositoryWorkspaceCleaned'
-  >
+  readonly runs: {
+    listRunRepositories(
+      runId: RunId,
+    ): readonly RunRepositorySnapshot[] | Promise<readonly RunRepositorySnapshot[]>
+    listRunRepositoryWorkspaces(
+      runId: RunId,
+    ): readonly RunRepositoryWorkspace[] | Promise<readonly RunRepositoryWorkspace[]>
+    markRunRepositoryWorkspacePreparing(
+      input: Parameters<RunRepository['markRunRepositoryWorkspacePreparing']>[0],
+    ): unknown
+    markRunRepositoryWorkspaceReady(
+      input: Parameters<RunRepository['markRunRepositoryWorkspaceReady']>[0],
+    ): unknown
+    markRunRepositoryWorkspaceFailed(
+      input: Parameters<RunRepository['markRunRepositoryWorkspaceFailed']>[0],
+    ): unknown
+    markRunRepositoryWorkspaceCleaned(
+      input: Parameters<RunRepository['markRunRepositoryWorkspaceCleaned']>[0],
+    ): unknown
+  }
   readonly processRunner: ProcessRunner
   readonly workspacesRoot: string
+  readonly resolveRunDirectory?: (runId: RunId) => string
   readonly credentialHelper: string
   readonly timeoutMs?: number
   readonly now?: () => string
@@ -146,7 +158,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
     runId: RunId,
     repository: RunRepositorySnapshot,
     state: RunRepositoryWorkspace | undefined,
-    root: string,
+    runDirectory: string,
   ): Promise<ProvisionedRunRepository> => {
     if (
       repository.provider === null ||
@@ -155,7 +167,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
     ) {
       throw new GitWorkspaceError('Legacy local repositories cannot provision cloned workspaces')
     }
-    const workspacePath = join(root, runId, repository.repositoryId)
+    const workspacePath = join(runDirectory, repository.repositoryId)
     const branchName = `slopify/${runId}`
     if (
       state !== undefined &&
@@ -166,8 +178,6 @@ export const createNativeGitRunWorkspaceProvisioner = (
     }
 
     try {
-      await requireCanonicalDirectory(root, 'Run workspaces root')
-      const runDirectory = join(root, runId)
       if (await pathExists(runDirectory)) {
         await requireCanonicalDirectory(runDirectory, 'Run workspace directory')
       }
@@ -178,7 +188,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
         return { ...repository, workspacePath, branchName }
       }
 
-      options.runs.markRunRepositoryWorkspacePreparing({
+      await options.runs.markRunRepositoryWorkspacePreparing({
         runId,
         repositoryId: repository.repositoryId,
         workspacePath,
@@ -220,7 +230,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
         'Git credential configuration',
       )
       await verifyWorkspace(repository, workspacePath, branchName)
-      options.runs.markRunRepositoryWorkspaceReady({
+      await options.runs.markRunRepositoryWorkspaceReady({
         runId,
         repositoryId: repository.repositoryId,
         workspacePath,
@@ -229,11 +239,11 @@ export const createNativeGitRunWorkspaceProvisioner = (
       })
       return { ...repository, workspacePath, branchName }
     } catch (cause) {
-      const existing = options.runs
-        .listRunRepositoryWorkspaces(runId)
-        .find(({ repositoryId }) => repositoryId === repository.repositoryId)
+      const existing = (await options.runs.listRunRepositoryWorkspaces(runId)).find(
+        ({ repositoryId }) => repositoryId === repository.repositoryId,
+      )
       if (existing === undefined) {
-        options.runs.markRunRepositoryWorkspacePreparing({
+        await options.runs.markRunRepositoryWorkspacePreparing({
           runId,
           repositoryId: repository.repositoryId,
           workspacePath,
@@ -241,7 +251,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
           timestamp: now(),
         })
       }
-      options.runs.markRunRepositoryWorkspaceFailed({
+      await options.runs.markRunRepositoryWorkspaceFailed({
         runId,
         repositoryId: repository.repositoryId,
         workspacePath,
@@ -254,7 +264,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
   }
 
   const prepareRun = async (runId: RunId): Promise<readonly ProvisionedRunRepository[]> => {
-    const repositories = options.runs.listRunRepositories(runId)
+    const repositories = await options.runs.listRunRepositories(runId)
     let root: string
     try {
       root = await getCanonicalRoot()
@@ -266,15 +276,38 @@ export const createNativeGitRunWorkspaceProvisioner = (
         })),
       )
     }
+    const runDirectory = resolve(options.resolveRunDirectory?.(runId) ?? join(root, runId))
+    const relativeRunDirectory = relative(root, runDirectory)
+    if (
+      relativeRunDirectory === '' ||
+      relativeRunDirectory === '..' ||
+      relativeRunDirectory.startsWith(`..${sep}`) ||
+      isAbsolute(relativeRunDirectory)
+    ) {
+      throw new RunWorkspaceProvisioningError(
+        repositories.map(({ repositoryId }) => ({
+          repositoryId,
+          message: 'Run workspace directory must stay inside the workspaces root',
+        })),
+      )
+    }
     const states = new Map<RepositoryId, RunRepositoryWorkspace>(
-      options.runs.listRunRepositoryWorkspaces(runId).map((state) => [state.repositoryId, state]),
+      (await options.runs.listRunRepositoryWorkspaces(runId)).map((state) => [
+        state.repositoryId,
+        state,
+      ]),
     )
     const workspaces: ProvisionedRunRepository[] = []
     const failures: RunWorkspaceProvisioningFailure[] = []
     for (const repository of repositories) {
       try {
         workspaces.push(
-          await prepareRepository(runId, repository, states.get(repository.repositoryId), root),
+          await prepareRepository(
+            runId,
+            repository,
+            states.get(repository.repositoryId),
+            runDirectory,
+          ),
         )
       } catch (cause) {
         failures.push({
@@ -290,12 +323,24 @@ export const createNativeGitRunWorkspaceProvisioner = (
   const cleanupRun = async (runId: RunId): Promise<void> => {
     const root = await getCanonicalRoot()
     await requireCanonicalDirectory(root, 'Run workspaces root')
-    const runDirectory = join(root, runId)
+    const runDirectory = resolve(options.resolveRunDirectory?.(runId) ?? join(root, runId))
+    const relativeRunDirectory = relative(root, runDirectory)
+    if (
+      relativeRunDirectory === '' ||
+      relativeRunDirectory === '..' ||
+      relativeRunDirectory.startsWith(`..${sep}`) ||
+      isAbsolute(relativeRunDirectory)
+    ) {
+      throw new GitWorkspaceError('Run workspace directory must stay inside the workspaces root')
+    }
+    if (await pathExists(runDirectory)) {
+      await requireCanonicalDirectory(runDirectory, 'Run workspace directory')
+    }
     if (await pathExists(runDirectory)) await rm(runDirectory, { recursive: true, force: true })
     const timestamp = now()
-    for (const workspace of options.runs.listRunRepositoryWorkspaces(runId)) {
+    for (const workspace of await options.runs.listRunRepositoryWorkspaces(runId)) {
       if (workspace.status === 'LEGACY') continue
-      options.runs.markRunRepositoryWorkspaceCleaned({
+      await options.runs.markRunRepositoryWorkspaceCleaned({
         runId,
         repositoryId: workspace.repositoryId,
         timestamp,
