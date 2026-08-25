@@ -48,6 +48,7 @@ export {
   type ResourceWatcher,
   type WatchDirectory,
   type WatchedResource,
+  type WatchedResourceInventory,
 } from './filesystem/resource-watcher.js'
 export {
   createManagedJsonSchemas,
@@ -288,3 +289,11 @@ export {
   type RunEventFeed,
   type SubscribeToRunEventsInput,
 } from './services/run-event-feed.js'
+export {
+  ResourceEventFeedError,
+  createResourceEventFeed,
+  type CreateResourceEventFeedOptions,
+  type PublishResourceChangeInput,
+  type ResourceEventFeed,
+  type SubscribeToResourceEventsInput,
+} from './services/resource-event-feed.js'

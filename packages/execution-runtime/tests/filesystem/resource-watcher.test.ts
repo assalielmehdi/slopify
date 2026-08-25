@@ -1,4 +1,4 @@
-import { mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -9,6 +9,7 @@ import {
   createResourceWatcher,
   type ResourceChangeEvent,
   type WatchDirectory,
+  type WatchedResource,
 } from '../../src/index.js'
 
 const directories: string[] = []
@@ -133,6 +134,51 @@ describe('editable resource watcher', () => {
     await watcher.start(() => undefined)
 
     expect(watchDirectory).toHaveBeenCalledOnce()
+    await watcher.stop()
+  })
+
+  it('discovers and removes resources from a changing inventory', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'slopify-resource-watcher-'))
+    directories.push(directory)
+    const workflowDirectory = join(directory, 'workflows', 'review')
+    const workflowPath = join(workflowDirectory, 'workflow.json')
+    const watchDirectory: WatchDirectory = vi.fn(() => ({ close: vi.fn() }))
+    const events: ResourceChangeEvent[] = []
+    let resources: readonly WatchedResource[] = []
+    const watcher = createResourceWatcher({
+      resources: async () => resources,
+      directories: [directory],
+      watchDirectory,
+    })
+
+    await watcher.start((event) => events.push(event))
+    expect(watchDirectory).toHaveBeenCalledWith(directory, expect.any(Function))
+
+    mkdirSync(workflowDirectory, { recursive: true })
+    writeFileSync(workflowPath, '{"schemaVersion":1}\n')
+    resources = [{ resourceId: 'workflow:review', path: workflowPath }]
+    await watcher.reconcile()
+
+    expect(events).toEqual([
+      expect.objectContaining({
+        type: 'CREATED',
+        resourceId: 'workflow:review',
+        path: workflowPath,
+      }),
+    ])
+    expect(watchDirectory).toHaveBeenCalledWith(workflowDirectory, expect.any(Function))
+
+    resources = []
+    await watcher.reconcile()
+
+    expect(events.at(-1)).toEqual(
+      expect.objectContaining({
+        type: 'DELETED',
+        resourceId: 'workflow:review',
+        path: workflowPath,
+        revision: null,
+      }),
+    )
     await watcher.stop()
   })
 

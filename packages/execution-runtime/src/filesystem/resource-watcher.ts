@@ -11,6 +11,10 @@ export interface WatchedResource {
   readonly maxBytes?: number
 }
 
+export type WatchedResourceInventory =
+  | readonly WatchedResource[]
+  | (() => readonly WatchedResource[] | Promise<readonly WatchedResource[]>)
+
 export interface ResourceChangeEvent {
   readonly type: ResourceChangeType
   readonly resourceId: string
@@ -45,23 +49,17 @@ const positiveInteger = (name: string, value: number, maximum: number): number =
 
 export const createResourceWatcher = (
   options: Readonly<{
-    resources: readonly WatchedResource[]
+    resources: WatchedResourceInventory
+    directories?: readonly string[]
     debounceMs?: number
     reconcileIntervalMs?: number
     watchDirectory?: WatchDirectory
     onError?: (error: unknown) => void
   }>,
 ): ResourceWatcher => {
-  const resourceIds = new Set<string>()
-  const paths = new Set<string>()
-  for (const resource of options.resources) {
-    if (resource.resourceId.trim() === '') throw new TypeError('resourceId must not be blank')
-    if (!isAbsolute(resource.path)) throw new TypeError('Watched resource paths must be absolute')
-    if (resourceIds.has(resource.resourceId))
-      throw new TypeError('resourceId values must be unique')
-    if (paths.has(resource.path)) throw new TypeError('Watched resource paths must be unique')
-    resourceIds.add(resource.resourceId)
-    paths.add(resource.path)
+  const configuredDirectories = options.directories ?? []
+  for (const directory of configuredDirectories) {
+    if (!isAbsolute(directory)) throw new TypeError('Watched directories must be absolute')
   }
   const debounceMs = positiveInteger('debounceMs', options.debounceMs ?? 50, 60_000)
   const reconcileIntervalMs = positiveInteger(
@@ -71,8 +69,9 @@ export const createResourceWatcher = (
   )
   const watchDirectory = options.watchDirectory ?? defaultWatchDirectory
   const onError = options.onError ?? (() => undefined)
+  const definitions = new Map<string, WatchedResource>()
   const revisions = new Map<string, ResourceRevision | null>()
-  const handles: Readonly<{ close(): void }>[] = []
+  const handles = new Map<string, Readonly<{ close(): void }>>()
   let listener: ((event: ResourceChangeEvent) => void) | undefined
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
   let reconcileTimer: ReturnType<typeof setInterval> | undefined
@@ -80,13 +79,68 @@ export const createResourceWatcher = (
   let started = false
   let stopped = false
 
+  const inventory = async (): Promise<readonly WatchedResource[]> => {
+    const resources =
+      typeof options.resources === 'function' ? await options.resources() : options.resources
+    const resourceIds = new Set<string>()
+    const paths = new Set<string>()
+    for (const resource of resources) {
+      if (resource.resourceId.trim() === '') throw new TypeError('resourceId must not be blank')
+      if (!isAbsolute(resource.path)) throw new TypeError('Watched resource paths must be absolute')
+      if (resourceIds.has(resource.resourceId))
+        throw new TypeError('resourceId values must be unique')
+      if (paths.has(resource.path)) throw new TypeError('Watched resource paths must be unique')
+      resourceIds.add(resource.resourceId)
+      paths.add(resource.path)
+    }
+    return resources
+  }
+
+  const syncDirectoryWatches = (resources: readonly WatchedResource[]): void => {
+    const directories = new Set([
+      ...configuredDirectories,
+      ...resources.map(({ path }) => dirname(path)),
+    ])
+    for (const directory of directories) {
+      if (!handles.has(directory))
+        handles.set(directory, watchDirectory(directory, scheduleReconciliation))
+    }
+    for (const [directory, handle] of handles) {
+      if (directories.has(directory)) continue
+      handle.close()
+      handles.delete(directory)
+    }
+  }
+
   const reconcileNow = async (): Promise<void> => {
-    for (const resource of options.resources) {
+    const resources = await inventory()
+    syncDirectoryWatches(resources)
+    const currentIds = new Set(resources.map(({ resourceId }) => resourceId))
+    for (const [resourceId, resource] of definitions) {
+      if (currentIds.has(resourceId)) continue
+      const previousRevision = revisions.get(resourceId) ?? null
+      definitions.delete(resourceId)
+      revisions.delete(resourceId)
+      if (previousRevision === null) continue
+      listener?.({
+        type: 'DELETED',
+        resourceId,
+        path: resource.path,
+        previousRevision,
+        revision: null,
+      })
+    }
+    for (const resource of resources) {
+      const previousDefinition = definitions.get(resource.resourceId)
+      if (previousDefinition !== undefined && previousDefinition.path !== resource.path) {
+        throw new TypeError(`Watched resource path changed for ${resource.resourceId}`)
+      }
       const revision = await readResourceRevision({
         path: resource.path,
         ...(resource.maxBytes === undefined ? {} : { maxBytes: resource.maxBytes }),
       })
       const previousRevision = revisions.get(resource.resourceId) ?? null
+      definitions.set(resource.resourceId, resource)
       if (revision === previousRevision) continue
       revisions.set(resource.resourceId, revision)
       const type: ResourceChangeType =
@@ -125,7 +179,9 @@ export const createResourceWatcher = (
       if (stopped) throw new TypeError('Resource watcher has already stopped')
       listener = nextListener
       try {
-        for (const resource of options.resources) {
+        const resources = await inventory()
+        for (const resource of resources) {
+          definitions.set(resource.resourceId, resource)
           revisions.set(
             resource.resourceId,
             await readResourceRevision({
@@ -134,14 +190,14 @@ export const createResourceWatcher = (
             }),
           )
         }
-        for (const directory of new Set(options.resources.map(({ path }) => dirname(path)))) {
-          handles.push(watchDirectory(directory, scheduleReconciliation))
-        }
+        syncDirectoryWatches(resources)
         reconcileTimer = setInterval(() => void reconcile().catch(onError), reconcileIntervalMs)
         started = true
       } catch (cause) {
-        for (const handle of handles.splice(0)) handle.close()
+        for (const handle of handles.values()) handle.close()
+        handles.clear()
         listener = undefined
+        definitions.clear()
         revisions.clear()
         throw cause
       }
@@ -154,7 +210,8 @@ export const createResourceWatcher = (
       if (reconcileTimer !== undefined) clearInterval(reconcileTimer)
       debounceTimer = undefined
       reconcileTimer = undefined
-      for (const handle of handles.splice(0)) handle.close()
+      for (const handle of handles.values()) handle.close()
+      handles.clear()
       await reconciliation
     },
   }
