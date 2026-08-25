@@ -1,5 +1,21 @@
 export { createOrchestratedRunService } from './orchestration/orchestrated-run-service.js'
 export {
+  LegacySqliteReaderError,
+  openLegacySqliteReader,
+  type LegacyDatabaseInspection,
+  type LegacySqliteReader,
+} from './migration/legacy-sqlite-reader.js'
+export {
+  LegacyMigrationError,
+  LegacyMigrationManifestSchema,
+  createLegacyMigrationService,
+  type CreateLegacyMigrationServiceOptions,
+  type LegacyMigrationErrorCode,
+  type LegacyMigrationManifest,
+  type LegacyMigrationPreparation,
+  type LegacyMigrationService,
+} from './migration/migration-service.js'
+export {
   resolveSlopifyPaths,
   type SlopifyPaths,
   type SlopifyRunPaths,
