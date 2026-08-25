@@ -20,6 +20,22 @@ const connection = {
 }
 
 const createClient = (overrides: Record<string, unknown> = {}) => ({
+  getSettings: vi.fn(async () => ({
+    value: {
+      schemaVersion: 1 as const,
+      appearance: { theme: 'system' as const },
+      git: { connections: [] },
+    },
+    etag: '"missing"',
+  })),
+  updateSettings: vi.fn(async (input: { appearance: { theme: 'light' | 'dark' | 'system' } }) => ({
+    value: {
+      schemaVersion: 1 as const,
+      appearance: input.appearance,
+      git: { connections: [] },
+    },
+    etag: `"${'a'.repeat(64)}"`,
+  })),
   listGitConnections: vi.fn(async () => []),
   configureGitConnection: vi.fn(async () => connection),
   disconnectGitConnection: vi.fn(async () => undefined),
@@ -53,9 +69,10 @@ afterEach(cleanup)
 
 describe('SettingsScreen', () => {
   it('renders Interface and Git without repeating the page title', async () => {
+    const client = createClient()
     render(
-      <AppShell>
-        <SettingsScreen client={createClient()} />
+      <AppShell themeClient={client}>
+        <SettingsScreen client={client} />
       </AppShell>,
     )
 
@@ -64,7 +81,7 @@ describe('SettingsScreen', () => {
     expect(screen.getByRole('heading', { name: 'Interface', level: 2 })).toBeTruthy()
     expect(screen.getByRole('heading', { name: 'Git', level: 2 })).toBeTruthy()
     expect(
-      within(themeOptions).getByRole('radio', { name: 'Light' }).getAttribute('aria-checked'),
+      within(themeOptions).getByRole('radio', { name: 'System' }).getAttribute('aria-checked'),
     ).toBe('true')
     expect(await screen.findByLabelText('GitHub personal access token')).toBeTruthy()
     expect(screen.getByLabelText('GitLab personal access token')).toBeTruthy()
@@ -72,18 +89,25 @@ describe('SettingsScreen', () => {
     expect(screen.getByTestId('gitlab-logo')).toBeTruthy()
   })
 
-  it('keeps exactly one theme selected and applies the global theme state', () => {
+  it('persists one selected theme through the shared settings API', async () => {
+    const client = createClient()
     render(
-      <AppShell>
-        <SettingsScreen client={createClient()} />
+      <AppShell themeClient={client}>
+        <SettingsScreen client={client} />
       </AppShell>,
     )
 
     const dark = screen.getByRole('radio', { name: 'Dark' })
     fireEvent.click(dark)
+    await waitFor(() =>
+      expect(client.updateSettings).toHaveBeenCalledWith(
+        { appearance: { theme: 'dark' } },
+        '"missing"',
+      ),
+    )
     expect(dark.getAttribute('aria-checked')).toBe('true')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(window.localStorage.getItem('slopify-theme')).toBe('dark')
+    expect(window.localStorage.getItem('slopify-theme')).toBeNull()
   })
 
   it('validates and stores a PAT without ever rendering it back', async () => {

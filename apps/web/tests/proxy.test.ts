@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import nextConfig from '../next.config'
-import { GET, POST, PUT } from '../app/api/[...path]/route'
+import { GET, PATCH, POST, PUT } from '../app/api/[...path]/route'
 
 describe('web configuration', () => {
   it('keeps build-time type checking delegated to the TypeScript CLI', () => {
@@ -80,6 +80,28 @@ describe('same-origin API proxy', () => {
       workflowId: 'default-workflow',
       variables: { task: 'SLOPIFY-40' },
     })
+  })
+
+  it('forwards settings preconditions on PATCH requests', async () => {
+    const fetchImplementation = vi.fn<typeof fetch>(async () =>
+      Response.json({ appearance: { theme: 'dark' } }, { headers: { etag: '"next"' } }),
+    )
+    vi.stubGlobal('fetch', fetchImplementation)
+
+    await PATCH(
+      new Request('http://127.0.0.1:3000/api/settings', {
+        body: JSON.stringify({ appearance: { theme: 'dark' } }),
+        headers: { 'content-type': 'application/json', 'if-match': '"current"' },
+        method: 'PATCH',
+      }),
+    )
+
+    const forwardedRequest = fetchImplementation.mock.calls.at(0)?.at(0)
+    expect(forwardedRequest).toBeInstanceOf(Request)
+    if (!(forwardedRequest instanceof Request)) throw new TypeError('Expected a Request')
+    expect(forwardedRequest.method).toBe('PATCH')
+    expect(forwardedRequest.headers.get('if-match')).toBe('"current"')
+    await expect(forwardedRequest.json()).resolves.toEqual({ appearance: { theme: 'dark' } })
   })
 
   it('maps the public API health path to the Hono health endpoint', async () => {

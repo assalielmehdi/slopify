@@ -1,11 +1,11 @@
 'use client'
 
-import type { GitConnection, GitProvider } from '@slopify/contracts'
+import { ThemePreferenceSchema, type GitConnection, type GitProvider } from '@slopify/contracts'
 import { CheckCircle2Icon } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 
 import { GitProviderLogo } from '@/components/settings/git-provider-logo'
-import { useThemePreference, type ThemePreference } from '@/components/theme-preference'
+import { useThemePreference } from '@/components/theme-preference'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -41,12 +41,18 @@ type SettingsClient = Pick<
 const defaultClient = createApiClient()
 
 function InterfaceSettings() {
-  const { preference, setPreference } = useThemePreference()
+  const { error, isSaving, preference, setPreference } = useThemePreference()
   return (
     <section aria-labelledby="interface-group-title">
       <h2 id="interface-group-title" className="mb-3 text-[14px]/5 font-semibold">
         Interface
       </h2>
+      {error === undefined ? null : (
+        <Alert className="mb-3" variant="destructive">
+          <AlertTitle>Theme unavailable</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
       <div className="overflow-hidden rounded-lg border border-border bg-card text-card-foreground shadow-[var(--shadow-raised)]">
         <div className="flex flex-col items-start gap-4 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
@@ -60,8 +66,9 @@ function InterfaceSettings() {
           <SegmentedControl
             ariaLabelledBy="theme-preference-label"
             className="w-full shrink-0 sm:w-auto"
+            disabled={isSaving}
             indicatorTestId="theme-selection-indicator"
-            onValueChange={(value) => setPreference(value as ThemePreference)}
+            onValueChange={(value) => void setPreference(ThemePreferenceSchema.parse(value))}
             options={themeOptions}
             value={preference}
           />

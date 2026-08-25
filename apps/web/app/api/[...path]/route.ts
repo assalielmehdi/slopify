@@ -1,23 +1,7 @@
-const DEFAULT_API_INTERNAL_URL = 'http://127.0.0.1:3001'
+import { DEFAULT_API_INTERNAL_URL, internalApiOrigin } from '@/lib/api-origin'
 
 const errorResponse = (status: number, code: string, message: string): Response =>
   Response.json({ error: { code, message } }, { status })
-
-const apiOrigin = (): string => {
-  const configuredUrl = process.env.API_INTERNAL_URL ?? DEFAULT_API_INTERNAL_URL
-  if (!URL.canParse(configuredUrl)) throw new Error('Invalid API origin')
-  const url = new URL(configuredUrl)
-  const isHttp = url.protocol === 'http:' || url.protocol === 'https:'
-  const isOriginOnly =
-    url.username === '' &&
-    url.password === '' &&
-    url.pathname === '/' &&
-    url.search === '' &&
-    url.hash === ''
-
-  if (!isHttp || !isOriginOnly) throw new Error('Invalid API origin')
-  return url.origin
-}
 
 const upstreamPath = (requestUrl: URL): string =>
   requestUrl.pathname === '/api/healthz'
@@ -27,7 +11,7 @@ const upstreamPath = (requestUrl: URL): string =>
 const proxyRequest = async (request: Request): Promise<Response> => {
   let origin: string
   try {
-    origin = apiOrigin()
+    origin = internalApiOrigin()
   } catch {
     return errorResponse(
       500,
@@ -46,4 +30,10 @@ const proxyRequest = async (request: Request): Promise<Response> => {
   }
 }
 
-export { proxyRequest as DELETE, proxyRequest as GET, proxyRequest as POST, proxyRequest as PUT }
+export {
+  proxyRequest as DELETE,
+  proxyRequest as GET,
+  proxyRequest as PATCH,
+  proxyRequest as POST,
+  proxyRequest as PUT,
+}

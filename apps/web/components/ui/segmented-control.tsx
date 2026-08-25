@@ -15,6 +15,7 @@ export function SegmentedControl({
   ariaLabel,
   ariaLabelledBy,
   className,
+  disabled = false,
   indicatorTestId,
   onValueChange,
   options,
@@ -23,6 +24,7 @@ export function SegmentedControl({
   ariaLabel?: string
   ariaLabelledBy?: string
   className?: string
+  disabled?: boolean
   indicatorTestId?: string
   onValueChange: (value: string) => void
   options: readonly SegmentedControlOption[]
@@ -63,6 +65,7 @@ export function SegmentedControl({
       role="radiogroup"
       aria-label={ariaLabel}
       aria-labelledby={ariaLabelledBy}
+      aria-busy={disabled}
       className={cn('t-tabs navigation-theme-tabs', className)}
     >
       <span
@@ -78,6 +81,7 @@ export function SegmentedControl({
           role="radio"
           aria-label={Icon === undefined ? undefined : label}
           aria-checked={value === optionValue}
+          disabled={disabled}
           tabIndex={value === optionValue ? 0 : -1}
           title={Icon === undefined ? undefined : label}
           data-option={optionValue}

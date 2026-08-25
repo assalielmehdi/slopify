@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createWorkflowDraft } from '@slopify/workflow-model'
 
 import { AppShell } from '../components/app-shell'
+import type { SettingsSnapshot } from '../lib/api-client'
 import { announceWorkflowCatalogChanged } from '../lib/workflow-catalog-events'
 
 const navigation = vi.hoisted(() => ({ pathname: '/', search: '', push: vi.fn() }))
@@ -40,6 +41,28 @@ const workflowClient = {
   createWorkflow: vi.fn(async () => defaultWorkflow),
   listWorkflows: vi.fn(async () => workflows),
 }
+const initialSystemSettings: SettingsSnapshot = {
+  value: {
+    schemaVersion: 1 as const,
+    appearance: { theme: 'system' as const },
+    git: { connections: [] },
+  },
+  etag: '"missing"',
+}
+const initialDarkSettings: SettingsSnapshot = {
+  value: {
+    ...initialSystemSettings.value,
+    appearance: { theme: 'dark' as const },
+  },
+  etag: `"${'b'.repeat(64)}"`,
+}
+const themeClient = {
+  getSettings: vi.fn(async () => initialSystemSettings),
+  updateSettings: vi.fn(async (input: { appearance: { theme: 'light' | 'dark' | 'system' } }) => ({
+    value: { ...initialSystemSettings.value, appearance: input.appearance },
+    etag: `"${'c'.repeat(64)}"`,
+  })),
+}
 
 beforeEach(() => {
   navigation.pathname = '/'
@@ -47,6 +70,8 @@ beforeEach(() => {
   navigation.push.mockReset()
   workflowClient.createWorkflow.mockReset().mockResolvedValue(defaultWorkflow)
   workflowClient.listWorkflows.mockReset().mockResolvedValue(workflows)
+  themeClient.getSettings.mockReset().mockResolvedValue(initialSystemSettings)
+  themeClient.updateSettings.mockClear()
   storedPreferences.clear()
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
@@ -254,11 +279,9 @@ describe('AppShell', () => {
     expect(workflowClient.listWorkflows).toHaveBeenCalledTimes(2)
   })
 
-  it('uses D for a persisted direct light and dark toggle', () => {
-    window.localStorage.setItem('slopify-theme', 'dark')
-
+  it('uses D for a persisted direct light and dark toggle', async () => {
     render(
-      <AppShell>
+      <AppShell initialSettings={initialDarkSettings} themeClient={themeClient}>
         <p>Workbench</p>
       </AppShell>,
     )
@@ -268,8 +291,86 @@ describe('AppShell', () => {
 
     fireEvent.keyDown(window, { key: 'd' })
 
+    await waitFor(() =>
+      expect(themeClient.updateSettings).toHaveBeenCalledWith(
+        { appearance: { theme: 'light' } },
+        initialDarkSettings.etag,
+      ),
+    )
     expect(document.documentElement.classList.contains('dark')).toBe(false)
-    expect(window.localStorage.getItem('slopify-theme')).toBe('light')
+    expect(window.localStorage.getItem('slopify-theme')).toBeNull()
+  })
+
+  it('migrates a legacy preference only while settings are missing', async () => {
+    window.localStorage.setItem('slopify-theme', 'dark')
+
+    const { unmount } = render(
+      <AppShell initialSettings={initialSystemSettings} themeClient={themeClient}>
+        <p>Workbench</p>
+      </AppShell>,
+    )
+
+    await waitFor(() =>
+      expect(themeClient.updateSettings).toHaveBeenCalledWith(
+        { appearance: { theme: 'dark' } },
+        '"missing"',
+      ),
+    )
+    expect(window.localStorage.getItem('slopify-theme')).toBeNull()
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+    unmount()
+
+    window.localStorage.setItem('slopify-theme', 'system')
+    themeClient.updateSettings.mockClear()
+    render(
+      <AppShell initialSettings={initialDarkSettings} themeClient={themeClient}>
+        <p>Workbench</p>
+      </AppShell>,
+    )
+
+    await waitFor(() => expect(window.localStorage.getItem('slopify-theme')).toBeNull())
+    expect(themeClient.updateSettings).not.toHaveBeenCalled()
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
+
+  it('follows system appearance changes while the file preference is system', () => {
+    let colorSchemeListener: (() => void) | undefined
+    const colorScheme = {
+      addEventListener: vi.fn((_event: string, listener: () => void) => {
+        colorSchemeListener = listener
+      }),
+      matches: false,
+      removeEventListener: vi.fn(),
+    }
+    Object.defineProperty(window, 'matchMedia', {
+      configurable: true,
+      value: vi.fn(() => colorScheme),
+    })
+
+    render(
+      <AppShell initialSettings={initialSystemSettings} themeClient={themeClient}>
+        <p>Workbench</p>
+      </AppShell>,
+    )
+
+    expect(document.documentElement.classList.contains('dark')).toBe(false)
+    colorScheme.matches = true
+    colorSchemeListener?.()
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
+  })
+
+  it('reloads file-backed settings when the window regains focus', async () => {
+    themeClient.getSettings.mockResolvedValue(initialDarkSettings)
+    render(
+      <AppShell initialSettings={initialSystemSettings} themeClient={themeClient}>
+        <p>Workbench</p>
+      </AppShell>,
+    )
+
+    fireEvent.focus(window)
+
+    await waitFor(() => expect(themeClient.getSettings).toHaveBeenCalledTimes(1))
+    expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 
   it.each([

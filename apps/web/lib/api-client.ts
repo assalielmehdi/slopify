@@ -19,7 +19,9 @@ import {
   RepositoryCatalogResponseSchema,
   RepositoryIdSchema,
   RepositorySchema,
+  SettingsSchema,
   UndoDeletionResponseSchema,
+  UpdateSettingsRequestSchema,
   RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
@@ -32,6 +34,8 @@ import {
   type GitRepository,
   type AgentTrace,
   type Repository,
+  type Settings,
+  type UpdateSettingsRequest,
   type DeletionReceipt,
   type UndoDeletionResponse,
   type RunStatus,
@@ -45,6 +49,7 @@ import {
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()
+const SettingsEtagSchema = z.string().regex(/^"(?:missing|[a-f0-9]{64})"$/)
 
 const WorkflowCatalogResponseSchema = z.strictObject({
   workflows: z.array(WorkflowSchema).readonly(),
@@ -143,6 +148,11 @@ export interface StartRunInput {
   readonly variables?: Readonly<Record<string, JsonValue>>
 }
 
+export interface SettingsSnapshot {
+  readonly value: Settings
+  readonly etag: string
+}
+
 export interface ListRunsInput {
   readonly page: number
   readonly pageSize: number
@@ -156,6 +166,8 @@ export interface ListRunsInput {
 
 export interface ApiClient {
   getHealth(): Promise<HealthResponse>
+  getSettings(): Promise<SettingsSnapshot>
+  updateSettings(input: UpdateSettingsRequest, etag: string): Promise<SettingsSnapshot>
   listGitConnections(): Promise<readonly GitConnection[]>
   configureGitConnection(
     provider: GitProvider,
@@ -231,6 +243,26 @@ export const createApiClient = (
   const get = <Schema extends z.ZodType>(path: string, schema: Schema) =>
     request(path, { headers: { accept: 'application/json' }, method: 'GET' }, schema)
 
+  const requestSettings = async (init: RequestInit): Promise<SettingsSnapshot> => {
+    const response = await fetchImplementation('/api/settings', init)
+    const body: unknown = await response.json()
+
+    if (!response.ok) {
+      const apiError = ApiErrorSchema.parse(body).error
+      throw new ApiClientError({
+        code: apiError.code,
+        message: apiError.message,
+        status: response.status,
+        ...(apiError.details === undefined ? {} : { details: apiError.details }),
+      })
+    }
+
+    return {
+      value: SettingsSchema.parse(body),
+      etag: SettingsEtagSchema.parse(response.headers.get('etag')),
+    }
+  }
+
   const requestEmpty = async (path: string, init: RequestInit): Promise<void> => {
     const response = await fetchImplementation(path, init)
     if (response.ok) return
@@ -246,6 +278,22 @@ export const createApiClient = (
   return {
     async getHealth() {
       return get('/api/healthz', HealthResponseSchema)
+    },
+
+    async getSettings() {
+      return requestSettings({ headers: { accept: 'application/json' }, method: 'GET' })
+    },
+
+    async updateSettings(input, etag) {
+      return requestSettings({
+        body: JSON.stringify(UpdateSettingsRequestSchema.parse(input)),
+        headers: {
+          accept: 'application/json',
+          'content-type': 'application/json',
+          'if-match': SettingsEtagSchema.parse(etag),
+        },
+        method: 'PATCH',
+      })
     },
 
     async listGitConnections() {

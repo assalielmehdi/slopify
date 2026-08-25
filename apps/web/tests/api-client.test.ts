@@ -5,6 +5,7 @@ import {
   DeletionReceiptSchema,
   HarnessCatalogResponseSchema,
   RepositorySchema,
+  SettingsSchema,
   UndoDeletionResponseSchema,
 } from '@slopify/contracts'
 
@@ -93,6 +94,40 @@ describe('API client', () => {
     expect(fetchImplementation).toHaveBeenCalledWith('/api/healthz', {
       headers: { accept: 'application/json' },
       method: 'GET',
+    })
+  })
+
+  it('loads and updates settings with their strong ETag', async () => {
+    const system = SettingsSchema.parse({
+      schemaVersion: 1,
+      appearance: { theme: 'system' },
+      git: { connections: [] },
+    })
+    const dark = SettingsSchema.parse({ ...system, appearance: { theme: 'dark' } })
+    const initialEtag = '"missing"'
+    const updatedEtag = `"${'a'.repeat(64)}"`
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(system, { headers: { etag: initialEtag } }))
+      .mockResolvedValueOnce(Response.json(dark, { headers: { etag: updatedEtag } }))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.getSettings()).resolves.toEqual({ value: system, etag: initialEtag })
+    await expect(
+      client.updateSettings({ appearance: { theme: 'dark' } }, initialEtag),
+    ).resolves.toEqual({ value: dark, etag: updatedEtag })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/settings', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/settings', {
+      body: JSON.stringify({ appearance: { theme: 'dark' } }),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'if-match': initialEtag,
+      },
+      method: 'PATCH',
     })
   })
 

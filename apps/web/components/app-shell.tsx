@@ -15,7 +15,11 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { ThemePreferenceProvider, useThemePreference } from '@/components/theme-preference'
+import {
+  ThemePreferenceProvider,
+  useThemePreference,
+  type ThemeSettingsClient,
+} from '@/components/theme-preference'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Toaster } from '@/components/ui/toast'
@@ -26,7 +30,7 @@ import {
   type WorkflowSidebarClient,
 } from '@/components/workflow-sidebar-menu'
 import { displayRunId } from '@/lib/run-id'
-import type { WorkflowCatalogEntry } from '@/lib/api-client'
+import type { SettingsSnapshot, WorkflowCatalogEntry } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 
 interface NavigationItem {
@@ -155,7 +159,7 @@ function AppShellContent({
 
       event.preventDefault()
       if (shortcut === 'b') setIsCollapsed((collapsed) => !collapsed)
-      else toggleTheme()
+      else void toggleTheme()
     }
 
     window.addEventListener('keydown', handleShortcut)
@@ -335,10 +339,17 @@ function AppShellContent({
 export function AppShell({
   children,
   client,
-}: Readonly<{ children: ReactNode; client?: WorkflowSidebarClient | undefined }>) {
+  initialSettings,
+  themeClient,
+}: Readonly<{
+  children: ReactNode
+  client?: WorkflowSidebarClient | undefined
+  initialSettings?: SettingsSnapshot | undefined
+  themeClient?: ThemeSettingsClient | undefined
+}>) {
   return (
     <TooltipProvider>
-      <ThemePreferenceProvider>
+      <ThemePreferenceProvider client={themeClient} initialSettings={initialSettings}>
         <AppShellContent client={client}>{children}</AppShellContent>
         <Toaster />
       </ThemePreferenceProvider>
