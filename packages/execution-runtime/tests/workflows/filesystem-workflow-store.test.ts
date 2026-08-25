@@ -13,7 +13,11 @@ import { join } from 'node:path'
 import type { WorkflowFile } from '@slopify/workflow-model'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createFilesystemWorkflowStore, resolveSlopifyPaths } from '../../src/index.js'
+import {
+  calculateResourceRevision,
+  createFilesystemWorkflowStore,
+  resolveSlopifyPaths,
+} from '../../src/index.js'
 
 const directories: string[] = []
 
@@ -132,6 +136,8 @@ describe('filesystem workflow store', () => {
       expect.objectContaining({
         status: 'INVALID',
         workflowId: 'broken-workflow',
+        source: invalidSource,
+        revision: calculateResourceRevision(invalidSource),
         diagnostics: [expect.objectContaining({ code: 'WORKFLOW_FILE_MALFORMED' })],
       }),
     )
@@ -162,6 +168,45 @@ describe('filesystem workflow store', () => {
       }),
     )
     expect(readFileSync(invalidPath, 'utf8')).toBe(invalidSource)
+  })
+
+  it('saves against the exact revision and can repair invalid source', async () => {
+    const fixture = createFixture()
+    const definitionFile = writeExternalWorkflow(fixture.paths, 'release-review', workflow())
+    const current = await fixture.workflows.get('release-review')
+    if (current?.status !== 'VALID') throw new Error('Expected a valid workflow fixture')
+
+    writeFileSync(definitionFile, '{ invalid')
+    await expect(
+      fixture.workflows.save({
+        workflowId: 'release-review',
+        value: workflow({ name: 'Stale update' }),
+        expectedRevision: current.revision,
+      }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_REVISION_CONFLICT' })
+
+    const invalid = await fixture.workflows.get('release-review')
+    if (invalid?.status !== 'INVALID' || invalid.revision === null) {
+      throw new Error('Expected an invalid revisioned workflow fixture')
+    }
+    await expect(
+      fixture.workflows.save({
+        workflowId: 'release-review',
+        value: workflow({ workflowId: 'different-workflow' }),
+        expectedRevision: invalid.revision,
+      }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_ID_MISMATCH' })
+
+    const repaired = await fixture.workflows.save({
+      workflowId: 'release-review',
+      value: workflow({ name: 'Repaired review' }),
+      expectedRevision: invalid.revision,
+    })
+    expect(repaired.value.name).toBe('Repaired review')
+    await expect(fixture.workflows.get('release-review')).resolves.toMatchObject({
+      status: 'VALID',
+      value: { name: 'Repaired review' },
+    })
   })
 
   it('reflects external creation, repair, changes, and deletion on the next read', async () => {

@@ -20,6 +20,16 @@ export interface ReadJsonResourceInput<Output> {
   readonly maxBytes?: number
 }
 
+export interface ReadResourceSourceInput {
+  readonly path: string
+  readonly maxBytes?: number
+}
+
+export interface VersionedResourceSource {
+  readonly source: string
+  readonly revision: ResourceRevision
+}
+
 export interface WriteJsonResourceInput<Output> extends ReadJsonResourceInput<Output> {
   readonly value: unknown
 }
@@ -34,6 +44,7 @@ export interface VersionedJsonResource<Output> {
 }
 
 export interface AtomicJsonResourceIO {
+  readSource(input: ReadResourceSourceInput): Promise<VersionedResourceSource>
   read<Output>(input: ReadJsonResourceInput<Output>): Promise<Output>
   readVersioned<Output>(
     input: ReadJsonResourceInput<Output>,
@@ -166,13 +177,17 @@ export const createAtomicJsonResourceIO = (
   options: Readonly<{ commit?: Commit }> = {},
 ): AtomicJsonResourceIO => {
   const commit = options.commit ?? rename
+  const readSource = async (input: ReadResourceSourceInput): Promise<VersionedResourceSource> => {
+    const source = await readBounded(input.path, byteLimit(input.maxBytes))
+    return { source, revision: calculateResourceRevision(source) }
+  }
   const readVersioned = async <Output>(
     input: ReadJsonResourceInput<Output>,
   ): Promise<VersionedJsonResource<Output>> => {
-    const source = await readBounded(input.path, byteLimit(input.maxBytes))
+    const { source, revision } = await readSource(input)
     return {
       value: parseJsonResource(input, source),
-      revision: calculateResourceRevision(source),
+      revision,
     }
   }
 
@@ -276,6 +291,7 @@ export const createAtomicJsonResourceIO = (
   }
 
   return {
+    readSource,
     async read(input) {
       return (await readVersioned(input)).value
     },

@@ -13,7 +13,9 @@ export {
   createAtomicJsonResourceIO,
   type AtomicJsonResourceIO,
   type ReadJsonResourceInput,
+  type ReadResourceSourceInput,
   type VersionedJsonResource,
+  type VersionedResourceSource,
   type WriteJsonResourceInput,
   type WriteVersionedJsonResourceInput,
 } from './filesystem/atomic-json-resource.js'
@@ -151,12 +153,18 @@ export { createFilesystemRepositoryStore } from './repositories/filesystem-repos
 export {
   WorkflowStoreError,
   type VersionedWorkflowFile,
-  type WorkflowDiagnostic,
-  type WorkflowDiagnosticCode,
   type WorkflowStore,
   type WorkflowStoreEntry,
   type WorkflowStoreErrorCode,
 } from './workflows/workflow-store.js'
+export {
+  invalidWorkflowSource,
+  parseWorkflowSource,
+  workflowDiagnostic,
+  type WorkflowDiagnostic,
+  type WorkflowDiagnosticCode,
+  type WorkflowSource,
+} from './workflows/workflow-source.js'
 export { createFilesystemWorkflowStore } from './workflows/filesystem-workflow-store.js'
 export { createRemoteRunRepositoryResolver } from './repositories/remote-run-repository-resolver.js'
 export {
@@ -266,6 +274,13 @@ export {
   type WorkflowService,
   type WorkflowServiceErrorCode,
 } from './services/workflow-service.js'
+export {
+  createWorkflowDefinitionService,
+  type WorkflowDefinitionCatalogEntry,
+  type WorkflowDefinitionService,
+  type WorkflowReadinessCode,
+  type WorkflowReadinessFinding,
+} from './services/workflow-definition-service.js'
 export {
   RunEventFeedError,
   createRunEventFeed,

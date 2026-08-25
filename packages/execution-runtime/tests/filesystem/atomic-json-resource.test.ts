@@ -13,7 +13,11 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { z } from 'zod'
 
-import { createAtomicJsonResourceIO, type FilesystemResourceError } from '../../src/index.js'
+import {
+  calculateResourceRevision,
+  createAtomicJsonResourceIO,
+  type FilesystemResourceError,
+} from '../../src/index.js'
 
 const directories: string[] = []
 const schema = z.strictObject({ schemaVersion: z.literal(1), name: z.string().min(1) })
@@ -33,6 +37,18 @@ afterEach(() => {
 })
 
 describe('atomic JSON resources', () => {
+  it('reads the exact source bytes with their revision', async () => {
+    const directory = createDirectory()
+    const path = join(directory, 'resource.json')
+    const source = '{ "schemaVersion": 1, "name": "Slopify" }\n'
+    writeFileSync(path, source)
+
+    await expect(createAtomicJsonResourceIO().readSource({ path })).resolves.toEqual({
+      source,
+      revision: calculateResourceRevision(source),
+    })
+  })
+
   it('writes validated JSON atomically with owner-only permissions', async () => {
     const directory = createDirectory()
     const path = join(directory, 'nested', 'resource.json')

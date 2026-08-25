@@ -1,34 +1,9 @@
 import type { WorkflowFile } from '@slopify/workflow-model'
 
 import type { ResourceRevision } from '../filesystem/resource-revision.js'
+import type { WorkflowSource } from './workflow-source.js'
 
-export type WorkflowDiagnosticCode =
-  | 'WORKFLOW_DIRECTORY_INVALID'
-  | 'WORKFLOW_FILE_MISSING'
-  | 'WORKFLOW_FILE_MALFORMED'
-  | 'WORKFLOW_FILE_INVALID'
-  | 'WORKFLOW_ID_MISMATCH'
-  | 'WORKFLOW_GRAPH_INVALID'
-  | 'WORKFLOW_ENTRY_UNAVAILABLE'
-
-export interface WorkflowDiagnostic {
-  readonly code: WorkflowDiagnosticCode
-  readonly message: string
-  readonly path: readonly (string | number)[]
-}
-
-export type WorkflowStoreEntry =
-  | Readonly<{
-      status: 'VALID'
-      workflowId: string
-      value: WorkflowFile
-      revision: ResourceRevision
-    }>
-  | Readonly<{
-      status: 'INVALID'
-      workflowId: string
-      diagnostics: readonly WorkflowDiagnostic[]
-    }>
+export type WorkflowStoreEntry = WorkflowSource
 
 export interface VersionedWorkflowFile {
   readonly value: WorkflowFile
@@ -36,7 +11,12 @@ export interface VersionedWorkflowFile {
 }
 
 export type WorkflowStoreErrorCode =
-  'WORKFLOW_CONFLICT' | 'WORKFLOW_FILE_INVALID' | 'WORKFLOW_UNAVAILABLE'
+  | 'WORKFLOW_CONFLICT'
+  | 'WORKFLOW_FILE_INVALID'
+  | 'WORKFLOW_ID_MISMATCH'
+  | 'WORKFLOW_NOT_FOUND'
+  | 'WORKFLOW_REVISION_CONFLICT'
+  | 'WORKFLOW_UNAVAILABLE'
 
 export class WorkflowStoreError extends Error {
   override readonly name = 'WorkflowStoreError'
@@ -52,6 +32,11 @@ export class WorkflowStoreError extends Error {
 
 export interface WorkflowStore {
   create(workflow: WorkflowFile): Promise<VersionedWorkflowFile>
+  save(input: {
+    readonly workflowId: string
+    readonly value: WorkflowFile
+    readonly expectedRevision: ResourceRevision | null
+  }): Promise<VersionedWorkflowFile>
   get(workflowId: string): Promise<WorkflowStoreEntry | undefined>
   list(): Promise<readonly WorkflowStoreEntry[]>
 }

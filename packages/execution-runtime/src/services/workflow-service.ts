@@ -24,6 +24,7 @@ export type WorkflowServiceErrorCode =
   | 'WORKFLOW_NAME_CONFLICT'
   | 'WORKFLOW_NOT_FOUND'
   | 'WORKFLOW_HARNESS_UNAVAILABLE'
+  | 'WORKFLOW_REVISION_CONFLICT'
 
 export class WorkflowServiceError extends Error {
   override readonly name = 'WorkflowServiceError'
