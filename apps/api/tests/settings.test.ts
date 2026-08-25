@@ -8,13 +8,22 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []
+const database = {
+  isOpen: true,
+  status: () => ({
+    foreignKeysEnabled: true,
+    journalMode: 'wal',
+    schemaVersion: 2,
+    writable: true,
+  }),
+}
 
 const createFixture = () => {
   const home = mkdtempSync(join(tmpdir(), 'slopify-settings-api-'))
   directories.push(home)
   const paths = resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } })
   const settings = createFilesystemSettingsStore({ paths })
-  return { app: createApiApp({ settings }), paths, settings }
+  return { app: createApiApp({ database, settings }), paths, settings }
 }
 
 const patchSettings = (app: ReturnType<typeof createApiApp>, etag: string | null, theme: string) =>
@@ -95,8 +104,11 @@ describe('settings API', () => {
     }
     const externalSource = `${JSON.stringify(external, null, 2)}\n`
     writeFileSync(paths.settingsFile, externalSource)
+    const externallyEdited = await app.request('/api/settings')
     const stale = await patchSettings(app, updated.headers.get('etag'), 'light')
 
+    expect(externallyEdited.status).toBe(200)
+    expect(await externallyEdited.json()).toMatchObject({ appearance: { theme: 'system' } })
     expect(stale.status).toBe(412)
     expect(await stale.json()).toMatchObject({ error: { code: 'SETTINGS_REVISION_CONFLICT' } })
     expect(readFileSync(paths.settingsFile, 'utf8')).toBe(externalSource)
@@ -113,8 +125,11 @@ describe('settings API', () => {
     const source = '{'
     writeFileSync(paths.settingsFile, source)
     const invalid = await app.request('/api/settings')
+    const health = await app.request('/healthz')
     expect(invalid.status).toBe(409)
     expect(await invalid.json()).toMatchObject({ error: { code: 'SETTINGS_FILE_INVALID' } })
     expect(readFileSync(paths.settingsFile, 'utf8')).toBe(source)
+    expect(health.status).toBe(200)
+    expect(await health.json()).toEqual({ status: 'ok' })
   })
 })
