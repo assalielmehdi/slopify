@@ -134,13 +134,39 @@ export const createAppendOnlyJsonl = <Record extends { readonly sequence: number
           { path: options.path },
         )
       handle = await open(options.path, constants.O_RDWR | constants.O_NOFOLLOW)
-      const contents = await handle.readFile()
-      if (contents.byteLength > maxFileBytes)
+      const openedMetadata = await handle.stat()
+      if (!openedMetadata.isFile())
+        throw new AppendOnlyJsonlError('JSONL_NOT_FILE', 'JSONL path is not a regular file', {
+          path: options.path,
+        })
+      if (openedMetadata.size > maxFileBytes)
         throw new AppendOnlyJsonlError(
           'JSONL_TOO_LARGE',
           `JSONL resource exceeds ${maxFileBytes} bytes`,
           { path: options.path },
         )
+      let contents = Buffer.alloc(
+        Math.min(maxFileBytes + 1, Math.max(8_192, openedMetadata.size + 1)),
+      )
+      let offset = 0
+      while (true) {
+        if (offset === contents.length) {
+          if (contents.length === maxFileBytes + 1) break
+          const expanded = Buffer.alloc(Math.min(maxFileBytes + 1, contents.length * 2))
+          contents.copy(expanded)
+          contents = expanded
+        }
+        const { bytesRead } = await handle.read(contents, offset, contents.length - offset, offset)
+        if (bytesRead === 0) break
+        offset += bytesRead
+      }
+      if (offset > maxFileBytes)
+        throw new AppendOnlyJsonlError(
+          'JSONL_TOO_LARGE',
+          `JSONL resource exceeds ${maxFileBytes} bytes`,
+          { path: options.path },
+        )
+      contents = contents.subarray(0, offset)
       const finalNewline = contents.lastIndexOf(0x0a)
       const completeBytes = finalNewline < 0 ? 0 : finalNewline + 1
       const recoveredBytes = contents.byteLength - completeBytes
@@ -148,6 +174,12 @@ export const createAppendOnlyJsonl = <Record extends { readonly sequence: number
       const lines = completeSource.split('\n').slice(0, -1)
       const records: Record[] = []
       for (const [index, line] of lines.entries()) {
+        if (Buffer.byteLength(line) + 1 > maxRecordBytes)
+          throw new AppendOnlyJsonlError(
+            'JSONL_RECORD_TOO_LARGE',
+            `JSONL record exceeds ${maxRecordBytes} bytes`,
+            { path: options.path, lineNumber: index + 1 },
+          )
         let value: unknown
         try {
           value = JSON.parse(line)

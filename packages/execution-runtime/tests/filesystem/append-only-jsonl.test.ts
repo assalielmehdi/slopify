@@ -146,4 +146,19 @@ describe('append-only JSONL', () => {
     )
     expect(existsSync(emptyPath)).toBe(false)
   })
+
+  it('rejects oversized records already present during replay', async () => {
+    const path = createPath()
+    writeFileSync(path, `${JSON.stringify({ sequence: 1, type: 'x'.repeat(64) })}\n`)
+
+    await rejectsWith(
+      createAppendOnlyJsonl({
+        path,
+        schema: recordSchema,
+        maxFileBytes: 256,
+        maxRecordBytes: 64,
+      }).replay(),
+      'JSONL_RECORD_TOO_LARGE',
+    )
+  })
 })

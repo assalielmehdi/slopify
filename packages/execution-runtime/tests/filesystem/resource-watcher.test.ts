@@ -135,4 +135,28 @@ describe('editable resource watcher', () => {
     expect(watchDirectory).toHaveBeenCalledOnce()
     await watcher.stop()
   })
+
+  it('closes partial directory watches when startup fails', async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'slopify-resource-watcher-'))
+    directories.push(directory)
+    const firstClose = vi.fn()
+    const watchDirectory: WatchDirectory = vi
+      .fn()
+      .mockReturnValueOnce({ close: firstClose })
+      .mockImplementationOnce(() => {
+        throw new Error('simulated watch failure')
+      })
+    const watcher = createResourceWatcher({
+      resources: [
+        { resourceId: 'settings', path: join(directory, 'one', 'settings.json') },
+        { resourceId: 'repositories', path: join(directory, 'two', 'repositories.json') },
+      ],
+      watchDirectory,
+    })
+
+    await expect(watcher.start(() => undefined)).rejects.toThrow('simulated watch failure')
+
+    expect(firstClose).toHaveBeenCalledOnce()
+    await watcher.stop()
+  })
 })

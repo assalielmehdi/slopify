@@ -124,20 +124,27 @@ export const createResourceWatcher = (
       if (started) throw new TypeError('Resource watcher has already started')
       if (stopped) throw new TypeError('Resource watcher has already stopped')
       listener = nextListener
-      for (const resource of options.resources) {
-        revisions.set(
-          resource.resourceId,
-          await readResourceRevision({
-            path: resource.path,
-            ...(resource.maxBytes === undefined ? {} : { maxBytes: resource.maxBytes }),
-          }),
-        )
+      try {
+        for (const resource of options.resources) {
+          revisions.set(
+            resource.resourceId,
+            await readResourceRevision({
+              path: resource.path,
+              ...(resource.maxBytes === undefined ? {} : { maxBytes: resource.maxBytes }),
+            }),
+          )
+        }
+        for (const directory of new Set(options.resources.map(({ path }) => dirname(path)))) {
+          handles.push(watchDirectory(directory, scheduleReconciliation))
+        }
+        reconcileTimer = setInterval(() => void reconcile().catch(onError), reconcileIntervalMs)
+        started = true
+      } catch (cause) {
+        for (const handle of handles.splice(0)) handle.close()
+        listener = undefined
+        revisions.clear()
+        throw cause
       }
-      for (const directory of new Set(options.resources.map(({ path }) => dirname(path)))) {
-        handles.push(watchDirectory(directory, scheduleReconciliation))
-      }
-      reconcileTimer = setInterval(() => void reconcile().catch(onError), reconcileIntervalMs)
-      started = true
     },
     reconcile,
     async stop() {
