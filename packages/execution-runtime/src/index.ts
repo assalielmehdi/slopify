@@ -45,6 +45,15 @@ export {
   type RunProjectionRepair,
 } from './runs/run-journal.js'
 export {
+  RunRecoveryError,
+  createRunRecoveryService,
+  type RunRecoveryErrorCode,
+  type RunRecoveryService,
+  type RunRecoveryStore,
+  type RunRecoverySummary,
+  type RunRecoveryWorkspaceCleaner,
+} from './runs/run-recovery-service.js'
+export {
   RunProjectionError,
   createRunProjectionState,
   reduceRunEvents,
