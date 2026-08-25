@@ -13,7 +13,9 @@ export {
   createAtomicJsonResourceIO,
   type AtomicJsonResourceIO,
   type ReadJsonResourceInput,
+  type VersionedJsonResource,
   type WriteJsonResourceInput,
+  type WriteVersionedJsonResourceInput,
 } from './filesystem/atomic-json-resource.js'
 export {
   InstanceLockError,
@@ -31,6 +33,11 @@ export {
   type AppendOnlyJsonlErrorCode,
   type JsonlReplay,
 } from './filesystem/append-only-jsonl.js'
+export {
+  ResourceRevisionSchema,
+  calculateResourceRevision,
+  type ResourceRevision,
+} from './filesystem/resource-revision.js'
 export {
   GitConnectionServiceError,
   createGitConnectionService,

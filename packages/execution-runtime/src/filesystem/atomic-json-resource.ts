@@ -5,6 +5,11 @@ import { basename, dirname, join } from 'node:path'
 import type { z } from 'zod'
 
 import { FilesystemResourceError } from './filesystem-errors.js'
+import {
+  ResourceRevisionSchema,
+  calculateResourceRevision,
+  type ResourceRevision,
+} from './resource-revision.js'
 
 const DEFAULT_MAX_BYTES = 1_048_576
 const MAX_CONFIGURABLE_BYTES = 67_108_864
@@ -19,9 +24,22 @@ export interface WriteJsonResourceInput<Output> extends ReadJsonResourceInput<Ou
   readonly value: unknown
 }
 
+export interface WriteVersionedJsonResourceInput<Output> extends WriteJsonResourceInput<Output> {
+  readonly expectedRevision: ResourceRevision | null
+}
+
+export interface VersionedJsonResource<Output> {
+  readonly value: Output
+  readonly revision: ResourceRevision
+}
+
 export interface AtomicJsonResourceIO {
   read<Output>(input: ReadJsonResourceInput<Output>): Promise<Output>
+  readVersioned<Output>(input: ReadJsonResourceInput<Output>): Promise<VersionedJsonResource<Output>>
   write<Output>(input: WriteJsonResourceInput<Output>): Promise<Output>
+  writeVersioned<Output>(
+    input: WriteVersionedJsonResourceInput<Output>,
+  ): Promise<VersionedJsonResource<Output>>
 }
 
 type Commit = (temporaryPath: string, destinationPath: string) => Promise<void>
@@ -119,97 +137,152 @@ const readBounded = async (path: string, maxBytes: number): Promise<string> => {
   }
 }
 
+const parseJsonResource = <Output>(
+  input: ReadJsonResourceInput<Output>,
+  source: string,
+): Output => {
+  let value: unknown
+  try {
+    value = JSON.parse(source)
+  } catch (cause) {
+    throw new FilesystemResourceError('RESOURCE_MALFORMED', 'JSON resource is malformed', {
+      path: input.path,
+      cause,
+    })
+  }
+  const parsed = input.schema.safeParse(value)
+  if (!parsed.success)
+    throw new FilesystemResourceError(
+      'RESOURCE_VALIDATION_FAILED',
+      'JSON resource does not match its schema',
+      { path: input.path, cause: parsed.error },
+    )
+  return parsed.data
+}
+
 export const createAtomicJsonResourceIO = (
   options: Readonly<{ commit?: Commit }> = {},
 ): AtomicJsonResourceIO => {
   const commit = options.commit ?? rename
+  const readVersioned = async <Output>(
+    input: ReadJsonResourceInput<Output>,
+  ): Promise<VersionedJsonResource<Output>> => {
+    const source = await readBounded(input.path, byteLimit(input.maxBytes))
+    return {
+      value: parseJsonResource(input, source),
+      revision: calculateResourceRevision(source),
+    }
+  }
+
+  const assertExpectedRevision = async (
+    path: string,
+    maxBytes: number,
+    expectedRevision: ResourceRevision | null | undefined,
+  ): Promise<void> => {
+    if (expectedRevision === undefined) return
+    const expected =
+      expectedRevision === null ? null : ResourceRevisionSchema.parse(expectedRevision)
+    let current: ResourceRevision | null
+    try {
+      current = calculateResourceRevision(await readBounded(path, maxBytes))
+    } catch (cause) {
+      if (cause instanceof FilesystemResourceError && cause.code === 'RESOURCE_NOT_FOUND') {
+        current = null
+      } else {
+        throw cause
+      }
+    }
+    if (current !== expected)
+      throw new FilesystemResourceError(
+        'RESOURCE_REVISION_CONFLICT',
+        'JSON resource changed since it was read',
+        { path },
+      )
+  }
+
+  const writeVersioned = async <Output>(
+    input: WriteJsonResourceInput<Output>,
+    expectedRevision: ResourceRevision | null | undefined,
+  ): Promise<VersionedJsonResource<Output>> => {
+    const maxBytes = byteLimit(input.maxBytes)
+    await assertExpectedRevision(input.path, maxBytes, expectedRevision)
+    const parsed = input.schema.safeParse(input.value)
+    if (!parsed.success)
+      throw new FilesystemResourceError(
+        'RESOURCE_VALIDATION_FAILED',
+        'JSON resource does not match its schema',
+        { path: input.path, cause: parsed.error },
+      )
+    let json: string | undefined
+    try {
+      json = JSON.stringify(parsed.data, null, 2)
+    } catch (cause) {
+      throw new FilesystemResourceError(
+        'RESOURCE_VALIDATION_FAILED',
+        'JSON resource value cannot be serialized',
+        { path: input.path, cause },
+      )
+    }
+    if (json === undefined)
+      throw new FilesystemResourceError(
+        'RESOURCE_VALIDATION_FAILED',
+        'JSON resource value cannot be serialized',
+        { path: input.path },
+      )
+    const serialized = `${json}\n`
+    if (Buffer.byteLength(serialized) > maxBytes)
+      throw new FilesystemResourceError(
+        'RESOURCE_TOO_LARGE',
+        `JSON resource exceeds ${maxBytes} bytes`,
+        { path: input.path },
+      )
+    await inspectPath(input.path, true)
+    const directory = dirname(input.path)
+    await mkdir(directory, { recursive: true, mode: 0o700 })
+    const temporaryPath = join(
+      directory,
+      `.${basename(input.path)}.${process.pid}.${crypto.randomUUID()}.tmp`,
+    )
+    let handle
+    try {
+      handle = await open(temporaryPath, 'wx', 0o600)
+      await handle.writeFile(serialized, 'utf8')
+      await handle.sync()
+      await handle.close()
+      handle = undefined
+      await inspectPath(input.path, true)
+      await assertExpectedRevision(input.path, maxBytes, expectedRevision)
+      await commit(temporaryPath, input.path)
+      const directoryHandle = await open(directory, constants.O_RDONLY)
+      try {
+        await directoryHandle.sync()
+      } finally {
+        await directoryHandle.close()
+      }
+      return { value: parsed.data, revision: calculateResourceRevision(serialized) }
+    } catch (cause) {
+      if (cause instanceof FilesystemResourceError) throw cause
+      throw new FilesystemResourceError(
+        'RESOURCE_WRITE_FAILED',
+        'JSON resource could not be written',
+        { path: input.path, cause },
+      )
+    } finally {
+      await handle?.close()
+      await rm(temporaryPath, { force: true })
+    }
+  }
+
   return {
     async read(input) {
-      const source = await readBounded(input.path, byteLimit(input.maxBytes))
-      let value: unknown
-      try {
-        value = JSON.parse(source)
-      } catch (cause) {
-        throw new FilesystemResourceError('RESOURCE_MALFORMED', 'JSON resource is malformed', {
-          path: input.path,
-          cause,
-        })
-      }
-      const parsed = input.schema.safeParse(value)
-      if (!parsed.success)
-        throw new FilesystemResourceError(
-          'RESOURCE_VALIDATION_FAILED',
-          'JSON resource does not match its schema',
-          { path: input.path, cause: parsed.error },
-        )
-      return parsed.data
+      return (await readVersioned(input)).value
     },
+    readVersioned,
     async write(input) {
-      const parsed = input.schema.safeParse(input.value)
-      if (!parsed.success)
-        throw new FilesystemResourceError(
-          'RESOURCE_VALIDATION_FAILED',
-          'JSON resource does not match its schema',
-          { path: input.path, cause: parsed.error },
-        )
-      let json: string | undefined
-      try {
-        json = JSON.stringify(parsed.data, null, 2)
-      } catch (cause) {
-        throw new FilesystemResourceError(
-          'RESOURCE_VALIDATION_FAILED',
-          'JSON resource value cannot be serialized',
-          { path: input.path, cause },
-        )
-      }
-      if (json === undefined)
-        throw new FilesystemResourceError(
-          'RESOURCE_VALIDATION_FAILED',
-          'JSON resource value cannot be serialized',
-          { path: input.path },
-        )
-      const serialized = `${json}\n`
-      const maxBytes = byteLimit(input.maxBytes)
-      if (Buffer.byteLength(serialized) > maxBytes)
-        throw new FilesystemResourceError(
-          'RESOURCE_TOO_LARGE',
-          `JSON resource exceeds ${maxBytes} bytes`,
-          { path: input.path },
-        )
-      await inspectPath(input.path, true)
-      const directory = dirname(input.path)
-      await mkdir(directory, { recursive: true, mode: 0o700 })
-      const temporaryPath = join(
-        directory,
-        `.${basename(input.path)}.${process.pid}.${crypto.randomUUID()}.tmp`,
-      )
-      let handle
-      try {
-        handle = await open(temporaryPath, 'wx', 0o600)
-        await handle.writeFile(serialized, 'utf8')
-        await handle.sync()
-        await handle.close()
-        handle = undefined
-        await inspectPath(input.path, true)
-        await commit(temporaryPath, input.path)
-        const directoryHandle = await open(directory, constants.O_RDONLY)
-        try {
-          await directoryHandle.sync()
-        } finally {
-          await directoryHandle.close()
-        }
-        return parsed.data
-      } catch (cause) {
-        if (cause instanceof FilesystemResourceError) throw cause
-        throw new FilesystemResourceError(
-          'RESOURCE_WRITE_FAILED',
-          'JSON resource could not be written',
-          { path: input.path, cause },
-        )
-      } finally {
-        await handle?.close()
-        await rm(temporaryPath, { force: true })
-      }
+      return (await writeVersioned(input, undefined)).value
+    },
+    writeVersioned(input) {
+      return writeVersioned(input, input.expectedRevision)
     },
   }
 }
