@@ -11,6 +11,7 @@ import type { JournalCoordinatorStore } from './journal-coordinator-store.js'
 export type JournalCoordinatorErrorCode =
   | 'JOURNAL_RECONCILE_LIMIT_EXCEEDED'
   | 'RUN_JOURNAL_CORRUPT'
+  | 'RUN_NOT_CANCELLABLE'
   | 'RUN_NOT_FOUND'
   | 'WORKFLOW_NOT_RUNNABLE'
 
@@ -27,6 +28,9 @@ export class JournalCoordinatorError extends Error {
 
 export interface JournalWorkflowCoordinator {
   start(input: Readonly<{ workflowId: string; runId: string }>): Promise<RunProjectionState>
+  requestCancellation(
+    input: Readonly<{ workflowId: string; runId: string; reason: string }>,
+  ): Promise<RunProjectionState>
   reconcile(input: Readonly<{ workflowId: string; runId: string }>): Promise<RunProjectionState>
 }
 
@@ -105,8 +109,27 @@ export const createJournalWorkflowCoordinator = (options: {
   readonly now?: () => string
 }): JournalWorkflowCoordinator => {
   const now = options.now ?? (() => new Date().toISOString())
+  const operationQueues = new Map<string, Promise<void>>()
 
-  const reconcile = async (input: {
+  const serialize = <Value>(
+    input: Readonly<{ workflowId: string; runId: string }>,
+    operation: () => Promise<Value>,
+  ): Promise<Value> => {
+    const key = `${input.workflowId}\0${input.runId}`
+    const previous = operationQueues.get(key) ?? Promise.resolve()
+    const result = previous.then(operation)
+    const settled = result.then(
+      () => undefined,
+      () => undefined,
+    )
+    operationQueues.set(key, settled)
+    void settled.then(() => {
+      if (operationQueues.get(key) === settled) operationQueues.delete(key)
+    })
+    return result
+  }
+
+  const reconcileUnlocked = async (input: {
     readonly workflowId: string
     readonly runId: string
   }): Promise<RunProjectionState> => {
@@ -119,6 +142,33 @@ export const createJournalWorkflowCoordinator = (options: {
       const projection = await requireProjection(journal)
       if (projection.run.status !== 'PENDING' && projection.run.status !== 'RUNNING') {
         return projection
+      }
+
+      const cancellation = replayed.events.find(({ type }) => type === 'RUN_CANCEL_REQUESTED')
+      if (cancellation?.type === 'RUN_CANCEL_REQUESTED') {
+        const pending = projection.executions.find(({ status }) => status === 'PENDING')
+        if (pending !== undefined) {
+          await journal.append({
+            eventId: stableId('event-node-cancelled', cancellation.eventId, pending.attemptId),
+            timestamp: now(),
+            type: 'NODE_CANCELLED',
+            data: {
+              nodeExecutionId: pending.nodeExecutionId,
+              attemptId: pending.attemptId,
+              reason: cancellation.data.reason,
+              durationMs: 0,
+            },
+          })
+          continue
+        }
+        if (projection.executions.some(({ status }) => status === 'RUNNING')) return projection
+        await journal.append({
+          eventId: stableId('event-run-cancelled', cancellation.eventId),
+          timestamp: now(),
+          type: 'RUN_CANCELLED',
+          data: {},
+        })
+        continue
       }
 
       const started = replayed.events.find(({ type }) => type === 'RUN_STARTED')
@@ -297,24 +347,58 @@ export const createJournalWorkflowCoordinator = (options: {
   }
 
   return {
-    async start(input) {
-      const { journal, startNodeId } = await requireRun(options.runs, input)
-      const timestamp = now()
-      const started = await journal.append({
-        eventId: 'run-started',
-        timestamp,
-        type: 'RUN_STARTED',
-        data: {},
+    start(input) {
+      return serialize(input, async () => {
+        const { journal, startNodeId } = await requireRun(options.runs, input)
+        const replayed = await journal.replay()
+        if (replayed.status === 'CORRUPT') {
+          throw new JournalCoordinatorError('RUN_JOURNAL_CORRUPT', replayed.diagnostic.message)
+        }
+        const existing = replayed.events.find(({ type }) => type === 'RUN_STARTED')
+        const timestamp = existing?.timestamp ?? now()
+        const started =
+          existing ??
+          (await journal.append({
+            eventId: 'run-started',
+            timestamp,
+            type: 'RUN_STARTED',
+            data: {},
+          }))
+        await schedule(journal, {
+          runId: input.runId,
+          nodeId: startNodeId,
+          executionIndex: 0,
+          causationId: started.eventId,
+          timestamp,
+        })
+        return reconcileUnlocked(input)
       })
-      await schedule(journal, {
-        runId: input.runId,
-        nodeId: startNodeId,
-        executionIndex: 0,
-        causationId: started.eventId,
-        timestamp,
-      })
-      return reconcile(input)
     },
-    reconcile,
+    requestCancellation(input) {
+      return serialize(input, async () => {
+        const { journal } = await requireRun(options.runs, input)
+        const projection = await requireProjection(journal)
+        if (projection.run.status === 'CANCELLED') return projection
+        if (projection.run.status !== 'RUNNING') {
+          throw new JournalCoordinatorError('RUN_NOT_CANCELLABLE', 'Run is not cancellable')
+        }
+        const replayed = await journal.replay()
+        if (replayed.status === 'CORRUPT') {
+          throw new JournalCoordinatorError('RUN_JOURNAL_CORRUPT', replayed.diagnostic.message)
+        }
+        if (!replayed.events.some(({ type }) => type === 'RUN_CANCEL_REQUESTED')) {
+          await journal.append({
+            eventId: stableId('event-cancel-request', input.runId),
+            timestamp: now(),
+            type: 'RUN_CANCEL_REQUESTED',
+            data: { reason: input.reason },
+          })
+        }
+        return reconcileUnlocked(input)
+      })
+    },
+    reconcile(input) {
+      return serialize(input, () => reconcileUnlocked(input))
+    },
   }
 }

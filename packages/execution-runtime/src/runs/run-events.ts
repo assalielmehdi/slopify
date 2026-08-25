@@ -89,6 +89,14 @@ export const RunDomainEventSchema = z.discriminatedUnion('type', [
     }),
   ),
   runEvent(
+    'NODE_TERMINATION_UNCONFIRMED',
+    z.strictObject({
+      nodeExecutionId: identifier,
+      attemptId: identifier,
+      reason: z.string().trim().min(1).max(1_024),
+    }),
+  ),
+  runEvent(
     'ROUTE_TRAVERSED',
     z.strictObject({
       sourceNodeExecutionId: identifier,

@@ -242,4 +242,40 @@ describe('journal workflow coordinator', () => {
     )
     expect(executions).toBe(1)
   })
+
+  it('records cancellation once and never schedules after the request', async () => {
+    const fixture = createFixture({
+      ...workflow,
+      name: 'Leaf review',
+      startNodeId: 'leaf',
+      nodes: [agent('leaf')],
+      edges: [],
+      maxTransitions: 0,
+    })
+    await fixture.coordinator.start({ workflowId: 'parallel-review', runId: 'run-01' })
+    fixture.events.pop()
+
+    const [first, second] = await Promise.all([
+      fixture.coordinator.requestCancellation({
+        workflowId: 'parallel-review',
+        runId: 'run-01',
+        reason: 'Stopped by user',
+      }),
+      fixture.coordinator.requestCancellation({
+        workflowId: 'parallel-review',
+        runId: 'run-01',
+        reason: 'A later duplicate reason',
+      }),
+    ])
+    await fixture.coordinator.reconcile({ workflowId: 'parallel-review', runId: 'run-01' })
+
+    expect(first.run.status).toBe('CANCELLED')
+    expect(second.run.status).toBe('CANCELLED')
+    expect(fixture.events.map(({ type }) => type)).toEqual([
+      'RUN_STARTED',
+      'RUN_CANCEL_REQUESTED',
+      'RUN_CANCELLED',
+    ])
+    expect(fixture.events[1]).toMatchObject({ data: { reason: 'Stopped by user' } })
+  })
 })

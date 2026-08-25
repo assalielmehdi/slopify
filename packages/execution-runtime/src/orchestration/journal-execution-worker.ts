@@ -20,6 +20,10 @@ export interface JournalRunLocator {
 export interface JournalExecutionWorker {
   runOnce(runs: readonly JournalRunLocator[]): Promise<boolean>
   drain(runs: readonly JournalRunLocator[]): Promise<number>
+  cancelRun(
+    run: JournalRunLocator,
+    reason: string,
+  ): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>>
   executingRunIds(): readonly string[]
 }
 
@@ -79,7 +83,25 @@ export const createJournalExecutionWorker = (options: {
   const concurrency = validConcurrency(options.concurrency ?? 2)
   const claims = options.claims ?? createScheduledNodeClaims(concurrency)
   const now = options.now ?? (() => new Date().toISOString())
-  const active = new Map<string, JournalRunLocator>()
+  const active = new Map<string, ClaimedExecution>()
+  const terminalWrites = new Map<string, Promise<void>>()
+
+  const serializeTerminal = async (key: string, operation: () => Promise<void>): Promise<void> => {
+    const previous = terminalWrites.get(key) ?? Promise.resolve()
+    let release: () => void = () => undefined
+    const gate = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const queued = previous.then(() => gate)
+    terminalWrites.set(key, queued)
+    await previous
+    try {
+      await operation()
+    } finally {
+      release()
+      if (terminalWrites.get(key) === queued) terminalWrites.delete(key)
+    }
+  }
 
   const claimNext = async (
     locators: readonly JournalRunLocator[],
@@ -91,6 +113,7 @@ export const createJournalExecutionWorker = (options: {
       if (replayed.status === 'CORRUPT') {
         throw new JournalExecutionWorkerError('RUN_JOURNAL_CORRUPT', replayed.diagnostic.message)
       }
+      if (replayed.events.some(({ type }) => type === 'RUN_CANCEL_REQUESTED')) continue
       for (const event of replayed.events) {
         if (event.type !== 'NODE_SCHEDULED') continue
         if (
@@ -105,8 +128,7 @@ export const createJournalExecutionWorker = (options: {
         const key = `${locator.runId}\0${event.data.attemptId}`
         const claim = claims.tryClaim(key)
         if (claim === undefined) continue
-        active.set(key, locator)
-        return {
+        const execution = {
           claim,
           locator,
           journal: run.journal,
@@ -117,6 +139,8 @@ export const createJournalExecutionWorker = (options: {
             nodeId: event.data.nodeId,
           },
         }
+        active.set(key, execution)
+        return execution
       }
     }
     return undefined
@@ -223,13 +247,105 @@ export const createJournalExecutionWorker = (options: {
           message: 'Node runner failed before producing a result',
         }
       }
-      await publishTerminal(execution, result, startedAt)
+      await serializeTerminal(key, () => publishTerminal(execution, result, startedAt))
       await options.coordinator.reconcile(execution.locator)
       return true
     } finally {
       active.delete(key)
       execution.claim.release()
     }
+  }
+
+  const cancelRun = async (
+    locator: JournalRunLocator,
+    reason: string,
+  ): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>> => {
+    const run = await options.runs.load(locator)
+    if (run === undefined) return { status: 'unconfirmed' }
+    const replayed = await run.journal.replay()
+    if (replayed.status === 'CORRUPT') {
+      throw new JournalExecutionWorkerError('RUN_JOURNAL_CORRUPT', replayed.diagnostic.message)
+    }
+    const terminalAttemptIds = new Set(
+      replayed.events.filter(terminalEvent).flatMap((event) => {
+        const attemptId = eventAttemptId(event)
+        return attemptId === undefined ? [] : [attemptId]
+      }),
+    )
+    const started = replayed.events.filter(
+      (event): event is Extract<RunDomainEvent, { readonly type: 'NODE_STARTED' }> =>
+        event.type === 'NODE_STARTED' && !terminalAttemptIds.has(event.data.attemptId),
+    )
+    if (started.length === 0) return { status: 'cancelled' }
+    let confirmed = true
+    for (const event of started) {
+      const key = `${locator.runId}\0${event.data.attemptId}`
+      const execution = active.get(key)
+      let status: 'cancelled' | 'unconfirmed' = 'unconfirmed'
+      if (execution !== undefined) {
+        try {
+          status = (await options.runner.cancel(execution.input)).status
+        } catch {
+          status = 'unconfirmed'
+        }
+      }
+      if (status === 'cancelled') {
+        await serializeTerminal(key, async () => {
+          const current = await run.journal.replay()
+          if (current.status === 'CORRUPT') {
+            throw new JournalExecutionWorkerError('RUN_JOURNAL_CORRUPT', current.diagnostic.message)
+          }
+          if (
+            current.events.some(
+              (candidate) =>
+                terminalEvent(candidate) && eventAttemptId(candidate) === event.data.attemptId,
+            )
+          ) {
+            return
+          }
+          const completedAt = now()
+          await run.journal.append({
+            eventId: stableId('event-node-cancelled', key),
+            timestamp: completedAt,
+            type: 'NODE_CANCELLED',
+            data: {
+              nodeExecutionId: event.data.nodeExecutionId,
+              attemptId: event.data.attemptId,
+              reason,
+              durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(event.timestamp)),
+            },
+          })
+        })
+      } else {
+        confirmed = false
+        await serializeTerminal(key, async () => {
+          const current = await run.journal.replay()
+          if (current.status === 'CORRUPT') {
+            throw new JournalExecutionWorkerError('RUN_JOURNAL_CORRUPT', current.diagnostic.message)
+          }
+          if (
+            current.events.some(
+              (candidate) =>
+                candidate.type === 'NODE_TERMINATION_UNCONFIRMED' &&
+                candidate.data.attemptId === event.data.attemptId,
+            )
+          ) {
+            return
+          }
+          await run.journal.append({
+            eventId: stableId('event-node-termination-unconfirmed', key),
+            timestamp: now(),
+            type: 'NODE_TERMINATION_UNCONFIRMED',
+            data: {
+              nodeExecutionId: event.data.nodeExecutionId,
+              attemptId: event.data.attemptId,
+              reason,
+            },
+          })
+        })
+      }
+    }
+    return confirmed ? { status: 'cancelled' } : { status: 'unconfirmed' }
   }
 
   return {
@@ -243,8 +359,9 @@ export const createJournalExecutionWorker = (options: {
         if (count === 0) return processed
       }
     },
+    cancelRun,
     executingRunIds() {
-      return [...new Set([...active.values()].map(({ runId }) => runId))]
+      return [...new Set([...active.values()].map(({ locator }) => locator.runId))]
     },
   }
 }

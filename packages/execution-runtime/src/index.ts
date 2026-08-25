@@ -328,6 +328,12 @@ export {
   type CancellationServiceErrorCode,
 } from './services/cancellation-service.js'
 export {
+  JournalCancellationServiceError,
+  createJournalCancellationService,
+  type JournalCancellationService,
+  type JournalCancellationServiceErrorCode,
+} from './services/journal-cancellation-service.js'
+export {
   RunServiceError,
   createFilesystemRunAdmissionService,
   createRunService,

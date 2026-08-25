@@ -217,4 +217,66 @@ describe('journal execution worker', () => {
       },
     })
   })
+
+  it('records confirmed and unconfirmed process termination distinctly', async () => {
+    const confirmed = createFixture()
+    let finishConfirmed: ((result: { status: 'cancelled'; reason: string }) => void) | undefined
+    const confirmedWorker = createJournalExecutionWorker({
+      runs: confirmed.runs,
+      coordinator: { reconcile: async () => undefined as never },
+      runner: {
+        run: () =>
+          new Promise((resolve) => {
+            finishConfirmed = resolve
+          }),
+        async cancel() {
+          finishConfirmed?.({ status: 'cancelled', reason: 'Stopped by user' })
+          return { status: 'cancelled' }
+        },
+      },
+      now: () => timestamp,
+    })
+    const confirmedRun = confirmedWorker.runOnce([locator])
+    await vi.waitFor(() => expect(confirmedWorker.executingRunIds()).toEqual(['run-01']))
+
+    await expect(confirmedWorker.cancelRun(locator, 'Stopped by user')).resolves.toEqual({
+      status: 'cancelled',
+    })
+    await confirmedRun
+    expect(confirmed.events.filter(({ type }) => type === 'NODE_CANCELLED')).toHaveLength(1)
+    expect(
+      confirmed.events.filter(({ type }) => type === 'NODE_TERMINATION_UNCONFIRMED'),
+    ).toHaveLength(0)
+
+    const unconfirmed = createFixture()
+    let finishUnconfirmed:
+      ((result: { status: 'failed'; code: string; message: string }) => void) | undefined
+    const unconfirmedWorker = createJournalExecutionWorker({
+      runs: unconfirmed.runs,
+      coordinator: { reconcile: async () => undefined as never },
+      runner: {
+        run: () =>
+          new Promise((resolve) => {
+            finishUnconfirmed = resolve
+          }),
+        async cancel() {
+          return { status: 'unconfirmed' }
+        },
+      },
+      now: () => timestamp,
+    })
+    const unconfirmedRun = unconfirmedWorker.runOnce([locator])
+    await vi.waitFor(() => expect(unconfirmedWorker.executingRunIds()).toEqual(['run-01']))
+
+    await expect(unconfirmedWorker.cancelRun(locator, 'Stopped by user')).resolves.toEqual({
+      status: 'unconfirmed',
+    })
+    expect(unconfirmed.events.at(-1)).toMatchObject({
+      type: 'NODE_TERMINATION_UNCONFIRMED',
+      data: { reason: 'Stopped by user' },
+    })
+    expect(unconfirmed.events.filter(({ type }) => type === 'NODE_CANCELLED')).toHaveLength(0)
+    finishUnconfirmed?.({ status: 'failed', code: 'TEST_FINISHED', message: 'Test finished' })
+    await unconfirmedRun
+  })
 })

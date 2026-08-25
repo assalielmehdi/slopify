@@ -314,6 +314,14 @@ const applyRunEvent = (
         }),
       )
       break
+    case 'NODE_TERMINATION_UNCONFIRMED':
+      state = replaceExecution(
+        state,
+        event.data.nodeExecutionId,
+        event.data.attemptId,
+        (execution) => execution,
+      )
+      break
     case 'ROUTE_TRAVERSED': {
       const routeKey = `${event.data.sourceNodeExecutionId}:${event.data.targetNodeId}:${event.data.outcome}`
       if (state.routing.traversed.includes(routeKey)) break
