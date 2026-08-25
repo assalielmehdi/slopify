@@ -32,6 +32,15 @@ export {
   type FilesystemRunStore,
   type FilesystemRunStoreErrorCode,
 } from './runs/filesystem-run-store.js'
+export { RunDomainEventSchema, type RunDomainEvent } from './runs/run-events.js'
+export {
+  RunProjectionError,
+  createRunProjectionState,
+  reduceRunEvents,
+  type RunProjectionErrorCode,
+  type RunProjectionState,
+  type RunRoutingProjection,
+} from './runs/run-projection.js'
 export {
   FilesystemResourceError,
   type FilesystemResourceErrorCode,
