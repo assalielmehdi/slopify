@@ -35,7 +35,12 @@ export const connectResourceEventStream = (
   ) {
     throw new TypeError('reconcileIntervalMs must be an integer from 1 to 3600000')
   }
-  const createEventSource = options.createEventSource ?? ((url) => new EventSource(url))
+  const createEventSource =
+    options.createEventSource ??
+    ((url) =>
+      typeof EventSource === 'undefined'
+        ? { addEventListener: () => undefined, close: () => undefined }
+        : new EventSource(url))
   const source = createEventSource(resourceEventStreamUrl)
   const reconcile = (): void => {
     try {
@@ -67,3 +72,5 @@ export const connectResourceEventStream = (
     source.close()
   }
 }
+
+export type ConnectResourceEventStream = typeof connectResourceEventStream

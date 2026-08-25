@@ -2,7 +2,7 @@
 
 import { ThemePreferenceSchema, type GitConnection, type GitProvider } from '@slopify/contracts'
 import { CheckCircle2Icon } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
 
 import { GitProviderLogo } from '@/components/settings/git-provider-logo'
 import { useThemePreference } from '@/components/theme-preference'
@@ -11,6 +11,10 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { SegmentedControl } from '@/components/ui/segmented-control'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
+import {
+  connectResourceEventStream,
+  type ConnectResourceEventStream,
+} from '@/lib/resource-event-stream'
 
 const themeOptions = [
   { value: 'light', label: 'Light' },
@@ -40,8 +44,11 @@ type SettingsClient = Pick<
 
 const defaultClient = createApiClient()
 
-function InterfaceSettings() {
-  const { error, isSaving, preference, setPreference } = useThemePreference()
+function InterfaceSettings({ refreshVersion }: Readonly<{ refreshVersion: number }>) {
+  const { error, isSaving, preference, refreshPreference, setPreference } = useThemePreference()
+  useEffect(() => {
+    if (refreshVersion > 0) void refreshPreference()
+  }, [refreshPreference, refreshVersion])
   return (
     <section aria-labelledby="interface-group-title">
       <h2 id="interface-group-title" className="mb-3 text-[14px]/5 font-semibold">
@@ -156,30 +163,38 @@ function GitProviderRow({
   )
 }
 
-function GitSettings({ client }: Readonly<{ client: SettingsClient }>) {
+function GitSettings({
+  client,
+  refreshVersion,
+}: Readonly<{ client: SettingsClient; refreshVersion: number }>) {
   const [connections, setConnections] = useState<readonly GitConnection[]>([])
   const [busyProvider, setBusyProvider] = useState<GitProvider>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
+  const loadSequence = useRef(0)
 
   useEffect(() => {
     let active = true
+    const sequence = ++loadSequence.current
     void client
       .listGitConnections()
       .then((nextConnections) => {
-        if (active) setConnections(nextConnections)
+        if (active && sequence === loadSequence.current) {
+          setConnections(nextConnections)
+          setError(undefined)
+        }
       })
       .catch((cause: unknown) => {
-        if (active)
+        if (active && sequence === loadSequence.current)
           setError(cause instanceof Error ? cause.message : 'Git connections could not be loaded.')
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active && sequence === loadSequence.current) setLoading(false)
       })
     return () => {
       active = false
     }
-  }, [client])
+  }, [client, refreshVersion])
 
   const configure = async (provider: GitProvider, token: string) => {
     setBusyProvider(provider)
@@ -244,11 +259,32 @@ function GitSettings({ client }: Readonly<{ client: SettingsClient }>) {
   )
 }
 
-export function SettingsScreen({ client = defaultClient }: Readonly<{ client?: SettingsClient }>) {
+export function SettingsScreen({
+  client = defaultClient,
+  connectResourceEvents = connectResourceEventStream,
+}: Readonly<{
+  client?: SettingsClient
+  connectResourceEvents?: ConnectResourceEventStream
+}>) {
+  const [refreshVersion, refresh] = useReducer((current: number) => current + 1, 0)
+  useEffect(
+    () =>
+      connectResourceEvents({
+        onDisconnect: () => undefined,
+        onEvent: (event) => {
+          if (event.resource.type === 'SETTINGS') refresh()
+        },
+        onInvalidEvent: () => undefined,
+        onOpen: () => undefined,
+        onReconcile: refresh,
+      }),
+    [connectResourceEvents],
+  )
+
   return (
     <div className="mx-auto grid w-full max-w-[760px] gap-8 px-6 py-10 sm:px-8 sm:py-12">
-      <InterfaceSettings />
-      <GitSettings client={client} />
+      <InterfaceSettings refreshVersion={refreshVersion} />
+      <GitSettings client={client} refreshVersion={refreshVersion} />
     </div>
   )
 }

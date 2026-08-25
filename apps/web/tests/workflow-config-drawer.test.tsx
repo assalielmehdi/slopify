@@ -251,4 +251,39 @@ describe('WorkflowConfigDrawer', () => {
 
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining(graph)))
   })
+
+  it('preserves dirty graph source and blocks saving after an external conflict', async () => {
+    const onDirtyChange = vi.fn()
+    const { rerender } = render(
+      <WorkflowConfigDrawer
+        value={drawerWorkflow()}
+        repositories={repositories}
+        onClose={vi.fn()}
+        onDelete={vi.fn(async () => true)}
+        onDirtyChange={onDirtyChange}
+        onSubmit={vi.fn(async () => true)}
+      />,
+    )
+    const editor = await screen.findByRole('textbox', { name: 'Workflow graph JSON' })
+    fireEvent.change(editor, { target: { value: '{' } })
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
+
+    rerender(
+      <WorkflowConfigDrawer
+        conflict="This workflow changed outside Slopify. Close and reopen to load the latest file."
+        value={drawerWorkflow({ name: 'Externally changed workflow' })}
+        repositories={repositories}
+        onClose={vi.fn()}
+        onDelete={vi.fn(async () => true)}
+        onDirtyChange={onDirtyChange}
+        onSubmit={vi.fn(async () => true)}
+      />,
+    )
+
+    expect((editor as HTMLTextAreaElement).value).toBe('{')
+    expect(screen.getByText(/changed outside Slopify/i)).toBeTruthy()
+    expect(
+      (screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+  })
 })

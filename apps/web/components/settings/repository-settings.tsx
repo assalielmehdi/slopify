@@ -6,6 +6,7 @@ import Link from 'next/link'
 import {
   useCallback,
   useEffect,
+  useReducer,
   useRef,
   useState,
   type CSSProperties,
@@ -39,6 +40,10 @@ import {
 import { createApiClient, type ApiClient } from '@/lib/api-client'
 import { buttonVariants } from '@/lib/button-variants'
 import { toast } from '@/lib/toast'
+import {
+  connectResourceEventStream,
+  type ConnectResourceEventStream,
+} from '@/lib/resource-event-stream'
 import { cn } from '@/lib/utils'
 
 type RepositoryClient = Pick<
@@ -417,7 +422,11 @@ function RepositoryPanel(props: RepositoryPanelProps) {
 
 export function RepositorySettings({
   client = defaultClient,
-}: Readonly<{ client?: RepositoryClient }>) {
+  connectResourceEvents = connectResourceEventStream,
+}: Readonly<{
+  client?: RepositoryClient
+  connectResourceEvents?: ConnectResourceEventStream
+}>) {
   const [repositories, setRepositories] = useState<readonly Repository[]>([])
   const [connections, setConnections] = useState<readonly GitConnection[]>([])
   const [remoteRepositories, setRemoteRepositories] = useState<readonly GitRepository[]>([])
@@ -433,33 +442,65 @@ export function RepositorySettings({
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [confirmationValue, setConfirmationValue] = useState('')
   const [error, setError] = useState<string>()
+  const [refreshVersion, refresh] = useReducer((current: number) => current + 1, 0)
   const panelRef = useRef<HTMLDivElement>(null)
   const openFrameRef = useRef<number | undefined>(undefined)
+  const catalogLoadSequence = useRef(0)
+  const cleanRef = useRef(true)
+
+  cleanRef.current = selection === undefined && !saving && !deleting
 
   const selectedRepository =
     repositories.find(({ repositoryId }) => repositoryId === selection) ??
     (closingRepository?.repositoryId === selection ? closingRepository : undefined)
   useEffect(() => {
     let active = true
+    const sequence = ++catalogLoadSequence.current
     void Promise.all([client.listRepositories(), client.listGitConnections()])
       .then(([nextRepositories, nextConnections]) => {
-        if (!active) return
+        if (!active || sequence !== catalogLoadSequence.current) return
         setRepositories(nextRepositories)
         setConnections(nextConnections)
-        setSelectedProvider(nextConnections[0]?.provider)
+        setSelectedProvider((current) =>
+          current !== undefined && nextConnections.some(({ provider }) => provider === current)
+            ? current
+            : nextConnections[0]?.provider,
+        )
+        setError(undefined)
       })
       .catch((cause: unknown) => {
-        if (active)
+        if (active && sequence === catalogLoadSequence.current)
           setError(cause instanceof Error ? cause.message : 'Repositories could not be loaded.')
       })
       .finally(() => {
-        if (active) setLoading(false)
+        if (active && sequence === catalogLoadSequence.current) setLoading(false)
       })
     return () => {
       active = false
       if (openFrameRef.current !== undefined) window.cancelAnimationFrame(openFrameRef.current)
     }
-  }, [client])
+  }, [client, refreshVersion])
+
+  useEffect(
+    () =>
+      connectResourceEvents({
+        onDisconnect: () => undefined,
+        onEvent: (event) => {
+          if (
+            cleanRef.current &&
+            (event.resource.type === 'REPOSITORIES' || event.resource.type === 'SETTINGS')
+          ) {
+            refresh()
+          }
+        },
+        onInvalidEvent: () => undefined,
+        onOpen: () => undefined,
+        onReconcile: () => {
+          if (cleanRef.current) refresh()
+        },
+      }),
+    [connectResourceEvents],
+  )
 
   useEffect(() => {
     if (selection !== 'add' || selectedProvider === undefined) return

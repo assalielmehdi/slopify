@@ -370,6 +370,45 @@ describe('API client', () => {
     })
   })
 
+  it('inspects an external workflow without advancing the editor precondition', async () => {
+    const workflow = createAgentWorkflowFixture({
+      createdAt: '2026-08-18T12:00:00Z',
+      modelId: 'gpt-5.5',
+      thinkingLevel: 'high',
+    })
+    const external = { ...workflow, name: 'External edit' }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(
+        Response.json(workflowEntry(workflow), { headers: { etag: `"${'a'.repeat(64)}"` } }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(workflowEntry(external, 'b'.repeat(64)), {
+          headers: { etag: `"${'b'.repeat(64)}"` },
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json(workflowEntry(workflow, 'c'.repeat(64)), {
+          headers: { etag: `"${'c'.repeat(64)}"` },
+        }),
+      )
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await client.getWorkflow(workflow.workflowId)
+    await client.getWorkflow(workflow.workflowId, { preserveRevision: true })
+    await client.updateWorkflow(workflow.workflowId, workflow)
+
+    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/workflows/default-workflow', {
+      body: JSON.stringify(workflowToWorkflowFile(workflow)),
+      headers: {
+        accept: 'application/json',
+        'content-type': 'application/json',
+        'if-match': `"${'a'.repeat(64)}"`,
+      },
+      method: 'PUT',
+    })
+  })
+
   it('rejects malformed workflow catalog data at the browser boundary', async () => {
     const client = createApiClient({
       fetch: async () => Response.json({ workflows: [{ workflowId: 'missing-fields' }] }),

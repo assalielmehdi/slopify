@@ -28,6 +28,7 @@ interface ThemePreferenceValue {
   readonly error: string | undefined
   readonly isSaving: boolean
   readonly preference: ThemePreference
+  readonly refreshPreference: () => Promise<void>
   readonly setPreference: (preference: ThemePreference) => Promise<void>
   readonly toggleTheme: () => Promise<void>
 }
@@ -93,6 +94,7 @@ export function ThemePreferenceProvider({
   const settingsRef = useRef(initialSettings)
   const preferenceRef = useRef(initialSettings.value.appearance.theme)
   const systemAppearanceRef = useRef<EffectiveTheme>('light')
+  const refreshSequenceRef = useRef(0)
 
   const acceptSettings = useCallback((settings: SettingsSnapshot) => {
     settingsRef.current = settings
@@ -104,15 +106,16 @@ export function ThemePreferenceProvider({
   const refreshSettings = useCallback(
     async (force = false) => {
       if (savingRef.current && !force) return false
+      const sequence = ++refreshSequenceRef.current
       try {
         const settings = await client.getSettings()
-        if (!mountedRef.current) return false
+        if (!mountedRef.current || sequence !== refreshSequenceRef.current) return false
         acceptSettings(settings)
         removeLegacyThemePreference()
         setError(undefined)
         return true
       } catch (cause) {
-        if (mountedRef.current) {
+        if (mountedRef.current && sequence === refreshSequenceRef.current) {
           setError(cause instanceof Error ? cause.message : 'Theme settings could not be loaded.')
         }
         return false
@@ -229,16 +232,28 @@ export function ThemePreferenceProvider({
   }, [persistPreference])
 
   const effectiveTheme = resolveTheme(preference, systemAppearance)
+  const refreshPreference = useCallback(async () => {
+    await refreshSettings()
+  }, [refreshSettings])
   const value = useMemo<ThemePreferenceValue>(
     () => ({
       effectiveTheme,
       error,
       isSaving,
       preference,
+      refreshPreference,
       setPreference: persistPreference,
       toggleTheme,
     }),
-    [effectiveTheme, error, isSaving, persistPreference, preference, toggleTheme],
+    [
+      effectiveTheme,
+      error,
+      isSaving,
+      persistPreference,
+      preference,
+      refreshPreference,
+      toggleTheme,
+    ],
   )
 
   return <ThemePreferenceContext.Provider value={value}>{children}</ThemePreferenceContext.Provider>

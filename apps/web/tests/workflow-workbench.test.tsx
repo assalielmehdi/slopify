@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
@@ -11,6 +11,7 @@ import {
 } from '@slopify/contracts'
 
 import { WorkflowWorkbench } from '../components/workflow/workflow-workbench'
+import type { ResourceEventStreamHandlers } from '../lib/resource-event-stream'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const navigation = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }))
@@ -48,15 +49,24 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
 
 vi.mock('../components/workflow/workflow-config-drawer', () => ({
   WorkflowConfigDrawer: ({
+    conflict,
+    onClose,
     onDelete,
+    onDirtyChange,
     onSubmit,
     value,
   }: {
+    conflict?: string
+    onClose: () => void
     onDelete: () => Promise<boolean>
+    onDirtyChange?: (dirty: boolean) => void
     onSubmit: (value: unknown) => Promise<boolean>
     value: Workflow
   }) => (
     <aside aria-label="Workflow configuration">
+      {conflict === undefined ? null : <p>{conflict}</p>}
+      <button onClick={() => onDirtyChange?.(true)}>Edit graph source</button>
+      <button onClick={onClose}>Close workflow configuration</button>
       <button onClick={() => void onDelete()}>Delete workflow</button>
       <button
         onClick={() =>
@@ -415,5 +425,99 @@ describe('WorkflowWorkbench', () => {
     const run = screen.getByRole('button', { name: 'Run' })
     expect((run as HTMLButtonElement).disabled).toBe(true)
     expect(run.getAttribute('title')).toContain('Every selected repository must be available')
+  })
+
+  it('preserves a dirty editor and surfaces an external workflow conflict', async () => {
+    let handlers: ResourceEventStreamHandlers | undefined
+    const externalWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      name: 'Externally changed workflow',
+      updatedAt: '2026-08-25T20:00:00.000Z',
+    })
+    const client = {
+      deleteWorkflow: vi.fn(),
+      listWorkflows: vi.fn(async () => catalog),
+      getWorkflow: vi.fn().mockResolvedValueOnce(workflow).mockResolvedValue(externalWorkflow),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listRepositories: vi.fn(async () => repositories),
+      startRun: vi.fn(),
+    }
+    render(
+      <WorkflowWorkbench
+        client={client}
+        connectResourceEvents={(nextHandlers) => {
+          handlers = nextHandlers
+          return vi.fn()
+        }}
+      />,
+    )
+
+    await screen.findByText('Graph 1 nodes, 0 edges')
+    fireEvent.click(screen.getByRole('button', { name: 'Configure workflow' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit graph source' }))
+    await act(async () =>
+      handlers?.onEvent({
+        sequence: 1,
+        timestamp: '2026-08-25T20:00:00.000Z',
+        change: 'CHANGED',
+        resource: { type: 'WORKFLOW', workflowId: workflow.workflowId },
+        revision: 'a'.repeat(64),
+      }),
+    )
+
+    expect(screen.getByText(/changed outside Slopify/i)).toBeTruthy()
+    expect(client.getWorkflow).toHaveBeenCalledTimes(1)
+    expect(client.updateWorkflow).not.toHaveBeenCalled()
+
+    await act(async () => handlers?.onReconcile())
+    expect(client.getWorkflow).toHaveBeenNthCalledWith(2, workflow.workflowId, {
+      preserveRevision: true,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close workflow configuration' }))
+    await waitFor(() => expect(client.getWorkflow).toHaveBeenCalledTimes(3))
+  })
+
+  it('refreshes a clean workflow after an external graph change', async () => {
+    let handlers: ResourceEventStreamHandlers | undefined
+    const firstAgent = workflow.nodes[0]
+    if (firstAgent === undefined) throw new Error('Expected an agent fixture')
+    const externalWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      nodes: [...workflow.nodes, { ...firstAgent, id: 'external-review' }],
+      updatedAt: '2026-08-25T20:00:00.000Z',
+    })
+    const client = {
+      deleteWorkflow: vi.fn(),
+      listWorkflows: vi.fn(async () => catalog),
+      getWorkflow: vi.fn().mockResolvedValueOnce(workflow).mockResolvedValue(externalWorkflow),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listRepositories: vi.fn(async () => repositories),
+      startRun: vi.fn(),
+    }
+    render(
+      <WorkflowWorkbench
+        client={client}
+        connectResourceEvents={(nextHandlers) => {
+          handlers = nextHandlers
+          return vi.fn()
+        }}
+      />,
+    )
+
+    await screen.findByText('Graph 1 nodes, 0 edges')
+    await act(async () =>
+      handlers?.onEvent({
+        sequence: 1,
+        timestamp: '2026-08-25T20:00:00.000Z',
+        change: 'CHANGED',
+        resource: { type: 'WORKFLOW', workflowId: workflow.workflowId },
+        revision: 'a'.repeat(64),
+      }),
+    )
+
+    expect(await screen.findByText('Graph 2 nodes, 0 edges')).toBeTruthy()
   })
 })

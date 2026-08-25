@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { AppShell } from '../components/app-shell'
 import { SettingsScreen } from '../components/settings/settings-screen'
+import type { ResourceEventStreamHandlers } from '../lib/resource-event-stream'
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/settings',
@@ -149,5 +150,43 @@ describe('SettingsScreen', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Disconnect' }))
     await waitFor(() => expect(client.disconnectGitConnection).toHaveBeenCalledWith('GITHUB'))
     expect(await screen.findByLabelText('GitHub personal access token')).toBeTruthy()
+  })
+
+  it('refreshes clean theme and Git settings after an external file change', async () => {
+    let handlers: ResourceEventStreamHandlers | undefined
+    const client = createClient({
+      getSettings: vi.fn().mockResolvedValue({
+        value: { schemaVersion: 1, appearance: { theme: 'dark' }, git: { connections: [] } },
+        etag: `"${'a'.repeat(64)}"`,
+      }),
+      listGitConnections: vi.fn().mockResolvedValueOnce([]).mockResolvedValue([connection]),
+    })
+    render(
+      <AppShell themeClient={client}>
+        <SettingsScreen
+          client={client}
+          connectResourceEvents={(nextHandlers) => {
+            handlers = nextHandlers
+            return vi.fn()
+          }}
+        />
+      </AppShell>,
+    )
+
+    expect(await screen.findByLabelText('GitHub personal access token')).toBeTruthy()
+    await act(async () =>
+      handlers?.onEvent({
+        sequence: 1,
+        timestamp: '2026-08-25T20:00:00.000Z',
+        change: 'CHANGED',
+        resource: { type: 'SETTINGS' },
+        revision: 'a'.repeat(64),
+      }),
+    )
+
+    expect(await screen.findByText(/Connected as operator/)).toBeTruthy()
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Dark' }).getAttribute('aria-checked')).toBe('true'),
+    )
   })
 })

@@ -245,7 +245,10 @@ export interface ApiClient {
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   createWorkflow(input: CreateWorkflowDefinitionInput): Promise<Workflow>
   deleteWorkflow(workflowId: string): Promise<DeletionReceipt>
-  getWorkflow(workflowId: string): Promise<Workflow>
+  getWorkflow(
+    workflowId: string,
+    options?: { readonly preserveRevision?: boolean },
+  ): Promise<Workflow>
   updateWorkflow(workflowId: string, workflow: Workflow): Promise<Workflow>
   startRun(input: StartRunInput): Promise<StartRunResponse>
   listRuns(input: ListRunsInput): Promise<RunHistoryPage>
@@ -338,6 +341,7 @@ export const createApiClient = (
   const validWorkflow = (
     entry: z.infer<typeof WorkflowCatalogEntrySchema>,
     etag?: string,
+    preserveRevision = false,
   ): Workflow => {
     if (entry.status === 'INVALID') {
       throw new ApiClientError({
@@ -347,11 +351,15 @@ export const createApiClient = (
         details: { diagnostics: entry.diagnostics },
       })
     }
-    workflowEtags.set(entry.workflowId, etag ?? `"${entry.revision}"`)
+    if (!preserveRevision) workflowEtags.set(entry.workflowId, etag ?? `"${entry.revision}"`)
     return workflowFileToWorkflow(entry.value)
   }
 
-  const requestWorkflow = async (path: string, init: RequestInit): Promise<Workflow> => {
+  const requestWorkflow = async (
+    path: string,
+    init: RequestInit,
+    preserveRevision = false,
+  ): Promise<Workflow> => {
     const response = await fetchImplementation(path, init)
     const body: unknown = await response.json()
     if (!response.ok) {
@@ -364,7 +372,11 @@ export const createApiClient = (
       })
     }
     const entry = WorkflowCatalogEntrySchema.parse(body)
-    return validWorkflow(entry, WorkflowEtagSchema.parse(response.headers.get('etag')))
+    return validWorkflow(
+      entry,
+      WorkflowEtagSchema.parse(response.headers.get('etag')),
+      preserveRevision,
+    )
   }
 
   return {
@@ -481,12 +493,16 @@ export const createApiClient = (
       )
     },
 
-    async getWorkflow(workflowId) {
+    async getWorkflow(workflowId, options) {
       const parsedId = WorkflowSlugSchema.parse(workflowId)
-      return requestWorkflow(`/api/workflows/${encodeURIComponent(parsedId)}`, {
-        headers: { accept: 'application/json' },
-        method: 'GET',
-      })
+      return requestWorkflow(
+        `/api/workflows/${encodeURIComponent(parsedId)}`,
+        {
+          headers: { accept: 'application/json' },
+          method: 'GET',
+        },
+        options?.preserveRevision ?? false,
+      )
     },
 
     async updateWorkflow(workflowId, workflow) {

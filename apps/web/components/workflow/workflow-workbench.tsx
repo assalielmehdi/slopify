@@ -12,6 +12,10 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
 import { WorkflowConfigDrawer } from '@/components/workflow/workflow-config-drawer'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
+import {
+  connectResourceEventStream,
+  type ConnectResourceEventStream,
+} from '@/lib/resource-event-stream'
 import { announceWorkflowCatalogChanged } from '@/lib/workflow-catalog-events'
 import { workflowRunDisabledReason } from '@/lib/workflow-run-readiness'
 
@@ -28,6 +32,7 @@ type WorkflowEditorClient = Pick<
 
 export interface WorkflowWorkbenchProps {
   readonly client?: WorkflowEditorClient
+  readonly connectResourceEvents?: ConnectResourceEventStream
   readonly selectedWorkflowId?: string | undefined
 }
 
@@ -44,6 +49,8 @@ interface WorkflowWorkbenchState {
   readonly harnessError: string | undefined
   readonly repositoryCatalogError: string | undefined
   readonly saveError: string | undefined
+  readonly externalChangeConflict: string | undefined
+  readonly refreshVersion: number
 }
 
 type WorkflowWorkbenchUpdate =
@@ -63,6 +70,8 @@ const initialWorkflowWorkbenchState: WorkflowWorkbenchState = {
   harnessError: undefined,
   repositoryCatalogError: undefined,
   saveError: undefined,
+  externalChangeConflict: undefined,
+  refreshVersion: 0,
 }
 
 const updateWorkflowWorkbench = (
@@ -78,12 +87,20 @@ const defaultClient = createApiClient()
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : 'The workflow could not be loaded'
 
-function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?: string) {
+function useWorkflowWorkbench(
+  client: WorkflowEditorClient,
+  connectResourceEvents: ConnectResourceEventStream,
+  selectedWorkflowId?: string,
+) {
   const router = useRouter()
   const [state, update] = useReducer(updateWorkflowWorkbench, initialWorkflowWorkbenchState)
   const loadSequence = useRef(0)
   const activeWorkflowId = useRef<string | undefined>(undefined)
   const loadedWorkflowId = useRef<string | undefined>(undefined)
+  const loadedWorkflowSnapshot = useRef<string | undefined>(undefined)
+  const configDirty = useRef(false)
+  const stateRef = useRef(state)
+  stateRef.current = state
   const requestedWorkflowId = selectedWorkflowId
 
   useEffect(() => {
@@ -109,7 +126,13 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
           activeWorkflowId.current = undefined
           loadedWorkflowId.current = undefined
           if (active && sequence === loadSequence.current) {
-            update({ workflow: undefined, harnesses, repositories, error: undefined })
+            update({
+              workflow: undefined,
+              harnesses,
+              repositories,
+              error: undefined,
+              externalChangeConflict: undefined,
+            })
           }
           return
         }
@@ -121,7 +144,14 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
         const current = await client.getWorkflow(catalogEntry.workflowId)
         if (!active || sequence !== loadSequence.current) return
         loadedWorkflowId.current = current.workflowId
-        update({ workflow: current, harnesses, repositories, error: undefined })
+        loadedWorkflowSnapshot.current = JSON.stringify(current)
+        update({
+          workflow: current,
+          harnesses,
+          repositories,
+          error: undefined,
+          externalChangeConflict: undefined,
+        })
       } catch (cause) {
         if (active && sequence === loadSequence.current) {
           const previousWorkflowId = loadedWorkflowId.current
@@ -140,7 +170,59 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     return () => {
       active = false
     }
-  }, [client, requestedWorkflowId, router])
+  }, [client, requestedWorkflowId, router, state.refreshVersion])
+
+  useEffect(
+    () =>
+      connectResourceEvents({
+        onDisconnect: () => undefined,
+        onEvent: (event) => {
+          if (event.resource.type === 'WORKFLOW') {
+            announceWorkflowCatalogChanged()
+            if (event.resource.workflowId !== activeWorkflowId.current) return
+            if (configDirty.current) {
+              update({
+                externalChangeConflict:
+                  event.change === 'DELETED'
+                    ? 'This workflow was deleted outside Slopify. Close the editor to refresh the catalog.'
+                    : 'This workflow changed outside Slopify. Close and reopen to load the latest file.',
+              })
+              return
+            }
+            update((current) => ({ refreshVersion: current.refreshVersion + 1 }))
+            return
+          }
+          if (event.resource.type === 'REPOSITORIES' && !configDirty.current) {
+            update((current) => ({ refreshVersion: current.refreshVersion + 1 }))
+          }
+        },
+        onInvalidEvent: () => undefined,
+        onOpen: () => undefined,
+        onReconcile: async () => {
+          const workflowId = activeWorkflowId.current
+          if (workflowId === undefined) return
+          if (!configDirty.current) {
+            update((current) => ({ refreshVersion: current.refreshVersion + 1 }))
+            return
+          }
+          try {
+            const external = await client.getWorkflow(workflowId, { preserveRevision: true })
+            if (JSON.stringify(external) !== loadedWorkflowSnapshot.current) {
+              update({
+                externalChangeConflict:
+                  'This workflow changed outside Slopify. Close and reopen to load the latest file.',
+              })
+            }
+          } catch {
+            update({
+              externalChangeConflict:
+                'This workflow is no longer readable from disk. Close the editor to refresh the catalog.',
+            })
+          }
+        },
+      }),
+    [client, connectResourceEvents],
+  )
 
   const { workflow } = state
   if (workflow === undefined) {
@@ -164,7 +246,9 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     try {
       const saved = await client.updateWorkflow(workflow.workflowId, next)
       if (activeWorkflowId.current === saved.workflowId) {
-        update({ workflow: saved })
+        loadedWorkflowSnapshot.current = JSON.stringify(saved)
+        configDirty.current = false
+        update({ workflow: saved, externalChangeConflict: undefined })
       }
       if (saved.name !== workflow.name) announceWorkflowCatalogChanged()
       return saved
@@ -184,7 +268,10 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     })
   }
 
-  const saveWorkflowConfiguration = async (value: Workflow) => (await persist(value)) !== undefined
+  const saveWorkflowConfiguration = async (value: Workflow) => {
+    if (stateRef.current.externalChangeConflict !== undefined) return false
+    return (await persist(value)) !== undefined
+  }
 
   const deleteWorkflow = async () => {
     update({ saving: true, saveError: undefined })
@@ -218,7 +305,15 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     selectNode,
     saveWorkflowConfiguration,
     deleteWorkflow,
-    closeConfigDrawer: () => update({ configDrawerOpen: false }),
+    closeConfigDrawer: () => {
+      const refreshAfterClose = stateRef.current.externalChangeConflict !== undefined
+      configDirty.current = false
+      update((current) => ({
+        configDrawerOpen: false,
+        externalChangeConflict: undefined,
+        ...(refreshAfterClose ? { refreshVersion: current.refreshVersion + 1 } : {}),
+      }))
+    },
     closeRunDrawer: () => update({ runDrawerOpen: false }),
     openRunDrawer: () => {
       if (!runnable) return
@@ -228,21 +323,28 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
         runDrawerOpen: true,
       })
     },
-    openConfigDrawer: () =>
+    openConfigDrawer: () => {
+      configDirty.current = false
       update({
         selectedNodeId: undefined,
         runDrawerOpen: false,
         configDrawerOpen: true,
         saveError: undefined,
-      }),
+        externalChangeConflict: undefined,
+      })
+    },
+    setConfigDirty: (dirty: boolean) => {
+      configDirty.current = dirty
+    },
   }
 }
 
 export function WorkflowWorkbench({
   client = defaultClient,
+  connectResourceEvents = connectResourceEventStream,
   selectedWorkflowId,
 }: WorkflowWorkbenchProps) {
-  const state = useWorkflowWorkbench(client, selectedWorkflowId)
+  const state = useWorkflowWorkbench(client, connectResourceEvents, selectedWorkflowId)
 
   if (!state.ready) {
     if (state.empty) {
@@ -303,9 +405,12 @@ export function WorkflowWorkbench({
 
       {state.configDrawerOpen ? (
         <WorkflowConfigDrawer
+          key={JSON.stringify(state.workflow)}
+          conflict={state.externalChangeConflict}
           error={state.repositoryCatalogError ?? state.saveError}
           onClose={state.closeConfigDrawer}
           onDelete={state.deleteWorkflow}
+          onDirtyChange={state.setConfigDirty}
           onSubmit={state.saveWorkflowConfiguration}
           repositories={state.repositories}
           saving={state.saving}

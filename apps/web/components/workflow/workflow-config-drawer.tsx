@@ -37,10 +37,12 @@ interface VariableRow {
 export interface WorkflowConfigDrawerProps {
   readonly value: Workflow
   readonly repositories: readonly Repository[]
+  readonly conflict?: string | undefined
   readonly error?: string | undefined
   readonly saving?: boolean | undefined
   readonly onClose: () => void
   readonly onDelete: () => Promise<boolean>
+  readonly onDirtyChange?: ((dirty: boolean) => void) | undefined
   readonly onSubmit: (value: Workflow) => Promise<boolean>
 }
 
@@ -224,10 +226,12 @@ function WorkflowVariableFields({
 export function WorkflowConfigDrawer({
   value,
   repositories,
+  conflict,
   error,
   saving = false,
   onClose,
   onDelete,
+  onDirtyChange,
   onSubmit,
 }: WorkflowConfigDrawerProps) {
   const { configuration } = value
@@ -317,6 +321,10 @@ export function WorkflowConfigDrawer({
     (selectedRepositories.length === 0 && primaryRepositoryId === null) ||
     (primaryRepositoryId !== null && selectedRepositories.includes(primaryRepositoryId))
 
+  useEffect(() => {
+    onDirtyChange?.(isDirty)
+  }, [isDirty, onDirtyChange])
+
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (
@@ -325,6 +333,7 @@ export function WorkflowConfigDrawer({
       !variablesValid ||
       !repositoriesValid ||
       graphResult.status === 'INVALID' ||
+      conflict !== undefined ||
       !isDirty
     )
       return
@@ -413,6 +422,12 @@ export function WorkflowConfigDrawer({
 
         <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
           <div className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto p-6">
+            {conflict === undefined ? null : (
+              <Alert variant="destructive">
+                <AlertTitle>External change detected</AlertTitle>
+                <AlertDescription>{conflict}</AlertDescription>
+              </Alert>
+            )}
             {error === undefined ? null : (
               <Alert variant="destructive">
                 <AlertTitle>Workflow action failed</AlertTitle>
@@ -534,6 +549,7 @@ export function WorkflowConfigDrawer({
                   !variablesValid ||
                   !repositoriesValid ||
                   graphResult.status === 'INVALID' ||
+                  conflict !== undefined ||
                   !isDirty
                 }
               >

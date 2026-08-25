@@ -5,6 +5,7 @@ import { DeletionReceiptSchema, RepositorySchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RepositorySettings } from '../components/settings/repository-settings'
+import type { ResourceEventStreamHandlers } from '../lib/resource-event-stream'
 import { toast } from '../lib/toast'
 
 const connections = [
@@ -312,5 +313,46 @@ describe('RepositorySettings', () => {
     expect(shell.getAttribute('data-open')).toBe('false')
     fireEvent.transitionEnd(shell, { propertyName: 'translate' })
     expect(screen.queryByRole('dialog', { name: 'slopify', hidden: true })).toBeNull()
+  })
+
+  it('refreshes the clean repository catalog after an external file change', async () => {
+    let handlers: ResourceEventStreamHandlers | undefined
+    const externallyAdded = RepositorySchema.parse({
+      ...repositories[0],
+      repositoryId: 'repository-external',
+      remoteId: '505',
+      name: 'external',
+      fullName: 'operator/external',
+      webUrl: 'https://github.com/operator/external',
+      cloneUrl: 'https://github.com/operator/external.git',
+    })
+    const client = createClient({
+      listRepositories: vi
+        .fn()
+        .mockResolvedValueOnce(repositories)
+        .mockResolvedValue([...repositories, externallyAdded]),
+    })
+    render(
+      <RepositorySettings
+        client={client}
+        connectResourceEvents={(nextHandlers) => {
+          handlers = nextHandlers
+          return vi.fn()
+        }}
+      />,
+    )
+
+    await screen.findByRole('button', { name: 'slopify, Available' })
+    await act(async () =>
+      handlers?.onEvent({
+        sequence: 1,
+        timestamp: '2026-08-25T20:00:00.000Z',
+        change: 'CHANGED',
+        resource: { type: 'REPOSITORIES' },
+        revision: 'a'.repeat(64),
+      }),
+    )
+
+    expect(await screen.findByRole('button', { name: 'external, Available' })).toBeTruthy()
   })
 })
