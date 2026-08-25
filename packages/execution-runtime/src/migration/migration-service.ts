@@ -58,6 +58,12 @@ export interface LegacyMigrationPreparation {
   readonly manifest: LegacyMigrationManifest
 }
 
+export interface LegacyMigrationReadSnapshot {
+  readonly databasePath: string
+  readonly manifest: LegacyMigrationManifest
+  cleanup(): Promise<void>
+}
+
 export interface LegacyMigrationService {
   prepare(): Promise<LegacyMigrationPreparation>
 }
@@ -127,6 +133,75 @@ export const calculateFileSha256 = async (path: string): Promise<string> => {
   const hash = createHash('sha256')
   for await (const chunk of createReadStream(path)) hash.update(chunk)
   return hash.digest('hex')
+}
+
+export const verifyLegacyMigrationBackup = async (
+  preparation: LegacyMigrationPreparation,
+): Promise<LegacyMigrationManifest> => {
+  const manifest = LegacyMigrationManifestSchema.parse(preparation.manifest)
+  if (resolve(preparation.backupPath) !== resolve(manifest.backup.path))
+    throw new LegacyMigrationError(
+      'SOURCE_CHANGED',
+      'The legacy database backup path does not match its manifest.',
+    )
+  const backupStat = await lstat(preparation.backupPath)
+  const backupHash = await calculateFileSha256(preparation.backupPath)
+  if (
+    !backupStat.isFile() ||
+    backupStat.isSymbolicLink() ||
+    backupStat.size !== manifest.backup.sizeBytes ||
+    backupHash !== manifest.backup.sha256
+  )
+    throw new LegacyMigrationError(
+      'SOURCE_CHANGED',
+      'The legacy database backup no longer matches its manifest.',
+    )
+  for (const sidecar of manifest.sidecars) {
+    const expectedPath = `${preparation.backupPath}${sidecar.kind === 'WAL' ? '-wal' : '-shm'}`
+    if (resolve(sidecar.backup.path) !== resolve(expectedPath))
+      throw new LegacyMigrationError(
+        'SOURCE_CHANGED',
+        'A legacy database backup sidecar path does not match its manifest.',
+      )
+    const sidecarStat = await lstat(sidecar.backup.path)
+    const sidecarHash = await calculateFileSha256(sidecar.backup.path)
+    if (
+      !sidecarStat.isFile() ||
+      sidecarStat.isSymbolicLink() ||
+      sidecarStat.size !== sidecar.backup.sizeBytes ||
+      sidecarHash !== sidecar.backup.sha256
+    )
+      throw new LegacyMigrationError(
+        'SOURCE_CHANGED',
+        'A legacy database backup sidecar no longer matches its manifest.',
+      )
+  }
+  return manifest
+}
+
+export const createLegacyMigrationReadSnapshot = async (
+  preparation: LegacyMigrationPreparation,
+): Promise<LegacyMigrationReadSnapshot> => {
+  const manifest = await verifyLegacyMigrationBackup(preparation)
+  const directory = join(preparation.directory, `.read-${crypto.randomUUID()}`)
+  const databasePath = join(directory, 'slopify.db')
+  try {
+    await mkdir(directory, { mode: 0o700 })
+    await copyFile(preparation.backupPath, databasePath)
+    await Promise.all(
+      manifest.sidecars.map((sidecar) =>
+        copyFile(sidecar.backup.path, `${databasePath}${sidecar.kind === 'WAL' ? '-wal' : '-shm'}`),
+      ),
+    )
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true })
+    throw error
+  }
+  return {
+    databasePath,
+    manifest,
+    cleanup: () => rm(directory, { recursive: true, force: true }),
+  }
 }
 
 const assertMigrationTargetsAreEmpty = async (

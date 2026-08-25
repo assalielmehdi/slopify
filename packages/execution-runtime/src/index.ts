@@ -5,15 +5,19 @@ export {
   type LegacyCatalogSnapshot,
   type LegacyDatabaseInspection,
   type LegacySqliteReader,
+  type LegacyTerminalRun,
 } from './migration/legacy-sqlite-reader.js'
 export {
   LegacyMigrationError,
   LegacyMigrationManifestSchema,
+  createLegacyMigrationReadSnapshot,
   createLegacyMigrationService,
+  verifyLegacyMigrationBackup,
   type CreateLegacyMigrationServiceOptions,
   type LegacyMigrationErrorCode,
   type LegacyMigrationManifest,
   type LegacyMigrationPreparation,
+  type LegacyMigrationReadSnapshot,
   type LegacyMigrationService,
 } from './migration/migration-service.js'
 export {
@@ -21,6 +25,16 @@ export {
   type LegacyCatalogConversionResult,
   type LegacyCatalogConverter,
 } from './migration/catalog-converter.js'
+export {
+  createLegacyRunConverter,
+  type LegacyRunConversionResult,
+  type LegacyRunConverter,
+} from './migration/run-converter.js'
+export {
+  createLegacyTraceConverter,
+  type LegacyTraceConversionInput,
+  type LegacyTraceConverter,
+} from './migration/trace-converter.js'
 export {
   resolveSlopifyPaths,
   type SlopifyPaths,
