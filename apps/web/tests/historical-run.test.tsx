@@ -60,8 +60,33 @@ const detail = {
       durationMs: 60_000,
     },
   ],
-  repositories: [],
-  repositoryWorkspaces: [],
+  repositories: [
+    {
+      repositoryId: 'repository-api',
+      position: 0,
+      name: 'Captured API',
+      provider: 'GITHUB',
+      remoteId: '123',
+      fullName: 'operator/captured-api',
+      cloneUrl: 'https://github.com/operator/captured-api.git',
+      defaultBranch: 'main',
+      baseSha: 'a'.repeat(40),
+      isPrimary: true,
+    },
+  ],
+  repositoryWorkspaces: [
+    {
+      repositoryId: 'repository-api',
+      position: 0,
+      status: 'CLEANED',
+      workspacePath: '/workspaces/run-historical/repository-api',
+      branchName: 'slopify/run-historical',
+      errorMessage: null,
+      preparedAt: '2026-07-01T10:00:02Z',
+      cleanedAt: '2026-07-01T10:05:02Z',
+      updatedAt: '2026-07-01T10:05:02Z',
+    },
+  ],
 } as unknown as RunDetailResponse
 
 beforeEach(() => {
@@ -99,6 +124,9 @@ describe('historical run', () => {
     expect(panel.textContent).toContain('historical-model')
     expect(panel.textContent).toContain('xhigh')
     expect(panel.textContent).toContain('Took 1m 0s')
+    expect(panel.textContent).toContain('Captured API')
+    expect(panel.textContent).toContain('operator/captured-api')
+    expect(panel.textContent).toContain('/workspaces/run-historical/repository-api')
     expect(panel.textContent).toContain('Captured response from July.')
   })
 })

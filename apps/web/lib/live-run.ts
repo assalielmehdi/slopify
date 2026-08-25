@@ -1,6 +1,7 @@
-import type { NodeExecutionStatus, RunEvent, RunStatus } from '@slopify/contracts'
+import type { NodeExecutionStatus, RunStatus } from '@slopify/contracts'
 
 import type { RunDetailResponse } from '@/lib/api-client'
+import type { RunEvent } from '@/lib/event-stream'
 
 export type NodeExecution = RunDetailResponse['nodeExecutions'][number]
 
@@ -18,6 +19,9 @@ export const runStatusFrom = (
   for (const event of events) {
     if (event.type === 'RUN_STATUS_CHANGED') status = event.data.to
     if (event.type === 'RUN_COMPLETED') status = event.data.status
+    if (event.type === 'RUN_SUCCEEDED') status = 'SUCCEEDED'
+    if (event.type === 'RUN_FAILED') status = 'FAILED'
+    if (event.type === 'RUN_CANCELLED') status = 'CANCELLED'
   }
   return status
 }
@@ -46,10 +50,10 @@ export const nodeStatusesFrom = (
     statuses[execution.nodeId] = execution.status
   }
   for (const event of events) {
-    if (event.type === 'NODE_STARTED') statuses[event.nodeId] = 'RUNNING'
+    if (event.type === 'NODE_STARTED' && 'nodeId' in event) statuses[event.nodeId] = 'RUNNING'
     if (event.type === 'NODE_COMPLETED') statuses[event.nodeId] = 'SUCCEEDED'
-    if (event.type === 'NODE_FAILED') statuses[event.nodeId] = 'FAILED'
-    if (event.type === 'NODE_CANCELLED') statuses[event.nodeId] = 'CANCELLED'
+    if (event.type === 'NODE_FAILED' && 'nodeId' in event) statuses[event.nodeId] = 'FAILED'
+    if (event.type === 'NODE_CANCELLED' && 'nodeId' in event) statuses[event.nodeId] = 'CANCELLED'
   }
   return statuses
 }

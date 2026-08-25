@@ -19,6 +19,20 @@ interface NodeExecutionSnapshot {
 }
 
 export interface RunNodePanelProps {
+  readonly repositories?: readonly {
+    readonly baseSha: string
+    readonly defaultBranch: string | null
+    readonly fullName: string
+    readonly isPrimary: boolean
+    readonly name: string
+    readonly provider: 'GITHUB' | 'GITLAB' | null
+    readonly repositoryId: string
+  }[]
+  readonly repositoryWorkspaces?: readonly {
+    readonly branchName: string | null
+    readonly repositoryId: string
+    readonly workspacePath: string
+  }[]
   readonly execution: NodeExecutionSnapshot | undefined
   readonly node: AgentNode
   readonly status: NodeExecutionStatus
@@ -49,6 +63,8 @@ const harnessLabel = (harnessId: string): string => (harnessId === 'pi' ? 'Pi' :
 export function RunNodePanel({
   execution,
   node,
+  repositories = [],
+  repositoryWorkspaces = [],
   status,
   trace,
   traceError,
@@ -65,7 +81,18 @@ export function RunNodePanel({
     harnessConfiguration?.thinkingLevel ?? node.harness.thinkingLevel ?? 'Harness default'
   const workspaceRepositories =
     trace === undefined
-      ? []
+      ? repositories.map((repository) => {
+          const workspace = repositoryWorkspaces.find(
+            ({ repositoryId }) => repositoryId === repository.repositoryId,
+          )
+          return {
+            repositoryId: repository.repositoryId,
+            name: repository.name,
+            workspacePath: workspace?.workspacePath ?? 'Not recorded',
+            branchLabel: `${workspace?.branchName ?? 'Not recorded'} · ${repository.defaultBranch ?? 'Default branch not recorded'} at ${repository.baseSha}`,
+            repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : repository.provider === 'GITLAB' ? 'GitLab' : 'Repository'} · ${repository.fullName}`,
+          }
+        })
       : trace.header.version !== 1
         ? trace.header.configuration.repositories.map((repository) => ({
             repositoryId: repository.repositoryId,
@@ -89,8 +116,11 @@ export function RunNodePanel({
     ['Model', displayedModel],
     ['Thinking', displayedThinking],
   ]
+  const primaryRepositoryId =
+    harnessConfiguration?.primaryRepositoryId ??
+    repositories.find(({ isPrimary }) => isPrimary)?.repositoryId
   const primaryRepository = workspaceRepositories.find(
-    ({ repositoryId }) => repositoryId === harnessConfiguration?.primaryRepositoryId,
+    ({ repositoryId }) => repositoryId === primaryRepositoryId,
   )
 
   return (
@@ -107,7 +137,7 @@ export function RunNodePanel({
           <DefinitionList items={configurationItems} />
         </section>
 
-        {harnessConfiguration === undefined ? null : (
+        {workspaceRepositories.length === 0 ? null : (
           <section className="grid gap-3" aria-label="Run workspaces">
             <div>
               <h3 className="text-sm/5 font-semibold">Run workspaces</h3>
@@ -124,7 +154,7 @@ export function RunNodePanel({
                 <li className="rounded-md border border-border p-3" key={repository.repositoryId}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm/5 font-medium">{repository.name}</p>
-                    {repository.repositoryId === harnessConfiguration.primaryRepositoryId ? (
+                    {repository.repositoryId === primaryRepositoryId ? (
                       <span className="text-xs/4 font-medium text-muted-foreground">Primary</span>
                     ) : null}
                   </div>

@@ -414,7 +414,7 @@ describe('LiveRun', () => {
       status: 'CANCELLED',
       completedAt: '2026-08-20T10:00:10Z',
     } as StartRunResponse
-    const cancelledDetail = { ...detail, run: cancelled }
+    const cancelledDetail = { ...detail, run: { ...detail.run, ...cancelled } }
     const client = {
       getRun: vi
         .fn<() => Promise<RunDetailResponse>>()

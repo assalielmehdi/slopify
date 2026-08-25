@@ -75,6 +75,20 @@ describe('run event reconciliation', () => {
     expect(runEventStreamUrl('run-01')).toBe('/api/runs/run-01/events')
     expect(() => runEventStreamUrl('../other')).toThrow()
   })
+
+  it('validates filesystem journal events without rewriting their facts', () => {
+    const filesystemEvent = {
+      schemaVersion: 1,
+      eventId: 'run-succeeded',
+      runId: 'run-01',
+      sequence: 3,
+      timestamp: '2026-08-25T10:00:03Z',
+      type: 'RUN_SUCCEEDED',
+      data: {},
+    } as const
+
+    expect(parseRunEvent(JSON.stringify(filesystemEvent))).toEqual(filesystemEvent)
+  })
 })
 
 describe('live run API contract', () => {

@@ -145,6 +145,8 @@ export function LiveRun({
           node={selectedNode}
           onClose={() => panel.close(true)}
           onExited={() => panel.update({ selectedNodeId: undefined })}
+          repositories={detail.repositories}
+          repositoryWorkspaces={detail.repositoryWorkspaces}
           status={statuses[selectedNode.id] ?? 'PENDING'}
           trace={panel.trace}
           traceError={panel.traceError}

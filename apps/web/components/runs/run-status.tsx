@@ -14,9 +14,10 @@ const runStatusPresentation = {
   SUCCEEDED: { label: 'Succeeded', variant: 'outline', className: statusSuccessClassName },
   FAILED: { label: 'Failed', variant: 'destructive' },
   CANCELLED: { label: 'Cancelled', variant: 'outline', className: statusWarningClassName },
+  CORRUPT: { label: 'Corrupt', variant: 'destructive' },
 } as const satisfies Readonly<
   Record<
-    RunStatus,
+    RunStatus | 'CORRUPT',
     {
       readonly className?: string
       readonly label: string
@@ -42,7 +43,7 @@ const nodeStatusPresentation = {
   >
 >
 
-export function RunStatusBadge({ status }: Readonly<{ status: RunStatus }>) {
+export function RunStatusBadge({ status }: Readonly<{ status: RunStatus | 'CORRUPT' }>) {
   const presentation = runStatusPresentation[status]
   return (
     <Badge

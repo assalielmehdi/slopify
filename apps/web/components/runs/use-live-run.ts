@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 
-import type { AgentTrace, RunEvent } from '@slopify/contracts'
+import type { AgentTrace } from '@slopify/contracts'
 
 import type { ApiClient, RunDetailResponse } from '@/lib/api-client'
 import {
   reconcileRunEvents,
   runEventStreamUrl,
   type RunEventSubscription,
+  type RunEvent,
 } from '@/lib/event-stream'
 import {
   lastRunEventSequence,
@@ -195,6 +196,9 @@ export function useLiveRunStream({
             dispatch({ type: 'snapshot', detail: undefined, events: reconciliation.events })
             if (
               event.type === 'RUN_COMPLETED' ||
+              event.type === 'RUN_SUCCEEDED' ||
+              event.type === 'RUN_FAILED' ||
+              event.type === 'RUN_CANCELLED' ||
               (event.type === 'RUN_STATUS_CHANGED' && terminalRunStatuses.has(event.data.to))
             ) {
               close()
@@ -228,7 +232,7 @@ export function useLiveRunStream({
       if (!mounted.current) return
       const current = detailRef.current
       if (current !== undefined) {
-        const next = { ...current, run: confirmed }
+        const next = { ...current, run: { ...current.run, ...confirmed } }
         detailRef.current = next
         dispatch({ type: 'snapshot', detail: next, events: eventsRef.current })
       }

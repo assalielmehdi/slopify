@@ -6,13 +6,15 @@ import { useEffect, useRef, type CSSProperties } from 'react'
 import type { AgentTrace, NodeExecutionStatus } from '@slopify/contracts'
 import type { AgentNode } from '@slopify/workflow-model'
 
-import { RunNodePanel } from '@/components/runs/run-node-panel'
+import { RunNodePanel, type RunNodePanelProps } from '@/components/runs/run-node-panel'
 import { NodeStatusBadge } from '@/components/runs/run-status'
 import { Button } from '@/components/ui/button'
 import type { NodeExecution } from '@/lib/live-run'
 import { formatDuration, formatTimestamp } from '@/lib/run-format'
 
 interface RunNodeDetailsDialogProps {
+  readonly repositories?: RunNodePanelProps['repositories']
+  readonly repositoryWorkspaces?: RunNodePanelProps['repositoryWorkspaces']
   readonly execution: NodeExecution | undefined
   readonly isOpen: boolean
   readonly node: AgentNode
@@ -30,6 +32,8 @@ export function RunNodeDetailsDialog({
   node,
   onClose,
   onExited,
+  repositories,
+  repositoryWorkspaces,
   status,
   trace,
   traceError,
@@ -115,6 +119,8 @@ export function RunNodeDetailsDialog({
         <RunNodePanel
           execution={execution}
           node={node}
+          {...(repositories === undefined ? {} : { repositories })}
+          {...(repositoryWorkspaces === undefined ? {} : { repositoryWorkspaces })}
           status={status}
           trace={trace}
           traceError={traceError}

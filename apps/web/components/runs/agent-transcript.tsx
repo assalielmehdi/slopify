@@ -1,7 +1,7 @@
 'use client'
 
 import type { AgentTraceEvent } from '@slopify/contracts'
-import { BrainIcon, ChevronRightIcon } from 'lucide-react'
+import { BookOpenIcon, BrainIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -39,6 +39,12 @@ type TranscriptItem =
       readonly id: string
       readonly kind: 'tool'
     } & AgentTraceTool)
+  | {
+      readonly id: string
+      readonly kind: 'skill'
+      readonly skillName: string
+      readonly evidence: 'DIRECT' | 'DERIVED'
+    }
 
 const record = (value: unknown): Record<string, unknown> | undefined =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -98,6 +104,17 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
           source: 'result',
           content: summary,
         })
+      continue
+    }
+    if (event.type === 'AGENT_SKILL_INVOKED') {
+      const skillName = text(data.skillName)
+      if (skillName === undefined) continue
+      items.push({
+        id: `event-${event.sequence}`,
+        kind: 'skill',
+        skillName,
+        evidence: data.evidence === 'DIRECT' ? 'DIRECT' : 'DERIVED',
+      })
       continue
     }
     const toolCallId = text(data.toolCallId)
@@ -175,6 +192,9 @@ const liveAnnouncement = (events: readonly AgentTraceEvent[]): string => {
   if (event?.type === 'AGENT_TOOL_COMPLETED') {
     return `${text(data?.toolName) ?? 'Tool'} ${data?.status === 'failed' ? 'failed' : 'completed'}`
   }
+  if (event?.type === 'AGENT_SKILL_INVOKED') {
+    return `${text(data?.skillName) ?? 'Skill'} invoked`
+  }
   if (event?.type === 'AGENT_RESULT') return 'Agent result received'
   return ''
 }
@@ -229,11 +249,34 @@ function ReasoningLine({ content }: Readonly<{ content: string }>) {
   )
 }
 
+function SkillLine({
+  evidence,
+  skillName,
+}: Readonly<{ evidence: 'DIRECT' | 'DERIVED'; skillName: string }>) {
+  return (
+    <div
+      className="flex min-w-0 items-start gap-2 border-b py-3 first:pt-0 last:border-b-0 last:pb-0"
+      data-message-kind="skill"
+    >
+      <BookOpenIcon aria-hidden="true" className="mt-1 size-4 shrink-0 text-muted-foreground" />
+      <div className="min-w-0">
+        <p className="break-words font-mono text-sm/6">{skillName}</p>
+        <p className="text-xs/4 text-muted-foreground">
+          {evidence === 'DIRECT' ? 'Direct' : 'Derived'} skill invocation
+        </p>
+      </div>
+    </div>
+  )
+}
+
 export function AgentTranscript({ events, prompt, result, streaming }: AgentTranscriptProps) {
   const [workOpen, setWorkOpen] = useState(false)
   const transcript = transcriptFrom(events)
   const workItems = transcript.filter(
-    (item) => item.kind === 'tool' || (item.kind === 'text' && item.source === 'reasoning'),
+    (item) =>
+      item.kind === 'tool' ||
+      item.kind === 'skill' ||
+      (item.kind === 'text' && item.source === 'reasoning'),
   )
   const results = transcript.filter(
     (item): item is Extract<TranscriptItem, { kind: 'text' }> =>
@@ -293,6 +336,12 @@ export function AgentTranscript({ events, prompt, result, streaming }: AgentTran
                             {workItems.map((item) =>
                               item.kind === 'text' ? (
                                 <ReasoningLine key={item.id} content={item.content} />
+                              ) : item.kind === 'skill' ? (
+                                <SkillLine
+                                  evidence={item.evidence}
+                                  key={item.id}
+                                  skillName={item.skillName}
+                                />
                               ) : (
                                 <AgentTraceToolBlock key={item.id} tool={item} />
                               ),

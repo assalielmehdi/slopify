@@ -454,6 +454,70 @@ describe('API client', () => {
     })
   })
 
+  it('accepts filesystem run admission and normalizes filesystem history', async () => {
+    const projection = {
+      schemaVersion: 1,
+      runId: 'run-filesystem-01',
+      workflowId: 'default-workflow',
+      status: 'PENDING',
+      transitionCount: 0,
+      lastEventSequence: 0,
+      createdAt: '2026-08-25T10:00:00Z',
+      startedAt: null,
+      completedAt: null,
+      failureCode: null,
+    }
+    const fetchImplementation = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(projection, { status: 202 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          data: [
+            {
+              status: 'READY',
+              locator: { workflowId: 'default-workflow', runId: 'run-filesystem-01' },
+              run: projection,
+            },
+            {
+              status: 'CORRUPT',
+              locator: { workflowId: 'default-workflow', runId: 'run-corrupt-01' },
+              diagnostic: { code: 'RESOURCE_VALIDATION_FAILED', message: 'run.json is invalid' },
+            },
+          ],
+          pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+        }),
+      )
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(
+      client.startRun({ workflowId: 'default-workflow', variables: {} }),
+    ).resolves.toEqual(projection)
+    await expect(client.listRuns({ page: 1, pageSize: 20 })).resolves.toEqual({
+      data: [
+        {
+          runId: 'run-filesystem-01',
+          workflowId: 'default-workflow',
+          status: 'PENDING',
+          createdAt: '2026-08-25T10:00:00Z',
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
+        },
+        {
+          runId: 'run-corrupt-01',
+          workflowId: 'default-workflow',
+          status: 'CORRUPT',
+          createdAt: null,
+          startedAt: null,
+          completedAt: null,
+          durationMs: null,
+          diagnostic: { code: 'RESOURCE_VALIDATION_FAILED', message: 'run.json is invalid' },
+        },
+      ],
+      pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+    })
+  })
+
   it('loads immutable repository and cloned workspace evidence with run details', async () => {
     const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
@@ -510,5 +574,129 @@ describe('API client', () => {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
+  })
+
+  it('normalizes filesystem run detail from immutable artifacts', async () => {
+    const workflow = createAgentWorkflowFixture({
+      createdAt: '2026-08-25T10:00:00Z',
+      modelId: 'test-model',
+      thinkingLevel: 'medium',
+    })
+    const workflowFile = workflowToWorkflowFile(workflow)
+    const projection = {
+      schemaVersion: 1,
+      runId: 'run-filesystem-01',
+      workflowId: workflow.workflowId,
+      status: 'RUNNING',
+      transitionCount: 2,
+      lastEventSequence: 2,
+      createdAt: '2026-08-25T10:00:00Z',
+      startedAt: '2026-08-25T10:00:01Z',
+      completedAt: null,
+      failureCode: null,
+    }
+    const response = {
+      status: 'READY',
+      run: projection,
+      workflowSnapshot: {
+        schemaVersion: 1,
+        capturedAt: '2026-08-25T10:00:00Z',
+        workflowRevision: 'a'.repeat(64),
+        workflow: workflowFile,
+      },
+      variablesSnapshot: { schemaVersion: 1, values: { task: 'Review the release.' } },
+      repositoriesSnapshot: {
+        schemaVersion: 1,
+        repositories: [
+          {
+            repositoryId: 'repository-api',
+            position: 0,
+            name: 'API',
+            provider: 'GITHUB',
+            remoteId: '123',
+            fullName: 'operator/api',
+            cloneUrl: 'https://github.com/operator/api.git',
+            webUrl: 'https://github.com/operator/api',
+            defaultBranch: 'main',
+            baseSha: 'a'.repeat(40),
+            isPrimary: true,
+          },
+        ],
+      },
+      workspaces: {
+        schemaVersion: 1,
+        runId: 'run-filesystem-01',
+        lastEventSequence: 2,
+        workspaces: [
+          {
+            repositoryId: 'repository-api',
+            position: 0,
+            status: 'READY',
+            workspacePath: '/workspaces/run-filesystem-01/repository-api',
+            branchName: 'slopify/run-filesystem-01',
+            errorMessage: null,
+            preparedAt: '2026-08-25T10:00:01Z',
+            cleanedAt: null,
+            updatedAt: '2026-08-25T10:00:01Z',
+          },
+        ],
+      },
+      executions: [],
+      events: [
+        {
+          schemaVersion: 1,
+          eventId: 'run-started',
+          runId: 'run-filesystem-01',
+          sequence: 1,
+          timestamp: '2026-08-25T10:00:01Z',
+          type: 'RUN_STARTED',
+          data: {},
+        },
+      ],
+    }
+    const client = createApiClient({ fetch: async () => Response.json(response) })
+
+    await expect(client.getRun('run-filesystem-01')).resolves.toMatchObject({
+      run: {
+        ...projection,
+        workflowSnapshot: workflow,
+        variables: { task: 'Review the release.' },
+      },
+      events: response.events,
+      nodeExecutions: [],
+      repositories: [expect.objectContaining({ repositoryId: 'repository-api' })],
+      repositoryWorkspaces: [
+        expect.objectContaining({
+          repositoryId: 'repository-api',
+          workspacePath: '/workspaces/run-filesystem-01/repository-api',
+        }),
+      ],
+    })
+  })
+
+  it('reports corrupt filesystem run detail through the client error contract', async () => {
+    const client = createApiClient({
+      fetch: async () =>
+        Response.json({
+          status: 'CORRUPT',
+          locator: { workflowId: 'default-workflow', runId: 'run-corrupt-01' },
+          diagnostic: {
+            code: 'RESOURCE_VALIDATION_FAILED',
+            message: 'run.json is invalid',
+          },
+        }),
+    })
+
+    await expect(client.getRun('run-corrupt-01')).rejects.toEqual(
+      new ApiClientError({
+        code: 'RUN_CORRUPT',
+        message: 'run.json is invalid',
+        status: 409,
+        details: {
+          code: 'RESOURCE_VALIDATION_FAILED',
+          message: 'run.json is invalid',
+        },
+      }),
+    )
   })
 })

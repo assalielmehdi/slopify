@@ -12,20 +12,13 @@ import {
   GitConnectionSchema,
   GitProviderSchema,
   GitRepositoryCatalogResponseSchema,
-  GitShaSchema,
-  NodeIdSchema,
-  NodeExecutionStatusSchema,
-  OutcomeNameSchema,
   RepositoryCatalogResponseSchema,
-  RepositoryIdSchema,
   RepositorySchema,
   SettingsSchema,
   UndoDeletionResponseSchema,
   UpdateSettingsRequestSchema,
-  RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
-  RunStatusSchema,
   WorkflowIdSchema,
   type HealthResponse,
   type HarnessDescriptor,
@@ -50,7 +43,24 @@ import {
 } from '@slopify/workflow-model'
 import { z } from 'zod'
 
-const JsonValueSchema = z.json()
+import {
+  StartRunResponseSchema,
+  normalizeRunHistory,
+  parseRunDetail,
+  type JsonValue,
+  type RunDetailResponse,
+  type RunHistoryPage,
+  type StartRunResponse,
+} from '@/lib/run-api-contract'
+
+export type {
+  JsonValue,
+  RunDetailResponse,
+  RunHistoryEntry,
+  RunHistoryPage,
+  StartRunResponse,
+} from '@/lib/run-api-contract'
+
 const SettingsEtagSchema = z.string().regex(/^"(?:missing|[a-f0-9]{64})"$/)
 const WorkflowRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 const WorkflowEtagSchema = z.string().regex(/^"(?:missing|[a-f0-9]{64})"$/u)
@@ -112,94 +122,7 @@ const CreateWorkflowDefinitionInputSchema = z.strictObject({
   description: z.string().trim().min(1).max(4096),
 })
 
-const StartRunResponseSchema = z.strictObject({
-  runId: RunIdSchema,
-  workflowId: WorkflowIdSchema,
-  workflowSnapshot: WorkflowSchema,
-  variables: z.record(z.string(), JsonValueSchema).readonly(),
-  status: RunStatusSchema,
-  transitionCount: z.number().int().nonnegative().safe(),
-  createdAt: z.iso.datetime({ offset: true }),
-  startedAt: z.iso.datetime({ offset: true }).nullable(),
-  completedAt: z.iso.datetime({ offset: true }).nullable(),
-})
-
-const RunHistoryEntrySchema = z.strictObject({
-  runId: RunIdSchema,
-  workflowId: WorkflowIdSchema,
-  status: RunStatusSchema,
-  createdAt: z.iso.datetime({ offset: true }),
-  startedAt: z.iso.datetime({ offset: true }).nullable(),
-  completedAt: z.iso.datetime({ offset: true }).nullable(),
-  durationMs: z.number().int().nonnegative().safe().nullable(),
-})
-
-const RunHistoryPageSchema = z.strictObject({
-  data: z.array(RunHistoryEntrySchema).readonly(),
-  pagination: z.strictObject({
-    page: z.number().int().positive().safe(),
-    pageSize: z.number().int().min(1).max(100).safe(),
-    totalItems: z.number().int().nonnegative().safe(),
-    totalPages: z.number().int().nonnegative().safe(),
-  }),
-})
-
-const RunRepositorySnapshotSchema = z.strictObject({
-  repositoryId: RepositoryIdSchema,
-  position: z.number().int().nonnegative().safe(),
-  name: z.string().trim().min(1),
-  provider: GitProviderSchema.nullable(),
-  remoteId: z.string().trim().min(1).nullable(),
-  fullName: z.string().trim().min(1),
-  cloneUrl: z.string().trim().min(1),
-  defaultBranch: z.string().trim().min(1).nullable(),
-  baseSha: GitShaSchema,
-  isPrimary: z.boolean(),
-})
-
-const RunRepositoryWorkspaceSchema = z.strictObject({
-  repositoryId: RepositoryIdSchema,
-  position: z.number().int().nonnegative().safe(),
-  status: z.enum(['PREPARING', 'READY', 'FAILED', 'CLEANED', 'LEGACY']),
-  workspacePath: z.string().min(1),
-  branchName: z.string().trim().min(1).nullable(),
-  errorMessage: z.string().trim().min(1).max(4_096).nullable(),
-  preparedAt: z.iso.datetime({ offset: true }).nullable(),
-  cleanedAt: z.iso.datetime({ offset: true }).nullable(),
-  updatedAt: z.iso.datetime({ offset: true }),
-})
-
-const RunDetailResponseSchema = z.strictObject({
-  run: StartRunResponseSchema,
-  events: z.array(RunEventSchema).readonly(),
-  nodeExecutions: z
-    .array(
-      z.strictObject({
-        nodeExecutionId: z.string().trim().min(1).max(256),
-        attemptId: z.string().trim().min(1).max(256),
-        nodeId: NodeIdSchema,
-        executionIndex: z.number().int().nonnegative().safe(),
-        status: NodeExecutionStatusSchema,
-        output: z.json().nullable(),
-        outcome: OutcomeNameSchema.nullable(),
-        errorCode: z.string().trim().min(1).max(128).nullable(),
-        errorMessage: z.string().trim().min(1).max(4_096).nullable(),
-        startedAt: z.iso.datetime({ offset: true }).nullable(),
-        completedAt: z.iso.datetime({ offset: true }).nullable(),
-        durationMs: z.number().int().nonnegative().finite().nullable(),
-      }),
-    )
-    .readonly(),
-  repositories: z.array(RunRepositorySnapshotSchema).readonly(),
-  repositoryWorkspaces: z.array(RunRepositoryWorkspaceSchema).readonly(),
-})
-
 export type WorkflowCatalogEntry = Workflow
-export type JsonValue = z.infer<typeof JsonValueSchema>
-export type StartRunResponse = z.infer<typeof StartRunResponseSchema>
-export type RunHistoryEntry = z.infer<typeof RunHistoryEntrySchema>
-export type RunHistoryPage = z.infer<typeof RunHistoryPageSchema>
-export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
 export interface StartRunInput {
   readonly workflowId: string
   readonly variables?: Readonly<Record<string, JsonValue>>
@@ -555,14 +478,48 @@ export const createApiClient = (
         search.set('durationMinMs', String(query.durationMinMs))
       if (query.durationMaxMs !== undefined)
         search.set('durationMaxMs', String(query.durationMaxMs))
-      return get(`/api/runs?${search.toString()}`, RunHistoryPageSchema)
+      const response = await fetchImplementation(`/api/runs?${search.toString()}`, {
+        headers: { accept: 'application/json' },
+        method: 'GET',
+      })
+      const body: unknown = await response.json()
+      if (!response.ok) {
+        const apiError = ApiErrorSchema.parse(body).error
+        throw new ApiClientError({
+          code: apiError.code,
+          message: apiError.message,
+          status: response.status,
+          ...(apiError.details === undefined ? {} : { details: apiError.details }),
+        })
+      }
+      return normalizeRunHistory(body)
     },
 
     async getRun(runId) {
-      return get(
+      const response = await fetchImplementation(
         `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}`,
-        RunDetailResponseSchema,
+        { headers: { accept: 'application/json' }, method: 'GET' },
       )
+      const body: unknown = await response.json()
+      if (!response.ok) {
+        const apiError = ApiErrorSchema.parse(body).error
+        throw new ApiClientError({
+          code: apiError.code,
+          message: apiError.message,
+          status: response.status,
+          ...(apiError.details === undefined ? {} : { details: apiError.details }),
+        })
+      }
+      const detail = parseRunDetail(body)
+      if (detail.status === 'CORRUPT') {
+        throw new ApiClientError({
+          code: 'RUN_CORRUPT',
+          message: detail.diagnostic.message,
+          status: 409,
+          details: detail.diagnostic,
+        })
+      }
+      return detail.value
     },
 
     async getAgentTrace(runId, nodeExecutionId, attemptId) {

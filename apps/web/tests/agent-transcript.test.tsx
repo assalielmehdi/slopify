@@ -101,6 +101,37 @@ describe('AgentTranscript', () => {
     expect(container.querySelectorAll('[data-message-kind]')).toHaveLength(5)
   })
 
+  it('renders direct and derived skill invocations in trace order', () => {
+    const { container } = render(
+      <AgentTranscript
+        prompt="Follow the available skills."
+        result={undefined}
+        streaming={false}
+        events={[
+          traceEvent(1, 'AGENT_SKILL_INVOKED', {
+            skillName: 'planning-and-task-breakdown',
+            evidence: 'DIRECT',
+          }),
+          traceEvent(2, 'AGENT_REASONING', { content: 'The plan is ready.' }),
+          traceEvent(3, 'AGENT_SKILL_INVOKED', {
+            skillName: 'frontend-ui-engineering',
+            evidence: 'DERIVED',
+            sourceToolCallId: 'tool-01',
+          }),
+        ]}
+      />,
+    )
+
+    fireEvent.click(screen.getByRole('button', { name: 'Work details' }))
+
+    const skills = container.querySelectorAll('[data-message-kind="skill"]')
+    expect(skills).toHaveLength(2)
+    expect(skills[0]?.textContent).toContain('planning-and-task-breakdown')
+    expect(skills[0]?.textContent).toContain('Direct')
+    expect(skills[1]?.textContent).toContain('frontend-ui-engineering')
+    expect(skills[1]?.textContent).toContain('Derived')
+  })
+
   it('renders Markdown in prompt and results while reasoning remains plain text', () => {
     const { container } = render(
       <AgentTranscript

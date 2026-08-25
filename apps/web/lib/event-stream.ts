@@ -1,4 +1,8 @@
-import { RunEventSchema, RunIdSchema, type RunEvent } from '@slopify/contracts'
+import { RunIdSchema } from '@slopify/contracts'
+
+import { ApiRunEventSchema, type ApiRunEvent } from '@/lib/run-api-contract'
+
+export type RunEvent = ApiRunEvent
 
 export interface EventReconciliation {
   readonly events: readonly RunEvent[]
@@ -55,7 +59,7 @@ export function reconcileRunEvents(
   return { events: contiguous, requiresSnapshot }
 }
 
-export const parseRunEvent = (data: string): RunEvent => RunEventSchema.parse(JSON.parse(data))
+export const parseRunEvent = (data: string): RunEvent => ApiRunEventSchema.parse(JSON.parse(data))
 
 export const runEventStreamUrl = (runId: string): string =>
   `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/events`
