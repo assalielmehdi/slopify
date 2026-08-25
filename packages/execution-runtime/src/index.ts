@@ -26,6 +26,13 @@ export {
 } from './runs/run-artifacts.js'
 export { resolveNodeExecutionPaths, type NodeExecutionPaths } from './runs/run-layout.js'
 export {
+  FilesystemRunStoreError,
+  createFilesystemRunStore,
+  type FilesystemRunAdmissionInput,
+  type FilesystemRunStore,
+  type FilesystemRunStoreErrorCode,
+} from './runs/filesystem-run-store.js'
+export {
   FilesystemResourceError,
   type FilesystemResourceErrorCode,
 } from './filesystem/filesystem-errors.js'
@@ -279,9 +286,13 @@ export {
 } from './services/cancellation-service.js'
 export {
   RunServiceError,
+  createFilesystemRunAdmissionService,
   createRunService,
+  type CreateFilesystemRunAdmissionServiceOptions,
   type CreateRunServiceInput,
   type CreateRunServiceOptions,
+  type FilesystemRunAdmissionService,
+  type FilesystemRunRepositoryResolution,
   type RunDetail,
   type RunService,
   type RunServiceErrorCode,

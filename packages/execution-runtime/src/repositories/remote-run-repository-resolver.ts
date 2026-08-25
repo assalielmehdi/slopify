@@ -1,6 +1,6 @@
 import type { GitConnectionService } from '../git/git-connection-service.js'
 import type { RemoteGitHost } from '../git/remote-git-host.js'
-import type { RunRepositoryResolution } from '../services/run-service.js'
+import type { FilesystemRunRepositoryResolution } from '../services/run-service.js'
 import type { RepositoryService } from './repository-service.js'
 
 export const createRemoteRunRepositoryResolver = (
@@ -9,7 +9,7 @@ export const createRemoteRunRepositoryResolver = (
     connections: Pick<GitConnectionService, 'requireToken'>
     remote: Pick<RemoteGitHost, 'getDefaultBranchSha'>
   }>,
-): ((repositoryId: string) => Promise<RunRepositoryResolution>) =>
+): ((repositoryId: string) => Promise<FilesystemRunRepositoryResolution>) =>
   async function resolveRunRepository(repositoryId) {
     const repository = await options.repositories.requireAvailable(repositoryId)
     const token = await options.connections.requireToken(repository.provider)
@@ -29,6 +29,7 @@ export const createRemoteRunRepositoryResolver = (
       remoteId: repository.remoteId,
       fullName: repository.fullName,
       cloneUrl: repository.cloneUrl,
+      webUrl: repository.webUrl,
       defaultBranch: repository.defaultBranch,
       baseSha,
     }

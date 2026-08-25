@@ -37,6 +37,7 @@ describe('remote run repository resolver', () => {
       remoteId: '42',
       fullName: 'platform/api',
       cloneUrl: 'https://gitlab.com/platform/api.git',
+      webUrl: 'https://gitlab.com/platform/api',
       defaultBranch: 'main',
       baseSha: 'a'.repeat(40),
     })
