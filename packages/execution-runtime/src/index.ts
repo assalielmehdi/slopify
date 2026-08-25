@@ -262,6 +262,17 @@ export {
   type WorkflowCoordinator,
 } from './orchestration/workflow-coordinator.js'
 export {
+  createFilesystemJournalCoordinatorStore,
+  type JournalCoordinatorRun,
+  type JournalCoordinatorStore,
+} from './orchestration/journal-coordinator-store.js'
+export {
+  JournalCoordinatorError,
+  createJournalWorkflowCoordinator,
+  type JournalCoordinatorErrorCode,
+  type JournalWorkflowCoordinator,
+} from './orchestration/journal-workflow-coordinator.js'
+export {
   createEventStore,
   type EventPage,
   type EventStore,
