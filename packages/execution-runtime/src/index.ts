@@ -1,5 +1,11 @@
 export { createOrchestratedRunService } from './orchestration/orchestrated-run-service.js'
 export {
+  resolveSlopifyPaths,
+  type SlopifyPaths,
+  type SlopifyRunPaths,
+  type SlopifyWorkflowPaths,
+} from './filesystem/slopify-home.js'
+export {
   GitConnectionServiceError,
   createGitConnectionService,
   type GitConnectionService,
