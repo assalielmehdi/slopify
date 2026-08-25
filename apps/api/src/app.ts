@@ -19,7 +19,7 @@ import {
   type RunEventFeed,
   type SettingsStore,
   type WorkbenchDatabase,
-  type WorkflowService,
+  type WorkflowDefinitionService,
 } from '@slopify/execution-runtime'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
@@ -47,7 +47,7 @@ export interface CreateApiAppOptions {
   readonly runs?: RunService
   readonly settings?: SettingsStore
   readonly eventFeed?: RunEventFeed
-  readonly workflows?: WorkflowService
+  readonly workflows?: WorkflowDefinitionService
 }
 
 const errorBody = (input: {
@@ -161,14 +161,17 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof WorkflowServiceError) {
-      return context.json(
-        errorBody({ code: error.code, message: error.message }),
+      const status =
         error.code === 'WORKFLOW_NOT_FOUND'
           ? 404
-          : error.code === 'WORKFLOW_HARNESS_UNAVAILABLE'
+          : error.code === 'WORKFLOW_HARNESS_UNAVAILABLE' || error.code === 'WORKFLOW_FILE_INVALID'
             ? 422
-            : 409,
-      )
+            : error.code === 'WORKFLOW_REVISION_CONFLICT'
+              ? 412
+              : error.code === 'WORKFLOW_UNAVAILABLE'
+                ? 503
+                : 409
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof RepositoryServiceError) {
       const status =

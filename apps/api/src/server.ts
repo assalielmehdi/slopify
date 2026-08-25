@@ -17,6 +17,7 @@ import {
   createFilesystemGitConnectionRepository,
   createFilesystemRepositoryStore,
   createFilesystemSettingsStore,
+  createFilesystemWorkflowStore,
   createGitConnectionService,
   createGitCredentialHelperCommand,
   createHarnessCatalog,
@@ -31,6 +32,7 @@ import {
   createSqliteCoordinatorStateStore,
   createSqliteExecutionMessageQueue,
   createWorkflowCoordinator,
+  createWorkflowDefinitionService,
   createWorkflowRepository,
   createWorkflowService,
   gitCredentialHelperPath,
@@ -201,6 +203,10 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
 
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
   const harnesses = createHarnessCatalog({ inspectors: [createPiHarnessInspector()] })
+  const workflows = createWorkflowDefinitionService({
+    workflows: createFilesystemWorkflowStore({ paths }),
+    harnesses,
+  })
   const pi = createPiCliAgentExecutor()
   const remoteGit = createFetchRemoteGitHost()
   const gitConnections = createGitConnectionService({
@@ -219,10 +225,10 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     connections: gitConnections,
     remote: remoteGit,
   })
-  const workflows = createWorkflowService({ workflows: workflowRepository, harnesses })
+  const legacyWorkflows = createWorkflowService({ workflows: workflowRepository, harnesses })
   const deletions = createDeletionService({
     operations: createDeletionOperationRepository(database),
-    handlers: [repositories, workflows],
+    handlers: [repositories, legacyWorkflows],
   })
   const queue = createSqliteExecutionMessageQueue(database)
   const coordinator = createWorkflowCoordinator({

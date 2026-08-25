@@ -100,8 +100,22 @@ const mapStoreError = (cause: unknown): never => {
     if (cause.code === 'WORKFLOW_NOT_FOUND') {
       throw new WorkflowServiceError('WORKFLOW_NOT_FOUND', 'Workflow was not found')
     }
+    if (cause.code === 'WORKFLOW_FILE_INVALID') {
+      throw new WorkflowServiceError('WORKFLOW_FILE_INVALID', cause.message)
+    }
+    if (cause.code === 'WORKFLOW_UNAVAILABLE') {
+      throw new WorkflowServiceError('WORKFLOW_UNAVAILABLE', 'Workflows are unavailable')
+    }
   }
   throw cause
+}
+
+const useWorkflowStore = async <Result>(operation: () => Promise<Result>): Promise<Result> => {
+  try {
+    return await operation()
+  } catch (cause) {
+    return mapStoreError(cause)
+  }
 }
 
 export const createWorkflowDefinitionService = (options: {
@@ -171,7 +185,7 @@ export const createWorkflowDefinitionService = (options: {
 
   const getSource = async (workflowIdInput: string): Promise<WorkflowSource> => {
     const workflowId = WorkflowSlugSchema.parse(workflowIdInput)
-    const source = await options.workflows.get(workflowId)
+    const source = await useWorkflowStore(() => options.workflows.get(workflowId))
     if (source === undefined) {
       throw new WorkflowServiceError('WORKFLOW_NOT_FOUND', 'Workflow was not found')
     }
@@ -180,7 +194,8 @@ export const createWorkflowDefinitionService = (options: {
 
   return {
     async list() {
-      return Object.freeze(await Promise.all((await options.workflows.list()).map(toCatalogEntry)))
+      const sources = await useWorkflowStore(() => options.workflows.list())
+      return Object.freeze(await Promise.all(sources.map(toCatalogEntry)))
     },
 
     async get(workflowId) {
@@ -201,12 +216,8 @@ export const createWorkflowDefinitionService = (options: {
           createdAt: timestamp,
         }),
       )
-      try {
-        const created = await options.workflows.create(workflow)
-        return evaluate(workflow.workflowId, created.value, created.revision)
-      } catch (cause) {
-        return mapStoreError(cause)
-      }
+      const created = await useWorkflowStore(() => options.workflows.create(workflow))
+      return evaluate(workflow.workflowId, created.value, created.revision)
     },
 
     async update(workflowIdInput, input) {
@@ -225,16 +236,14 @@ export const createWorkflowDefinitionService = (options: {
         createdAt: current.status === 'VALID' ? current.value.createdAt : parsed.value.createdAt,
         updatedAt: now(),
       })
-      try {
-        const saved = await options.workflows.save({
+      const saved = await useWorkflowStore(() =>
+        options.workflows.save({
           workflowId,
           value: workflow,
           expectedRevision: parsed.expectedRevision,
-        })
-        return evaluate(workflowId, saved.value, saved.revision)
-      } catch (cause) {
-        return mapStoreError(cause)
-      }
+        }),
+      )
+      return evaluate(workflowId, saved.value, saved.revision)
     },
   }
 }

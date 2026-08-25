@@ -133,6 +133,19 @@ describe('workflow definition service', () => {
     ).rejects.toMatchObject({ code: 'WORKFLOW_ID_CONFLICT' })
   })
 
+  it('maps filesystem catalog failures without leaking adapter errors', async () => {
+    const workflows = store()
+    vi.mocked(workflows.list).mockRejectedValueOnce(
+      new WorkflowStoreError('WORKFLOW_UNAVAILABLE', 'Filesystem details'),
+    )
+    const service = createWorkflowDefinitionService({ workflows, harnesses: harnesses() })
+
+    await expect(service.list()).rejects.toMatchObject({
+      code: 'WORKFLOW_UNAVAILABLE',
+      message: 'Workflows are unavailable',
+    })
+  })
+
   it('keeps invalid raw source visible without pretending it was parsed', async () => {
     const contents = '{ "schemaVersion": 2, invalid json'
     const invalid = parseWorkflowSource({
