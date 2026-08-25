@@ -337,6 +337,7 @@ export const AgentTraceEventTypeSchema = z.enum([
   'AGENT_TOOL_STARTED',
   'AGENT_TOOL_UPDATED',
   'AGENT_TOOL_COMPLETED',
+  'AGENT_SKILL_INVOKED',
   'AGENT_RESULT',
   'AGENT_FAILED',
   'AGENT_CANCELLED',

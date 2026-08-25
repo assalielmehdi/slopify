@@ -1,8 +1,9 @@
 import { constants } from 'node:fs'
-import { appendFile, mkdir, open, readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { lstat, mkdir, open, readFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 import {
+  AgentExecutionEventSchema,
   type AgentExecutionEvent,
   AgentTraceEventSchema,
   AgentTraceHeaderSchema,
@@ -12,6 +13,11 @@ import {
 } from '@slopify/contracts'
 import { z } from 'zod'
 
+import type { SlopifyPaths } from '../filesystem/slopify-home.js'
+import { resolveNodeExecutionPaths } from '../runs/run-layout.js'
+
+const MAX_TRACE_BYTES = 67_108_864
+const MAX_RECORD_BYTES = 2_097_152
 const identifier = z
   .string()
   .min(1)
@@ -30,7 +36,12 @@ const eventRecordSchema = z.strictObject({
 const recordSchema = z.discriminatedUnion('kind', [headerRecordSchema, eventRecordSchema])
 
 export type AgentTraceStoreErrorCode =
-  'TRACE_ALREADY_EXISTS' | 'TRACE_NOT_FOUND' | 'TRACE_REQUEST_INVALID' | 'TRACE_CORRUPT'
+  | 'TRACE_ALREADY_EXISTS'
+  | 'TRACE_CORRUPT'
+  | 'TRACE_NOT_FOUND'
+  | 'TRACE_REQUEST_INVALID'
+  | 'TRACE_TOO_LARGE'
+  | 'TRACE_UNAVAILABLE'
 
 export class AgentTraceStoreError extends Error {
   override readonly name = 'AgentTraceStoreError'
@@ -44,14 +55,33 @@ export class AgentTraceStoreError extends Error {
   }
 }
 
+interface TraceIdentity {
+  readonly runId: string
+  readonly nodeExecutionId: string
+  readonly attemptId: string
+}
+
 export interface AgentTraceStore {
   start(header: AgentTraceHeader): Promise<void>
   append(header: AgentTraceHeader, event: AgentExecutionEvent): Promise<void>
-  read(input: {
-    readonly runId: string
-    readonly nodeExecutionId: string
-    readonly attemptId: string
-  }): Promise<AgentTrace>
+  read(input: TraceIdentity): Promise<AgentTrace>
+}
+
+export interface RunAgentTraceContext {
+  readonly workflowId: string
+  readonly executionIndex: number
+  readonly header: AgentTraceHeader
+}
+
+export interface RunAgentTraceReadInput extends TraceIdentity {
+  readonly workflowId: string
+  readonly executionIndex: number
+}
+
+export interface RunAgentTraceStore {
+  start(context: RunAgentTraceContext): Promise<void>
+  append(context: RunAgentTraceContext, event: AgentExecutionEvent): Promise<void>
+  read(input: RunAgentTraceReadInput): Promise<AgentTrace>
 }
 
 const validId = (value: string): string => {
@@ -61,17 +91,182 @@ const validId = (value: string): string => {
   return result.data
 }
 
-const serialized = (value: unknown): string => `${JSON.stringify(value)}\n`
+const nodeErrorCode = (cause: unknown): string | undefined =>
+  typeof cause === 'object' && cause !== null && 'code' in cause
+    ? String((cause as { readonly code: unknown }).code)
+    : undefined
+
+const serialized = (value: unknown): string => {
+  const line = `${JSON.stringify(value)}\n`
+  if (Buffer.byteLength(line) > MAX_RECORD_BYTES) {
+    throw new AgentTraceStoreError('TRACE_TOO_LARGE', 'Agent trace record is too large')
+  }
+  return line
+}
+
+const sameHeader = (left: AgentTraceHeader, right: AgentTraceHeader): boolean =>
+  JSON.stringify(left) === JSON.stringify(right)
+
+const matchesIdentity = (header: AgentTraceHeader, identity: TraceIdentity): boolean =>
+  header.runId === identity.runId &&
+  header.nodeExecutionId === identity.nodeExecutionId &&
+  header.attemptId === identity.attemptId
+
+interface ParsedTrace {
+  readonly trace: AgentTrace
+  readonly completeBytes: number
+  readonly fileBytes: number
+}
+
+const parse = async (path: string, expected?: TraceIdentity): Promise<ParsedTrace> => {
+  let source: Buffer
+  try {
+    const metadata = await lstat(path)
+    if (metadata.isSymbolicLink() || !metadata.isFile()) {
+      throw new AgentTraceStoreError('TRACE_UNAVAILABLE', 'Agent trace is unavailable')
+    }
+    if (metadata.size > MAX_TRACE_BYTES) {
+      throw new AgentTraceStoreError('TRACE_TOO_LARGE', 'Agent trace is too large')
+    }
+    source = await readFile(path)
+    if (source.byteLength > MAX_TRACE_BYTES) {
+      throw new AgentTraceStoreError('TRACE_TOO_LARGE', 'Agent trace is too large')
+    }
+  } catch (cause) {
+    if (cause instanceof AgentTraceStoreError) throw cause
+    if (nodeErrorCode(cause) === 'ENOENT') {
+      throw new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found', { cause })
+    }
+    throw new AgentTraceStoreError('TRACE_UNAVAILABLE', 'Agent trace is unavailable', { cause })
+  }
+  const finalNewline = source.lastIndexOf(0x0a)
+  const completeBytes = finalNewline < 0 ? 0 : finalNewline + 1
+  const lines = source.subarray(0, completeBytes).toString('utf8').split('\n').slice(0, -1)
+  const records: z.infer<typeof recordSchema>[] = []
+  for (const line of lines) {
+    if (Buffer.byteLength(line) + 1 > MAX_RECORD_BYTES) {
+      throw new AgentTraceStoreError('TRACE_TOO_LARGE', 'Agent trace record is too large')
+    }
+    try {
+      records.push(recordSchema.parse(JSON.parse(line)))
+    } catch (cause) {
+      throw new AgentTraceStoreError('TRACE_CORRUPT', 'Agent trace is corrupt', { cause })
+    }
+  }
+  const first = records[0]
+  if (first?.kind !== 'header' || records.slice(1).some(({ kind }) => kind === 'header')) {
+    throw new AgentTraceStoreError('TRACE_CORRUPT', 'Agent trace header is invalid')
+  }
+  if (expected !== undefined && !matchesIdentity(first.header, expected)) {
+    throw new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found')
+  }
+  const events = records.flatMap((record) => (record.kind === 'event' ? [record.event] : []))
+  const trace = AgentTraceSchema.parse({
+    header: first.header,
+    events,
+    complete: terminalTypes.has(events.at(-1)?.type ?? ''),
+  })
+  return { trace, completeBytes, fileBytes: source.byteLength }
+}
+
+const queues = new Map<string, Promise<void>>()
+
+const enqueue = <Value>(path: string, operation: () => Promise<Value>): Promise<Value> => {
+  const previous = queues.get(path) ?? Promise.resolve()
+  const result = previous.then(operation)
+  const settled = result.then(
+    () => undefined,
+    () => undefined,
+  )
+  queues.set(path, settled)
+  void settled.then(() => {
+    if (queues.get(path) === settled) queues.delete(path)
+  })
+  return result
+}
+
+const start = (path: string, unparsedHeader: AgentTraceHeader): Promise<void> =>
+  enqueue(path, async () => {
+    const header = AgentTraceHeaderSchema.parse(unparsedHeader)
+    await mkdir(dirname(path), { recursive: true, mode: 0o700 })
+    let file
+    try {
+      file = await open(
+        path,
+        constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY | constants.O_NOFOLLOW,
+        0o600,
+      )
+      await file.writeFile(serialized({ kind: 'header', header }))
+      await file.sync()
+    } catch (cause) {
+      if (cause instanceof AgentTraceStoreError) throw cause
+      if (nodeErrorCode(cause) !== 'EEXIST') {
+        throw new AgentTraceStoreError('TRACE_UNAVAILABLE', 'Agent trace could not be created', {
+          cause,
+        })
+      }
+      const existing = await parse(path)
+      if (!sameHeader(existing.trace.header, header)) {
+        throw new AgentTraceStoreError('TRACE_ALREADY_EXISTS', 'Agent trace already exists', {
+          cause,
+        })
+      }
+    } finally {
+      await file?.close()
+    }
+  })
+
+const append = (
+  path: string,
+  unparsedHeader: AgentTraceHeader,
+  unparsedEvent: AgentExecutionEvent,
+): Promise<void> =>
+  enqueue(path, async () => {
+    const header = AgentTraceHeaderSchema.parse(unparsedHeader)
+    const event = AgentExecutionEventSchema.parse(unparsedEvent)
+    if (
+      event.runId !== header.runId ||
+      event.executionId !== header.nodeExecutionId ||
+      event.nodeId !== header.nodeId
+    ) {
+      throw new AgentTraceStoreError(
+        'TRACE_REQUEST_INVALID',
+        'Agent event does not belong to the captured trace context',
+      )
+    }
+    const existing = await parse(path, header)
+    const traceEvent = AgentTraceEventSchema.parse({
+      sequence: existing.trace.events.length + 1,
+      timestamp: event.timestamp,
+      type: event.type,
+      data: event.data,
+    })
+    const line = serialized({ kind: 'event', event: traceEvent })
+    if (existing.completeBytes + Buffer.byteLength(line) > MAX_TRACE_BYTES) {
+      throw new AgentTraceStoreError('TRACE_TOO_LARGE', 'Agent trace is too large')
+    }
+    let file
+    try {
+      file = await open(path, constants.O_RDWR | constants.O_NOFOLLOW)
+      if (existing.completeBytes !== existing.fileBytes) {
+        await file.truncate(existing.completeBytes)
+      }
+      await file.write(line, existing.completeBytes, 'utf8')
+      await file.sync()
+    } catch (cause) {
+      if (cause instanceof AgentTraceStoreError) throw cause
+      throw new AgentTraceStoreError('TRACE_UNAVAILABLE', 'Agent trace could not be written', {
+        cause,
+      })
+    } finally {
+      await file?.close()
+    }
+  })
 
 export const createFilesystemAgentTraceStore = (options: {
   readonly root: string
 }): AgentTraceStore => {
-  const sequenceByPath = new Map<string, number>()
-  const tracePath = (input: {
-    readonly runId: string
-    readonly nodeExecutionId: string
-    readonly attemptId: string
-  }) =>
+  const tracePath = (input: TraceIdentity) =>
     join(
       options.root,
       'runs',
@@ -80,78 +275,37 @@ export const createFilesystemAgentTraceStore = (options: {
       validId(input.nodeExecutionId),
       `${validId(input.attemptId)}.jsonl`,
     )
-
-  const parse = async (path: string): Promise<AgentTrace> => {
-    let source: string
-    try {
-      source = await readFile(path, 'utf8')
-    } catch (cause) {
-      throw new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found', { cause })
-    }
-    const lines = source.split('\n')
-    if (lines.at(-1) === '') lines.pop()
-    const records: z.infer<typeof recordSchema>[] = []
-    for (const [index, line] of lines.entries()) {
-      if (line.trim() === '') continue
-      try {
-        records.push(recordSchema.parse(JSON.parse(line)))
-      } catch (cause) {
-        if (index === lines.length - 1) break
-        throw new AgentTraceStoreError('TRACE_CORRUPT', 'Agent trace is corrupt', { cause })
-      }
-    }
-    const first = records[0]
-    if (first?.kind !== 'header')
-      throw new AgentTraceStoreError('TRACE_CORRUPT', 'Agent trace header is missing')
-    const events = records.flatMap((record) => (record.kind === 'event' ? [record.event] : []))
-    return AgentTraceSchema.parse({
-      header: first.header,
-      events,
-      complete: terminalTypes.has(events.at(-1)?.type ?? ''),
-    })
-  }
-
   return {
-    async start(unparsedHeader) {
-      const header = AgentTraceHeaderSchema.parse(unparsedHeader)
-      const path = tracePath(header)
-      await mkdir(join(path, '..'), { recursive: true, mode: 0o700 })
-      let file
-      try {
-        file = await open(path, constants.O_CREAT | constants.O_EXCL | constants.O_WRONLY, 0o600)
-        await file.writeFile(serialized({ kind: 'header', header }))
-        sequenceByPath.set(path, 0)
-      } catch (cause) {
-        if ((cause as NodeJS.ErrnoException).code !== 'EEXIST') throw cause
-        const existing = await parse(path)
-        if (JSON.stringify(existing.header) !== JSON.stringify(header)) {
-          throw new AgentTraceStoreError('TRACE_ALREADY_EXISTS', 'Agent trace already exists', {
-            cause,
-          })
-        }
-        sequenceByPath.set(path, existing.events.length)
-      } finally {
-        await file?.close()
-      }
+    start(header) {
+      return start(tracePath(header), header)
     },
-
-    async append(unparsedHeader, event) {
-      const header = AgentTraceHeaderSchema.parse(unparsedHeader)
-      const path = tracePath(header)
-      const current = sequenceByPath.get(path) ?? (await parse(path)).events.length
-      const data = JSON.parse(JSON.stringify(event.data)) as never
-      const traceEvent = AgentTraceEventSchema.parse({
-        sequence: current + 1,
-        timestamp: event.timestamp,
-        type: event.type,
-        data,
-      })
-      await appendFile(path, serialized({ kind: 'event', event: traceEvent }), { mode: 0o600 })
-      sequenceByPath.set(path, traceEvent.sequence)
+    append(header, event) {
+      return append(tracePath(header), header, event)
     },
-
     async read(input) {
-      return parse(tracePath(input))
+      return (await parse(tracePath(input), input)).trace
+    },
+  }
+}
+
+export const createRunFilesystemAgentTraceStore = (options: {
+  readonly paths: Pick<SlopifyPaths, 'run'>
+}): RunAgentTraceStore => {
+  const tracePath = (input: RunAgentTraceReadInput) =>
+    resolveNodeExecutionPaths(
+      options.paths.run(input.workflowId, input.runId),
+      input.executionIndex,
+      input.nodeExecutionId,
+    ).traceFile
+  return {
+    start(context) {
+      return start(tracePath({ ...context, ...context.header }), context.header)
+    },
+    append(context, event) {
+      return append(tracePath({ ...context, ...context.header }), context.header, event)
+    },
+    async read(input) {
+      return (await parse(tracePath(input), input)).trace
     },
   }
 }

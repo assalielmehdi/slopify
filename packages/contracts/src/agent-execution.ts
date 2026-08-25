@@ -198,6 +198,16 @@ const AgentToolCompletedEventSchema = z.strictObject({
   }),
 })
 
+const AgentSkillInvokedEventSchema = z.strictObject({
+  ...eventBase,
+  type: z.literal('AGENT_SKILL_INVOKED'),
+  data: z.strictObject({
+    skillName: z.string().min(1).max(128).regex(OPAQUE_ID_PATTERN),
+    evidence: z.enum(['DIRECT', 'DERIVED']),
+    sourceToolCallId: toolCallId.optional(),
+  }),
+})
+
 const AgentResultEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_RESULT'),
@@ -236,6 +246,7 @@ export const AgentExecutionEventSchema = z.discriminatedUnion('type', [
   AgentToolStartedEventSchema,
   AgentToolUpdatedEventSchema,
   AgentToolCompletedEventSchema,
+  AgentSkillInvokedEventSchema,
   AgentResultEventSchema,
   AgentFailedEventSchema,
   AgentCancelledEventSchema,

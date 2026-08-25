@@ -236,6 +236,20 @@ describe('agent execution event contract', () => {
       },
       {
         ...eventBase,
+        type: 'AGENT_SKILL_INVOKED',
+        data: {
+          skillName: 'browser-testing',
+          evidence: 'DERIVED',
+          sourceToolCallId: 'tool-call-01',
+        },
+      },
+      {
+        ...eventBase,
+        type: 'AGENT_SKILL_INVOKED',
+        data: { skillName: 'native-skill', evidence: 'DIRECT' },
+      },
+      {
+        ...eventBase,
         type: 'AGENT_RESULT',
         data: {
           result,

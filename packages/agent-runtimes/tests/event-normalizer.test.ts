@@ -236,6 +236,53 @@ describe('Pi event normalizer', () => {
     ])
   })
 
+  it('derives skill evidence only from a skill definition read', () => {
+    const skillRead = createNormalizer().normalize({
+      type: 'tool_execution_start',
+      toolCallId: 'call_skill_01',
+      toolName: 'read',
+      args: { path: '/Users/operator/.agents/skills/browser-testing/SKILL.md' },
+    })
+    const ordinaryRead = createNormalizer().normalize({
+      type: 'tool_execution_start',
+      toolCallId: 'call_read_01',
+      toolName: 'read',
+      args: { path: '/workspace/docs/SKILL.md' },
+    })
+
+    expect(applicationEvents(skillRead)).toContainEqual({
+      type: 'AGENT_SKILL_INVOKED',
+      data: {
+        skillName: 'browser-testing',
+        evidence: 'DERIVED',
+        sourceToolCallId: 'call_skill_01',
+      },
+    })
+    expect(applicationEvents(ordinaryRead).some(({ type }) => type === 'AGENT_SKILL_INVOKED')).toBe(
+      false,
+    )
+  })
+
+  it('omits oversized raw harness payloads while preserving their event type', () => {
+    const events = createNormalizer().normalize({
+      type: 'future_event',
+      content: 'x'.repeat(1_000_001),
+    })
+
+    expect(events).toEqual([
+      {
+        type: 'HARNESS_EVENT',
+        data: {
+          harnessId: 'pi',
+          event: {
+            type: 'future_event',
+            captureError: 'Pi event payload was omitted because it was too large',
+          },
+        },
+      },
+    ])
+  })
+
   it.each([
     { type: 'start' },
     { type: 'text_start', contentIndex: 0 },

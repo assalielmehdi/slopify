@@ -17,6 +17,7 @@ type ObservableAgentEvent = Extract<
       | 'AGENT_TOOL_STARTED'
       | 'AGENT_TOOL_UPDATED'
       | 'AGENT_TOOL_COMPLETED'
+      | 'AGENT_SKILL_INVOKED'
   }
 >
 
@@ -51,6 +52,18 @@ const capturedHarnessEvent = (
   try {
     const serialized = JSON.stringify(event)
     if (serialized === undefined) throw new Error('Pi event is not JSON serializable')
+    if (serialized.length > MAX_CONTENT_LENGTH) {
+      return {
+        type: 'HARNESS_EVENT',
+        data: {
+          harnessId: PI_HARNESS_ID,
+          event: {
+            type: typeof event.type === 'string' ? redactor.redact(event.type) : 'unknown',
+            captureError: 'Pi event payload was omitted because it was too large',
+          },
+        },
+      }
+    }
     return {
       type: 'HARNESS_EVENT',
       data: {
@@ -97,6 +110,23 @@ const visibleToolInput = (input: unknown, redactor: EventRedactor): JsonValue =>
     return JSON.parse(redactor.redact(serialized)) as JsonValue
   } catch {
     return '[Tool input unavailable]'
+  }
+}
+
+const derivedSkillEvent = (
+  toolCallId: string,
+  toolName: string,
+  input: unknown,
+): NormalizedPiEvent | undefined => {
+  if (toolName !== 'read' || !isRecord(input) || typeof input.path !== 'string') return undefined
+  const match = /(?:^|[/\\])skills[/\\]([a-z0-9]+(?:[._-][a-z0-9]+)*)[/\\]SKILL\.md$/u.exec(
+    input.path,
+  )
+  const skillName = match?.[1]
+  if (skillName === undefined || skillName.length > 128) return undefined
+  return {
+    type: 'AGENT_SKILL_INVOKED',
+    data: { skillName, evidence: 'DERIVED', sourceToolCallId: toolCallId },
   }
 }
 
@@ -171,6 +201,7 @@ export const createPiEventNormalizer = (
               observedContent: '',
               redaction: options.redactor.createStream(),
             })
+            const skill = derivedSkillEvent(event.toolCallId, event.toolName, event.args)
             return [
               captured,
               {
@@ -181,6 +212,7 @@ export const createPiEventNormalizer = (
                   input: visibleToolInput(event.args, options.redactor),
                 },
               },
+              ...(skill === undefined ? [] : [skill]),
             ]
           }
 

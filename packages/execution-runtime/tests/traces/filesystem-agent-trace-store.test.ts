@@ -1,11 +1,25 @@
-import { mkdtempSync, readFileSync, rmSync, statSync } from 'node:fs'
+import {
+  appendFileSync,
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { AgentTraceHeaderSchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createFilesystemAgentTraceStore } from '../../src/index.js'
+import {
+  createFilesystemAgentTraceStore,
+  createRunFilesystemAgentTraceStore,
+  resolveNodeExecutionPaths,
+  resolveSlopifyPaths,
+} from '../../src/index.js'
 
 const directories: string[] = []
 
@@ -174,5 +188,99 @@ describe('filesystem agent trace store', () => {
     await expect(
       store.read({ runId: '../outside', nodeExecutionId: 'node-01', attemptId: 'attempt-01' }),
     ).rejects.toMatchObject({ code: 'TRACE_REQUEST_INVALID' })
+  })
+
+  it('surfaces unavailable linked traces without following them', async () => {
+    const { root, store } = createStore()
+    await store.start(header)
+    const tracePath = join(
+      root,
+      'runs',
+      'run-01',
+      'executions',
+      'node-execution-01',
+      'attempt-01.jsonl',
+    )
+    const outside = join(root, 'outside.jsonl')
+    writeFileSync(outside, 'owner-local data\n')
+    rmSync(tracePath)
+    symlinkSync(outside, tracePath)
+
+    await expect(
+      store.read({
+        runId: 'run-01',
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'attempt-01',
+      }),
+    ).rejects.toMatchObject({ code: 'TRACE_UNAVAILABLE' })
+  })
+
+  it('colocates run traces and binds every event to captured execution context', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'slopify-run-agent-traces-'))
+    directories.push(home)
+    const paths = resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } })
+    const store = createRunFilesystemAgentTraceStore({ paths })
+    const context = { workflowId: 'workflow-01', executionIndex: 2, header }
+
+    await store.start(context)
+    await store.append(context, {
+      executionId: 'node-execution-01',
+      runId: 'run-01',
+      nodeId: 'identify-agent',
+      timestamp: '2026-08-22T10:00:01.000Z',
+      type: 'AGENT_SKILL_INVOKED',
+      data: {
+        skillName: 'browser-testing',
+        evidence: 'DERIVED',
+        sourceToolCallId: 'tool-01',
+      },
+    })
+    const runPaths = paths.run('workflow-01', 'run-01')
+    const tracePath = resolveNodeExecutionPaths(runPaths, 2, 'node-execution-01').traceFile
+
+    expect(existsSync(tracePath)).toBe(true)
+    await expect(
+      store.append(context, {
+        executionId: 'different-execution',
+        runId: 'run-01',
+        nodeId: 'identify-agent',
+        timestamp: '2026-08-22T10:00:02.000Z',
+        type: 'AGENT_MESSAGE',
+        data: { content: 'Wrong execution.' },
+      }),
+    ).rejects.toMatchObject({ code: 'TRACE_REQUEST_INVALID' })
+
+    appendFileSync(tracePath, '{"kind":"event"')
+    await store.append(context, {
+      executionId: 'node-execution-01',
+      runId: 'run-01',
+      nodeId: 'identify-agent',
+      timestamp: '2026-08-22T10:00:03.000Z',
+      type: 'AGENT_MESSAGE',
+      data: { content: 'Recovered after a partial write.' },
+    })
+    await expect(
+      store.read({
+        workflowId: 'workflow-01',
+        executionIndex: 2,
+        runId: 'run-01',
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'attempt-01',
+      }),
+    ).resolves.toMatchObject({
+      events: [
+        { type: 'AGENT_SKILL_INVOKED' },
+        { type: 'AGENT_MESSAGE', data: { content: 'Recovered after a partial write.' } },
+      ],
+    })
+    await expect(
+      store.read({
+        workflowId: 'workflow-01',
+        executionIndex: 2,
+        runId: 'run-01',
+        nodeExecutionId: 'node-execution-01',
+        attemptId: 'different-attempt',
+      }),
+    ).rejects.toMatchObject({ code: 'TRACE_NOT_FOUND' })
   })
 })

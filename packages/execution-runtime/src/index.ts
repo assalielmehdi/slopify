@@ -166,8 +166,12 @@ export {
 export {
   AgentTraceStoreError,
   createFilesystemAgentTraceStore,
+  createRunFilesystemAgentTraceStore,
   type AgentTraceStore,
   type AgentTraceStoreErrorCode,
+  type RunAgentTraceContext,
+  type RunAgentTraceReadInput,
+  type RunAgentTraceStore,
 } from './traces/filesystem-agent-trace-store.js'
 export { createAgentNodeRunner } from './orchestration/agent-node-runner.js'
 export {
