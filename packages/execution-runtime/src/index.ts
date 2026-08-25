@@ -36,8 +36,17 @@ export {
 export {
   ResourceRevisionSchema,
   calculateResourceRevision,
+  readResourceRevision,
   type ResourceRevision,
 } from './filesystem/resource-revision.js'
+export {
+  createResourceWatcher,
+  type ResourceChangeEvent,
+  type ResourceChangeType,
+  type ResourceWatcher,
+  type WatchDirectory,
+  type WatchedResource,
+} from './filesystem/resource-watcher.js'
 export {
   GitConnectionServiceError,
   createGitConnectionService,
