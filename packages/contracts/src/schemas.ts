@@ -82,6 +82,10 @@ export const SettingsSchema = z.strictObject({
   git: z.strictObject({ connections: SettingsGitConnectionsSchema }),
 })
 
+export const UpdateSettingsRequestSchema = z.strictObject({
+  appearance: z.strictObject({ theme: ThemePreferenceSchema }),
+})
+
 export const ConfigureGitConnectionRequestSchema = z.strictObject({
   token: z.string().trim().min(1).max(16_384),
 })
@@ -448,6 +452,7 @@ export type GitProvider = z.infer<typeof GitProviderSchema>
 export type GitConnection = z.infer<typeof GitConnectionSchema>
 export type ThemePreference = z.infer<typeof ThemePreferenceSchema>
 export type Settings = z.infer<typeof SettingsSchema>
+export type UpdateSettingsRequest = z.infer<typeof UpdateSettingsRequestSchema>
 export type GitRepositoryVisibility = z.infer<typeof GitRepositoryVisibilitySchema>
 export type GitRepository = z.infer<typeof GitRepositorySchema>
 export type HarnessThinkingLevel = z.infer<typeof HarnessThinkingLevelSchema>

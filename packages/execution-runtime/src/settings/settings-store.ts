@@ -46,6 +46,19 @@ export type SettingsCredentialReference = z.infer<typeof SettingsCredentialRefer
 export type SettingsGitConnectionRecord = z.infer<typeof SettingsGitConnectionRecordSchema>
 export type SettingsRecord = z.infer<typeof SettingsRecordSchema>
 
+export type SettingsStoreErrorCode =
+  'SETTINGS_FILE_INVALID' | 'SETTINGS_REVISION_CONFLICT' | 'SETTINGS_UNAVAILABLE'
+
+export class SettingsStoreError extends Error {
+  readonly code: SettingsStoreErrorCode
+
+  constructor(code: SettingsStoreErrorCode, message: string, cause?: unknown) {
+    super(message, cause === undefined ? undefined : { cause })
+    this.name = 'SettingsStoreError'
+    this.code = code
+  }
+}
+
 export interface VersionedSettingsRecord {
   readonly value: SettingsRecord
   readonly revision: SettingsRevision | null

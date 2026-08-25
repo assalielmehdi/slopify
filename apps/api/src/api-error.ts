@@ -1,6 +1,6 @@
 import type { Context } from 'hono'
 
-type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 422 | 429 | 503
+type ApiApplicationErrorStatus = 400 | 401 | 403 | 404 | 409 | 412 | 422 | 428 | 429 | 503
 
 export class ApiApplicationError extends Error {
   readonly status: ApiApplicationErrorStatus

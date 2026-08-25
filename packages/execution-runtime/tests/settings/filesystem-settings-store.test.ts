@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   createFilesystemSettingsStore,
   resolveSlopifyPaths,
-  type FilesystemResourceError,
+  type SettingsStoreError,
 } from '../../src/index.js'
 
 const directories: string[] = []
@@ -19,8 +19,8 @@ const createFixture = () => {
   return { paths, store: createFilesystemSettingsStore({ paths }) }
 }
 
-const rejectsWith = async (promise: Promise<unknown>, code: FilesystemResourceError['code']) => {
-  await expect(promise).rejects.toMatchObject({ name: 'FilesystemResourceError', code })
+const rejectsWith = async (promise: Promise<unknown>, code: SettingsStoreError['code']) => {
+  await expect(promise).rejects.toMatchObject({ name: 'SettingsStoreError', code })
 }
 
 afterEach(() => {
@@ -85,7 +85,7 @@ describe('filesystem settings store', () => {
         },
         expectedRevision: initial.revision,
       }),
-      'RESOURCE_REVISION_CONFLICT',
+      'SETTINGS_REVISION_CONFLICT',
     )
     expect(readFileSync(paths.settingsFile, 'utf8')).toBe(externalSource)
   })
@@ -100,11 +100,15 @@ describe('filesystem settings store', () => {
         git: { connections: [] },
       }),
     ],
-  ] as const)('surfaces %s without modifying the invalid file', async (code, source) => {
+  ] as const)('surfaces %s without modifying the invalid file', async (causeCode, source) => {
     const { paths, store } = createFixture()
     writeFileSync(paths.settingsFile, source)
 
-    await rejectsWith(store.read(), code)
+    await expect(store.read()).rejects.toMatchObject({
+      name: 'SettingsStoreError',
+      code: 'SETTINGS_FILE_INVALID',
+      cause: { code: causeCode },
+    })
 
     expect(readFileSync(paths.settingsFile, 'utf8')).toBe(source)
   })

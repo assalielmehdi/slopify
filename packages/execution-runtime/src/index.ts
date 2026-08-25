@@ -52,11 +52,13 @@ export {
   SettingsGitConnectionRecordSchema,
   SettingsRecordSchema,
   SettingsRevisionSchema,
+  SettingsStoreError,
   type SettingsCredentialReference,
   type SettingsGitConnectionRecord,
   type SettingsRecord,
   type SettingsRevision,
   type SettingsStore,
+  type SettingsStoreErrorCode,
   type VersionedSettingsRecord,
   type WriteSettingsInput,
 } from './settings/settings-store.js'

@@ -20,6 +20,7 @@ import {
   SettingsSchema,
   ThemePreferenceSchema,
   UndoDeletionResponseSchema,
+  UpdateSettingsRequestSchema,
   WorkflowIdSchema,
   type HarnessId,
   type RunId,
@@ -217,6 +218,18 @@ describe('settings', () => {
         git: {
           connections: [settings.git.connections[0], settings.git.connections[0]],
         },
+      }).success,
+    ).toBe(false)
+  })
+
+  it('limits settings updates to the appearance category', () => {
+    expect(UpdateSettingsRequestSchema.parse({ appearance: { theme: 'dark' } })).toEqual({
+      appearance: { theme: 'dark' },
+    })
+    expect(
+      UpdateSettingsRequestSchema.safeParse({
+        appearance: { theme: 'dark' },
+        git: { connections: [] },
       }).success,
     ).toBe(false)
   })

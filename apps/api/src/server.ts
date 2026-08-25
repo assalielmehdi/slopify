@@ -14,6 +14,7 @@ import {
   createExecutionWorker,
   createFetchRemoteGitHost,
   createFilesystemAgentTraceStore,
+  createFilesystemSettingsStore,
   createGitConnectionRepository,
   createGitConnectionService,
   createGitCredentialHelperCommand,
@@ -34,6 +35,7 @@ import {
   createWorkflowService,
   gitCredentialHelperPath,
   openDatabase,
+  resolveSlopifyPaths,
   type WorkflowRepository,
 } from '@slopify/execution-runtime'
 import { createDefaultWorkflow } from '@slopify/workflow-model'
@@ -179,6 +181,7 @@ export const startApiServer = (input: {
 
 export const startConfiguredApiServer = (environment: ApiEnvironment = process.env): ApiServer => {
   const configuration = resolveApiServerConfiguration(environment)
+  const settings = createFilesystemSettingsStore({ paths: resolveSlopifyPaths({ environment }) })
   let database
   try {
     database = openDatabase({ path: configuration.databasePath })
@@ -192,7 +195,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     database = undefined
   }
   if (database === undefined) {
-    return startApiServer({ app: createApiApp({}), configuration })
+    return startApiServer({ app: createApiApp({ settings }), configuration })
   }
 
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
@@ -298,6 +301,7 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       harnesses,
       repositories,
       runs: runService,
+      settings,
       traces,
       workflows,
     }),

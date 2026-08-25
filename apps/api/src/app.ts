@@ -7,6 +7,7 @@ import {
   RepositoryServiceError,
   RunEventFeedError,
   RunServiceError,
+  SettingsStoreError,
   WorkflowServiceError,
   type CancellationService,
   type AgentTraceStore,
@@ -16,6 +17,7 @@ import {
   type RepositoryService,
   type RunService,
   type RunEventFeed,
+  type SettingsStore,
   type WorkbenchDatabase,
   type WorkflowService,
 } from '@slopify/execution-runtime'
@@ -29,6 +31,7 @@ import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerRepositoryRoutes } from './routes/repositories.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
+import { registerSettingsRoutes } from './routes/settings.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
@@ -42,6 +45,7 @@ export interface CreateApiAppOptions {
   readonly harnesses?: HarnessCatalog
   readonly repositories?: RepositoryService
   readonly runs?: RunService
+  readonly settings?: SettingsStore
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
 }
@@ -90,12 +94,22 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.runs !== undefined)
     registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
+  if (options.settings !== undefined) registerSettingsRoutes(app, options.settings)
 
   app.notFound((context) =>
     context.json(errorBody({ code: 'NOT_FOUND', message: 'Route not found' }), 404),
   )
 
   app.onError((error, context) => {
+    if (error instanceof SettingsStoreError) {
+      const status =
+        error.code === 'SETTINGS_FILE_INVALID'
+          ? 409
+          : error.code === 'SETTINGS_REVISION_CONFLICT'
+            ? 412
+            : 503
+      return context.json(errorBody({ code: error.code, message: error.message }), status)
+    }
     if (error instanceof GitConnectionServiceError) {
       const status =
         error.code === 'GIT_CONNECTION_INVALID'
