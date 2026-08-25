@@ -336,13 +336,22 @@ text color of their role.
 
 ### Workflow editor
 
-- A workflow screen presents the single current workflow graph. Do not expose revision
-  selectors, revision IDs, version ancestry, or publication controls.
+- The workflow editor presents one selected current workflow graph at a time. A compact
+  selector above the canvas lists every workflow by name with primary-Project context;
+  selection lives in the URL so refresh and browser history preserve it. Do not expose
+  revision selectors, revision IDs, version ancestry, or publication controls.
+- Keep workflow creation beside the selector. Create and Edit use the same contained
+  floating drawer and expose the same name, description, Projects, primary Project, and
+  variables. Select a new workflow only after persistence succeeds.
+- An empty workflow catalog is a valid first-use state. Keep the editor shell visible,
+  explain that workflows isolate project processes and run configuration, and provide a
+  clear creation action instead of rendering an error.
 - Every workflow node is an agent. One agent can be the entire workflow.
 - An empty workflow is a valid draft state. Give it a calm, actionable empty canvas,
   but disable running it and explain that at least one agent is required.
 - Keep a compact workflow configuration action directly beside Run. It opens the same
-  contained, non-modal floating right drawer used by agent configuration.
+  contained, non-modal floating right drawer used by agent configuration and edits the
+  selected workflow only.
 - Workflow configuration contains Projects and Variables. Projects are selected from
   Slopify's live Project catalog and apply to every agent in the workflow. Variables are
   an ordered list of unique, non-empty names requested whenever a run starts.

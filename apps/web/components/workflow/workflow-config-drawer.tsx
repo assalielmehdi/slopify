@@ -1,7 +1,7 @@
 'use client'
 
 import type { Project } from '@slopify/contracts'
-import type { WorkflowConfiguration } from '@slopify/workflow-model'
+import type { CreateWorkflowInput, WorkflowConfiguration } from '@slopify/workflow-model'
 import {
   BracesIcon,
   FolderGit2Icon,
@@ -16,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -25,12 +26,13 @@ interface VariableRow {
 }
 
 export interface WorkflowConfigDrawerProps {
-  readonly configuration: WorkflowConfiguration
+  readonly mode: 'create' | 'edit'
+  readonly value: CreateWorkflowInput
   readonly projects: readonly Project[]
   readonly error?: string | undefined
   readonly saving?: boolean | undefined
   readonly onClose: () => void
-  readonly onSubmit: (configuration: WorkflowConfiguration) => Promise<boolean>
+  readonly onSubmit: (value: CreateWorkflowInput) => Promise<boolean>
 }
 
 const prefersReducedMotion = (): boolean =>
@@ -209,19 +211,23 @@ function WorkflowVariableFields({
 }
 
 export function WorkflowConfigDrawer({
-  configuration,
+  mode,
+  value,
   projects,
   error,
   saving = false,
   onClose,
   onSubmit,
 }: WorkflowConfigDrawerProps) {
+  const { configuration } = value
   const shellRef = useRef<HTMLDivElement>(null)
   const openFrameRef = useRef<number | undefined>(undefined)
   const closeTimerRef = useRef<number | undefined>(undefined)
   const closingRef = useRef(false)
   const nextVariableId = useRef(configuration.variables.length)
   const [open, setOpen] = useState(false)
+  const [name, setName] = useState(value.name)
+  const [description, setDescription] = useState(value.description)
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<Project['projectId']>>(
     () => new Set(configuration.projectIds),
   )
@@ -267,6 +273,8 @@ export function WorkflowConfigDrawer({
   }, [])
 
   const trimmedVariables = variables.map(({ name }) => name.trim())
+  const trimmedName = name.trim()
+  const trimmedDescription = description.trim()
   const variablesValid =
     trimmedVariables.every((name) => name.length > 0) &&
     new Set(trimmedVariables).size === trimmedVariables.length
@@ -275,6 +283,9 @@ export function WorkflowConfigDrawer({
     if (selectedProjectIds.has(project.projectId)) selectedProjects.push(project.projectId)
   }
   const isDirty =
+    mode === 'create' ||
+    trimmedName !== value.name ||
+    trimmedDescription !== value.description ||
     !sameMembers(selectedProjects, configuration.projectIds) ||
     primaryProjectId !== configuration.primaryProjectId ||
     !sameValues(trimmedVariables, configuration.variables)
@@ -284,16 +295,30 @@ export function WorkflowConfigDrawer({
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    if (!variablesValid || !projectsValid || !isDirty) return
+    if (
+      trimmedName.length === 0 ||
+      trimmedDescription.length === 0 ||
+      !variablesValid ||
+      !projectsValid ||
+      !isDirty
+    )
+      return
     const saved = await onSubmit({
-      projectIds: selectedProjects,
-      primaryProjectId,
-      variables: trimmedVariables,
+      name: trimmedName,
+      description: trimmedDescription,
+      configuration: {
+        projectIds: selectedProjects,
+        primaryProjectId,
+        variables: trimmedVariables,
+      },
     })
     if (!saved) return
     toast.add({
-      title: 'Workflow configuration saved',
-      description: 'Projects and run variables are available to every agent in this workflow.',
+      title: mode === 'create' ? 'Workflow created' : 'Workflow saved',
+      description:
+        mode === 'create'
+          ? `${trimmedName} is ready to configure.`
+          : 'Details, projects, and run variables were saved.',
       type: 'success',
     })
     requestClose()
@@ -312,7 +337,7 @@ export function WorkflowConfigDrawer({
       }}
     >
       <aside
-        aria-label="Workflow configuration"
+        aria-label={mode === 'create' ? 'Create workflow' : 'Workflow configuration'}
         data-open={open}
         className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
       >
@@ -323,10 +348,12 @@ export function WorkflowConfigDrawer({
             </span>
             <div className="min-w-0">
               <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]">
-                Workflow configuration
+                {mode === 'create' ? 'Create workflow' : 'Edit workflow'}
               </h2>
               <p className="text-xs/4 text-muted-foreground">
-                Configure resources and inputs shared by every agent.
+                {mode === 'create'
+                  ? 'Start with details and shared workflow configuration.'
+                  : 'Update details and configuration shared by every agent.'}
               </p>
             </div>
           </div>
@@ -334,7 +361,9 @@ export function WorkflowConfigDrawer({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label="Close workflow configuration"
+            aria-label={
+              mode === 'create' ? 'Close create workflow' : 'Close workflow configuration'
+            }
             onClick={requestClose}
             className="absolute top-3 right-3"
           >
@@ -346,10 +375,40 @@ export function WorkflowConfigDrawer({
           <div className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto p-6">
             {error === undefined ? null : (
               <Alert variant="destructive">
-                <AlertTitle>Workflow configuration not saved</AlertTitle>
+                <AlertTitle>
+                  {mode === 'create' ? 'Workflow not created' : 'Workflow not saved'}
+                </AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
+
+            <section className="grid gap-3">
+              <div>
+                <h3 className="text-sm/5 font-semibold">Details</h3>
+                <p className="mt-1 text-xs/4 text-muted-foreground">
+                  Name and describe this workflow in the editor catalog.
+                </p>
+              </div>
+              <Field>
+                <FieldLabel htmlFor="workflow-name">Name</FieldLabel>
+                <Input
+                  autoFocus={mode === 'create'}
+                  id="workflow-name"
+                  onChange={(event) => setName(event.currentTarget.value)}
+                  placeholder="Release workflow"
+                  value={name}
+                />
+              </Field>
+              <Field>
+                <FieldLabel htmlFor="workflow-description">Description</FieldLabel>
+                <Textarea
+                  id="workflow-description"
+                  onChange={(event) => setDescription(event.currentTarget.value)}
+                  placeholder="What should this workflow coordinate?"
+                  value={description}
+                />
+              </Field>
+            </section>
 
             <WorkflowProjectsFields
               onPrimaryProjectChange={setPrimaryProjectId}
@@ -391,9 +450,22 @@ export function WorkflowConfigDrawer({
             <footer className="flex justify-end">
               <Button
                 type="submit"
-                disabled={saving || !variablesValid || !projectsValid || !isDirty}
+                disabled={
+                  saving ||
+                  trimmedName.length === 0 ||
+                  trimmedDescription.length === 0 ||
+                  !variablesValid ||
+                  !projectsValid ||
+                  !isDirty
+                }
               >
-                {saving ? 'Saving changes…' : 'Save changes'}
+                {saving
+                  ? mode === 'create'
+                    ? 'Creating workflow…'
+                    : 'Saving changes…'
+                  : mode === 'create'
+                    ? 'Create workflow'
+                    : 'Save changes'}
               </Button>
             </footer>
           </div>

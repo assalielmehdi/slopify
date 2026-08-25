@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
-  ensureDefaultWorkflow,
+  ensureInitialWorkflow,
   resolveApiServerConfiguration,
   startApiServer,
 } from '../src/server.js'
@@ -20,16 +20,16 @@ const database = {
 
 describe('API server configuration', () => {
   it('seeds one empty workflow draft exactly once', () => {
-    const save = vi.fn()
+    const insert = vi.fn()
     const workflows = {
-      save,
-      get: vi.fn(() => undefined),
+      insert,
+      list: vi.fn(() => []),
     }
 
-    ensureDefaultWorkflow(workflows)
+    ensureInitialWorkflow(workflows)
 
-    expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith(
+    expect(insert).toHaveBeenCalledTimes(1)
+    expect(insert).toHaveBeenCalledWith(
       expect.objectContaining({
         workflowId: 'default-workflow',
         startNodeId: null,
@@ -38,21 +38,21 @@ describe('API server configuration', () => {
       }),
     )
 
-    workflows.get.mockReturnValue(save.mock.calls[0]?.[0])
-    ensureDefaultWorkflow(workflows)
-    expect(save).toHaveBeenCalledTimes(1)
+    workflows.list.mockReturnValue([insert.mock.calls[0]?.[0]])
+    ensureInitialWorkflow(workflows)
+    expect(insert).toHaveBeenCalledTimes(1)
   })
 
-  it('never overwrites an existing workflow', () => {
-    const save = vi.fn()
+  it('never adds the default workflow to a non-empty catalog', () => {
+    const insert = vi.fn()
     const workflows = {
-      save,
-      get: vi.fn(() => ({ workflowId: 'default-workflow' })),
+      insert,
+      list: vi.fn(() => [{ workflowId: 'release-workflow' }]),
     }
 
-    ensureDefaultWorkflow(workflows)
+    ensureInitialWorkflow(workflows)
 
-    expect(save).not.toHaveBeenCalled()
+    expect(insert).not.toHaveBeenCalled()
   })
 
   it('configures only the database, traces, and cloned workspaces under owner-local state', () => {

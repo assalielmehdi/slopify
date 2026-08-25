@@ -3,9 +3,10 @@ import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import type { WorkbenchDatabase } from './database.js'
 import { getDatabaseHandle } from './database.js'
-import { mapPersistenceError } from './errors.js'
+import { mapPersistenceError, PersistenceError } from './errors.js'
 
 export interface WorkflowRepository {
+  insert(workflow: Workflow): void
   save(workflow: Workflow): void
   get(workflowId: string): Workflow | undefined
   list(): readonly Workflow[]
@@ -14,6 +15,13 @@ export interface WorkflowRepository {
 interface WorkflowRow {
   readonly definition_json: string
 }
+
+const isConstraintError = (cause: unknown): boolean =>
+  typeof cause === 'object' &&
+  cause !== null &&
+  'code' in cause &&
+  typeof cause.code === 'string' &&
+  cause.code.startsWith('SQLITE_CONSTRAINT')
 
 export const createWorkflowRepository = (database: WorkbenchDatabase): WorkflowRepository => {
   const connection = getDatabaseHandle(database)
@@ -31,6 +39,26 @@ export const createWorkflowRepository = (database: WorkbenchDatabase): WorkflowR
   }
 
   return {
+    insert(workflowInput) {
+      const workflow = WorkflowSchema.parse(workflowInput)
+      try {
+        connection
+          .prepare(
+            `INSERT INTO workflows (workflow_id, definition_json)
+             VALUES (?, ?)`,
+          )
+          .run(workflow.workflowId, JSON.stringify(workflow))
+      } catch (cause) {
+        if (isConstraintError(cause)) {
+          throw new PersistenceError({
+            code: 'PERSISTENCE_CONFLICT',
+            message: 'Workflow already exists',
+            cause,
+          })
+        }
+        throw mapPersistenceError(cause, 'Could not persist workflow')
+      }
+    },
     save(workflowInput) {
       const workflow = WorkflowSchema.parse(workflowInput)
       try {

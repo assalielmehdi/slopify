@@ -1,16 +1,20 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RootLayout from '../app/layout'
 import Page from '../app/page'
 
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
+}))
+
 afterEach(cleanup)
 
 describe('App Router root', () => {
-  it('leaves the visible route heading to the shared application shell', () => {
-    render(<Page />)
+  it('leaves the visible route heading to the shared application shell', async () => {
+    render(await Page({ searchParams: Promise.resolve({}) }))
 
     expect(screen.queryByRole('heading', { level: 1, name: 'Editor' })).toBeNull()
     expect(screen.getByRole('region', { name: 'Editor' })).toBeTruthy()

@@ -13,6 +13,7 @@ export interface StartRunDrawerProps {
   readonly client: StartRunClient
   readonly onClose: () => void
   readonly onStarted?: ((runId: string) => void) | undefined
+  readonly workflowId: string
 }
 
 const prefersReducedMotion = () =>
@@ -26,9 +27,9 @@ const durationMilliseconds = (value: string) => {
   return 350
 }
 
-export function StartRunDrawer({ client, onClose, onStarted }: StartRunDrawerProps) {
+export function StartRunDrawer({ client, onClose, onStarted, workflowId }: StartRunDrawerProps) {
   const router = useRouter()
-  const state = useStartRun(client)
+  const state = useStartRun(client, { initialWorkflowId: workflowId, requireInitialWorkflow: true })
   const shellRef = useRef<HTMLDivElement>(null)
   const closingRef = useRef(false)
   const closeTimerRef = useRef<number | undefined>(undefined)

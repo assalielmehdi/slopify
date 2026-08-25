@@ -1,6 +1,8 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
 import { RunConfigurationFields } from '@/components/runs/run-configuration-fields'
 import { useStartRun } from '@/components/runs/use-start-run'
@@ -14,10 +16,17 @@ const defaultClient = createApiClient()
 
 export interface StartRunFormProps {
   readonly client?: ApiClient
+  readonly initialWorkflowId?: string | undefined
 }
 
-export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
-  const state = useStartRun(client)
+export function StartRunForm({ client = defaultClient, initialWorkflowId }: StartRunFormProps) {
+  const router = useRouter()
+  const state = useStartRun(client, { initialWorkflowId })
+
+  useEffect(() => {
+    if (state.loading || state.workflowId === '' || state.workflowId === initialWorkflowId) return
+    router.replace(`/runs/new?workflowId=${encodeURIComponent(state.workflowId)}`)
+  }, [initialWorkflowId, router, state.loading, state.workflowId])
 
   if (state.loading) {
     return <p className="text-xs text-muted-foreground">Loading run configuration…</p>
@@ -47,7 +56,10 @@ export function StartRunForm({ client = defaultClient }: StartRunFormProps) {
             <CardContent>
               <RunConfigurationFields
                 onVariableValueChange={state.changeVariable}
-                onWorkflowChange={state.changeWorkflow}
+                onWorkflowChange={(workflowId) => {
+                  state.changeWorkflow(workflowId)
+                  router.replace(`/runs/new?workflowId=${encodeURIComponent(workflowId)}`)
+                }}
                 rows={state.rows}
                 workflowId={state.workflowId}
                 workflows={state.workflows}

@@ -6,6 +6,13 @@ export const metadata: Metadata = {
   title: 'Start a run',
 }
 
-export default function NewRunPage() {
-  return <StartRunForm />
+interface NewRunPageProps {
+  readonly searchParams: Promise<{ readonly workflowId?: string | readonly string[] | undefined }>
+}
+
+export default async function NewRunPage({ searchParams }: NewRunPageProps) {
+  const workflowId = (await searchParams).workflowId
+  return (
+    <StartRunForm initialWorkflowId={typeof workflowId === 'string' ? workflowId : undefined} />
+  )
 }

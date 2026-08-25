@@ -25,11 +25,56 @@ const createFixture = () => {
   const workflows = createWorkflowService({
     workflows: fixture.workflows,
     harnesses: createTestHarnessCatalog(),
+    createId: () => 'workflow-release',
+    now: () => '2026-08-24T14:00:00.000Z',
   })
   return { fixture, app: createApiApp({ database: fixture.database, workflows }) }
 }
 
 describe('workflow API', () => {
+  it('creates and returns a canonical empty workflow', async () => {
+    const { fixture, app } = createFixture()
+
+    const response = await app.request('/api/workflows', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name: 'Release workflow',
+        description: 'Prepare and review a release.',
+        configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+      }),
+    })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({
+      workflowId: 'workflow-release',
+      name: 'Release workflow',
+      nodes: [],
+      edges: [],
+    })
+    expect(fixture.workflows.get('workflow-release')).toMatchObject({
+      workflowId: 'workflow-release',
+    })
+  })
+
+  it('rejects client-owned creation fields', async () => {
+    const { app } = createFixture()
+
+    const response = await app.request('/api/workflows', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        workflowId: 'client-owned',
+        name: 'Release workflow',
+        description: 'Prepare and review a release.',
+        configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+      }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+  })
+
   it('lists current workflows and returns one exact workflow', async () => {
     const { fixture, app } = createFixture()
 

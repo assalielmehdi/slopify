@@ -10,6 +10,7 @@ import {
   WorkflowServiceError,
   createWorkflowService,
   type HarnessCatalog,
+  PersistenceError,
   type WorkflowRepository,
 } from '../../src/index.js'
 
@@ -53,6 +54,7 @@ const availableHarnesses = (): HarnessCatalog => ({
 describe('workflow service', () => {
   it('lists and gets current workflows', () => {
     const workflows: WorkflowRepository = {
+      insert: vi.fn(),
       save: vi.fn(),
       get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
       list: () => [workflow],
@@ -64,7 +66,12 @@ describe('workflow service', () => {
   })
 
   it('reports an unknown workflow', () => {
-    const workflows: WorkflowRepository = { save: vi.fn(), get: () => undefined, list: () => [] }
+    const workflows: WorkflowRepository = {
+      insert: vi.fn(),
+      save: vi.fn(),
+      get: () => undefined,
+      list: () => [],
+    }
     const service = createWorkflowService({ workflows, harnesses: availableHarnesses() })
 
     expect(() => service.get('missing')).toThrow(
@@ -74,11 +81,69 @@ describe('workflow service', () => {
     )
   })
 
+  it('creates and inserts a canonical empty workflow with server-owned fields', () => {
+    const insert = vi.fn()
+    const service = createWorkflowService({
+      workflows: { insert, save: vi.fn(), get: () => undefined, list: () => [] },
+      harnesses: availableHarnesses(),
+      createId: () => 'workflow-release',
+      now: () => '2026-08-24T14:00:00.000Z',
+    })
+
+    const created = service.create({
+      name: 'Release workflow',
+      description: 'Prepare and review a release.',
+      configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+    })
+
+    expect(created).toMatchObject({
+      workflowId: 'workflow-release',
+      name: 'Release workflow',
+      startNodeId: null,
+      nodes: [],
+      edges: [],
+      createdAt: '2026-08-24T14:00:00.000Z',
+      updatedAt: '2026-08-24T14:00:00.000Z',
+    })
+    expect(insert).toHaveBeenCalledWith(created)
+  })
+
+  it('maps an insert collision to a stable workflow conflict', () => {
+    const service = createWorkflowService({
+      workflows: {
+        insert: () => {
+          throw new PersistenceError({
+            code: 'PERSISTENCE_CONFLICT',
+            message: 'Workflow already exists',
+          })
+        },
+        save: vi.fn(),
+        get: () => undefined,
+        list: () => [],
+      },
+      harnesses: availableHarnesses(),
+      createId: () => 'workflow-collision',
+    })
+
+    expect(() =>
+      service.create({
+        name: 'Release workflow',
+        description: 'Prepare and review a release.',
+        configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'WORKFLOW_ID_CONFLICT',
+      }) satisfies Partial<WorkflowServiceError>,
+    )
+  })
+
   it('updates a schema-valid draft and verifies every selected harness', async () => {
     const save = vi.fn()
     const harnesses = availableHarnesses()
     const service = createWorkflowService({
       workflows: {
+        insert: vi.fn(),
         save,
         get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
         list: () => [workflow],
@@ -126,7 +191,7 @@ describe('workflow service', () => {
       }),
     }
     const service = createWorkflowService({
-      workflows: { save: vi.fn(), get: () => workflow, list: () => [workflow] },
+      workflows: { insert: vi.fn(), save: vi.fn(), get: () => workflow, list: () => [workflow] },
       harnesses,
     })
 
@@ -140,7 +205,7 @@ describe('workflow service', () => {
     if (firstAgent === undefined) throw new Error('Expected an agent fixture')
     const save = vi.fn()
     const service = createWorkflowService({
-      workflows: { save, get: () => workflow, list: () => [workflow] },
+      workflows: { insert: vi.fn(), save, get: () => workflow, list: () => [workflow] },
       harnesses: availableHarnesses(),
     })
     const secondAgent = { ...firstAgent, id: 'review-agent', name: 'Review agent' }

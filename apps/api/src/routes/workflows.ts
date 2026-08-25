@@ -6,6 +6,10 @@ import { parseJsonBody } from '../api-error.js'
 export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowService): void => {
   app.get('/api/workflows', (context) => context.json({ workflows: workflows.list() }, 200))
 
+  app.post('/api/workflows', async (context) =>
+    context.json(workflows.create(await parseJsonBody(context)), 201),
+  )
+
   app.get('/api/workflows/:workflowId', (context) =>
     context.json(workflows.get(context.req.param('workflowId')), 200),
   )

@@ -248,6 +248,28 @@ describe('API client', () => {
     })
   })
 
+  it('creates a workflow from editable fields and parses the canonical response', async () => {
+    const workflow = createAgentWorkflowFixture({
+      createdAt: '2026-08-24T14:00:00.000Z',
+      modelId: 'test-model',
+      thinkingLevel: 'high',
+    })
+    const input = {
+      name: 'Release workflow',
+      description: 'Prepare and review a release.',
+      configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+    } as const
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(workflow))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.createWorkflow(input)).resolves.toEqual(workflow)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows', {
+      body: JSON.stringify(input),
+      headers: { accept: 'application/json', 'content-type': 'application/json' },
+      method: 'POST',
+    })
+  })
+
   it('updates a full workflow and parses the canonical response', async () => {
     const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
