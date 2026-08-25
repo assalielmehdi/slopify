@@ -5,8 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import RootLayout from '../app/layout'
 import Page from '../app/page'
+import ProjectsPage from '../app/projects/page'
+
+const navigation = vi.hoisted(() => ({ permanentRedirect: vi.fn() }))
 
 vi.mock('next/navigation', () => ({
+  permanentRedirect: navigation.permanentRedirect,
   useRouter: () => ({ push: vi.fn(), replace: vi.fn() }),
 }))
 
@@ -53,5 +57,11 @@ describe('App Router root', () => {
       value: { appearance: { theme: 'dark' } },
       etag: `"${'a'.repeat(64)}"`,
     })
+  })
+
+  it('permanently redirects the legacy projects route to repositories', () => {
+    ProjectsPage()
+
+    expect(navigation.permanentRedirect).toHaveBeenCalledWith('/repositories')
   })
 })
