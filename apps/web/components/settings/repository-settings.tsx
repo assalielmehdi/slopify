@@ -38,7 +38,6 @@ import {
 } from '@/components/ui/select'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
 import { buttonVariants } from '@/lib/button-variants'
-import { showUndoDeletionToast } from '@/lib/undo-deletion-toast'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
@@ -49,7 +48,6 @@ type RepositoryClient = Pick<
   | 'listGitConnections'
   | 'listGitRepositories'
   | 'listRepositories'
-  | 'undoDeletion'
 >
 
 const defaultClient = createApiClient()
@@ -567,22 +565,16 @@ export function RepositorySettings({
     setDeleting(true)
     setError(undefined)
     try {
-      const receipt = await client.deleteRepository(selectedRepository.repositoryId)
+      await client.deleteRepository(selectedRepository.repositoryId)
       setClosingRepository(selectedRepository)
       setRepositories((current) =>
         current.filter(({ repositoryId }) => repositoryId !== selectedRepository.repositoryId),
       )
       closePanel()
-      showUndoDeletionToast({
-        receipt,
-        deletedTitle: 'Repository deleted',
-        deletedDescription: `${selectedRepository.fullName} was removed from Slopify.`,
-        restoredTitle: 'Repository restored',
-        restoredDescription: `${selectedRepository.fullName} is available in Slopify again.`,
-        async onUndo() {
-          await client.undoDeletion(receipt.deletionId)
-          setRepositories(await client.listRepositories())
-        },
+      toast.add({
+        title: 'Repository deleted',
+        description: `${selectedRepository.fullName} was removed from Slopify.`,
+        type: 'success',
       })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Repository could not be deleted.')

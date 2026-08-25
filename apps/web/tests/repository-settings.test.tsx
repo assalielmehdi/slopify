@@ -1,11 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import {
-  DeletionReceiptSchema,
-  RepositorySchema,
-  UndoDeletionResponseSchema,
-} from '@slopify/contracts'
+import { DeletionReceiptSchema, RepositorySchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RepositorySettings } from '../components/settings/repository-settings'
@@ -90,15 +86,6 @@ const createClient = (overrides: Record<string, unknown> = {}) => ({
       undoExpiresAt: new Date(deletedAt.getTime() + 10_000).toISOString(),
     })
   }),
-  undoDeletion: vi.fn(async (deletionId: string) =>
-    UndoDeletionResponseSchema.parse({
-      deletionId,
-      subject: { type: 'REPOSITORY', id: 'repository-01' },
-      deletedAt: new Date().toISOString(),
-      undoExpiresAt: new Date(Date.now() + 10_000).toISOString(),
-      state: 'UNDONE',
-    }),
-  ),
   ...overrides,
 })
 
@@ -287,7 +274,7 @@ describe('RepositorySettings', () => {
     expect(await screen.findByRole('dialog', { name: 'Add repository' })).toBeTruthy()
   })
 
-  it('requires the exact remote name before deleting and supports undo', async () => {
+  it('requires the exact remote name before deleting immediately without undo', async () => {
     const client = createClient()
     const addToast = vi.spyOn(toast, 'add')
     render(<RepositorySettings client={client} />)
@@ -306,13 +293,10 @@ describe('RepositorySettings', () => {
     )?.[0]
     expect(deletionToast).toMatchObject({
       description: 'operator/slopify was removed from Slopify.',
-      actionProps: { children: 'Undo' },
+      type: 'success',
     })
-
-    await act(async () => {
-      await deletionToast?.actionProps?.onClick?.({ preventDefault: vi.fn() } as never)
-    })
-    await waitFor(() => expect(client.undoDeletion).toHaveBeenCalled())
+    expect(deletionToast?.actionProps).toBeUndefined()
+    expect(screen.queryByRole('button', { name: 'slopify, Available' })).toBeNull()
   })
 
   it('keeps the floating panel mounted until its close transition exits', async () => {

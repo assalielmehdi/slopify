@@ -9,7 +9,10 @@ import {
 } from '@slopify/execution-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createPersistenceFixture } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import {
+  createPersistenceFixture,
+  createTestAgentWorkflow,
+} from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -30,7 +33,11 @@ afterEach(() => {
 })
 
 const createFixture = () => {
-  const fixture = createPersistenceFixture()
+  const workflow = createTestAgentWorkflow({
+    repositoryIds: ['repository-01'],
+    primaryRepositoryId: 'repository-01',
+  })
+  const fixture = createPersistenceFixture(workflow)
   fixtures.push(fixture)
   let repositoryAvailable = true
   const timestamp = '2026-08-21T10:00:00Z'
@@ -69,6 +76,7 @@ const createFixture = () => {
     setRepositoryAvailable(available: boolean) {
       repositoryAvailable = available
     },
+    getWorkflow: () => fixture.workflows.get(workflow.workflowId),
   }
 }
 
@@ -181,5 +189,10 @@ describe('repositories API', () => {
       },
     })
     expect(await listedAfterUndo.json()).toEqual({ repositories: [] })
+    expect(fixture.getWorkflow()?.configuration).toEqual({
+      repositoryIds: ['repository-01'],
+      primaryRepositoryId: 'repository-01',
+      variables: [],
+    })
   })
 })
