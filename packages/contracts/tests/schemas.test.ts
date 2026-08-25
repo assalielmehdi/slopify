@@ -14,6 +14,7 @@ import {
   NodeIdSchema,
   OutcomeNameSchema,
   RepositoryCatalogResponseSchema,
+  ResourceChangeEventSchema,
   RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
@@ -236,6 +237,37 @@ describe('settings', () => {
 })
 
 describe('public API records', () => {
+  it('publishes strict non-secret editable resource events', () => {
+    const event = {
+      sequence: 1,
+      timestamp: '2026-08-25T21:00:00.000Z',
+      change: 'CHANGED',
+      resource: { type: 'WORKFLOW', workflowId: 'release-workflow' },
+      revision: 'a'.repeat(64),
+    }
+
+    expect(ResourceChangeEventSchema.parse(event)).toEqual(event)
+    expect(
+      ResourceChangeEventSchema.parse({
+        ...event,
+        resource: { type: 'SETTINGS' },
+        revision: null,
+      }),
+    ).toMatchObject({ resource: { type: 'SETTINGS' }, revision: null })
+    expect(
+      ResourceChangeEventSchema.safeParse({
+        ...event,
+        path: '/Users/operator/.slopify/workflows/release-workflow/workflow.json',
+      }).success,
+    ).toBe(false)
+    expect(
+      ResourceChangeEventSchema.safeParse({
+        ...event,
+        token: 'github_pat_secret',
+      }).success,
+    ).toBe(false)
+  })
+
   it('keeps repository deletion receipts closed', () => {
     const receipt = {
       deletionId: 'deletion-01',

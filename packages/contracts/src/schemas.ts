@@ -177,6 +177,25 @@ export const RepositoryCatalogResponseSchema = z.strictObject({
   repositories: z.array(RepositorySchema).readonly(),
 })
 
+export const ResourceChangeTypeSchema = z.enum(['CREATED', 'CHANGED', 'DELETED'])
+
+export const EditableResourceSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('SETTINGS') }),
+  z.strictObject({ type: z.literal('REPOSITORIES') }),
+  z.strictObject({ type: z.literal('WORKFLOW'), workflowId: WorkflowIdSchema }),
+])
+
+export const ResourceChangeEventSchema = z.strictObject({
+  sequence: z.number().int().positive().safe(),
+  timestamp: z.iso.datetime({ offset: true }),
+  change: ResourceChangeTypeSchema,
+  resource: EditableResourceSchema,
+  revision: z
+    .string()
+    .regex(/^[0-9a-f]{64}$/u)
+    .nullable(),
+})
+
 export const DeletionSubjectSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('REPOSITORY'), id: RepositoryIdSchema }),
   z.strictObject({ type: z.literal('WORKFLOW'), id: WorkflowIdSchema }),
@@ -461,6 +480,9 @@ export type HarnessDescriptor = z.infer<typeof HarnessDescriptorSchema>
 export type HarnessCatalogResponse = z.infer<typeof HarnessCatalogResponseSchema>
 export type RepositoryAvailability = z.infer<typeof RepositoryAvailabilitySchema>
 export type Repository = z.infer<typeof RepositorySchema>
+export type ResourceChangeType = z.infer<typeof ResourceChangeTypeSchema>
+export type EditableResource = z.infer<typeof EditableResourceSchema>
+export type ResourceChangeEvent = z.infer<typeof ResourceChangeEventSchema>
 export type DeletionReceipt = z.infer<typeof DeletionReceiptSchema>
 export type UndoDeletionResponse = z.infer<typeof UndoDeletionResponseSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
