@@ -33,6 +33,17 @@ export {
   type FilesystemRunStoreErrorCode,
 } from './runs/filesystem-run-store.js'
 export { RunDomainEventSchema, type RunDomainEvent } from './runs/run-events.js'
+export { createFilesystemRunJournal } from './runs/filesystem-run-journal.js'
+export {
+  RunJournalError,
+  type NewRunDomainEvent,
+  type RunJournal,
+  type RunJournalDiagnostic,
+  type RunJournalDiagnosticCode,
+  type RunJournalErrorCode,
+  type RunJournalReplay,
+  type RunProjectionRepair,
+} from './runs/run-journal.js'
 export {
   RunProjectionError,
   createRunProjectionState,
