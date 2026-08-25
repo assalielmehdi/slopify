@@ -25,6 +25,13 @@ export {
   type InstanceLockOwner,
 } from './filesystem/instance-lock.js'
 export {
+  AppendOnlyJsonlError,
+  createAppendOnlyJsonl,
+  type AppendOnlyJsonl,
+  type AppendOnlyJsonlErrorCode,
+  type JsonlReplay,
+} from './filesystem/append-only-jsonl.js'
+export {
   GitConnectionServiceError,
   createGitConnectionService,
   type GitConnectionService,
