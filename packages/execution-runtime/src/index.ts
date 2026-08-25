@@ -6,6 +6,16 @@ export {
   type SlopifyWorkflowPaths,
 } from './filesystem/slopify-home.js'
 export {
+  FilesystemResourceError,
+  type FilesystemResourceErrorCode,
+} from './filesystem/filesystem-errors.js'
+export {
+  createAtomicJsonResourceIO,
+  type AtomicJsonResourceIO,
+  type ReadJsonResourceInput,
+  type WriteJsonResourceInput,
+} from './filesystem/atomic-json-resource.js'
+export {
   GitConnectionServiceError,
   createGitConnectionService,
   type GitConnectionService,
