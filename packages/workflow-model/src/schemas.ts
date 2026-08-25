@@ -49,21 +49,64 @@ export const WorkflowNameSchema = z
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
     message: 'Use 1–100 lowercase letters, numbers, and single hyphens',
   })
+export const WorkflowSlugSchema = z
+  .string()
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: 'Use 1–64 lowercase letters, numbers, and single hyphens',
+  })
+
+const repositoryIdsSchema = z.array(RepositoryIdSchema).max(32).readonly()
+const workflowVariablesSchema = z.array(WorkflowVariableNameSchema).max(128).readonly()
+
+function validateRepositorySelection(
+  selection: {
+    readonly repositoryIds: readonly string[]
+    readonly primaryRepositoryId: string | null
+  },
+  context: z.RefinementCtx,
+): void {
+  if (new Set(selection.repositoryIds).size !== selection.repositoryIds.length) {
+    context.addIssue({
+      code: 'custom',
+      path: ['repositoryIds'],
+      message: 'Repositories must be unique',
+    })
+  }
+  if (selection.repositoryIds.length === 0 && selection.primaryRepositoryId !== null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['primaryRepositoryId'],
+      message: 'A workflow without repositories cannot have a primary repository',
+    })
+  }
+  if (selection.repositoryIds.length > 0 && selection.primaryRepositoryId === null) {
+    context.addIssue({
+      code: 'custom',
+      path: ['primaryRepositoryId'],
+      message: 'A workflow with repositories must have a primary repository',
+    })
+  }
+  if (
+    selection.primaryRepositoryId !== null &&
+    !selection.repositoryIds.includes(selection.primaryRepositoryId)
+  ) {
+    context.addIssue({
+      code: 'custom',
+      path: ['primaryRepositoryId'],
+      message: 'The primary repository must be selected for the workflow',
+    })
+  }
+}
 
 export const WorkflowConfigurationSchema = z
   .strictObject({
-    repositoryIds: z.array(RepositoryIdSchema).max(32).readonly(),
+    repositoryIds: repositoryIdsSchema,
     primaryRepositoryId: RepositoryIdSchema.nullable(),
-    variables: z.array(WorkflowVariableNameSchema).max(128).readonly(),
+    variables: workflowVariablesSchema,
   })
   .superRefine((configuration, context) => {
-    if (new Set(configuration.repositoryIds).size !== configuration.repositoryIds.length) {
-      context.addIssue({
-        code: 'custom',
-        path: ['repositoryIds'],
-        message: 'Repositories must be unique',
-      })
-    }
+    validateRepositorySelection(configuration, context)
     if (new Set(configuration.variables).size !== configuration.variables.length) {
       context.addIssue({
         code: 'custom',
@@ -71,30 +114,23 @@ export const WorkflowConfigurationSchema = z
         message: 'Variables must be unique',
       })
     }
-    if (configuration.repositoryIds.length === 0 && configuration.primaryRepositoryId !== null) {
-      context.addIssue({
-        code: 'custom',
-        path: ['primaryRepositoryId'],
-        message: 'A workflow without repositories cannot have a primary repository',
-      })
-    }
-    if (configuration.repositoryIds.length > 0 && configuration.primaryRepositoryId === null) {
-      context.addIssue({
-        code: 'custom',
-        path: ['primaryRepositoryId'],
-        message: 'A workflow with repositories must have a primary repository',
-      })
-    }
-    if (
-      configuration.primaryRepositoryId !== null &&
-      !configuration.repositoryIds.includes(configuration.primaryRepositoryId)
-    ) {
-      context.addIssue({
-        code: 'custom',
-        path: ['primaryRepositoryId'],
-        message: 'The primary repository must be selected for the workflow',
-      })
-    }
+  })
+  .readonly()
+
+export const WorkflowRepositoriesSchema = z
+  .strictObject({
+    repositoryIds: repositoryIdsSchema,
+    primaryRepositoryId: RepositoryIdSchema.nullable(),
+  })
+  .superRefine(validateRepositorySelection)
+  .readonly()
+
+export const WorkflowGraphSchema = z
+  .strictObject({
+    startNodeId: NodeIdSchema.nullable(),
+    nodes: z.array(AgentNodeSchema).readonly(),
+    edges: z.array(WorkflowEdgeSchema).readonly(),
+    maxTransitions: z.number().int().nonnegative().safe(),
   })
   .readonly()
 
@@ -117,6 +153,27 @@ export const WorkflowSchema = z
     nodes: z.array(AgentNodeSchema).readonly(),
     edges: z.array(WorkflowEdgeSchema).readonly(),
     maxTransitions: z.number().int().nonnegative().safe(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .readonly()
+
+export const WorkflowFileSchema = z
+  .strictObject({
+    schemaVersion: z.literal(2),
+    workflowId: WorkflowSlugSchema,
+    name: nonBlankString,
+    description: nonBlankString,
+    repositories: WorkflowRepositoriesSchema,
+    variables: workflowVariablesSchema.superRefine((variables, context) => {
+      if (new Set(variables).size !== variables.length) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Variables must be unique',
+        })
+      }
+    }),
+    graph: WorkflowGraphSchema,
     createdAt: z.iso.datetime({ offset: true }),
     updatedAt: z.iso.datetime({ offset: true }),
   })
