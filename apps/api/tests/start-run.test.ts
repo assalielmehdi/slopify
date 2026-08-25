@@ -6,7 +6,7 @@ import {
   createTestHarnessCatalog,
   createTestAgentWorkflow,
   createPersistenceFixture,
-  resolveTestProject,
+  resolveTestRepository,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
@@ -19,10 +19,10 @@ afterEach(() => {
 const createFixture = () => {
   const workflow = createTestAgentWorkflow({
     createdAt: '2026-08-19T07:30:00Z',
-    prompt: 'Deliver {{objective}} for {{project}}.',
-    projectIds: ['project-api'],
-    primaryProjectId: 'project-api',
-    variables: ['objective', 'project'],
+    prompt: 'Deliver {{objective}} for {{repository}}.',
+    repositoryIds: ['repository-api'],
+    primaryRepositoryId: 'repository-api',
+    variables: ['objective', 'repository'],
   })
   const fixture = createPersistenceFixture(workflow)
   fixtures.push(fixture)
@@ -31,7 +31,7 @@ const createFixture = () => {
     runs: fixture.runs,
     workflows: fixture.workflows,
     harnesses: createTestHarnessCatalog(),
-    resolveProject: resolveTestProject,
+    resolveRepository: resolveTestRepository,
     now: () => '2026-08-19T07:30:00Z',
     createRunId: () => 'run-start-01',
   })
@@ -47,7 +47,7 @@ describe('start run admission', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflowId: TEST_WORKFLOW_ID,
-        variables: { objective: 'Ship the API', project: 'Slopify' },
+        variables: { objective: 'Ship the API', repository: 'Slopify' },
       }),
     })
 
@@ -56,7 +56,7 @@ describe('start run admission', () => {
       run: {
         status: 'PENDING',
         workflowSnapshot: expect.objectContaining({ workflowId: TEST_WORKFLOW_ID }),
-        variables: { objective: 'Ship the API', project: 'Slopify' },
+        variables: { objective: 'Ship the API', repository: 'Slopify' },
       },
     })
   })
@@ -84,7 +84,7 @@ describe('start run admission', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflowId: TEST_WORKFLOW_ID,
-        variables: { objective: 'Ship', project: 'Slopify', typo: true },
+        variables: { objective: 'Ship', repository: 'Slopify', typo: true },
       }),
     })
 

@@ -1,3 +1,4 @@
+import { DeletionReceiptSchema } from '@slopify/contracts'
 import type { WorkflowService } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 
@@ -13,6 +14,13 @@ export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowService): v
   app.get('/api/workflows/:workflowId', (context) =>
     context.json(workflows.get(context.req.param('workflowId')), 200),
   )
+
+  app.delete('/api/workflows/:workflowId', (context) => {
+    return context.json(
+      DeletionReceiptSchema.parse(workflows.delete(context.req.param('workflowId'))),
+      200,
+    )
+  })
 
   app.put('/api/workflows/:workflowId', async (context) =>
     context.json(

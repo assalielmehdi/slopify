@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Suspense, useEffect, useState, type ReactNode } from 'react'
 import {
   ChevronRightIcon,
   CpuIcon,
@@ -20,7 +20,13 @@ import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { Toaster } from '@/components/ui/toast'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import {
+  WorkflowSidebarMenu,
+  WorkflowSidebarMenuFallback,
+  type WorkflowSidebarClient,
+} from '@/components/workflow-sidebar-menu'
 import { displayRunId } from '@/lib/run-id'
+import type { WorkflowCatalogEntry } from '@/lib/api-client'
 import { cn } from '@/lib/utils'
 
 interface NavigationItem {
@@ -29,21 +35,10 @@ interface NavigationItem {
   readonly label: string
 }
 
-const navigationSections: readonly { label: string; items: readonly NavigationItem[] }[] = [
-  {
-    label: 'Workflow',
-    items: [
-      { href: '/', label: 'Editor', icon: WorkflowIcon },
-      { href: '/runs', label: 'Runs', icon: HistoryIcon },
-    ],
-  },
-  {
-    label: 'Configuration',
-    items: [
-      { href: '/harnesses', label: 'Harnesses', icon: CpuIcon },
-      { href: '/projects', label: 'Projects', icon: FolderGit2Icon },
-    ],
-  },
+const navigationItems: readonly NavigationItem[] = [
+  { href: '/runs', label: 'Runs', icon: HistoryIcon },
+  { href: '/harnesses', label: 'Harnesses', icon: CpuIcon },
+  { href: '/repositories', label: 'Repositories', icon: FolderGit2Icon },
 ]
 
 function isNavigationItemActive(pathname: string, href: string) {
@@ -52,11 +47,20 @@ function isNavigationItemActive(pathname: string, href: string) {
   return pathname === href
 }
 
-function getBreadcrumbs(pathname: string): readonly { href: string; label: string }[] {
+function getBreadcrumbs(
+  pathname: string,
+  selectedWorkflow?: WorkflowCatalogEntry,
+): readonly { href: string; label: string }[] {
   if (pathname === '/') {
     return [
-      { href: '/', label: 'Workflow' },
-      { href: '/', label: 'Editor' },
+      { href: '/', label: 'Workflows' },
+      {
+        href:
+          selectedWorkflow === undefined
+            ? '/'
+            : `/?workflowId=${encodeURIComponent(selectedWorkflow.workflowId)}`,
+        label: selectedWorkflow?.name ?? 'Workflow',
+      },
     ]
   }
   if (pathname === '/runs/new') {
@@ -72,9 +76,7 @@ function getBreadcrumbs(pathname: string): readonly { href: string; label: strin
     ]
   }
 
-  const destination = navigationSections
-    .flatMap(({ items }) => items)
-    .find(({ href }) => href === pathname)
+  const destination = navigationItems.find(({ href }) => href === pathname)
   if (destination !== undefined) return [{ href: destination.href, label: destination.label }]
   if (pathname === '/settings') return [{ href: '/settings', label: 'Settings' }]
   return [{ href: pathname, label: 'Slopify' }]
@@ -118,16 +120,23 @@ function NavigationToggle({
   )
 }
 
-function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
+function AppShellContent({
+  children,
+  client,
+}: Readonly<{ children: ReactNode; client?: WorkflowSidebarClient | undefined }>) {
   const pathname = usePathname()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  const [selectedWorkflow, setSelectedWorkflow] = useState<WorkflowCatalogEntry | undefined>()
   const { toggleTheme } = useThemePreference()
-  const breadcrumbs = getBreadcrumbs(pathname)
+  const breadcrumbs = getBreadcrumbs(pathname, selectedWorkflow)
   const isSettings = pathname === '/settings'
   const isEditor = pathname === '/'
   const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
   const usesOwnPageSpacing =
-    ['/harnesses', '/projects', '/runs'].includes(pathname) || isEditor || isSettings || isRunDetail
+    ['/harnesses', '/repositories', '/runs'].includes(pathname) ||
+    isEditor ||
+    isSettings ||
+    isRunDetail
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
@@ -198,46 +207,45 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
           data-state={isCollapsed ? 'collapsed' : 'expanded'}
           className={cn('min-h-0 flex-1 overflow-y-auto py-4', isCollapsed ? 'px-2.5' : 'px-3')}
         >
-          {navigationSections.map((section, sectionIndex) => (
-            <div
-              key={section.label}
-              className={cn(sectionIndex > 0 && (isCollapsed ? 'mt-3 border-t pt-3' : 'mt-5'))}
-            >
-              <p
-                className={cn(
-                  'mb-2 px-2 text-[11px]/4 font-medium tracking-[0.08em] text-muted-foreground uppercase',
-                  isCollapsed && 'sr-only',
-                )}
+          <ul className="space-y-0.5">
+            <li>
+              <Suspense
+                fallback={
+                  <WorkflowSidebarMenuFallback collapsed={isCollapsed} editorActive={isEditor} />
+                }
               >
-                {section.label}
-              </p>
-              <ul className="space-y-0.5">
-                {section.items.map(({ href, icon: Icon, label }) => {
-                  const isActive = isNavigationItemActive(pathname, href)
-                  return (
-                    <li key={href}>
-                      <Link
-                        href={href}
-                        aria-current={isActive ? 'page' : undefined}
-                        aria-label={label}
-                        title={isCollapsed ? label : undefined}
-                        className={cn(
-                          'flex h-9 items-center rounded-md text-[14px]/5 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring/30',
-                          isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-2',
-                          isActive
-                            ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
-                            : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
-                        )}
-                      >
-                        <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.8} />
-                        <span className={cn('truncate', isCollapsed && 'sr-only')}>{label}</span>
-                      </Link>
-                    </li>
-                  )
-                })}
-              </ul>
-            </div>
-          ))}
+                <WorkflowSidebarMenu
+                  client={client}
+                  collapsed={isCollapsed}
+                  editorActive={isEditor}
+                  onSelectedWorkflowChange={setSelectedWorkflow}
+                />
+              </Suspense>
+            </li>
+            {navigationItems.map(({ href, icon: Icon, label }) => {
+              const isActive = isNavigationItemActive(pathname, href)
+              return (
+                <li key={href}>
+                  <Link
+                    href={href}
+                    aria-current={isActive ? 'page' : undefined}
+                    aria-label={label}
+                    title={isCollapsed ? label : undefined}
+                    className={cn(
+                      'flex h-9 items-center rounded-md text-[14px]/5 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring/30',
+                      isCollapsed ? 'justify-center px-0' : 'gap-2.5 px-2',
+                      isActive
+                        ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
+                        : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
+                    )}
+                  >
+                    <Icon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.8} />
+                    <span className={cn('truncate', isCollapsed && 'sr-only')}>{label}</span>
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
         </nav>
 
         <div
@@ -324,11 +332,14 @@ function AppShellContent({ children }: Readonly<{ children: ReactNode }>) {
   )
 }
 
-export function AppShell({ children }: Readonly<{ children: ReactNode }>) {
+export function AppShell({
+  children,
+  client,
+}: Readonly<{ children: ReactNode; client?: WorkflowSidebarClient | undefined }>) {
   return (
     <TooltipProvider>
       <ThemePreferenceProvider>
-        <AppShellContent>{children}</AppShellContent>
+        <AppShellContent client={client}>{children}</AppShellContent>
         <Toaster />
       </ThemePreferenceProvider>
     </TooltipProvider>

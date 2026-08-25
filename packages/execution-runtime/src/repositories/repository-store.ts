@@ -1,7 +1,7 @@
 import type { DeletionReceipt, GitProvider } from '@slopify/contracts'
 
-export interface ProjectRecord {
-  readonly projectId: string
+export interface RepositoryRecord {
+  readonly repositoryId: string
   readonly name: string
   readonly provider: GitProvider
   readonly remoteId: string
@@ -13,11 +13,11 @@ export interface ProjectRecord {
   readonly updatedAt: string
 }
 
-export interface ProjectRepository {
-  add(project: ProjectRecord): void
-  get(projectId: string): ProjectRecord | undefined
-  findByRemote(provider: GitProvider, remoteId: string): ProjectRecord | undefined
-  list(): readonly ProjectRecord[]
+export interface RepositoryStore {
+  add(repository: RepositoryRecord): void
+  get(repositoryId: string): RepositoryRecord | undefined
+  findByRemote(provider: GitProvider, remoteId: string): RepositoryRecord | undefined
+  list(): readonly RepositoryRecord[]
   stageDeletion(receipt: DeletionReceipt): boolean
   restoreDeletion(deletionId: string, now: string): 'UNDONE' | 'EXPIRED' | 'NOT_FOUND'
   purgeExpired(now: string): void

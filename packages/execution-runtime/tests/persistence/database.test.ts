@@ -50,10 +50,10 @@ describe('current database schema', () => {
       'execution_messages',
       'git_connections',
       'node_executions',
-      'projects',
+      'repositories',
       'run_events',
-      'run_project_workspaces',
-      'run_projects',
+      'run_repositories',
+      'run_repository_workspaces',
       'runs',
       'schema_metadata',
       'workflow_coordinator_states',
@@ -122,7 +122,121 @@ describe('current database schema', () => {
     ).toBe(1)
   })
 
-  it('migrates local Project catalogs away while preserving legacy run evidence', () => {
+  it('migrates version two repository data and serialized workflow keys in place', () => {
+    const path = createDatabasePath()
+    const versionTwo = new Database(path)
+    versionTwo.exec(`
+      CREATE TABLE schema_metadata (version INTEGER PRIMARY KEY, name TEXT, applied_at TEXT);
+      CREATE TABLE workflows (workflow_id TEXT PRIMARY KEY, definition_json TEXT);
+      CREATE TABLE git_connections (provider TEXT PRIMARY KEY);
+      CREATE TABLE deletion_operations (
+        deletion_id TEXT PRIMARY KEY, subject_type TEXT, subject_id TEXT, state TEXT,
+        deleted_at TEXT, undo_expires_at TEXT, restored_at TEXT, purged_at TEXT
+      );
+      CREATE UNIQUE INDEX deletion_operations_pending_subject
+        ON deletion_operations (subject_type, subject_id) WHERE state = 'PENDING';
+      CREATE TABLE projects (
+        project_id TEXT PRIMARY KEY, name TEXT, provider TEXT, remote_id TEXT,
+        repository_full_name TEXT, clone_url TEXT, web_url TEXT, default_branch TEXT,
+        created_at TEXT, updated_at TEXT, deletion_id TEXT, deleted_at TEXT
+      );
+      CREATE INDEX projects_by_deletion_id ON projects (deletion_id);
+      CREATE TABLE runs (
+        run_id TEXT PRIMARY KEY, workflow_snapshot_json TEXT, status TEXT
+      );
+      CREATE TABLE run_projects (
+        run_id TEXT, project_id TEXT, project_position INTEGER, name TEXT,
+        provider TEXT, remote_id TEXT, repository_full_name TEXT, clone_url TEXT,
+        default_branch TEXT, base_sha TEXT, is_primary INTEGER,
+        PRIMARY KEY (run_id, project_id)
+      );
+      CREATE UNIQUE INDEX run_projects_one_primary ON run_projects (run_id) WHERE is_primary = 1;
+      CREATE TABLE run_project_workspaces (
+        run_id TEXT, project_id TEXT, status TEXT, workspace_path TEXT,
+        branch_name TEXT, error_message TEXT, prepared_at TEXT, cleaned_at TEXT,
+        updated_at TEXT, PRIMARY KEY (run_id, project_id)
+      );
+      CREATE TABLE node_executions (node_execution_id TEXT PRIMARY KEY);
+      CREATE TABLE run_events (run_id TEXT, sequence INTEGER, PRIMARY KEY (run_id, sequence));
+      CREATE TABLE execution_messages (id TEXT PRIMARY KEY);
+      CREATE TABLE workflow_coordinator_states (
+        run_id TEXT PRIMARY KEY, state_json TEXT, updated_at TEXT
+      );
+      INSERT INTO schema_metadata VALUES (2, 'current_schema', '2026-08-24T00:00:00Z');
+      INSERT INTO deletion_operations VALUES (
+        'deletion-01', 'PROJECT', 'project-api', 'PENDING',
+        '2026-08-24T00:00:00Z', '2026-08-24T00:00:10Z', NULL, NULL
+      );
+      INSERT INTO projects VALUES (
+        'project-api', 'API', 'GITHUB', '100', 'operator/api',
+        'https://github.com/operator/api.git', 'https://github.com/operator/api', 'main',
+        '2026-08-24T00:00:00Z', '2026-08-24T00:00:00Z', 'deletion-01',
+        '2026-08-24T00:00:00Z'
+      );
+      INSERT INTO workflows VALUES (
+        'workflow-01',
+        '{"schemaVersion":1,"configuration":{"projectIds":["project-api"],"primaryProjectId":"project-api","variables":[]}}'
+      );
+      INSERT INTO runs VALUES (
+        'run-01',
+        '{"schemaVersion":1,"configuration":{"projectIds":["project-api"],"primaryProjectId":"project-api","variables":[]}}',
+        'RUNNING'
+      );
+      INSERT INTO run_projects VALUES (
+        'run-01', 'project-api', 0, 'API', 'GITHUB', '100', 'operator/api',
+        'https://github.com/operator/api.git', 'main',
+        'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 1
+      );
+      INSERT INTO run_project_workspaces VALUES (
+        'run-01', 'project-api', 'READY', '/tmp/run-01/project-api', 'slopify/run-01',
+        NULL, '2026-08-24T00:00:01Z', NULL, '2026-08-24T00:00:01Z'
+      );
+      INSERT INTO workflow_coordinator_states VALUES (
+        'run-01',
+        '{"workflow":{"schemaVersion":1,"configuration":{"projectIds":["project-api"],"primaryProjectId":"project-api","variables":[]}}}',
+        '2026-08-24T00:00:01Z'
+      );
+    `)
+    versionTwo.pragma(`application_id = ${SLOPIFY_DATABASE_APPLICATION_ID}`)
+    versionTwo.close()
+
+    const migrated = openDatabase({ path })
+    databases.push(migrated)
+    const connection = getDatabaseHandle(migrated)
+
+    expect(migrated.status().schemaVersion).toBe(4)
+    expect(
+      connection.prepare('SELECT repository_id, name, deletion_id FROM repositories').get(),
+    ).toEqual({ repository_id: 'project-api', name: 'API', deletion_id: 'deletion-01' })
+    expect(connection.prepare('SELECT subject_type FROM deletion_operations').pluck().get()).toBe(
+      'REPOSITORY',
+    )
+    expect(
+      connection.prepare('SELECT repository_id, repository_position FROM run_repositories').get(),
+    ).toEqual({ repository_id: 'project-api', repository_position: 0 })
+    expect(
+      connection
+        .prepare('SELECT repository_id, workspace_path FROM run_repository_workspaces')
+        .get(),
+    ).toEqual({ repository_id: 'project-api', workspace_path: '/tmp/run-01/project-api' })
+
+    for (const [table, column, pathPrefix] of [
+      ['workflows', 'definition_json', ''],
+      ['runs', 'workflow_snapshot_json', ''],
+      ['workflow_coordinator_states', 'state_json', '.workflow'],
+    ] as const) {
+      const json = connection.prepare(`SELECT ${column} FROM ${table}`).pluck().get() as string
+      const parsed = JSON.parse(json) as Record<string, unknown>
+      const workflow = pathPrefix === '' ? parsed : (parsed.workflow as Record<string, unknown>)
+      expect(workflow.schemaVersion).toBe(2)
+      expect(workflow).not.toHaveProperty('configuration.projectIds')
+      expect(workflow).not.toHaveProperty('configuration.primaryProjectId')
+      expect(workflow).toHaveProperty('configuration.repositoryIds', ['project-api'])
+      expect(workflow).toHaveProperty('configuration.primaryRepositoryId', 'project-api')
+    }
+  })
+
+  it('migrates legacy local repository catalogs away while preserving run evidence', () => {
     const path = createDatabasePath()
     const legacy = new Database(path)
     legacy.exec(`
@@ -156,7 +270,9 @@ describe('current database schema', () => {
       CREATE TABLE node_executions (node_execution_id TEXT PRIMARY KEY);
       CREATE TABLE run_events (run_id TEXT, sequence INTEGER, PRIMARY KEY (run_id, sequence));
       CREATE TABLE execution_messages (id TEXT PRIMARY KEY);
-      CREATE TABLE workflow_coordinator_states (run_id TEXT PRIMARY KEY);
+      CREATE TABLE workflow_coordinator_states (
+        run_id TEXT PRIMARY KEY, state_json TEXT, updated_at TEXT
+      );
       INSERT INTO schema_metadata VALUES (1, 'current_schema', '2026-08-23T00:00:00Z');
       INSERT INTO projects VALUES (
         'project-api', 'API', '/source/api', '2026-08-23T00:00:00Z',
@@ -182,13 +298,13 @@ describe('current database schema', () => {
     databases.push(migrated)
     const connection = getDatabaseHandle(migrated)
 
-    expect(migrated.status().schemaVersion).toBe(2)
-    expect(connection.prepare('SELECT COUNT(*) FROM projects').pluck().get()).toBe(0)
+    expect(migrated.status().schemaVersion).toBe(4)
+    expect(connection.prepare('SELECT COUNT(*) FROM repositories').pluck().get()).toBe(0)
     expect(
       connection
         .prepare(
           `SELECT provider, remote_id, repository_full_name, clone_url, default_branch
-           FROM run_projects WHERE run_id = 'run-legacy'`,
+           FROM run_repositories WHERE run_id = 'run-legacy'`,
         )
         .get(),
     ).toEqual({
@@ -202,7 +318,7 @@ describe('current database schema', () => {
       connection
         .prepare(
           `SELECT status, workspace_path, branch_name
-           FROM run_project_workspaces WHERE run_id = 'run-legacy'`,
+           FROM run_repository_workspaces WHERE run_id = 'run-legacy'`,
         )
         .get(),
     ).toEqual({

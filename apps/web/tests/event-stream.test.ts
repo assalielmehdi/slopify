@@ -48,8 +48,8 @@ const run = {
 
 const detail = {
   run,
-  projects: [],
-  projectWorkspaces: [],
+  repositories: [],
+  repositoryWorkspaces: [],
   events: [event(1, 'RUN_STARTED'), event(2)],
   nodeExecutions: [],
 }

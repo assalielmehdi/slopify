@@ -3,7 +3,7 @@ import {
   GitProviderSchema,
   NodeExecutionStatusSchema,
   NodeIdSchema,
-  ProjectIdSchema,
+  RepositoryIdSchema,
   RunIdSchema,
   RunStatusSchema,
   WorkflowIdSchema,
@@ -11,7 +11,7 @@ import {
   type GitProvider,
   type NodeExecutionStatus as ContractNodeExecutionStatus,
   type NodeId,
-  type ProjectId,
+  type RepositoryId,
   type RunId,
   type RunStatus,
   type WorkflowId,
@@ -43,12 +43,12 @@ export interface CreateRunInput {
   readonly workflowId: string
   readonly workflowSnapshot: Workflow
   readonly variables: Readonly<Record<string, JsonValue>>
-  readonly projects: readonly CreateRunProjectInput[]
+  readonly repositories: readonly CreateRunRepositoryInput[]
   readonly createdAt: string
 }
 
-export interface CreateRunProjectInput {
-  readonly projectId: string
+export interface CreateRunRepositoryInput {
+  readonly repositoryId: string
   readonly name: string
   readonly provider: GitProvider
   readonly remoteId: string
@@ -96,8 +96,8 @@ export interface NodeExecutionRecord {
   readonly durationMs: number | null
 }
 
-export interface RunProjectSnapshot {
-  readonly projectId: ProjectId
+export interface RunRepositorySnapshot {
+  readonly repositoryId: RepositoryId
   readonly position: number
   readonly name: string
   readonly provider: GitProvider | null
@@ -109,12 +109,12 @@ export interface RunProjectSnapshot {
   readonly isPrimary: boolean
 }
 
-export type RunProjectWorkspaceStatus = 'PREPARING' | 'READY' | 'FAILED' | 'CLEANED' | 'LEGACY'
+export type RunRepositoryWorkspaceStatus = 'PREPARING' | 'READY' | 'FAILED' | 'CLEANED' | 'LEGACY'
 
-export interface RunProjectWorkspace {
-  readonly projectId: ProjectId
+export interface RunRepositoryWorkspace {
+  readonly repositoryId: RepositoryId
   readonly position: number
-  readonly status: RunProjectWorkspaceStatus
+  readonly status: RunRepositoryWorkspaceStatus
   readonly workspacePath: string
   readonly branchName: string | null
   readonly errorMessage: string | null
@@ -123,23 +123,23 @@ export interface RunProjectWorkspace {
   readonly updatedAt: string
 }
 
-export interface MarkRunProjectWorkspacePreparingInput {
+export interface MarkRunRepositoryWorkspacePreparingInput {
   readonly runId: RunId
-  readonly projectId: string
+  readonly repositoryId: string
   readonly workspacePath: string
   readonly branchName: string
   readonly timestamp: string
 }
 
-export type MarkRunProjectWorkspaceReadyInput = MarkRunProjectWorkspacePreparingInput
+export type MarkRunRepositoryWorkspaceReadyInput = MarkRunRepositoryWorkspacePreparingInput
 
-export interface MarkRunProjectWorkspaceFailedInput extends MarkRunProjectWorkspacePreparingInput {
+export interface MarkRunRepositoryWorkspaceFailedInput extends MarkRunRepositoryWorkspacePreparingInput {
   readonly errorMessage: string
 }
 
-export interface MarkRunProjectWorkspaceCleanedInput {
+export interface MarkRunRepositoryWorkspaceCleanedInput {
   readonly runId: RunId
-  readonly projectId: string
+  readonly repositoryId: string
   readonly timestamp: string
 }
 
@@ -148,15 +148,21 @@ export interface RunRepository {
   get(runId: RunId): RunRecord | undefined
   list(input: ListRunsInput): RunPage
   listNodeExecutions(runId: RunId): readonly NodeExecutionRecord[]
-  listRunProjects(runId: RunId): readonly RunProjectSnapshot[]
-  listRunProjectWorkspaces(runId: RunId): readonly RunProjectWorkspace[]
+  listRunRepositories(runId: RunId): readonly RunRepositorySnapshot[]
+  listRunRepositoryWorkspaces(runId: RunId): readonly RunRepositoryWorkspace[]
   listTerminalRunIdsNeedingWorkspaceCleanup(): readonly RunId[]
-  markRunProjectWorkspacePreparing(
-    input: MarkRunProjectWorkspacePreparingInput,
-  ): RunProjectWorkspace
-  markRunProjectWorkspaceReady(input: MarkRunProjectWorkspaceReadyInput): RunProjectWorkspace
-  markRunProjectWorkspaceFailed(input: MarkRunProjectWorkspaceFailedInput): RunProjectWorkspace
-  markRunProjectWorkspaceCleaned(input: MarkRunProjectWorkspaceCleanedInput): RunProjectWorkspace
+  markRunRepositoryWorkspacePreparing(
+    input: MarkRunRepositoryWorkspacePreparingInput,
+  ): RunRepositoryWorkspace
+  markRunRepositoryWorkspaceReady(
+    input: MarkRunRepositoryWorkspaceReadyInput,
+  ): RunRepositoryWorkspace
+  markRunRepositoryWorkspaceFailed(
+    input: MarkRunRepositoryWorkspaceFailedInput,
+  ): RunRepositoryWorkspace
+  markRunRepositoryWorkspaceCleaned(
+    input: MarkRunRepositoryWorkspaceCleanedInput,
+  ): RunRepositoryWorkspace
 }
 
 interface RunRow {
@@ -186,9 +192,9 @@ interface NodeExecutionRow {
   readonly duration_ms: number | null
 }
 
-interface RunProjectRow {
-  readonly project_id: string
-  readonly project_position: number
+interface RunRepositoryRow {
+  readonly repository_id: string
+  readonly repository_position: number
   readonly name: string
   readonly provider: string | null
   readonly remote_id: string | null
@@ -199,10 +205,10 @@ interface RunProjectRow {
   readonly is_primary: number
 }
 
-interface RunProjectWorkspaceRow {
-  readonly project_id: string
-  readonly project_position: number
-  readonly status: RunProjectWorkspaceStatus
+interface RunRepositoryWorkspaceRow {
+  readonly repository_id: string
+  readonly repository_position: number
+  readonly status: RunRepositoryWorkspaceStatus
   readonly workspace_path: string
   readonly branch_name: string | null
   readonly error_message: string | null
@@ -211,8 +217,8 @@ interface RunProjectWorkspaceRow {
   readonly updated_at: string
 }
 
-const CreateRunProjectInputSchema = z.strictObject({
-  projectId: ProjectIdSchema,
+const CreateRunRepositoryInputSchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
   name: z.string().trim().min(1).max(256),
   provider: GitProviderSchema,
   remoteId: z.string().regex(/^\d+$/u).max(128),
@@ -251,9 +257,9 @@ const mapRun = (row: RunRow): RunRecord => ({
   completedAt: row.completed_at,
 })
 
-const mapRunProject = (row: RunProjectRow): RunProjectSnapshot => ({
-  projectId: ProjectIdSchema.parse(row.project_id),
-  position: row.project_position,
+const mapRunRepository = (row: RunRepositoryRow): RunRepositorySnapshot => ({
+  repositoryId: RepositoryIdSchema.parse(row.repository_id),
+  position: row.repository_position,
   name: row.name,
   provider: row.provider === null ? null : GitProviderSchema.parse(row.provider),
   remoteId: row.remote_id,
@@ -264,9 +270,9 @@ const mapRunProject = (row: RunProjectRow): RunProjectSnapshot => ({
   isPrimary: row.is_primary === 1,
 })
 
-const mapRunProjectWorkspace = (row: RunProjectWorkspaceRow): RunProjectWorkspace => ({
-  projectId: ProjectIdSchema.parse(row.project_id),
-  position: row.project_position,
+const mapRunRepositoryWorkspace = (row: RunRepositoryWorkspaceRow): RunRepositoryWorkspace => ({
+  repositoryId: RepositoryIdSchema.parse(row.repository_id),
+  position: row.repository_position,
   status: row.status,
   workspacePath: row.workspace_path,
   branchName: row.branch_name,
@@ -292,52 +298,55 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
     return row === undefined ? undefined : mapRun(row)
   }
 
-  const listRunProjects = (runIdInput: RunId): readonly RunProjectSnapshot[] => {
+  const listRunRepositories = (runIdInput: RunId): readonly RunRepositorySnapshot[] => {
     const runId = RunIdSchema.parse(runIdInput)
     const rows = connection
       .prepare(
-        `SELECT project_id, project_position, name, provider, remote_id,
+        `SELECT repository_id, repository_position, name, provider, remote_id,
                 repository_full_name, clone_url, default_branch, base_sha, is_primary
-         FROM run_projects
+         FROM run_repositories
          WHERE run_id = ?
-         ORDER BY project_position`,
+         ORDER BY repository_position`,
       )
-      .all(runId) as RunProjectRow[]
-    return rows.map(mapRunProject)
+      .all(runId) as RunRepositoryRow[]
+    return rows.map(mapRunRepository)
   }
 
-  const listRunProjectWorkspaces = (runIdInput: RunId): readonly RunProjectWorkspace[] => {
+  const listRunRepositoryWorkspaces = (runIdInput: RunId): readonly RunRepositoryWorkspace[] => {
     const runId = RunIdSchema.parse(runIdInput)
     const rows = connection
       .prepare(
-        `SELECT workspace.project_id, project.project_position,
+        `SELECT workspace.repository_id, repository.repository_position,
                 workspace.status, workspace.workspace_path, workspace.branch_name,
                 workspace.error_message, workspace.prepared_at,
                 workspace.cleaned_at, workspace.updated_at
-         FROM run_project_workspaces AS workspace
-         JOIN run_projects AS project
-           ON project.run_id = workspace.run_id
-          AND project.project_id = workspace.project_id
+         FROM run_repository_workspaces AS workspace
+         JOIN run_repositories AS repository
+           ON repository.run_id = workspace.run_id
+          AND repository.repository_id = workspace.repository_id
          WHERE workspace.run_id = ?
-         ORDER BY project.project_position`,
+         ORDER BY repository.repository_position`,
       )
-      .all(runId) as RunProjectWorkspaceRow[]
-    return rows.map(mapRunProjectWorkspace)
+      .all(runId) as RunRepositoryWorkspaceRow[]
+    return rows.map(mapRunRepositoryWorkspace)
   }
 
-  const getRunProjectWorkspace = (
+  const getRunRepositoryWorkspace = (
     runId: RunId,
-    projectId: ProjectId,
-  ): RunProjectWorkspace | undefined =>
-    listRunProjectWorkspaces(runId).find((workspace) => workspace.projectId === projectId)
+    repositoryId: RepositoryId,
+  ): RunRepositoryWorkspace | undefined =>
+    listRunRepositoryWorkspaces(runId).find((workspace) => workspace.repositoryId === repositoryId)
 
-  const requireRunProjectWorkspace = (runId: RunId, projectId: ProjectId): RunProjectWorkspace => {
-    const workspace = getRunProjectWorkspace(runId, projectId)
+  const requireRunRepositoryWorkspace = (
+    runId: RunId,
+    repositoryId: RepositoryId,
+  ): RunRepositoryWorkspace => {
+    const workspace = getRunRepositoryWorkspace(runId, repositoryId)
     if (workspace === undefined) {
       throw new PersistenceError({
         code: 'PERSISTENCE_NOT_FOUND',
-        message: 'Run project workspace was not found',
-        details: { runId, projectId },
+        message: 'Run repository workspace was not found',
+        details: { runId, repositoryId },
       })
     }
     return workspace
@@ -368,18 +377,26 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       ) {
         throw validationFailure('Run variables do not match the workflow variables')
       }
-      if (!Array.isArray(input.projects)) {
-        throw validationFailure('Run project snapshot is required')
+      if (!Array.isArray(input.repositories)) {
+        throw validationFailure('Run repository snapshot is required')
       }
-      const projects = input.projects.map((project) =>
-        parseInput(CreateRunProjectInputSchema, project, 'Run project snapshot is invalid'),
+      const repositories = input.repositories.map((repository) =>
+        parseInput(
+          CreateRunRepositoryInputSchema,
+          repository,
+          'Run repository snapshot is invalid',
+        ),
       )
-      const configuredProjectIds = workflowSnapshot.configuration.projectIds
+      const configuredRepositoryIds = workflowSnapshot.configuration.repositoryIds
       if (
-        projects.length !== configuredProjectIds.length ||
-        projects.some((project, position) => project.projectId !== configuredProjectIds[position])
+        repositories.length !== configuredRepositoryIds.length ||
+        repositories.some(
+          (repository, position) => repository.repositoryId !== configuredRepositoryIds[position],
+        )
       ) {
-        throw validationFailure('Run project snapshot does not match the workflow project order')
+        throw validationFailure(
+          'Run repository snapshot does not match the workflow repository order',
+        )
       }
       const createdAt = parseInput(timestamp, input.createdAt, 'Run creation timestamp is invalid')
       const variablesJson = serializeJson(variables, 'variables')
@@ -399,25 +416,27 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
                  ) VALUES (?, ?, ?, ?, 'PENDING', ?)`,
               )
               .run(runId, workflowId, variablesJson, workflowSnapshotJson, createdAt)
-            const insertProject = connection.prepare(
-              `INSERT INTO run_projects (
-                 run_id, project_id, project_position, name, provider, remote_id,
+            const insertRepository = connection.prepare(
+              `INSERT INTO run_repositories (
+                 run_id, repository_id, repository_position, name, provider, remote_id,
                  repository_full_name, clone_url, default_branch, base_sha, is_primary
                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
-            for (const [position, project] of projects.entries()) {
-              insertProject.run(
+            for (const [position, repository] of repositories.entries()) {
+              insertRepository.run(
                 runId,
-                project.projectId,
+                repository.repositoryId,
                 position,
-                project.name,
-                project.provider,
-                project.remoteId,
-                project.fullName,
-                project.cloneUrl,
-                project.defaultBranch,
-                project.baseSha,
-                project.projectId === workflowSnapshot.configuration.primaryProjectId ? 1 : 0,
+                repository.name,
+                repository.provider,
+                repository.remoteId,
+                repository.fullName,
+                repository.cloneUrl,
+                repository.defaultBranch,
+                repository.baseSha,
+                repository.repositoryId === workflowSnapshot.configuration.primaryRepositoryId
+                  ? 1
+                  : 0,
               )
             }
             appendEvent(connection, runId, {
@@ -542,15 +561,15 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       }))
     },
 
-    listRunProjects,
+    listRunRepositories,
 
-    listRunProjectWorkspaces,
+    listRunRepositoryWorkspaces,
 
     listTerminalRunIdsNeedingWorkspaceCleanup() {
       const rows = connection
         .prepare(
           `SELECT DISTINCT workspace.run_id
-           FROM run_project_workspaces AS workspace
+           FROM run_repository_workspaces AS workspace
            JOIN runs AS run ON run.run_id = workspace.run_id
            WHERE run.status IN ('SUCCEEDED', 'FAILED', 'CANCELLED')
              AND workspace.status NOT IN ('CLEANED', 'LEGACY')
@@ -560,31 +579,33 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       return rows.map(({ run_id: runId }) => RunIdSchema.parse(runId))
     },
 
-    markRunProjectWorkspacePreparing(input) {
+    markRunRepositoryWorkspacePreparing(input) {
       const runId = RunIdSchema.parse(input.runId)
-      const projectId = ProjectIdSchema.parse(input.projectId)
+      const repositoryId = RepositoryIdSchema.parse(input.repositoryId)
       const workspacePath = requireNonBlank(input.workspacePath, 'workspacePath')
       const branchName = requireNonBlank(input.branchName, 'branchName')
       const updatedAt = parseInput(timestamp, input.timestamp, 'Workspace timestamp is invalid')
       if (!isAbsolute(workspacePath)) {
-        throw validationFailure('Run project workspace path must be absolute')
+        throw validationFailure('Run repository workspace path must be absolute')
       }
-      if (!listRunProjects(runId).some((project) => project.projectId === projectId)) {
+      if (
+        !listRunRepositories(runId).some((repository) => repository.repositoryId === repositoryId)
+      ) {
         throw new PersistenceError({
           code: 'PERSISTENCE_NOT_FOUND',
-          message: 'Run project was not found',
-          details: { runId, projectId },
+          message: 'Run repository was not found',
+          details: { runId, repositoryId },
         })
       }
-      const existing = getRunProjectWorkspace(runId, projectId)
+      const existing = getRunRepositoryWorkspace(runId, repositoryId)
       if (
         existing !== undefined &&
         (existing.workspacePath !== workspacePath || existing.branchName !== branchName)
       ) {
         throw new PersistenceError({
           code: 'PERSISTENCE_CONFLICT',
-          message: 'Run project workspace identity cannot be changed',
-          details: { runId, projectId, workspacePath, branchName },
+          message: 'Run repository workspace identity cannot be changed',
+          details: { runId, repositoryId, workspacePath, branchName },
         })
       }
       if (existing?.status === 'READY') return existing
@@ -592,61 +613,61 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
       try {
         connection
           .prepare(
-            `INSERT INTO run_project_workspaces (
-               run_id, project_id, status, workspace_path, branch_name,
+            `INSERT INTO run_repository_workspaces (
+               run_id, repository_id, status, workspace_path, branch_name,
                error_message, prepared_at, cleaned_at, updated_at
              ) VALUES (?, ?, 'PREPARING', ?, ?, NULL, NULL, NULL, ?)
-             ON CONFLICT (run_id, project_id) DO UPDATE SET
+             ON CONFLICT (run_id, repository_id) DO UPDATE SET
                status = 'PREPARING', error_message = NULL,
                prepared_at = NULL, cleaned_at = NULL, updated_at = excluded.updated_at`,
           )
-          .run(runId, projectId, workspacePath, branchName, updatedAt)
+          .run(runId, repositoryId, workspacePath, branchName, updatedAt)
       } catch (cause) {
-        throw mapPersistenceError(cause, 'Could not mark run project workspace as preparing')
+        throw mapPersistenceError(cause, 'Could not mark run repository workspace as preparing')
       }
-      return requireRunProjectWorkspace(runId, projectId)
+      return requireRunRepositoryWorkspace(runId, repositoryId)
     },
 
-    markRunProjectWorkspaceReady(input) {
+    markRunRepositoryWorkspaceReady(input) {
       const runId = RunIdSchema.parse(input.runId)
-      const projectId = ProjectIdSchema.parse(input.projectId)
+      const repositoryId = RepositoryIdSchema.parse(input.repositoryId)
       const workspacePath = requireNonBlank(input.workspacePath, 'workspacePath')
       const branchName = requireNonBlank(input.branchName, 'branchName')
       const updatedAt = parseInput(timestamp, input.timestamp, 'Workspace timestamp is invalid')
-      const existing = requireRunProjectWorkspace(runId, projectId)
+      const existing = requireRunRepositoryWorkspace(runId, repositoryId)
       if (existing.workspacePath !== workspacePath || existing.branchName !== branchName) {
         throw new PersistenceError({
           code: 'PERSISTENCE_CONFLICT',
-          message: 'Run project workspace does not match its preparation',
-          details: { runId, projectId, workspacePath, branchName },
+          message: 'Run repository workspace does not match its preparation',
+          details: { runId, repositoryId, workspacePath, branchName },
         })
       }
       if (existing.status === 'READY') return existing
       if (existing.status !== 'PREPARING') {
         throw new PersistenceError({
           code: 'PERSISTENCE_CONFLICT',
-          message: 'Only a preparing run project workspace can become ready',
-          details: { runId, projectId, status: existing.status },
+          message: 'Only a preparing run repository workspace can become ready',
+          details: { runId, repositoryId, status: existing.status },
         })
       }
       try {
         connection
           .prepare(
-            `UPDATE run_project_workspaces
+            `UPDATE run_repository_workspaces
              SET status = 'READY', error_message = NULL,
                  prepared_at = ?, updated_at = ?
-             WHERE run_id = ? AND project_id = ? AND status = 'PREPARING'`,
+             WHERE run_id = ? AND repository_id = ? AND status = 'PREPARING'`,
           )
-          .run(updatedAt, updatedAt, runId, projectId)
+          .run(updatedAt, updatedAt, runId, repositoryId)
       } catch (cause) {
-        throw mapPersistenceError(cause, 'Could not mark run project workspace as ready')
+        throw mapPersistenceError(cause, 'Could not mark run repository workspace as ready')
       }
-      return requireRunProjectWorkspace(runId, projectId)
+      return requireRunRepositoryWorkspace(runId, repositoryId)
     },
 
-    markRunProjectWorkspaceFailed(input) {
+    markRunRepositoryWorkspaceFailed(input) {
       const runId = RunIdSchema.parse(input.runId)
-      const projectId = ProjectIdSchema.parse(input.projectId)
+      const repositoryId = RepositoryIdSchema.parse(input.repositoryId)
       const workspacePath = requireNonBlank(input.workspacePath, 'workspacePath')
       const branchName = requireNonBlank(input.branchName, 'branchName')
       const errorMessage = parseInput(
@@ -655,48 +676,48 @@ export const createRunRepository = (database: WorkbenchDatabase): RunRepository 
         'Workspace failure message is invalid',
       )
       const updatedAt = parseInput(timestamp, input.timestamp, 'Workspace timestamp is invalid')
-      const existing = requireRunProjectWorkspace(runId, projectId)
+      const existing = requireRunRepositoryWorkspace(runId, repositoryId)
       if (existing.workspacePath !== workspacePath || existing.branchName !== branchName) {
         throw new PersistenceError({
           code: 'PERSISTENCE_CONFLICT',
-          message: 'Run project workspace does not match its preparation',
-          details: { runId, projectId, workspacePath, branchName },
+          message: 'Run repository workspace does not match its preparation',
+          details: { runId, repositoryId, workspacePath, branchName },
         })
       }
       try {
         connection
           .prepare(
-            `UPDATE run_project_workspaces
+            `UPDATE run_repository_workspaces
              SET status = 'FAILED', error_message = ?,
                  prepared_at = NULL, updated_at = ?
-             WHERE run_id = ? AND project_id = ?`,
+             WHERE run_id = ? AND repository_id = ?`,
           )
-          .run(errorMessage, updatedAt, runId, projectId)
+          .run(errorMessage, updatedAt, runId, repositoryId)
       } catch (cause) {
-        throw mapPersistenceError(cause, 'Could not mark run project workspace as failed')
+        throw mapPersistenceError(cause, 'Could not mark run repository workspace as failed')
       }
-      return requireRunProjectWorkspace(runId, projectId)
+      return requireRunRepositoryWorkspace(runId, repositoryId)
     },
 
-    markRunProjectWorkspaceCleaned(input) {
+    markRunRepositoryWorkspaceCleaned(input) {
       const runId = RunIdSchema.parse(input.runId)
-      const projectId = ProjectIdSchema.parse(input.projectId)
+      const repositoryId = RepositoryIdSchema.parse(input.repositoryId)
       const cleanedAt = parseInput(timestamp, input.timestamp, 'Workspace timestamp is invalid')
-      const existing = requireRunProjectWorkspace(runId, projectId)
+      const existing = requireRunRepositoryWorkspace(runId, repositoryId)
       if (existing.status === 'CLEANED' || existing.status === 'LEGACY') return existing
       try {
         connection
           .prepare(
-            `UPDATE run_project_workspaces
+            `UPDATE run_repository_workspaces
              SET status = 'CLEANED', error_message = NULL,
                  cleaned_at = ?, updated_at = ?
-             WHERE run_id = ? AND project_id = ?`,
+             WHERE run_id = ? AND repository_id = ?`,
           )
-          .run(cleanedAt, cleanedAt, runId, projectId)
+          .run(cleanedAt, cleanedAt, runId, repositoryId)
       } catch (cause) {
-        throw mapPersistenceError(cause, 'Could not mark run project workspace as cleaned')
+        throw mapPersistenceError(cause, 'Could not mark run repository workspace as cleaned')
       }
-      return requireRunProjectWorkspace(runId, projectId)
+      return requireRunRepositoryWorkspace(runId, repositoryId)
     },
   }
 }

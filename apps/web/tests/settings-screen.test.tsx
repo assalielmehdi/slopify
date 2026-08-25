@@ -6,7 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppShell } from '../components/app-shell'
 import { SettingsScreen } from '../components/settings/settings-screen'
 
-vi.mock('next/navigation', () => ({ usePathname: () => '/settings' }))
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/settings',
+  useRouter: () => ({ push: vi.fn() }),
+  useSearchParams: () => new URLSearchParams(),
+}))
 
 const connection = {
   provider: 'GITHUB' as const,

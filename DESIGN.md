@@ -267,6 +267,12 @@ text color of their role.
   control onto the work surface.
 - The product title and collapse control share one row when the sidebar is expanded.
 - The expand control moves to the breadcrumb bar when the sidebar is collapsed.
+- Workflows is an expanded-by-default disclosure whose nested links list every persisted
+  workflow. Selecting one opens the editor with that workflow in URL state; collapsing
+  the sidebar reduces the disclosure to the Workflows destination icon. Hovering or
+  focusing the disclosure swaps the workflow glyph for its expand/collapse chevron. A
+  separate trailing plus action opens a compact, focused workflow-name popover. New
+  names are unique lowercase slugs; Enter creates and Escape cancels.
 - Section labels are visually quieter than navigation destinations.
 - The selected destination uses `selected` plus stronger text, not a chromatic accent.
 - Settings is a standalone footer destination pinned to the bottom of the sidebar.
@@ -312,49 +318,55 @@ text color of their role.
 
 - Harnesses are discovered from the host through the API; the frontend never maintains
   a parallel availability or model catalog. Harness setup remains external to Slopify.
-- Keep this screen deliberately minimal while Pi is the only harness: one left-aligned
-  bordered surface showing its name, installed version when available, availability,
-  and a short explanation that configuration remains in Pi.
+- Present harnesses in the same responsive card grid used by Repositories. Each card
+  shows only the harness logo, name, type, short description, and availability.
+- Treat each harness card as one accessible button. Open the contained, floating right
+  drawer used by Repositories for version, executable, and discovered-model details.
 - When Pi is unavailable, show the reason and one link to the official installation
   page. Never imply that Slopify can install or configure it.
 - Model metadata may be summarized. Detailed agent selection belongs in the workflow
   agent drawer.
 
-### Project catalog
+### Repository catalog
 
-- Projects are GitHub.com or GitLab.com repositories selected from configured provider
+- Repositories are GitHub.com or GitLab.com repositories selected from configured provider
   connections. The add flow first selects a connected provider, then one repository
   returned by that provider. It never accepts a local path or arbitrary clone URL.
-- After the API confirms a Project was added, close the add drawer and show a success
-  toast naming the Project. Never show success before persistence completes.
+- After the API confirms a Repository was added, close the add drawer and show a success
+  toast naming the Repository. Never show success before persistence completes.
 - Use a left-aligned responsive card catalog, whole-surface tiles, and the standard
   contained floating drawer.
-- Derive availability from the provider whenever Projects are listed or used. Never
-  remove a saved Project merely because its connection or repository is unavailable.
-- An unavailable Project remains in its original catalog position with a muted tile and
+- Derive availability from the provider whenever Repositories are listed or used. Never
+  remove a saved Repository merely because its connection or repository is unavailable.
+- An unavailable Repository remains in its original catalog position with a muted tile and
   the explicit status `Connection missing` or `Repository unavailable`.
 
 ### Workflow editor
 
-- The workflow editor presents one selected current workflow graph at a time. A compact
-  selector above the canvas lists every workflow by name with primary-Project context;
-  selection lives in the URL so refresh and browser history preserve it. Do not expose
-  revision selectors, revision IDs, version ancestry, or publication controls.
-- Keep workflow creation beside the selector. Create and Edit use the same contained
-  floating drawer and expose the same name, description, Projects, primary Project, and
-  variables. Select a new workflow only after persistence succeeds.
+- The workflow editor presents one selected current workflow graph at a time. Selection lives
+  in the URL so refresh and browser history preserve it. The application breadcrumb reads
+  `Workflows > workflow-name`; do not add another selector or creation toolbar above the canvas.
+  Do not expose revision selectors, revision IDs, version ancestry, or publication controls.
+- Create workflows from the Workflows sidebar disclosure popover. Select a new workflow only
+  after persistence succeeds. Edit the selected workflow's description, Repositories, primary
+  Repository, and variables from its contained configuration drawer.
 - An empty workflow catalog is a valid first-use state. Keep the editor shell visible,
-  explain that workflows isolate project processes and run configuration, and provide a
-  clear creation action instead of rendering an error.
+  explain that workflows isolate repository processes and run configuration, and keep the
+  empty-state explanation instead of rendering an error. Creation remains available from the
+  Workflows sidebar disclosure.
 - Every workflow node is an agent. One agent can be the entire workflow.
 - An empty workflow is a valid draft state. Give it a calm, actionable empty canvas,
   but disable running it and explain that at least one agent is required.
 - Keep a compact workflow configuration action directly beside Run. It opens the same
   contained, non-modal floating right drawer used by agent configuration and edits the
   selected workflow only.
-- Workflow configuration contains Projects and Variables. Projects are selected from
-  Slopify's live Project catalog and apply to every agent in the workflow. Variables are
+- Workflow configuration contains Repositories and Variables. Repositories are selected from
+  Slopify's live Repository catalog and apply to every agent in the workflow. Variables are
   an ordered list of unique, non-empty names requested whenever a run starts.
+- Delete the selected workflow from its configuration drawer. Reuse the Repository deletion
+  confirmation transition: reveal and focus an adjacent name input, and enable confirmation
+  only when it exactly matches the workflow name. Preserve historical run snapshots and select
+  the next current workflow after deletion.
 - Let the graph fill the workspace remaining below the application header. Keep the
   page itself fixed to the viewport; graph pan and zoom belong to the canvas.
 - Workflow nodes use the standard neutral card treatment. In a run snapshot, a node's
@@ -455,7 +467,7 @@ text color of their role.
   not shift the graph, overlap the application header, add
   a backdrop, trap focus, or block interaction with the canvas.
 - The panel shows the captured harness and version, optional model and thinking effort,
-  primary Project and cloned run workspace paths and branches, result/timeout data,
+  primary Repository and cloned run workspace paths and branches, result/timeout data,
   execution status and
   timing, errors or output, and available agent transcript messages.
 - The panel enters from and exits toward the right over 350ms using the catalog drawer

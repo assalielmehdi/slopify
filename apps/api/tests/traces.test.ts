@@ -19,12 +19,12 @@ const trace = AgentTraceSchema.parse({
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the repository.',
       workspaceRoot: '/Users/developer/.slopify/orchestrator/workspaces/run-01',
-      primaryProjectId: 'project-api',
-      projects: [
+      primaryRepositoryId: 'repository-api',
+      repositories: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           name: 'API',
-          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-01/project-api',
+          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-01/repository-api',
           baseSha: '1111111111111111111111111111111111111111',
           sourceBranch: 'main',
         },
@@ -65,7 +65,7 @@ describe('agent trace API', () => {
 
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual(trace)
-    expect(trace.header.configuration.projects).toHaveLength(1)
+    expect(trace.header.configuration.repositories).toHaveLength(1)
     expect(traces.read).toHaveBeenCalledWith({
       runId: 'run-01',
       nodeExecutionId: 'node-execution-01',

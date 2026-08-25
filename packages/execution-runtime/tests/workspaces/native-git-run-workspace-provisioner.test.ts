@@ -63,9 +63,9 @@ const createRun = (
     workflowSnapshot: fixture.workflow,
     variables: {},
     createdAt: timestamp,
-    projects: [
+    repositories: [
       {
-        projectId: 'project-api',
+        repositoryId: 'repository-api',
         name: 'API',
         provider: 'GITHUB',
         remoteId: '123',
@@ -97,8 +97,8 @@ describe('native Git run workspace provisioner', () => {
     const remote = createRemote()
     const workflow = createTestAgentWorkflow({
       createdAt: timestamp,
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     })
     const fixture = createPersistenceFixture(workflow)
 
@@ -116,7 +116,7 @@ describe('native Git run workspace provisioner', () => {
         provisioner.ensure('run-clone'),
         provisioner.ensure('run-clone'),
       ])
-      const workspacePath = join(root, 'run-clone', 'project-api')
+      const workspacePath = join(root, 'run-clone', 'repository-api')
       expect(first).toEqual(second)
       expect(first).toMatchObject([
         {
@@ -149,8 +149,8 @@ describe('native Git run workspace provisioner', () => {
     const remote = createRemote()
     const workflow = createTestAgentWorkflow({
       createdAt: timestamp,
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     })
     const fixture = createPersistenceFixture(workflow)
 
@@ -181,8 +181,8 @@ describe('native Git run workspace provisioner', () => {
     const remote = createRemote()
     const workflow = createTestAgentWorkflow({
       createdAt: timestamp,
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     })
     const fixture = createPersistenceFixture(workflow)
 
@@ -200,7 +200,7 @@ describe('native Git run workspace provisioner', () => {
       await provisioner.cleanup('run-cleanup')
 
       expect(existsSync(join(root, 'run-cleanup'))).toBe(false)
-      expect(fixture.runs.listRunProjectWorkspaces('run-cleanup')).toMatchObject([
+      expect(fixture.runs.listRunRepositoryWorkspaces('run-cleanup')).toMatchObject([
         { status: 'CLEANED', cleanedAt: timestamp },
       ])
     } finally {
@@ -214,8 +214,8 @@ describe('native Git run workspace provisioner', () => {
     const remote = createRemote()
     const workflow = createTestAgentWorkflow({
       createdAt: timestamp,
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     })
     const fixture = createPersistenceFixture(workflow)
     mkdirSync(root, { recursive: true })
@@ -233,7 +233,7 @@ describe('native Git run workspace provisioner', () => {
       await expect(provisioner.ensure('run-linked')).rejects.toBeInstanceOf(
         RunWorkspaceProvisioningError,
       )
-      expect(existsSync(join(relocated, 'project-api'))).toBe(false)
+      expect(existsSync(join(relocated, 'repository-api'))).toBe(false)
     } finally {
       fixture.cleanup()
     }
@@ -247,8 +247,8 @@ describe('native Git run workspace provisioner', () => {
     const remote = createRemote()
     const workflow = createTestAgentWorkflow({
       createdAt: timestamp,
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     })
     const fixture = createPersistenceFixture(workflow)
 

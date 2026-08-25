@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 
-import type { HarnessDescriptor, Project } from '@slopify/contracts'
+import type { HarnessDescriptor, Repository } from '@slopify/contracts'
 import type { Workflow } from '@slopify/workflow-model'
 
 import type { RunVariableRow } from '@/components/runs/run-configuration-fields'
@@ -50,7 +50,7 @@ const variablesFrom = (rows: readonly RunVariableRow[]): Readonly<Record<string,
 
 export type StartRunClient = Pick<
   ApiClient,
-  'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'
+  'listHarnesses' | 'listRepositories' | 'listWorkflows' | 'startRun'
 >
 
 export interface UseStartRunOptions {
@@ -61,7 +61,7 @@ export interface UseStartRunOptions {
 export function useStartRun(client: StartRunClient, options: UseStartRunOptions = {}) {
   const [workflows, setWorkflows] = useState<readonly WorkflowCatalogEntry[]>([])
   const [harnesses, setHarnesses] = useState<readonly HarnessDescriptor[]>([])
-  const [projects, setProjects] = useState<readonly Project[]>([])
+  const [repositories, setRepositories] = useState<readonly Repository[]>([])
   const [workflowId, setWorkflowId] = useState('')
   const [rows, setRows] = useState<readonly RunVariableRow[]>([])
   const [startedRun, setStartedRun] = useState<StartRunResponse>()
@@ -73,15 +73,15 @@ export function useStartRun(client: StartRunClient, options: UseStartRunOptions 
     let active = true
     const load = async () => {
       try {
-        const [nextWorkflows, nextHarnesses, nextProjects] = await Promise.all([
+        const [nextWorkflows, nextHarnesses, nextRepositories] = await Promise.all([
           client.listWorkflows(),
           client.listHarnesses(),
-          client.listProjects(),
+          client.listRepositories(),
         ])
         if (!active) return
         setWorkflows(nextWorkflows)
         setHarnesses(nextHarnesses)
-        setProjects(nextProjects)
+        setRepositories(nextRepositories)
         const requestedWorkflow = nextWorkflows.find(
           ({ workflowId: candidateId }) => candidateId === options.initialWorkflowId,
         )
@@ -118,7 +118,7 @@ export function useStartRun(client: StartRunClient, options: UseStartRunOptions 
   const runDisabledReason =
     selectedWorkflow === undefined
       ? 'Choose a workflow before starting a run.'
-      : workflowRunDisabledReason({ harnesses, projects, workflow: selectedWorkflow })
+      : workflowRunDisabledReason({ harnesses, repositories, workflow: selectedWorkflow })
   const runnable = runDisabledReason === undefined
   const canStart =
     selectedWorkflow !== undefined &&

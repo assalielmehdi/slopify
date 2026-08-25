@@ -6,9 +6,9 @@ import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import {
   type HarnessCatalog,
-  type RunProjectResolution,
+  type RunRepositoryResolution,
   createEventStore,
-  createProjectRepository,
+  createRepositoryStore,
   createRunRepository,
   createWorkflowRepository,
   openDatabase,
@@ -18,15 +18,15 @@ import {
 export const TEST_TIMESTAMP = '2026-08-23T12:00:00.000Z'
 export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('test-workflow')
 export const TEST_RUN_ID = RunIdSchema.parse('run-01')
-export const TEST_RUN_PROJECT: RunProjectResolution = {
-  projectId: 'project-api' as RunProjectResolution['projectId'],
+export const TEST_RUN_REPOSITORY: RunRepositoryResolution = {
+  repositoryId: 'repository-api' as RunRepositoryResolution['repositoryId'],
   name: 'API',
   provider: 'GITHUB',
   remoteId: '100',
   fullName: 'operator/api',
   cloneUrl: 'https://github.com/operator/api.git',
   defaultBranch: 'main',
-  baseSha: 'a'.repeat(40) as RunProjectResolution['baseSha'],
+  baseSha: 'a'.repeat(40) as RunRepositoryResolution['baseSha'],
 }
 
 export const createTestHarnessCatalog = (): HarnessCatalog => ({
@@ -48,24 +48,26 @@ export const createTestHarnessCatalog = (): HarnessCatalog => ({
 export interface CreateTestAgentWorkflowInput {
   readonly workflowId?: string
   readonly prompt?: string
-  readonly projectIds?: readonly string[]
-  readonly primaryProjectId?: string | null
+  readonly repositoryIds?: readonly string[]
+  readonly primaryRepositoryId?: string | null
   readonly variables?: readonly string[]
   readonly createdAt?: string
 }
 
 export const createTestAgentWorkflow = (input: CreateTestAgentWorkflowInput = {}): Workflow => {
   const createdAt = input.createdAt ?? TEST_TIMESTAMP
-  const projectIds = input.projectIds ?? []
+  const repositoryIds = input.repositoryIds ?? []
   return WorkflowSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     workflowId: input.workflowId ?? TEST_WORKFLOW_ID,
     name: 'Test workflow',
     description: 'A current Pi-backed agent workflow for tests.',
     configuration: {
-      projectIds,
-      primaryProjectId:
-        input.primaryProjectId === undefined ? (projectIds[0] ?? null) : input.primaryProjectId,
+      repositoryIds,
+      primaryRepositoryId:
+        input.primaryRepositoryId === undefined
+          ? (repositoryIds[0] ?? null)
+          : input.primaryRepositoryId,
       variables: input.variables ?? [],
     },
     startNodeId: 'agent',
@@ -85,25 +87,29 @@ export const createTestAgentWorkflow = (input: CreateTestAgentWorkflowInput = {}
   })
 }
 
-export const resolveTestProject = async (projectId: string): Promise<RunProjectResolution> => ({
-  ...TEST_RUN_PROJECT,
-  projectId: projectId as RunProjectResolution['projectId'],
+export const resolveTestRepository = async (
+  repositoryId: string,
+): Promise<RunRepositoryResolution> => ({
+  ...TEST_RUN_REPOSITORY,
+  repositoryId: repositoryId as RunRepositoryResolution['repositoryId'],
 })
 
-export const createTestRunProjects = (workflow: Workflow): readonly RunProjectResolution[] =>
-  workflow.configuration.projectIds.map((projectId) => ({
-    ...TEST_RUN_PROJECT,
-    projectId,
-    name: projectId === TEST_RUN_PROJECT.projectId ? TEST_RUN_PROJECT.name : projectId,
-    remoteId: projectId === TEST_RUN_PROJECT.projectId ? TEST_RUN_PROJECT.remoteId : '200',
+export const createTestRunRepositories = (workflow: Workflow): readonly RunRepositoryResolution[] =>
+  workflow.configuration.repositoryIds.map((repositoryId) => ({
+    ...TEST_RUN_REPOSITORY,
+    repositoryId,
+    name:
+      repositoryId === TEST_RUN_REPOSITORY.repositoryId ? TEST_RUN_REPOSITORY.name : repositoryId,
+    remoteId:
+      repositoryId === TEST_RUN_REPOSITORY.repositoryId ? TEST_RUN_REPOSITORY.remoteId : '200',
     fullName:
-      projectId === TEST_RUN_PROJECT.projectId
-        ? TEST_RUN_PROJECT.fullName
-        : `operator/${projectId}`,
+      repositoryId === TEST_RUN_REPOSITORY.repositoryId
+        ? TEST_RUN_REPOSITORY.fullName
+        : `operator/${repositoryId}`,
     cloneUrl:
-      projectId === TEST_RUN_PROJECT.projectId
-        ? TEST_RUN_PROJECT.cloneUrl
-        : `https://github.com/operator/${projectId}.git`,
+      repositoryId === TEST_RUN_REPOSITORY.repositoryId
+        ? TEST_RUN_REPOSITORY.cloneUrl
+        : `https://github.com/operator/${repositoryId}.git`,
   }))
 
 export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) => {
@@ -111,7 +117,7 @@ export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) =
   const path = join(directory, 'state', 'workbench.sqlite')
   const database = openDatabase({ path })
   const workflows = createWorkflowRepository(database)
-  const projects = createProjectRepository(database)
+  const repositories = createRepositoryStore(database)
   const runs = createRunRepository(database)
   const events = createEventStore(database)
 
@@ -122,7 +128,7 @@ export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) =
     rmSync(directory, { force: true, recursive: true })
   }
 
-  return { database, events, path, projects, workflow, runs, workflows, cleanup }
+  return { database, events, path, repositories, workflow, runs, workflows, cleanup }
 }
 
 export const createRun = (
@@ -136,5 +142,5 @@ export const createRun = (
     workflowSnapshot,
     variables,
     createdAt: TEST_TIMESTAMP,
-    projects: createTestRunProjects(workflowSnapshot),
+    repositories: createTestRunRepositories(workflowSnapshot),
   })

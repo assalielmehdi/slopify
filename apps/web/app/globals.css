@@ -95,10 +95,12 @@
   --tabs-text-active: #1c1c1c;
   --tabs-bar-bg: #f1f1f3;
   --tabs-pill-bg: #ffffff;
-  --acc-expand: 250ms;
-  --acc-collapse: 250ms;
-  --acc-chevron: 250ms;
+  --acc-duration: 250ms;
   --acc-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --icon-swap-dur: 250ms;
+  --icon-swap-blur: 2px;
+  --icon-swap-start-scale: 0.25;
+  --icon-swap-ease: ease-in-out;
   --panel-open-dur: 400ms;
   --panel-close-dur: 350ms;
   --panel-translate-y: 100px;
@@ -117,16 +119,43 @@
   --sidebar-ring: #1c1c1c;
 }
 
+.t-icon-swap {
+  position: relative;
+  display: inline-grid;
+}
+
+.t-icon-swap .t-icon {
+  grid-area: 1 / 1;
+  transition:
+    opacity var(--icon-swap-dur) var(--icon-swap-ease),
+    filter var(--icon-swap-dur) var(--icon-swap-ease),
+    transform var(--icon-swap-dur) var(--icon-swap-ease);
+  will-change: opacity, filter, transform;
+}
+
+.t-icon-swap[data-state='a'] .t-icon[data-icon='a'],
+.t-icon-swap[data-state='b'] .t-icon[data-icon='b'] {
+  opacity: 1;
+  filter: blur(0);
+  transform: scale(1);
+}
+
+.t-icon-swap[data-state='a'] .t-icon[data-icon='b'],
+.t-icon-swap[data-state='b'] .t-icon[data-icon='a'] {
+  opacity: 0;
+  filter: blur(var(--icon-swap-blur));
+  transform: scale(var(--icon-swap-start-scale));
+}
+
 /* Agent work disclosure: grid rows avoid measuring dynamic trace content. */
 .t-acc-panel {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--acc-collapse) var(--acc-ease);
+  transition: grid-template-rows var(--acc-duration) var(--acc-ease);
 }
 
 .t-acc[data-open='true'] .t-acc-panel {
   grid-template-rows: 1fr;
-  transition: grid-template-rows var(--acc-expand) var(--acc-ease);
 }
 
 .t-acc-panel-inner {
@@ -134,23 +163,20 @@
   opacity: 0;
   filter: blur(2px);
   transition:
-    opacity var(--acc-collapse) var(--acc-ease),
-    filter var(--acc-collapse) var(--acc-ease);
+    opacity var(--acc-duration) var(--acc-ease),
+    filter var(--acc-duration) var(--acc-ease);
 }
 
 .t-acc[data-open='true'] .t-acc-panel-inner {
   opacity: 1;
   filter: blur(0);
-  transition:
-    opacity var(--acc-expand) var(--acc-ease),
-    filter var(--acc-expand) var(--acc-ease);
 }
 
 .t-acc-chevron {
   display: inline-flex;
   transform: rotate(0deg);
   transform-origin: center;
-  transition: transform var(--acc-chevron) var(--acc-ease);
+  transition: transform var(--acc-duration) var(--acc-ease);
 }
 
 .t-acc-chevron path {
@@ -165,6 +191,10 @@
   .t-acc-panel,
   .t-acc-panel-inner,
   .t-acc-chevron {
+    transition: none !important;
+  }
+
+  .t-icon-swap .t-icon {
     transition: none !important;
   }
 }

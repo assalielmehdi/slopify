@@ -3,6 +3,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   AgentNodeSchema,
   CreateWorkflowInputSchema,
+  WorkflowNameSchema,
   WorkflowEdgeSchema,
   WorkflowSchema,
   type CreateWorkflowInput,
@@ -22,13 +23,13 @@ const agentNode = {
 } as const
 
 const workflow = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   workflowId: 'workflow-01',
   name: 'Implementation workflow',
   description: 'Coordinate local agents.',
   configuration: {
-    projectIds: ['project-api', 'project-web'],
-    primaryProjectId: 'project-api',
+    repositoryIds: ['repository-api', 'repository-web'],
+    primaryRepositoryId: 'repository-api',
     variables: ['objective', 'release context'],
   },
   startNodeId: 'plan',
@@ -73,11 +74,11 @@ describe('workflow node contracts', () => {
 describe('workflow document contract', () => {
   it('accepts only editable fields when creating a workflow', () => {
     const input = {
-      name: 'Release workflow',
+      name: 'release-workflow',
       description: 'Prepare and review a release.',
       configuration: {
-        projectIds: ['project-api'],
-        primaryProjectId: 'project-api',
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
         variables: ['release'],
       },
     } as const
@@ -91,6 +92,22 @@ describe('workflow document contract', () => {
     expect(CreateWorkflowInputSchema.safeParse({ ...input, description: undefined }).success).toBe(
       false,
     )
+  })
+
+  it('accepts only canonical workflow name slugs for new workflows', () => {
+    expect(WorkflowNameSchema.parse('release-2026')).toBe('release-2026')
+
+    for (const name of [
+      'Release-workflow',
+      'release workflow',
+      '-release',
+      'release-',
+      'release--workflow',
+      'release_workflow',
+      'a'.repeat(101),
+    ]) {
+      expect(WorkflowNameSchema.safeParse(name).success).toBe(false)
+    }
   })
 
   it('parses the complete workflow document', () => {
@@ -116,17 +133,20 @@ describe('workflow document contract', () => {
     ).toBe(false)
   })
 
-  it('requires unique projects and variables plus a selected primary project', () => {
+  it('requires unique repositories and variables plus a selected primary repository', () => {
     expect(
       WorkflowSchema.safeParse({
         ...workflow,
-        configuration: { ...workflow.configuration, projectIds: ['project-api', 'project-api'] },
+        configuration: {
+          ...workflow.configuration,
+          repositoryIds: ['repository-api', 'repository-api'],
+        },
       }).success,
     ).toBe(false)
     expect(
       WorkflowSchema.safeParse({
         ...workflow,
-        configuration: { ...workflow.configuration, primaryProjectId: null },
+        configuration: { ...workflow.configuration, primaryRepositoryId: null },
       }).success,
     ).toBe(false)
     expect(

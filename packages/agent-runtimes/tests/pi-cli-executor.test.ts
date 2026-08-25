@@ -43,10 +43,10 @@ const input = AgentExecutionInputSchema.parse({
   nodeId: 'plan',
   workspace: {
     rootPath: '/workspaces/run-01',
-    primaryProjectId: 'backend',
-    projects: [
-      { projectId: 'backend', path: '/workspaces/run-01/backend' },
-      { projectId: 'web', path: '/workspaces/run-01/web' },
+    primaryRepositoryId: 'backend',
+    repositories: [
+      { repositoryId: 'backend', path: '/workspaces/run-01/backend' },
+      { repositoryId: 'web', path: '/workspaces/run-01/web' },
     ],
   },
   model: 'anthropic/claude-sonnet-4-5',
@@ -196,7 +196,7 @@ describe('Pi CLI executor', () => {
     vi.useRealTimers()
   })
 
-  it('ignores project-local configuration while preserving host discovery and completion', async () => {
+  it('ignores repository-local configuration while preserving host discovery and completion', async () => {
     const process = successfulProcess([{ type: 'future_event', value: 1 }])
     const { executor, getSpawnInput } = createExecutor(process, {
       now: () => Date.parse('2026-08-23T00:00:00Z'),
@@ -234,7 +234,7 @@ describe('Pi CLI executor', () => {
       message: expect.stringContaining('# Plan'),
     })
     expect(process.writes[1]).toMatchObject({
-      message: expect.stringContaining('"projectId":"backend"'),
+      message: expect.stringContaining('"repositoryId":"backend"'),
     })
     expect(process.writes[1]).toMatchObject({
       message: expect.stringContaining('planned, blocked'),

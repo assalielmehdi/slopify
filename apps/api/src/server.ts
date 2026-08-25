@@ -21,9 +21,9 @@ import {
   createNativeGitRunWorkspaceProvisioner,
   createOrchestratedRunService,
   createProcessRunner,
-  createProjectRepository,
-  createProjectService,
-  createRemoteRunProjectResolver,
+  createRepositoryStore,
+  createRepositoryService,
+  createRemoteRunRepositoryResolver,
   createRunEventFeed,
   createRunRepository,
   createRunService,
@@ -204,20 +204,21 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     secrets: createBunGitSecretStore(),
     remote: remoteGit,
   })
-  const projectRepository = createProjectRepository(database)
+  const repositoryStore = createRepositoryStore(database)
   const workflowRepository = createWorkflowRepository(database)
   ensureInitialWorkflow(workflowRepository)
   const runRepository = createRunRepository(database)
   const eventStore = createEventStore(database)
   const traces = createFilesystemAgentTraceStore({ root: configuration.tracesRoot })
-  const projects = createProjectService({
-    projects: projectRepository,
+  const repositories = createRepositoryService({
+    repositories: repositoryStore,
     connections: gitConnections,
     remote: remoteGit,
   })
+  const workflows = createWorkflowService({ workflows: workflowRepository, harnesses })
   const deletions = createDeletionService({
     operations: createDeletionOperationRepository(database),
-    handlers: [projects],
+    handlers: [repositories, workflows],
   })
   const queue = createSqliteExecutionMessageQueue(database)
   const coordinator = createWorkflowCoordinator({
@@ -264,8 +265,8 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
     runs: runRepository,
     workflows: workflowRepository,
     harnesses,
-    resolveProject: createRemoteRunProjectResolver({
-      projects,
+    resolveRepository: createRemoteRunRepositoryResolver({
+      repositories,
       connections: gitConnections,
       remote: remoteGit,
     }),
@@ -295,10 +296,10 @@ export const startConfiguredApiServer = (environment: ApiEnvironment = process.e
       eventFeed: createRunEventFeed({ events: eventStore, runs: runRepository }),
       gitConnections,
       harnesses,
-      projects,
+      repositories,
       runs: runService,
       traces,
-      workflows: createWorkflowService({ workflows: workflowRepository, harnesses }),
+      workflows,
     }),
     configuration,
   })

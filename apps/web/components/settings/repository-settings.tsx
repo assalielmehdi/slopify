@@ -1,12 +1,11 @@
 'use client'
 
-import type { GitConnection, GitProvider, GitRepository, Project } from '@slopify/contracts'
-import { FolderGit2Icon, Trash2Icon, XIcon } from 'lucide-react'
+import type { GitConnection, GitProvider, GitRepository, Repository } from '@slopify/contracts'
+import { FolderGit2Icon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import Link from 'next/link'
 import {
   useCallback,
   useEffect,
-  useMemo,
   useRef,
   useState,
   type CSSProperties,
@@ -16,7 +15,6 @@ import {
 
 import { CatalogCardSkeleton } from '@/components/settings/catalog-card-skeleton'
 import { CatalogCardTags } from '@/components/settings/catalog-card-tags'
-import { CatalogToolbar } from '@/components/settings/catalog-toolbar'
 import { GitProviderLogo } from '@/components/settings/git-provider-logo'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
@@ -44,13 +42,13 @@ import { showUndoDeletionToast } from '@/lib/undo-deletion-toast'
 import { toast } from '@/lib/toast'
 import { cn } from '@/lib/utils'
 
-type ProjectClient = Pick<
+type RepositoryClient = Pick<
   ApiClient,
-  | 'addProject'
-  | 'deleteProject'
+  | 'addRepository'
+  | 'deleteRepository'
   | 'listGitConnections'
   | 'listGitRepositories'
-  | 'listProjects'
+  | 'listRepositories'
   | 'undoDeletion'
 >
 
@@ -59,7 +57,7 @@ const defaultClient = createApiClient()
 const providerLabel = (provider: GitProvider): string =>
   provider === 'GITHUB' ? 'GitHub' : 'GitLab'
 
-const statusLabel = (availability: Project['availability']): string =>
+const statusLabel = (availability: Repository['availability']): string =>
   availability === 'AVAILABLE'
     ? 'Available'
     : availability === 'CONNECTION_MISSING'
@@ -70,7 +68,7 @@ const prefersReducedMotion = (): boolean =>
   typeof window.matchMedia === 'function' &&
   window.matchMedia('(prefers-reduced-motion: reduce)').matches
 
-function ProjectIcon({ provider }: Readonly<{ provider?: GitProvider }>) {
+function RepositoryIcon({ provider }: Readonly<{ provider?: GitProvider }>) {
   return (
     <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground">
       {provider === undefined ? (
@@ -82,49 +80,53 @@ function ProjectIcon({ provider }: Readonly<{ provider?: GitProvider }>) {
   )
 }
 
-function ProjectStatus({ project }: Readonly<{ project: Project }>) {
+function RepositoryStatus({ repository }: Readonly<{ repository: Repository }>) {
   return (
     <Badge
       variant="secondary"
       className={cn(
         'shrink-0 font-normal',
-        project.availability === 'AVAILABLE' && 'bg-status-success/10 text-status-success',
-        project.availability === 'CONNECTION_MISSING' && 'bg-status-warning/10 text-status-warning',
-        project.availability === 'REPOSITORY_UNAVAILABLE' &&
+        repository.availability === 'AVAILABLE' && 'bg-status-success/10 text-status-success',
+        repository.availability === 'CONNECTION_MISSING' &&
+          'bg-status-warning/10 text-status-warning',
+        repository.availability === 'REPOSITORY_UNAVAILABLE' &&
           'bg-status-danger/10 text-status-danger',
       )}
     >
-      {statusLabel(project.availability)}
+      {statusLabel(repository.availability)}
     </Badge>
   )
 }
 
-function ProjectTile({ onSelect, project }: Readonly<{ onSelect: () => void; project: Project }>) {
+function RepositoryTile({
+  onSelect,
+  repository,
+}: Readonly<{ onSelect: () => void; repository: Repository }>) {
   return (
     <Button
-      aria-label={`${project.name}, ${statusLabel(project.availability)}`}
+      aria-label={`${repository.name}, ${statusLabel(repository.availability)}`}
       className={cn(
         'h-auto min-h-[140px] w-full flex-col items-stretch justify-start gap-0 overflow-hidden rounded-lg border border-border bg-card p-0 text-left whitespace-normal shadow-[var(--shadow-raised)] transition-[background-color,border-color,box-shadow,opacity] duration-150 hover:border-input hover:bg-accent/45 hover:shadow-[var(--shadow-raised-hover)] focus-visible:border-input',
-        project.availability !== 'AVAILABLE' && 'bg-muted/20 opacity-70',
+        repository.availability !== 'AVAILABLE' && 'bg-muted/20 opacity-70',
       )}
       onClick={onSelect}
       type="button"
       variant="ghost"
     >
       <span className="flex min-h-0 flex-1 items-start gap-3.5 p-4">
-        <ProjectIcon provider={project.provider} />
+        <RepositoryIcon provider={repository.provider} />
         <span className="flex min-w-0 flex-1 self-stretch flex-col gap-1">
           <span className="truncate text-[14px]/5 font-semibold tracking-[-0.01em] text-foreground">
-            {project.name}
+            {repository.name}
           </span>
           <span className="text-[12px]/4 font-medium text-muted-foreground">
-            {providerLabel(project.provider)} repository
+            {providerLabel(repository.provider)} repository
           </span>
           <span className="mt-1 truncate font-mono text-[12px]/5 font-normal text-muted-foreground">
-            {project.fullName}
+            {repository.fullName}
           </span>
           <CatalogCardTags>
-            <ProjectStatus project={project} />
+            <RepositoryStatus repository={repository} />
           </CatalogCardTags>
         </span>
       </span>
@@ -132,7 +134,25 @@ function ProjectTile({ onSelect, project }: Readonly<{ onSelect: () => void; pro
   )
 }
 
-interface ProjectPanelProps {
+function AddRepositoryTile({
+  disabled,
+  onSelect,
+}: Readonly<{ disabled: boolean; onSelect: () => void }>) {
+  return (
+    <Button
+      aria-label="Add repository"
+      className="h-auto min-h-[140px] w-full rounded-lg border-dashed border-border bg-card text-muted-foreground hover:border-input hover:bg-accent/45 hover:text-foreground focus-visible:border-input"
+      disabled={disabled}
+      onClick={onSelect}
+      type="button"
+      variant="ghost"
+    >
+      <PlusIcon aria-hidden="true" />
+    </Button>
+  )
+}
+
+interface RepositoryPanelProps {
   readonly connections: readonly GitConnection[]
   readonly confirmingDelete: boolean
   readonly confirmationValue: string
@@ -149,16 +169,16 @@ interface ProjectPanelProps {
   readonly panelRef: RefObject<HTMLDivElement | null>
   readonly repositories: readonly GitRepository[]
   readonly saving: boolean
-  readonly selectedProject: Project | undefined
+  readonly selectedRepository: Repository | undefined
   readonly selectedProvider: GitProvider | undefined
   readonly selectedRepositoryId: string | undefined
   readonly selection: 'add' | string | undefined
 }
 
-function ProjectPanel(props: ProjectPanelProps) {
+function RepositoryPanel(props: RepositoryPanelProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const confirmationInputRef = useRef<HTMLInputElement>(null)
-  const panelTitle = props.selection === 'add' ? 'Add project' : props.selectedProject?.name
+  const panelTitle = props.selection === 'add' ? 'Add repository' : props.selectedRepository?.name
   const selectedRepository = props.repositories.find(
     ({ remoteId }) => remoteId === props.selectedRepositoryId,
   )
@@ -193,7 +213,7 @@ function ProjectPanel(props: ProjectPanelProps) {
       aria-hidden={!props.isOpen}
       className="floating-panel-shell fixed top-[4.25rem] right-3 bottom-3 left-3 z-30 w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
       data-open={props.isOpen}
-      data-testid="project-panel-shell"
+      data-testid="repository-panel-shell"
       onTransitionEnd={(event) => {
         if (
           event.target === event.currentTarget &&
@@ -213,7 +233,7 @@ function ProjectPanel(props: ProjectPanelProps) {
     >
       <dialog
         ref={dialogRef}
-        aria-labelledby="project-panel-title"
+        aria-labelledby="repository-panel-title"
         aria-modal="false"
         className="t-panel-slide relative m-0 flex h-full max-h-none w-full max-w-none flex-col overflow-hidden rounded-xl border border-border bg-card p-0 text-card-foreground shadow-[var(--shadow-overlay)]"
         data-layout="floating"
@@ -221,28 +241,28 @@ function ProjectPanel(props: ProjectPanelProps) {
       >
         <header className="relative shrink-0 border-b border-border p-6 pr-14">
           <div className="flex items-center gap-3">
-            <ProjectIcon />
+            <RepositoryIcon />
             <div className="min-w-0">
               <h2
-                id="project-panel-title"
+                id="repository-panel-title"
                 className="text-[18px]/6 font-semibold tracking-[-0.01em]"
               >
                 {panelTitle}
               </h2>
               <p className="text-[12px]/4 text-muted-foreground">
-                {props.selectedProject === undefined
+                {props.selectedRepository === undefined
                   ? 'GitHub or GitLab repository'
-                  : `${providerLabel(props.selectedProject.provider)} · ${props.selectedProject.fullName}`}
+                  : `${providerLabel(props.selectedRepository.provider)} · ${props.selectedRepository.fullName}`}
               </p>
             </div>
-            {props.selectedProject === undefined ? null : (
+            {props.selectedRepository === undefined ? null : (
               <div className="ml-auto">
-                <ProjectStatus project={props.selectedProject} />
+                <RepositoryStatus repository={props.selectedRepository} />
               </div>
             )}
           </div>
           <Button
-            aria-label="Close project details"
+            aria-label="Close repository details"
             className="absolute top-3 right-3"
             onClick={props.onClose}
             size="icon-sm"
@@ -257,14 +277,14 @@ function ProjectPanel(props: ProjectPanelProps) {
           {props.selection === 'add' ? (
             <form className="grid gap-4" onSubmit={(event) => void props.onAdd(event)}>
               <Field>
-                <FieldLabel htmlFor="project-provider">Provider</FieldLabel>
+                <FieldLabel htmlFor="repository-provider">Provider</FieldLabel>
                 <Select
                   onValueChange={(value) => {
                     if (value !== null) props.onProviderChange(value as GitProvider)
                   }}
                   value={props.selectedProvider ?? null}
                 >
-                  <SelectTrigger className="w-full" id="project-provider">
+                  <SelectTrigger className="w-full" id="repository-provider">
                     <SelectValue placeholder="Select a provider">
                       {props.selectedProvider === undefined
                         ? undefined
@@ -281,7 +301,7 @@ function ProjectPanel(props: ProjectPanelProps) {
                 </Select>
               </Field>
               <Field>
-                <FieldLabel htmlFor="project-repository">Repository</FieldLabel>
+                <FieldLabel htmlFor="repository-repository">Repository</FieldLabel>
                 <Combobox
                   disabled={props.loadingRepositories || props.repositories.length === 0}
                   isItemEqualToValue={(repository, value) => repository.remoteId === value.remoteId}
@@ -297,7 +317,7 @@ function ProjectPanel(props: ProjectPanelProps) {
                 >
                   <ComboboxInput
                     disabled={props.loadingRepositories || props.repositories.length === 0}
-                    id="project-repository"
+                    id="repository-repository"
                     placeholder="Search repositories…"
                   />
                   <ComboboxContent>
@@ -327,24 +347,24 @@ function ProjectPanel(props: ProjectPanelProps) {
                 }
                 type="submit"
               >
-                {props.saving ? 'Adding project…' : 'Add project'}
+                {props.saving ? 'Adding repository…' : 'Add repository'}
               </Button>
             </form>
-          ) : props.selectedProject === undefined ? null : (
+          ) : props.selectedRepository === undefined ? null : (
             <>
               <section className="grid gap-2">
                 <h3 className="text-[14px]/5 font-semibold">Repository</h3>
                 <a
                   className="break-all rounded-md border border-border p-3 font-mono text-[12px]/5 text-muted-foreground hover:text-foreground"
-                  href={props.selectedProject.webUrl}
+                  href={props.selectedRepository.webUrl}
                   rel="noreferrer"
                   target="_blank"
                 >
-                  {props.selectedProject.fullName}
+                  {props.selectedRepository.fullName}
                 </a>
                 <p className="text-[12px]/4 text-muted-foreground">
                   Default branch:{' '}
-                  <span className="font-mono">{props.selectedProject.defaultBranch}</span>
+                  <span className="font-mono">{props.selectedRepository.defaultBranch}</span>
                 </p>
               </section>
               <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
@@ -360,7 +380,7 @@ function ProjectPanel(props: ProjectPanelProps) {
                     aria-label="Repository name confirmation"
                     aria-invalid={
                       props.confirmationValue.length > 0 &&
-                      props.confirmationValue !== props.selectedProject.fullName
+                      props.confirmationValue !== props.selectedRepository.fullName
                     }
                     autoComplete="off"
                     disabled={!props.confirmingDelete || props.deleting}
@@ -375,7 +395,7 @@ function ProjectPanel(props: ProjectPanelProps) {
                   disabled={
                     props.deleting ||
                     (props.confirmingDelete &&
-                      props.confirmationValue !== props.selectedProject.fullName)
+                      props.confirmationValue !== props.selectedRepository.fullName)
                   }
                   onClick={() => void props.onDelete()}
                   type="button"
@@ -386,7 +406,7 @@ function ProjectPanel(props: ProjectPanelProps) {
                     ? 'Deleting…'
                     : props.confirmingDelete
                       ? 'Confirm'
-                      : 'Delete project'}
+                      : 'Delete repository'}
                 </Button>
               </div>
             </>
@@ -397,14 +417,16 @@ function ProjectPanel(props: ProjectPanelProps) {
   )
 }
 
-export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: ProjectClient }>) {
-  const [projects, setProjects] = useState<readonly Project[]>([])
+export function RepositorySettings({
+  client = defaultClient,
+}: Readonly<{ client?: RepositoryClient }>) {
+  const [repositories, setRepositories] = useState<readonly Repository[]>([])
   const [connections, setConnections] = useState<readonly GitConnection[]>([])
-  const [repositories, setRepositories] = useState<readonly GitRepository[]>([])
+  const [remoteRepositories, setRemoteRepositories] = useState<readonly GitRepository[]>([])
   const [selectedProvider, setSelectedProvider] = useState<GitProvider>()
   const [selectedRepositoryId, setSelectedRepositoryId] = useState<string>()
   const [selection, setSelection] = useState<'add' | string>()
-  const [closingProject, setClosingProject] = useState<Project>()
+  const [closingRepository, setClosingRepository] = useState<Repository>()
   const [isPanelOpen, setIsPanelOpen] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadingRepositories, setLoadingRepositories] = useState(false)
@@ -412,37 +434,25 @@ export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: 
   const [deleting, setDeleting] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [confirmationValue, setConfirmationValue] = useState('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [error, setError] = useState<string>()
   const panelRef = useRef<HTMLDivElement>(null)
   const openFrameRef = useRef<number | undefined>(undefined)
 
-  const selectedProject =
-    projects.find(({ projectId }) => projectId === selection) ??
-    (closingProject?.projectId === selection ? closingProject : undefined)
-  const visibleProjects = useMemo(() => {
-    const query = searchQuery.trim().toLocaleLowerCase()
-    if (query === '') return projects
-    return projects.filter(
-      ({ name, fullName, provider }) =>
-        name.toLocaleLowerCase().includes(query) ||
-        fullName.toLocaleLowerCase().includes(query) ||
-        providerLabel(provider).toLocaleLowerCase().includes(query),
-    )
-  }, [projects, searchQuery])
-
+  const selectedRepository =
+    repositories.find(({ repositoryId }) => repositoryId === selection) ??
+    (closingRepository?.repositoryId === selection ? closingRepository : undefined)
   useEffect(() => {
     let active = true
-    void Promise.all([client.listProjects(), client.listGitConnections()])
-      .then(([nextProjects, nextConnections]) => {
+    void Promise.all([client.listRepositories(), client.listGitConnections()])
+      .then(([nextRepositories, nextConnections]) => {
         if (!active) return
-        setProjects(nextProjects)
+        setRepositories(nextRepositories)
         setConnections(nextConnections)
         setSelectedProvider(nextConnections[0]?.provider)
       })
       .catch((cause: unknown) => {
         if (active)
-          setError(cause instanceof Error ? cause.message : 'Projects could not be loaded.')
+          setError(cause instanceof Error ? cause.message : 'Repositories could not be loaded.')
       })
       .finally(() => {
         if (active) setLoading(false)
@@ -457,13 +467,13 @@ export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: 
     if (selection !== 'add' || selectedProvider === undefined) return
     let active = true
     setLoadingRepositories(true)
-    setRepositories([])
+    setRemoteRepositories([])
     setSelectedRepositoryId(undefined)
     void client
       .listGitRepositories(selectedProvider)
       .then((nextRepositories) => {
         if (!active) return
-        setRepositories(nextRepositories)
+        setRemoteRepositories(nextRepositories)
         setSelectedRepositoryId(nextRepositories[0]?.remoteId)
       })
       .catch((cause: unknown) => {
@@ -485,14 +495,14 @@ export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: 
     setConfirmationValue('')
     if (prefersReducedMotion()) {
       setSelection(undefined)
-      setClosingProject(undefined)
+      setClosingRepository(undefined)
     }
   }, [])
 
   const openPanel = useCallback((nextSelection: 'add' | string) => {
     if (openFrameRef.current !== undefined) window.cancelAnimationFrame(openFrameRef.current)
     setSelection(nextSelection)
-    setClosingProject(undefined)
+    setClosingRepository(undefined)
     setConfirmingDelete(false)
     setConfirmationValue('')
     setError(undefined)
@@ -523,105 +533,100 @@ export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: 
     return () => document.removeEventListener('pointerdown', handleOutsidePointerDown)
   }, [closePanel, isPanelOpen])
 
-  const addProject = async (event: FormEvent<HTMLFormElement>) => {
+  const addRepository = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (selectedProvider === undefined || selectedRepositoryId === undefined) return
     setSaving(true)
     setError(undefined)
     try {
-      const project = await client.addProject({
+      const repository = await client.addRepository({
         provider: selectedProvider,
         remoteId: selectedRepositoryId,
       })
-      setProjects((current) => [...current, project])
+      setRepositories((current) => [...current, repository])
       closePanel()
       toast.add({
-        title: 'Project added',
-        description: `${project.fullName} is now available in Slopify.`,
+        title: 'Repository added',
+        description: `${repository.fullName} is now available in Slopify.`,
         type: 'success',
       })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Project could not be added.')
+      setError(cause instanceof Error ? cause.message : 'Repository could not be added.')
     } finally {
       setSaving(false)
     }
   }
 
-  const deleteProject = async () => {
-    if (selectedProject === undefined) return
+  const deleteRepository = async () => {
+    if (selectedRepository === undefined) return
     if (!confirmingDelete) {
       setConfirmingDelete(true)
       return
     }
-    if (confirmationValue !== selectedProject.fullName) return
+    if (confirmationValue !== selectedRepository.fullName) return
     setDeleting(true)
     setError(undefined)
     try {
-      const receipt = await client.deleteProject(selectedProject.projectId)
-      setClosingProject(selectedProject)
-      setProjects((current) =>
-        current.filter(({ projectId }) => projectId !== selectedProject.projectId),
+      const receipt = await client.deleteRepository(selectedRepository.repositoryId)
+      setClosingRepository(selectedRepository)
+      setRepositories((current) =>
+        current.filter(({ repositoryId }) => repositoryId !== selectedRepository.repositoryId),
       )
       closePanel()
       showUndoDeletionToast({
         receipt,
-        deletedTitle: 'Project deleted',
-        deletedDescription: `${selectedProject.fullName} was removed from Slopify.`,
-        restoredTitle: 'Project restored',
-        restoredDescription: `${selectedProject.fullName} is available in Slopify again.`,
+        deletedTitle: 'Repository deleted',
+        deletedDescription: `${selectedRepository.fullName} was removed from Slopify.`,
+        restoredTitle: 'Repository restored',
+        restoredDescription: `${selectedRepository.fullName} is available in Slopify again.`,
         async onUndo() {
           await client.undoDeletion(receipt.deletionId)
-          setProjects(await client.listProjects())
+          setRepositories(await client.listRepositories())
         },
       })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Project could not be deleted.')
+      setError(cause instanceof Error ? cause.message : 'Repository could not be deleted.')
     } finally {
       setDeleting(false)
     }
   }
 
   return (
-    <section aria-label="Projects" className="w-full px-6 pt-6 pb-10 sm:pb-12">
-      <CatalogToolbar
-        addDisabled={connections.length === 0}
-        onAdd={() => openPanel('add')}
-        onQueryChange={setSearchQuery}
-        plural="projects"
-        query={searchQuery}
-        singular="project"
-      />
-
+    <section aria-label="Repositories" className="w-full px-6 pt-6 pb-10 sm:pb-12">
       {error === undefined ? null : (
         <Alert className="mb-3" variant="destructive">
-          <AlertTitle>Project unavailable</AlertTitle>
+          <AlertTitle>Repository unavailable</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
       {loading ? (
-        <CatalogCardSkeleton label="projects" />
+        <CatalogCardSkeleton label="repositories" />
       ) : (
         <div
           className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
-          data-testid="project-grid"
+          data-testid="repository-grid"
         >
-          {visibleProjects.map((project) => (
-            <ProjectTile
-              key={project.projectId}
-              onSelect={() => openPanel(project.projectId)}
-              project={project}
+          {repositories.map((repository) => (
+            <RepositoryTile
+              key={repository.repositoryId}
+              onSelect={() => openPanel(repository.repositoryId)}
+              repository={repository}
             />
           ))}
+          <AddRepositoryTile
+            disabled={connections.length === 0}
+            onSelect={() => openPanel('add')}
+          />
         </div>
       )}
 
-      {!loading && projects.length === 0 && error === undefined ? (
+      {!loading && repositories.length === 0 && error === undefined ? (
         <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
-          <p className="text-[14px]/5 font-semibold">No projects yet</p>
+          <p className="text-[14px]/5 font-semibold">No repositories yet</p>
           <p className="mt-1 text-[13px]/5 text-muted-foreground">
             {connections.length === 0
-              ? 'Connect GitHub or GitLab in Settings before adding a project.'
+              ? 'Connect GitHub or GitLab in Settings before adding a repository.'
               : 'Add a repository from one of your connected Git providers.'}
           </p>
           {connections.length === 0 ? (
@@ -630,29 +635,22 @@ export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: 
             </Link>
           ) : null}
         </div>
-      ) : !loading && visibleProjects.length === 0 && error === undefined ? (
-        <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
-          <p className="text-[14px]/5 font-semibold">No matching projects</p>
-          <p className="mt-1 text-[13px]/5 text-muted-foreground">
-            Try a different name, provider, or repository path.
-          </p>
-        </div>
       ) : null}
 
       {selection === undefined ? null : (
-        <ProjectPanel
+        <RepositoryPanel
           connections={connections}
           confirmingDelete={confirmingDelete}
           confirmationValue={confirmationValue}
           deleting={deleting}
           isOpen={isPanelOpen}
           loadingRepositories={loadingRepositories}
-          onAdd={addProject}
+          onAdd={addRepository}
           onClose={closePanel}
           onConfirmationValueChange={setConfirmationValue}
-          onDelete={deleteProject}
+          onDelete={deleteRepository}
           onExited={() => {
-            setClosingProject(undefined)
+            setClosingRepository(undefined)
             setSelection(undefined)
           }}
           onProviderChange={(provider) => {
@@ -661,9 +659,9 @@ export function ProjectSettings({ client = defaultClient }: Readonly<{ client?: 
           }}
           onRepositoryChange={setSelectedRepositoryId}
           panelRef={panelRef}
-          repositories={repositories}
+          repositories={remoteRepositories}
           saving={saving}
-          selectedProject={selectedProject}
+          selectedRepository={selectedRepository}
           selectedProvider={selectedProvider}
           selectedRepositoryId={selectedRepositoryId}
           selection={selection}

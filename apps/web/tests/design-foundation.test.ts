@@ -20,6 +20,16 @@ describe('the application design foundation', () => {
     expect(stylesheet).toContain('@media (prefers-reduced-motion: reduce)')
   })
 
+  it('uses the same reversible motion for workflow disclosure expansion and collapse', () => {
+    const stylesheet = source('app/globals.css')
+
+    expect(stylesheet).toContain('--acc-duration: 250ms')
+    expect(stylesheet).not.toContain('--acc-expand')
+    expect(stylesheet).not.toContain('--acc-collapse')
+    expect(stylesheet).not.toContain('--acc-chevron')
+    expect(stylesheet.match(/var\(--acc-duration\)/g)).toHaveLength(4)
+  })
+
   it('loops the running workflow-node fill from top to bottom with a static fallback', () => {
     const stylesheet = source('app/globals.css')
 
@@ -84,7 +94,7 @@ describe('the application design foundation', () => {
 
   it.each([
     'components/workflow/agent-drawer.tsx',
-    'components/settings/project-settings.tsx',
+    'components/settings/repository-settings.tsx',
     'components/runs/run-node-details-dialog.tsx',
     'components/ui/sheet.tsx',
     'components/ui/toast.tsx',

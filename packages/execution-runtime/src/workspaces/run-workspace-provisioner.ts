@@ -1,19 +1,19 @@
-import type { ProjectId, RunId } from '@slopify/contracts'
+import type { RepositoryId, RunId } from '@slopify/contracts'
 
-import type { RunProjectSnapshot } from '../persistence/run-repository.js'
+import type { RunRepositorySnapshot } from '../persistence/run-repository.js'
 
-export interface ProvisionedRunProject extends RunProjectSnapshot {
+export interface ProvisionedRunRepository extends RunRepositorySnapshot {
   readonly workspacePath: string
   readonly branchName: string
 }
 
 export interface RunWorkspaceProvisioner {
-  ensure(runId: RunId): Promise<readonly ProvisionedRunProject[]>
+  ensure(runId: RunId): Promise<readonly ProvisionedRunRepository[]>
   cleanup(runId: RunId): Promise<void>
 }
 
 export interface RunWorkspaceProvisioningFailure {
-  readonly projectId: ProjectId
+  readonly repositoryId: RepositoryId
   readonly message: string
 }
 
@@ -25,7 +25,7 @@ export class RunWorkspaceProvisioningError extends Error {
     super(
       failures.length === 1
         ? failures[0]?.message
-        : `${failures.length} run project workspaces could not be prepared`,
+        : `${failures.length} run repository workspaces could not be prepared`,
     )
   }
 }

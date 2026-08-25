@@ -4,7 +4,7 @@ import {
   AgentTraceStoreError,
   DeletionServiceError,
   GitConnectionServiceError,
-  ProjectServiceError,
+  RepositoryServiceError,
   RunEventFeedError,
   RunServiceError,
   WorkflowServiceError,
@@ -13,7 +13,7 @@ import {
   type DeletionService,
   type GitConnectionService,
   type HarnessCatalog,
-  type ProjectService,
+  type RepositoryService,
   type RunService,
   type RunEventFeed,
   type WorkbenchDatabase,
@@ -26,7 +26,7 @@ import { ApiApplicationError } from './api-error.js'
 import { registerDeletionRoutes } from './routes/deletions.js'
 import { registerGitConnectionRoutes } from './routes/git-connections.js'
 import { registerHarnessRoutes } from './routes/harnesses.js'
-import { registerProjectRoutes } from './routes/projects.js'
+import { registerRepositoryRoutes } from './routes/repositories.js'
 import { registerRunRoutes } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
@@ -40,7 +40,7 @@ export interface CreateApiAppOptions {
   readonly deletions?: DeletionService
   readonly gitConnections?: GitConnectionService
   readonly harnesses?: HarnessCatalog
-  readonly projects?: ProjectService
+  readonly repositories?: RepositoryService
   readonly runs?: RunService
   readonly eventFeed?: RunEventFeed
   readonly workflows?: WorkflowService
@@ -82,7 +82,7 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
     }
   })
 
-  if (options.projects !== undefined) registerProjectRoutes(app, options.projects)
+  if (options.repositories !== undefined) registerRepositoryRoutes(app, options.repositories)
   if (options.gitConnections !== undefined) registerGitConnectionRoutes(app, options.gitConnections)
   if (options.harnesses !== undefined) registerHarnessRoutes(app, options.harnesses)
   if (options.deletions !== undefined) registerDeletionRoutes(app, options.deletions)
@@ -136,7 +136,7 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
       const status =
         error.code === 'RUN_ADMISSION_CLOSED'
           ? 503
-          : error.code === 'WORKFLOW_PROJECT_UNAVAILABLE' ||
+          : error.code === 'WORKFLOW_REPOSITORY_UNAVAILABLE' ||
               error.code === 'WORKFLOW_HARNESS_UNAVAILABLE'
             ? 409
             : error.code === 'RUN_REQUEST_INVALID' || error.code === 'RUN_VARIABLES_INVALID'
@@ -156,15 +156,16 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
             : 409,
       )
     }
-    if (error instanceof ProjectServiceError) {
+    if (error instanceof RepositoryServiceError) {
       const status =
-        error.code === 'PROJECT_NOT_FOUND'
+        error.code === 'REPOSITORY_NOT_FOUND'
           ? 404
-          : error.code === 'PROJECT_REMOTE_CONFLICT'
+          : error.code === 'REPOSITORY_REMOTE_CONFLICT'
             ? 409
-            : error.code === 'PROJECT_CONNECTION_REQUIRED' || error.code === 'PROJECT_UNAVAILABLE'
+            : error.code === 'REPOSITORY_CONNECTION_REQUIRED' ||
+                error.code === 'REPOSITORY_UNAVAILABLE'
               ? 422
-              : error.code === 'PROJECT_REPOSITORY_NOT_FOUND'
+              : error.code === 'REPOSITORY_REMOTE_NOT_FOUND'
                 ? 404
                 : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)

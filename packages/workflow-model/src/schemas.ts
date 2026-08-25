@@ -3,7 +3,7 @@ import {
   HarnessThinkingLevelSchema,
   NodeIdSchema,
   OutcomeNameSchema,
-  ProjectIdSchema,
+  RepositoryIdSchema,
   WorkflowIdSchema,
 } from '@slopify/contracts'
 import { z } from 'zod'
@@ -43,19 +43,25 @@ export const WorkflowEdgeSchema = z
   .readonly()
 
 export const WorkflowVariableNameSchema = z.string().trim().min(1).max(128)
+export const WorkflowNameSchema = z
+  .string()
+  .max(100)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
+    message: 'Use 1–100 lowercase letters, numbers, and single hyphens',
+  })
 
 export const WorkflowConfigurationSchema = z
   .strictObject({
-    projectIds: z.array(ProjectIdSchema).max(32).readonly(),
-    primaryProjectId: ProjectIdSchema.nullable(),
+    repositoryIds: z.array(RepositoryIdSchema).max(32).readonly(),
+    primaryRepositoryId: RepositoryIdSchema.nullable(),
     variables: z.array(WorkflowVariableNameSchema).max(128).readonly(),
   })
   .superRefine((configuration, context) => {
-    if (new Set(configuration.projectIds).size !== configuration.projectIds.length) {
+    if (new Set(configuration.repositoryIds).size !== configuration.repositoryIds.length) {
       context.addIssue({
         code: 'custom',
-        path: ['projectIds'],
-        message: 'Projects must be unique',
+        path: ['repositoryIds'],
+        message: 'Repositories must be unique',
       })
     }
     if (new Set(configuration.variables).size !== configuration.variables.length) {
@@ -65,28 +71,28 @@ export const WorkflowConfigurationSchema = z
         message: 'Variables must be unique',
       })
     }
-    if (configuration.projectIds.length === 0 && configuration.primaryProjectId !== null) {
+    if (configuration.repositoryIds.length === 0 && configuration.primaryRepositoryId !== null) {
       context.addIssue({
         code: 'custom',
-        path: ['primaryProjectId'],
-        message: 'A workflow without projects cannot have a primary project',
+        path: ['primaryRepositoryId'],
+        message: 'A workflow without repositories cannot have a primary repository',
       })
     }
-    if (configuration.projectIds.length > 0 && configuration.primaryProjectId === null) {
+    if (configuration.repositoryIds.length > 0 && configuration.primaryRepositoryId === null) {
       context.addIssue({
         code: 'custom',
-        path: ['primaryProjectId'],
-        message: 'A workflow with projects must have a primary project',
+        path: ['primaryRepositoryId'],
+        message: 'A workflow with repositories must have a primary repository',
       })
     }
     if (
-      configuration.primaryProjectId !== null &&
-      !configuration.projectIds.includes(configuration.primaryProjectId)
+      configuration.primaryRepositoryId !== null &&
+      !configuration.repositoryIds.includes(configuration.primaryRepositoryId)
     ) {
       context.addIssue({
         code: 'custom',
-        path: ['primaryProjectId'],
-        message: 'The primary project must be selected for the workflow',
+        path: ['primaryRepositoryId'],
+        message: 'The primary repository must be selected for the workflow',
       })
     }
   })
@@ -94,7 +100,7 @@ export const WorkflowConfigurationSchema = z
 
 export const CreateWorkflowInputSchema = z
   .strictObject({
-    name: nonBlankString,
+    name: WorkflowNameSchema,
     description: nonBlankString,
     configuration: WorkflowConfigurationSchema,
   })
@@ -102,7 +108,7 @@ export const CreateWorkflowInputSchema = z
 
 export const WorkflowSchema = z
   .strictObject({
-    schemaVersion: z.literal(1),
+    schemaVersion: z.literal(2),
     workflowId: WorkflowIdSchema,
     name: nonBlankString,
     description: nonBlankString,

@@ -3,12 +3,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import {
   DeletionReceiptSchema,
-  ProjectSchema,
+  RepositorySchema,
   UndoDeletionResponseSchema,
 } from '@slopify/contracts'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ProjectSettings } from '../components/settings/project-settings'
+import { RepositorySettings } from '../components/settings/repository-settings'
 import { toast } from '../lib/toast'
 
 const connections = [
@@ -20,22 +20,22 @@ const connections = [
   },
 ]
 
-const repositories = [
+const remoteRepositories = [
   {
     provider: 'GITHUB' as const,
     remoteId: '303',
-    name: 'new-project',
-    fullName: 'operator/new-project',
-    cloneUrl: 'https://github.com/operator/new-project.git',
-    webUrl: 'https://github.com/operator/new-project',
+    name: 'new-repository',
+    fullName: 'operator/new-repository',
+    cloneUrl: 'https://github.com/operator/new-repository.git',
+    webUrl: 'https://github.com/operator/new-repository',
     visibility: 'PRIVATE' as const,
     defaultBranch: 'main',
   },
 ]
 
-const projects = ProjectSchema.array().parse([
+const repositories = RepositorySchema.array().parse([
   {
-    projectId: 'project-01',
+    repositoryId: 'repository-01',
     name: 'slopify',
     provider: 'GITHUB',
     remoteId: '101',
@@ -48,7 +48,7 @@ const projects = ProjectSchema.array().parse([
     updatedAt: '2026-08-21T10:00:00Z',
   },
   {
-    projectId: 'project-02',
+    repositoryId: 'repository-02',
     name: 'archived',
     provider: 'GITLAB',
     remoteId: '202',
@@ -63,29 +63,29 @@ const projects = ProjectSchema.array().parse([
 ])
 
 const createClient = (overrides: Record<string, unknown> = {}) => ({
-  listProjects: vi.fn(async () => projects),
+  listRepositories: vi.fn(async () => repositories),
   listGitConnections: vi.fn(async () => connections),
-  listGitRepositories: vi.fn(async () => repositories),
-  addProject: vi.fn(async () =>
-    ProjectSchema.parse({
-      projectId: 'project-03',
+  listGitRepositories: vi.fn(async () => remoteRepositories),
+  addRepository: vi.fn(async () =>
+    RepositorySchema.parse({
+      repositoryId: 'repository-03',
       provider: 'GITHUB',
       remoteId: '303',
-      name: 'new-project',
-      fullName: 'operator/new-project',
-      cloneUrl: 'https://github.com/operator/new-project.git',
-      webUrl: 'https://github.com/operator/new-project',
+      name: 'new-repository',
+      fullName: 'operator/new-repository',
+      cloneUrl: 'https://github.com/operator/new-repository.git',
+      webUrl: 'https://github.com/operator/new-repository',
       defaultBranch: 'main',
       availability: 'AVAILABLE',
       createdAt: '2026-08-21T10:02:00Z',
       updatedAt: '2026-08-21T10:02:00Z',
     }),
   ),
-  deleteProject: vi.fn(async (projectId: string) => {
+  deleteRepository: vi.fn(async (repositoryId: string) => {
     const deletedAt = new Date()
     return DeletionReceiptSchema.parse({
-      deletionId: `deletion-${projectId}`,
-      subject: { type: 'PROJECT', id: projectId },
+      deletionId: `deletion-${repositoryId}`,
+      subject: { type: 'REPOSITORY', id: repositoryId },
       deletedAt: deletedAt.toISOString(),
       undoExpiresAt: new Date(deletedAt.getTime() + 10_000).toISOString(),
     })
@@ -93,7 +93,7 @@ const createClient = (overrides: Record<string, unknown> = {}) => ({
   undoDeletion: vi.fn(async (deletionId: string) =>
     UndoDeletionResponseSchema.parse({
       deletionId,
-      subject: { type: 'PROJECT', id: 'project-01' },
+      subject: { type: 'REPOSITORY', id: 'repository-01' },
       deletedAt: new Date().toISOString(),
       undoExpiresAt: new Date(Date.now() + 10_000).toISOString(),
       state: 'UNDONE',
@@ -107,48 +107,48 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-describe('ProjectSettings', () => {
-  it('shows card skeletons while connections and projects are loading', async () => {
-    let resolve: ((value: typeof projects) => void) | undefined
-    const listProjects = vi.fn(
+describe('RepositorySettings', () => {
+  it('shows card skeletons while connections and repositories are loading', async () => {
+    let resolve: ((value: typeof repositories) => void) | undefined
+    const listRepositories = vi.fn(
       () =>
-        new Promise<typeof projects>((next) => {
+        new Promise<typeof repositories>((next) => {
           resolve = next
         }),
     )
-    render(<ProjectSettings client={createClient({ listProjects })} />)
+    render(<RepositorySettings client={createClient({ listRepositories })} />)
 
-    expect(screen.getByRole('status', { name: 'Loading projects' })).toBeTruthy()
-    await act(async () => resolve?.(projects))
+    expect(screen.getByRole('status', { name: 'Loading repositories' })).toBeTruthy()
+    await act(async () => resolve?.(repositories))
     await waitFor(() =>
-      expect(screen.queryByRole('status', { name: 'Loading projects' })).toBeNull(),
+      expect(screen.queryByRole('status', { name: 'Loading repositories' })).toBeNull(),
     )
   })
 
-  it('requires a Git connection before a project can be added', async () => {
+  it('requires a Git connection before a repository can be added', async () => {
     render(
-      <ProjectSettings
+      <RepositorySettings
         client={createClient({
-          listProjects: vi.fn(async () => []),
+          listRepositories: vi.fn(async () => []),
           listGitConnections: vi.fn(async () => []),
         })}
       />,
     )
 
-    expect(await screen.findByText('No projects yet')).toBeTruthy()
+    expect(await screen.findByText('No repositories yet')).toBeTruthy()
     expect(
-      screen.getByText('Connect GitHub or GitLab in Settings before adding a project.'),
+      screen.getByText('Connect GitHub or GitLab in Settings before adding a repository.'),
     ).toBeTruthy()
     expect(
-      (screen.getByRole('button', { name: 'Add project' }) as HTMLButtonElement).disabled,
+      (screen.getByRole('button', { name: 'Add repository' }) as HTMLButtonElement).disabled,
     ).toBe(true)
     expect(screen.getByRole('link', { name: 'Open Settings' }).getAttribute('href')).toBe(
       '/settings',
     )
   })
 
-  it('shows remote identity and retains projects whose connection is missing', async () => {
-    render(<ProjectSettings client={createClient()} />)
+  it('shows remote identity and retains repositories whose connection is missing', async () => {
+    render(<RepositorySettings client={createClient()} />)
 
     const available = await screen.findByRole('button', { name: 'slopify, Available' })
     const disconnected = screen.getByRole('button', { name: 'archived, Connection missing' })
@@ -164,26 +164,26 @@ describe('ProjectSettings', () => {
   it('adds a repository selected from a connected provider', async () => {
     const client = createClient()
     const addToast = vi.spyOn(toast, 'add')
-    render(<ProjectSettings client={client} />)
+    render(<RepositorySettings client={client} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
-    const panel = await screen.findByRole('dialog', { name: 'Add project' })
+    fireEvent.click(await screen.findByRole('button', { name: 'Add repository' }))
+    const panel = await screen.findByRole('dialog', { name: 'Add repository' })
     const providerSelect = within(panel).getByRole('combobox', { name: 'Provider' })
     expect(providerSelect.getAttribute('data-slot')).toBe('select-trigger')
     const repositorySelect = within(panel).getByRole('combobox', { name: 'Repository' })
     await waitFor(() =>
-      expect((repositorySelect as HTMLInputElement).value).toBe('operator/new-project'),
+      expect((repositorySelect as HTMLInputElement).value).toBe('operator/new-repository'),
     )
     expect(repositorySelect.getAttribute('data-slot')).toBe('combobox-input')
-    fireEvent.click(within(panel).getByRole('button', { name: 'Add project' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add repository' }))
 
     await waitFor(() =>
-      expect(client.addProject).toHaveBeenCalledWith({ provider: 'GITHUB', remoteId: '303' }),
+      expect(client.addRepository).toHaveBeenCalledWith({ provider: 'GITHUB', remoteId: '303' }),
     )
-    expect(await screen.findByRole('button', { name: 'new-project, Available' })).toBeTruthy()
+    expect(await screen.findByRole('button', { name: 'new-repository, Available' })).toBeTruthy()
     expect(addToast).toHaveBeenCalledWith({
-      title: 'Project added',
-      description: 'operator/new-project is now available in Slopify.',
+      title: 'Repository added',
+      description: 'operator/new-repository is now available in Slopify.',
       type: 'success',
     })
   })
@@ -202,11 +202,11 @@ describe('ProjectSettings', () => {
     const client = createClient({
       listGitRepositories: vi.fn(async () => [...repositories, matchingRepository]),
     })
-    render(<ProjectSettings client={client} />)
+    render(<RepositorySettings client={client} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
-    const panel = await screen.findByRole('dialog', { name: 'Add project' })
-    const panelShell = screen.getByTestId('project-panel-shell')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add repository' }))
+    const panel = await screen.findByRole('dialog', { name: 'Add repository' })
+    const panelShell = screen.getByTestId('repository-panel-shell')
     await waitFor(() => expect(panelShell.getAttribute('data-open')).toBe('true'))
     const repositoryCombobox = within(panel).getByRole('combobox', { name: 'Repository' })
 
@@ -214,15 +214,15 @@ describe('ProjectSettings', () => {
     fireEvent.click(within(panel).getByRole('button', { name: 'Toggle options' }))
     fireEvent.change(repositoryCombobox, { target: { value: 'review-service' } })
     const matchingOption = await screen.findByRole('option', { name: 'operator/review-service' })
-    expect(screen.queryByRole('option', { name: 'operator/new-project' })).toBeNull()
+    expect(screen.queryByRole('option', { name: 'operator/new-repository' })).toBeNull()
     fireEvent.pointerDown(matchingOption, { pointerType: 'mouse' })
     fireEvent.click(matchingOption)
 
     expect(panelShell.getAttribute('data-open')).toBe('true')
     expect((repositoryCombobox as HTMLInputElement).value).toBe('operator/review-service')
-    fireEvent.click(within(panel).getByRole('button', { name: 'Add project' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Add repository' }))
     await waitFor(() =>
-      expect(client.addProject).toHaveBeenCalledWith({ provider: 'GITHUB', remoteId: '304' }),
+      expect(client.addRepository).toHaveBeenCalledWith({ provider: 'GITHUB', remoteId: '304' }),
     )
   })
 
@@ -249,11 +249,11 @@ describe('ProjectSettings', () => {
         provider === 'GITHUB' ? repositories : [gitLabRepository],
       ),
     })
-    render(<ProjectSettings client={client} />)
+    render(<RepositorySettings client={client} />)
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Add project' }))
-    const panel = await screen.findByRole('dialog', { name: 'Add project' })
-    const panelShell = screen.getByTestId('project-panel-shell')
+    fireEvent.click(await screen.findByRole('button', { name: 'Add repository' }))
+    const panel = await screen.findByRole('dialog', { name: 'Add repository' })
+    const panelShell = screen.getByTestId('repository-panel-shell')
     await waitFor(() => expect(panelShell.getAttribute('data-open')).toBe('true'))
     fireEvent.click(within(panel).getByRole('combobox', { name: 'Provider' }))
     const gitLabOption = screen.getByRole('option', { name: 'GitLab' })
@@ -268,34 +268,41 @@ describe('ProjectSettings', () => {
     )
   })
 
-  it('filters projects by provider and full repository name', async () => {
-    render(<ProjectSettings client={createClient()} />)
+  it('renders the add action after repository cards without a search control', async () => {
+    render(<RepositorySettings client={createClient()} />)
 
-    await screen.findByRole('button', { name: 'slopify, Available' })
-    fireEvent.click(screen.getByRole('button', { name: 'Open project search' }))
-    const search = screen.getByRole('searchbox', { name: 'Search projects' })
-    fireEvent.change(search, { target: { value: 'gitlab' } })
+    const grid = await screen.findByTestId('repository-grid')
+    const repositoryCards = within(grid).getAllByRole('button')
 
-    expect(screen.queryByRole('button', { name: 'slopify, Available' })).toBeNull()
-    expect(screen.getByRole('button', { name: 'archived, Connection missing' })).toBeTruthy()
+    expect(repositoryCards.map((card) => card.getAttribute('aria-label'))).toEqual([
+      'slopify, Available',
+      'archived, Connection missing',
+      'Add repository',
+    ])
+    expect(screen.queryByRole('searchbox', { name: 'Search repositories' })).toBeNull()
+
+    const addTile = within(grid).getByRole('button', { name: 'Add repository' })
+    expect(addTile.parentElement).toBe(grid)
+    fireEvent.click(addTile)
+    expect(await screen.findByRole('dialog', { name: 'Add repository' })).toBeTruthy()
   })
 
   it('requires the exact remote name before deleting and supports undo', async () => {
     const client = createClient()
     const addToast = vi.spyOn(toast, 'add')
-    render(<ProjectSettings client={client} />)
+    render(<RepositorySettings client={client} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'slopify, Available' }))
     const panel = await screen.findByRole('dialog', { name: 'slopify' })
-    fireEvent.click(within(panel).getByRole('button', { name: 'Delete project' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Delete repository' }))
     const confirmation = within(panel).getByLabelText('Repository name confirmation')
     expect(document.activeElement).toBe(confirmation)
     fireEvent.change(confirmation, { target: { value: 'operator/slopify' } })
     fireEvent.click(within(panel).getByRole('button', { name: 'Confirm' }))
 
-    await waitFor(() => expect(client.deleteProject).toHaveBeenCalledWith('project-01'))
+    await waitFor(() => expect(client.deleteRepository).toHaveBeenCalledWith('repository-01'))
     const deletionToast = addToast.mock.calls.find(
-      ([options]) => options.title === 'Project deleted',
+      ([options]) => options.title === 'Repository deleted',
     )?.[0]
     expect(deletionToast).toMatchObject({
       description: 'operator/slopify was removed from Slopify.',
@@ -309,15 +316,15 @@ describe('ProjectSettings', () => {
   })
 
   it('keeps the floating panel mounted until its close transition exits', async () => {
-    render(<ProjectSettings client={createClient()} />)
+    render(<RepositorySettings client={createClient()} />)
 
     fireEvent.click(await screen.findByRole('button', { name: 'slopify, Available' }))
     const panel = await screen.findByRole('dialog', { name: 'slopify' })
-    const shell = screen.getByTestId('project-panel-shell')
+    const shell = screen.getByTestId('repository-panel-shell')
     expect(shell.className).toContain('top-[4.25rem]')
     expect(shell.className).toContain('bottom-3')
     expect(shell.className).not.toContain('inset-y-3')
-    fireEvent.click(within(panel).getByRole('button', { name: 'Close project details' }))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Close repository details' }))
     expect(shell.getAttribute('data-open')).toBe('false')
     fireEvent.transitionEnd(shell, { propertyName: 'translate' })
     expect(screen.queryByRole('dialog', { name: 'slopify', hidden: true })).toBeNull()

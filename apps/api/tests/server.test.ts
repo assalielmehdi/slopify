@@ -13,7 +13,7 @@ const database = {
   status: () => ({
     foreignKeysEnabled: true,
     journalMode: 'wal',
-    schemaVersion: 1,
+    schemaVersion: 2,
     writable: true,
   }),
 }

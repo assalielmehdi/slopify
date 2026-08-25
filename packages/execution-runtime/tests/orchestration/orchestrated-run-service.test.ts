@@ -12,7 +12,7 @@ import {
   createPersistenceFixture,
   createTestAgentWorkflow,
   createTestHarnessCatalog,
-  resolveTestProject,
+  resolveTestRepository,
 } from '../persistence/test-fixture.js'
 
 describe('orchestrated run service', () => {
@@ -20,8 +20,8 @@ describe('orchestrated run service', () => {
     const fixture = createPersistenceFixture(
       createTestAgentWorkflow({
         createdAt: '2026-08-20T12:00:00.000Z',
-        projectIds: ['project-api'],
-        primaryProjectId: 'project-api',
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
       }),
     )
     try {
@@ -37,7 +37,7 @@ describe('orchestrated run service', () => {
         runs: fixture.runs,
         workflows: fixture.workflows,
         harnesses: createTestHarnessCatalog(),
-        resolveProject: resolveTestProject,
+        resolveRepository: resolveTestRepository,
         createRunId: () => 'run-orchestrated',
         now: () => '2026-08-20T12:00:00.000Z',
       })

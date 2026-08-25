@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HarnessDescriptorSchema, ProjectSchema } from '@slopify/contracts'
+import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/contracts'
 import { WorkflowSchema } from '@slopify/workflow-model'
 
 import { StartRunDrawer } from '../components/runs/start-run-drawer'
@@ -23,8 +23,8 @@ const workflow = WorkflowSchema.parse({
   ...baseWorkflow,
   name: 'Invisible workflow name',
   configuration: {
-    projectIds: ['project-api'],
-    primaryProjectId: 'project-api',
+    repositoryIds: ['repository-api'],
+    primaryRepositoryId: 'repository-api',
     variables: ['topic'],
   },
   nodes: baseWorkflow.nodes.map((node) => ({ ...node, prompt: 'Process {{ topic }}' })),
@@ -48,9 +48,9 @@ const harnesses = HarnessDescriptorSchema.array().parse([
     models: [{ id: 'test-model', name: 'Test model', thinkingLevels: ['high'] }],
   },
 ])
-const projects = ProjectSchema.array().parse([
+const repositories = RepositorySchema.array().parse([
   {
-    projectId: 'project-api',
+    repositoryId: 'repository-api',
     name: 'API',
     provider: 'GITHUB',
     remoteId: '101',
@@ -76,9 +76,9 @@ describe('StartRunDrawer', () => {
     const client = {
       listWorkflows: vi.fn(async () => [firstWorkflow, workflow]),
       listHarnesses: vi.fn(async () => harnesses),
-      listProjects: vi.fn(async () => projects),
+      listRepositories: vi.fn(async () => repositories),
       startRun,
-    } as Pick<ApiClient, 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'>
+    } as Pick<ApiClient, 'listHarnesses' | 'listRepositories' | 'listWorkflows' | 'startRun'>
     const onStarted = vi.fn()
 
     render(
@@ -120,9 +120,9 @@ describe('StartRunDrawer', () => {
     const client = {
       listWorkflows: vi.fn(async () => [workflow]),
       listHarnesses: vi.fn(async () => harnesses),
-      listProjects: vi.fn(async () => projects),
+      listRepositories: vi.fn(async () => repositories),
       startRun: vi.fn(async () => startedRun),
-    } as Pick<ApiClient, 'listHarnesses' | 'listProjects' | 'listWorkflows' | 'startRun'>
+    } as Pick<ApiClient, 'listHarnesses' | 'listRepositories' | 'listWorkflows' | 'startRun'>
     const onClose = vi.fn()
 
     render(<StartRunDrawer client={client} onClose={onClose} workflowId={workflow.workflowId} />)

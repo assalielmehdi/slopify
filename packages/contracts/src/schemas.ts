@@ -14,7 +14,7 @@ export const WorkflowIdSchema = opaqueId.brand<'WorkflowId'>()
 export const RunIdSchema = opaqueId.brand<'RunId'>()
 export const HarnessIdSchema = opaqueId.brand<'HarnessId'>()
 export const NodeIdSchema = kebabCaseId.brand<'NodeId'>()
-export const ProjectIdSchema = opaqueId.brand<'ProjectId'>()
+export const RepositoryIdSchema = opaqueId.brand<'RepositoryId'>()
 export const DeletionIdSchema = opaqueId.brand<'DeletionId'>()
 export const OutcomeNameSchema = kebabCaseId.brand<'OutcomeName'>()
 
@@ -118,14 +118,14 @@ export const HarnessCatalogResponseSchema = z.strictObject({
   harnesses: z.array(HarnessDescriptorSchema).readonly(),
 })
 
-export const ProjectAvailabilitySchema = z.enum([
+export const RepositoryAvailabilitySchema = z.enum([
   'AVAILABLE',
   'CONNECTION_MISSING',
   'REPOSITORY_UNAVAILABLE',
 ])
 
-export const ProjectSchema = z.strictObject({
-  projectId: ProjectIdSchema,
+export const RepositorySchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
   name: z.string().trim().min(1).max(256),
   provider: GitProviderSchema,
   remoteId: z.string().regex(/^\d+$/u).max(128),
@@ -133,22 +133,23 @@ export const ProjectSchema = z.strictObject({
   cloneUrl: z.url({ protocol: /^https$/u }).max(4_096),
   webUrl: z.url({ protocol: /^https$/u }).max(4_096),
   defaultBranch: z.string().trim().min(1).max(512),
-  availability: ProjectAvailabilitySchema,
+  availability: RepositoryAvailabilitySchema,
   createdAt: z.iso.datetime({ offset: true }),
   updatedAt: z.iso.datetime({ offset: true }),
 })
 
-export const AddProjectRequestSchema = z.strictObject({
+export const AddRepositoryRequestSchema = z.strictObject({
   provider: GitProviderSchema,
   remoteId: z.string().regex(/^\d+$/u).max(128),
 })
 
-export const ProjectCatalogResponseSchema = z.strictObject({
-  projects: z.array(ProjectSchema).readonly(),
+export const RepositoryCatalogResponseSchema = z.strictObject({
+  repositories: z.array(RepositorySchema).readonly(),
 })
 
 export const DeletionSubjectSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('PROJECT'), id: ProjectIdSchema }),
+  z.strictObject({ type: z.literal('REPOSITORY'), id: RepositoryIdSchema }),
+  z.strictObject({ type: z.literal('WORKFLOW'), id: WorkflowIdSchema }),
 ])
 
 export const DeletionReceiptSchema = z.strictObject({
@@ -307,7 +308,7 @@ const agentTraceConfigurationFields = {
   thinkingLevel: HarnessThinkingLevelSchema.optional(),
   renderedPrompt: z.string().min(1).max(1_000_000),
   workspaceRoot: z.string().trim().min(1).max(4_096),
-  primaryProjectId: ProjectIdSchema,
+  primaryRepositoryId: RepositoryIdSchema,
   timeoutSeconds: z.number().int().positive().safe(),
 } as const
 
@@ -316,10 +317,10 @@ const LegacyAgentTraceHeaderSchema = z.strictObject({
   ...agentTraceHeaderFields,
   configuration: z.strictObject({
     ...agentTraceConfigurationFields,
-    projects: z
+    repositories: z
       .array(
         z.strictObject({
-          projectId: ProjectIdSchema,
+          repositoryId: RepositoryIdSchema,
           name: z.string().trim().min(1).max(256),
           worktreePath: z.string().trim().min(1).max(4_096),
           baseSha: GitShaSchema,
@@ -337,10 +338,10 @@ const ClonedWorkspaceAgentTraceHeaderSchema = z.strictObject({
   ...agentTraceHeaderFields,
   configuration: z.strictObject({
     ...agentTraceConfigurationFields,
-    projects: z
+    repositories: z
       .array(
         z.strictObject({
-          projectId: ProjectIdSchema,
+          repositoryId: RepositoryIdSchema,
           name: z.string().trim().min(1).max(256),
           provider: GitProviderSchema,
           fullName: z.string().trim().min(1).max(512),
@@ -356,10 +357,42 @@ const ClonedWorkspaceAgentTraceHeaderSchema = z.strictObject({
   }),
 })
 
-export const AgentTraceHeaderSchema = z.discriminatedUnion('version', [
-  LegacyAgentTraceHeaderSchema,
-  ClonedWorkspaceAgentTraceHeaderSchema,
-])
+const RepositoryWorkspaceAgentTraceHeaderSchema = ClonedWorkspaceAgentTraceHeaderSchema.extend({
+  version: z.literal(3),
+})
+
+const normalizeLegacyAgentTraceHeader = (input: unknown): unknown => {
+  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input
+  const header = input as Record<string, unknown>
+  const configuration = header.configuration
+  if (typeof configuration !== 'object' || configuration === null || Array.isArray(configuration)) {
+    return input
+  }
+  const legacy = configuration as Record<string, unknown>
+  if (!Array.isArray(legacy.projects)) return input
+  const { primaryProjectId, projects, ...currentConfiguration } = legacy
+  return {
+    ...header,
+    configuration: {
+      ...currentConfiguration,
+      primaryRepositoryId: primaryProjectId,
+      repositories: projects.map((entry) => {
+        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return entry
+        const { projectId, ...repository } = entry as Record<string, unknown>
+        return { ...repository, repositoryId: projectId }
+      }),
+    },
+  }
+}
+
+export const AgentTraceHeaderSchema = z.preprocess(
+  normalizeLegacyAgentTraceHeader,
+  z.discriminatedUnion('version', [
+    LegacyAgentTraceHeaderSchema,
+    ClonedWorkspaceAgentTraceHeaderSchema,
+    RepositoryWorkspaceAgentTraceHeaderSchema,
+  ]),
+)
 
 export const AgentTraceEventSchema = z.strictObject({
   sequence: z.number().int().positive().safe(),
@@ -378,7 +411,7 @@ export type WorkflowId = z.infer<typeof WorkflowIdSchema>
 export type RunId = z.infer<typeof RunIdSchema>
 export type HarnessId = z.infer<typeof HarnessIdSchema>
 export type NodeId = z.infer<typeof NodeIdSchema>
-export type ProjectId = z.infer<typeof ProjectIdSchema>
+export type RepositoryId = z.infer<typeof RepositoryIdSchema>
 export type OutcomeName = z.infer<typeof OutcomeNameSchema>
 export type RunStatus = z.infer<typeof RunStatusSchema>
 export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusSchema>
@@ -393,8 +426,8 @@ export type HarnessThinkingLevel = z.infer<typeof HarnessThinkingLevelSchema>
 export type HarnessModelOption = z.infer<typeof HarnessModelOptionSchema>
 export type HarnessDescriptor = z.infer<typeof HarnessDescriptorSchema>
 export type HarnessCatalogResponse = z.infer<typeof HarnessCatalogResponseSchema>
-export type ProjectAvailability = z.infer<typeof ProjectAvailabilitySchema>
-export type Project = z.infer<typeof ProjectSchema>
+export type RepositoryAvailability = z.infer<typeof RepositoryAvailabilitySchema>
+export type Repository = z.infer<typeof RepositorySchema>
 export type DeletionReceipt = z.infer<typeof DeletionReceiptSchema>
 export type UndoDeletionResponse = z.infer<typeof UndoDeletionResponseSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>

@@ -6,7 +6,7 @@ import {
   RunServiceError,
   createRunService,
   type HarnessCatalog,
-  type RunProjectResolution,
+  type RunRepositoryResolution,
 } from '../../src/index.js'
 import { createPersistenceFixture, createTestAgentWorkflow } from '../persistence/test-fixture.js'
 
@@ -19,10 +19,10 @@ afterEach(() => {
 const agentWorkflow = (): Workflow => {
   const workflow = createTestAgentWorkflow({
     createdAt: '2026-08-18T22:00:00Z',
-    prompt: 'Implement {{ objective }} for {{project}}. Escaped: \\{{ignored}}.',
-    projectIds: ['project-api'],
-    primaryProjectId: 'project-api',
-    variables: ['objective', 'project'],
+    prompt: 'Implement {{ objective }} for {{repository}}. Escaped: \\{{ignored}}.',
+    repositoryIds: ['repository-api'],
+    primaryRepositoryId: 'repository-api',
+    variables: ['objective', 'repository'],
   })
   const node = workflow.nodes[0]
   if (node === undefined) throw new Error('Expected an agent workflow')
@@ -39,15 +39,17 @@ const agentWorkflow = (): Workflow => {
 
 const createServiceFixture = (
   workflow: Workflow = agentWorkflow(),
-  resolveProject: (projectId: string) => Promise<RunProjectResolution> = async (projectId) => ({
-    projectId: projectId as RunProjectResolution['projectId'],
+  resolveRepository: (repositoryId: string) => Promise<RunRepositoryResolution> = async (
+    repositoryId,
+  ) => ({
+    repositoryId: repositoryId as RunRepositoryResolution['repositoryId'],
     name: 'API',
     provider: 'GITHUB',
     remoteId: '123',
     fullName: 'operator/api',
     cloneUrl: 'https://github.com/operator/api.git',
     defaultBranch: 'main',
-    baseSha: 'a'.repeat(40) as RunProjectResolution['baseSha'],
+    baseSha: 'a'.repeat(40) as RunRepositoryResolution['baseSha'],
   }),
   harnesses: Pick<HarnessCatalog, 'requireAvailable'> = {
     requireAvailable: vi.fn(async () => ({
@@ -70,7 +72,7 @@ const createServiceFixture = (
     events: fixture.events,
     runs: fixture.runs,
     workflows: fixture.workflows,
-    resolveProject,
+    resolveRepository,
     harnesses,
     now: () => '2026-08-18T22:30:00Z',
     createRunId: () => `run-service-${++identity}`,
@@ -80,7 +82,7 @@ const createServiceFixture = (
 
 const createInput = {
   workflowId: 'test-workflow',
-  variables: { objective: 'the run API', project: 'Slopify' },
+  variables: { objective: 'the run API', repository: 'Slopify' },
 }
 
 describe('run service admission', () => {
@@ -105,14 +107,14 @@ describe('run service admission', () => {
       runId: 'run-service-1',
       status: 'PENDING',
       workflowSnapshot: fixture.workflow,
-      variables: { objective: 'the run API', project: 'Slopify' },
+      variables: { objective: 'the run API', repository: 'Slopify' },
     })
     expect(detail).toMatchObject({
       run,
       events: [{ type: 'RUN_STARTED', sequence: 1, data: { workflowId: 'test-workflow' } }],
-      projects: [
+      repositories: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           position: 0,
           name: 'API',
           provider: 'GITHUB',
@@ -124,7 +126,7 @@ describe('run service admission', () => {
           isPrimary: true,
         },
       ],
-      projectWorkspaces: [],
+      repositoryWorkspaces: [],
     })
   })
 
@@ -145,29 +147,29 @@ describe('run service admission', () => {
     await expect(
       service.create({
         workflowId: 'test-workflow',
-        variables: { objective: 'the API', project: 'Slopify', unexpected: true },
+        variables: { objective: 'the API', repository: 'Slopify', unexpected: true },
       }),
     ).rejects.toMatchObject({ code: 'RUN_VARIABLES_INVALID' } satisfies Partial<RunServiceError>)
   })
 
-  it('requires every configured project to be available before admitting the run', async () => {
+  it('requires every configured repository to be available before admitting the run', async () => {
     const workflow = {
       ...agentWorkflow(),
       configuration: {
-        projectIds: ['project-api'],
-        primaryProjectId: 'project-api',
-        variables: ['objective', 'project'],
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
+        variables: ['objective', 'repository'],
       },
     }
-    const resolveProject = vi.fn(async () => {
+    const resolveRepository = vi.fn(async () => {
       throw new Error('missing')
     })
-    const { service } = createServiceFixture(workflow, resolveProject)
+    const { service } = createServiceFixture(workflow, resolveRepository)
 
     await expect(service.create(createInput)).rejects.toMatchObject({
-      code: 'WORKFLOW_PROJECT_UNAVAILABLE',
+      code: 'WORKFLOW_REPOSITORY_UNAVAILABLE',
     } satisfies Partial<RunServiceError>)
-    expect(resolveProject).toHaveBeenCalledWith('project-api')
+    expect(resolveRepository).toHaveBeenCalledWith('repository-api')
   })
 
   it('requires every agent harness and selected model to be available before admission', async () => {
@@ -184,13 +186,13 @@ describe('run service admission', () => {
     expect(harnesses.requireAvailable).toHaveBeenCalledWith('pi', 'test-model', 'medium')
   })
 
-  it('rejects an agent workflow without a primary project', async () => {
+  it('rejects an agent workflow without a primary repository', async () => {
     const workflow = {
       ...agentWorkflow(),
       configuration: {
-        projectIds: [],
-        primaryProjectId: null,
-        variables: ['objective', 'project'],
+        repositoryIds: [],
+        primaryRepositoryId: null,
+        variables: ['objective', 'repository'],
       },
     }
     const { service } = createServiceFixture(workflow)
@@ -217,7 +219,7 @@ describe('run service admission', () => {
 
   it('reads the workflow and variables captured by the run after live data changes', async () => {
     const { fixture, service } = createServiceFixture()
-    const variables = { objective: 'the API', project: 'Slopify' }
+    const variables = { objective: 'the API', repository: 'Slopify' }
     const run = await service.create({ workflowId: fixture.workflow.workflowId, variables })
     variables.objective = 'mutated after create'
 
@@ -229,7 +231,7 @@ describe('run service admission', () => {
 
     expect(service.get(run.runId)?.run).toMatchObject({
       workflowSnapshot: fixture.workflow,
-      variables: { objective: 'the API', project: 'Slopify' },
+      variables: { objective: 'the API', repository: 'Slopify' },
     })
   })
 })

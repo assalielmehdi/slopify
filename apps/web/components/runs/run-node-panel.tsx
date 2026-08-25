@@ -63,23 +63,23 @@ export function RunNodePanel({
   const displayedModel = harnessConfiguration?.model ?? node.harness.modelId ?? 'Harness default'
   const displayedThinking =
     harnessConfiguration?.thinkingLevel ?? node.harness.thinkingLevel ?? 'Harness default'
-  const workspaceProjects =
+  const workspaceRepositories =
     trace === undefined
       ? []
-      : trace.header.version === 2
-        ? trace.header.configuration.projects.map((project) => ({
-            projectId: project.projectId,
-            name: project.name,
-            workspacePath: project.workspacePath,
-            branchLabel: `${project.branchName} · ${project.defaultBranch} at ${project.baseSha}`,
-            repositoryLabel: `${project.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${project.fullName}`,
+      : trace.header.version !== 1
+        ? trace.header.configuration.repositories.map((repository) => ({
+            repositoryId: repository.repositoryId,
+            name: repository.name,
+            workspacePath: repository.workspacePath,
+            branchLabel: `${repository.branchName} · ${repository.defaultBranch} at ${repository.baseSha}`,
+            repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${repository.fullName}`,
           }))
-        : trace.header.configuration.projects.map((project) => ({
-            projectId: project.projectId,
-            name: project.name,
-            workspacePath: project.worktreePath,
-            branchLabel: `${project.sourceBranch ?? 'Detached'} · ${project.baseSha}`,
-            repositoryLabel: 'Legacy local project',
+        : trace.header.configuration.repositories.map((repository) => ({
+            repositoryId: repository.repositoryId,
+            name: repository.name,
+            workspacePath: repository.worktreePath,
+            branchLabel: `${repository.sourceBranch ?? 'Detached'} · ${repository.baseSha}`,
+            repositoryLabel: 'Legacy local repository',
           }))
   const configurationItems: (readonly [string, string])[] = [
     ['Harness', displayedHarness],
@@ -89,8 +89,8 @@ export function RunNodePanel({
     ['Model', displayedModel],
     ['Thinking', displayedThinking],
   ]
-  const primaryProject = workspaceProjects.find(
-    ({ projectId }) => projectId === harnessConfiguration?.primaryProjectId,
+  const primaryRepository = workspaceRepositories.find(
+    ({ repositoryId }) => repositoryId === harnessConfiguration?.primaryRepositoryId,
   )
 
   return (
@@ -112,29 +112,30 @@ export function RunNodePanel({
             <div>
               <h3 className="text-sm/5 font-semibold">Run workspaces</h3>
               <p className="mt-1 text-xs/4 text-muted-foreground">
-                The agent started in {primaryProject?.name ?? 'the primary project'} and shared
+                The agent started in {primaryRepository?.name ?? 'the primary repository'} and
+                shared
                 {trace?.header.version === 1
                   ? ' these legacy local Git worktrees with the run.'
                   : ' these fresh repository clones with the run.'}
               </p>
             </div>
             <ul className="grid gap-2">
-              {workspaceProjects.map((project) => (
-                <li className="rounded-md border border-border p-3" key={project.projectId}>
+              {workspaceRepositories.map((repository) => (
+                <li className="rounded-md border border-border p-3" key={repository.repositoryId}>
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm/5 font-medium">{project.name}</p>
-                    {project.projectId === harnessConfiguration.primaryProjectId ? (
+                    <p className="text-sm/5 font-medium">{repository.name}</p>
+                    {repository.repositoryId === harnessConfiguration.primaryRepositoryId ? (
                       <span className="text-xs/4 font-medium text-muted-foreground">Primary</span>
                     ) : null}
                   </div>
                   <p className="mt-1 break-all font-mono text-xs/4 text-muted-foreground">
-                    {project.workspacePath}
+                    {repository.workspacePath}
                   </p>
                   <p className="mt-1 truncate font-mono text-xs/4 text-muted-foreground">
-                    {project.branchLabel}
+                    {repository.branchLabel}
                   </p>
                   <p className="mt-1 truncate text-xs/4 text-muted-foreground">
-                    {project.repositoryLabel}
+                    {repository.repositoryLabel}
                   </p>
                 </li>
               ))}

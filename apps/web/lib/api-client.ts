@@ -1,6 +1,6 @@
 import {
   ApiErrorSchema,
-  AddProjectRequestSchema,
+  AddRepositoryRequestSchema,
   DeletionReceiptSchema,
   AgentTraceSchema,
   CancelRunRequestSchema,
@@ -16,9 +16,9 @@ import {
   NodeIdSchema,
   NodeExecutionStatusSchema,
   OutcomeNameSchema,
-  ProjectCatalogResponseSchema,
-  ProjectIdSchema,
-  ProjectSchema,
+  RepositoryCatalogResponseSchema,
+  RepositoryIdSchema,
+  RepositorySchema,
   UndoDeletionResponseSchema,
   RunEventSchema,
   RunIdSchema,
@@ -31,7 +31,7 @@ import {
   type GitProvider,
   type GitRepository,
   type AgentTrace,
-  type Project,
+  type Repository,
   type DeletionReceipt,
   type UndoDeletionResponse,
   type RunStatus,
@@ -82,8 +82,8 @@ const RunHistoryPageSchema = z.strictObject({
   }),
 })
 
-const RunProjectSnapshotSchema = z.strictObject({
-  projectId: ProjectIdSchema,
+const RunRepositorySnapshotSchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
   position: z.number().int().nonnegative().safe(),
   name: z.string().trim().min(1),
   provider: GitProviderSchema.nullable(),
@@ -95,8 +95,8 @@ const RunProjectSnapshotSchema = z.strictObject({
   isPrimary: z.boolean(),
 })
 
-const RunProjectWorkspaceSchema = z.strictObject({
-  projectId: ProjectIdSchema,
+const RunRepositoryWorkspaceSchema = z.strictObject({
+  repositoryId: RepositoryIdSchema,
   position: z.number().int().nonnegative().safe(),
   status: z.enum(['PREPARING', 'READY', 'FAILED', 'CLEANED', 'LEGACY']),
   workspacePath: z.string().min(1),
@@ -128,8 +128,8 @@ const RunDetailResponseSchema = z.strictObject({
       }),
     )
     .readonly(),
-  projects: z.array(RunProjectSnapshotSchema).readonly(),
-  projectWorkspaces: z.array(RunProjectWorkspaceSchema).readonly(),
+  repositories: z.array(RunRepositorySnapshotSchema).readonly(),
+  repositoryWorkspaces: z.array(RunRepositoryWorkspaceSchema).readonly(),
 })
 
 export type WorkflowCatalogEntry = Workflow
@@ -164,12 +164,16 @@ export interface ApiClient {
   disconnectGitConnection(provider: GitProvider): Promise<void>
   listGitRepositories(provider: GitProvider): Promise<readonly GitRepository[]>
   listHarnesses(): Promise<readonly HarnessDescriptor[]>
-  listProjects(): Promise<readonly Project[]>
-  addProject(input: { readonly provider: GitProvider; readonly remoteId: string }): Promise<Project>
-  deleteProject(projectId: string): Promise<DeletionReceipt>
+  listRepositories(): Promise<readonly Repository[]>
+  addRepository(input: {
+    readonly provider: GitProvider
+    readonly remoteId: string
+  }): Promise<Repository>
+  deleteRepository(repositoryId: string): Promise<DeletionReceipt>
   undoDeletion(deletionId: string): Promise<UndoDeletionResponse>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
   createWorkflow(input: CreateWorkflowInput): Promise<Workflow>
+  deleteWorkflow(workflowId: string): Promise<DeletionReceipt>
   getWorkflow(workflowId: string): Promise<Workflow>
   updateWorkflow(workflowId: string, workflow: Workflow): Promise<Workflow>
   startRun(input: StartRunInput): Promise<StartRunResponse>
@@ -283,25 +287,25 @@ export const createApiClient = (
       return (await get('/api/harnesses', HarnessCatalogResponseSchema)).harnesses
     },
 
-    async listProjects() {
-      return (await get('/api/projects', ProjectCatalogResponseSchema)).projects
+    async listRepositories() {
+      return (await get('/api/repositories', RepositoryCatalogResponseSchema)).repositories
     },
 
-    async addProject(input) {
+    async addRepository(input) {
       return request(
-        '/api/projects',
+        '/api/repositories',
         {
-          body: JSON.stringify(AddProjectRequestSchema.parse(input)),
+          body: JSON.stringify(AddRepositoryRequestSchema.parse(input)),
           headers: { accept: 'application/json', 'content-type': 'application/json' },
           method: 'POST',
         },
-        ProjectSchema,
+        RepositorySchema,
       )
     },
 
-    async deleteProject(projectId) {
+    async deleteRepository(repositoryId) {
       return request(
-        `/api/projects/${encodeURIComponent(projectId)}`,
+        `/api/repositories/${encodeURIComponent(repositoryId)}`,
         { method: 'DELETE', headers: { accept: 'application/json' } },
         DeletionReceiptSchema,
       )
@@ -328,6 +332,14 @@ export const createApiClient = (
           method: 'POST',
         },
         WorkflowSchema,
+      )
+    },
+
+    async deleteWorkflow(workflowId) {
+      return request(
+        `/api/workflows/${encodeURIComponent(WorkflowIdSchema.parse(workflowId))}`,
+        { headers: { accept: 'application/json' }, method: 'DELETE' },
+        DeletionReceiptSchema,
       )
     },
 

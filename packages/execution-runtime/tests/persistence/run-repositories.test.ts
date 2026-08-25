@@ -8,8 +8,8 @@ const timestamp = '2026-08-23T12:00:00Z'
 const apiSha = '1111111111111111111111111111111111111111'
 const webSha = '2222222222222222222222222222222222222222'
 
-const project = (projectId: string, name: string, remoteId: string, baseSha: string) => ({
-  projectId,
+const repository = (repositoryId: string, name: string, remoteId: string, baseSha: string) => ({
+  repositoryId,
   name,
   provider: 'GITHUB' as const,
   remoteId,
@@ -19,21 +19,21 @@ const project = (projectId: string, name: string, remoteId: string, baseSha: str
   baseSha,
 })
 
-const workflowWithProjects = () =>
+const workflowWithRepositories = () =>
   createTestAgentWorkflow({
     createdAt: timestamp,
-    projectIds: ['project-api', 'project-web'],
-    primaryProjectId: 'project-web',
+    repositoryIds: ['repository-api', 'repository-web'],
+    primaryRepositoryId: 'repository-web',
   })
 
-describe('run project snapshots', () => {
-  it('rejects a current run when immutable project evidence is omitted', () => {
-    const fixture = createPersistenceFixture(workflowWithProjects())
+describe('run repository snapshots', () => {
+  it('rejects a current run when immutable repository evidence is omitted', () => {
+    const fixture = createPersistenceFixture(workflowWithRepositories())
 
     try {
       expect(() =>
         fixture.runs.create({
-          runId: 'run-project-omitted',
+          runId: 'run-repository-omitted',
           workflowId: fixture.workflow.workflowId,
           workflowSnapshot: fixture.workflow,
           variables: {},
@@ -44,31 +44,31 @@ describe('run project snapshots', () => {
           code: 'PERSISTENCE_VALIDATION_FAILED',
         }) satisfies Partial<PersistenceError>,
       )
-      expect(fixture.runs.get('run-project-omitted')).toBeUndefined()
+      expect(fixture.runs.get('run-repository-omitted')).toBeUndefined()
     } finally {
       fixture.cleanup()
     }
   })
 
-  it('atomically captures ordered immutable projects with the run', () => {
-    const fixture = createPersistenceFixture(workflowWithProjects())
+  it('atomically captures ordered immutable repositories with the run', () => {
+    const fixture = createPersistenceFixture(workflowWithRepositories())
 
     try {
       fixture.runs.create({
-        runId: 'run-project-snapshot',
+        runId: 'run-repository-snapshot',
         workflowId: fixture.workflow.workflowId,
         workflowSnapshot: fixture.workflow,
         variables: {},
         createdAt: timestamp,
-        projects: [
-          project('project-api', 'API', '100', apiSha),
-          project('project-web', 'Web', '200', webSha),
+        repositories: [
+          repository('repository-api', 'API', '100', apiSha),
+          repository('repository-web', 'Web', '200', webSha),
         ],
       })
 
-      expect(fixture.runs.listRunProjects('run-project-snapshot')).toEqual([
+      expect(fixture.runs.listRunRepositories('run-repository-snapshot')).toEqual([
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           position: 0,
           name: 'API',
           provider: 'GITHUB',
@@ -80,7 +80,7 @@ describe('run project snapshots', () => {
           isPrimary: false,
         },
         {
-          projectId: 'project-web',
+          repositoryId: 'repository-web',
           position: 1,
           name: 'Web',
           provider: 'GITHUB',
@@ -97,56 +97,56 @@ describe('run project snapshots', () => {
     }
   })
 
-  it('rolls back the run when its project snapshot does not match the workflow', () => {
-    const fixture = createPersistenceFixture(workflowWithProjects())
+  it('rolls back the run when its repository snapshot does not match the workflow', () => {
+    const fixture = createPersistenceFixture(workflowWithRepositories())
 
     try {
       expect(() =>
         fixture.runs.create({
-          runId: 'run-project-mismatch',
+          runId: 'run-repository-mismatch',
           workflowId: fixture.workflow.workflowId,
           workflowSnapshot: fixture.workflow,
           variables: {},
           createdAt: timestamp,
-          projects: [project('project-web', 'Web', '200', webSha)],
+          repositories: [repository('repository-web', 'Web', '200', webSha)],
         }),
       ).toThrowError(
         expect.objectContaining({
           code: 'PERSISTENCE_VALIDATION_FAILED',
         }) satisfies Partial<PersistenceError>,
       )
-      expect(fixture.runs.get('run-project-mismatch')).toBeUndefined()
+      expect(fixture.runs.get('run-repository-mismatch')).toBeUndefined()
     } finally {
       fixture.cleanup()
     }
   })
 
-  it('rolls back the run if any project row cannot be persisted', () => {
-    const fixture = createPersistenceFixture(workflowWithProjects())
+  it('rolls back the run if any repository row cannot be persisted', () => {
+    const fixture = createPersistenceFixture(workflowWithRepositories())
 
     try {
       expect(() =>
         fixture.runs.create({
-          runId: 'run-project-atomicity',
+          runId: 'run-repository-atomicity',
           workflowId: fixture.workflow.workflowId,
           workflowSnapshot: fixture.workflow,
           variables: {},
           createdAt: timestamp,
-          projects: [
-            project('project-api', 'API', '100', apiSha),
-            project('project-web', 'Web', '100', webSha),
+          repositories: [
+            repository('repository-api', 'API', '100', apiSha),
+            repository('repository-web', 'Web', '100', webSha),
           ],
         }),
       ).toThrowError(expect.objectContaining({ code: 'PERSISTENCE_WRITE_FAILED' }))
-      expect(fixture.runs.get('run-project-atomicity')).toBeUndefined()
-      expect(fixture.runs.listRunProjects('run-project-atomicity')).toEqual([])
+      expect(fixture.runs.get('run-repository-atomicity')).toBeUndefined()
+      expect(fixture.runs.listRunRepositories('run-repository-atomicity')).toEqual([])
     } finally {
       fixture.cleanup()
     }
   })
 
   it('persists PREPARING, READY, FAILED, and CLEANED workspace transitions', () => {
-    const fixture = createPersistenceFixture(workflowWithProjects())
+    const fixture = createPersistenceFixture(workflowWithRepositories())
 
     try {
       fixture.runs.create({
@@ -155,54 +155,54 @@ describe('run project snapshots', () => {
         workflowSnapshot: fixture.workflow,
         variables: {},
         createdAt: timestamp,
-        projects: [
-          project('project-api', 'API', '100', apiSha),
-          project('project-web', 'Web', '200', webSha),
+        repositories: [
+          repository('repository-api', 'API', '100', apiSha),
+          repository('repository-web', 'Web', '200', webSha),
         ],
       })
 
-      fixture.runs.markRunProjectWorkspacePreparing({
+      fixture.runs.markRunRepositoryWorkspacePreparing({
         runId: 'run-worktree-state',
-        projectId: 'project-api',
-        workspacePath: '/workspaces/run-worktree-state/project-api',
+        repositoryId: 'repository-api',
+        workspacePath: '/workspaces/run-worktree-state/repository-api',
         branchName: 'slopify/run-worktree-state',
         timestamp,
       })
-      fixture.runs.markRunProjectWorkspaceReady({
+      fixture.runs.markRunRepositoryWorkspaceReady({
         runId: 'run-worktree-state',
-        projectId: 'project-api',
-        workspacePath: '/workspaces/run-worktree-state/project-api',
+        repositoryId: 'repository-api',
+        workspacePath: '/workspaces/run-worktree-state/repository-api',
         branchName: 'slopify/run-worktree-state',
         timestamp: '2026-08-23T12:00:01Z',
       })
-      fixture.runs.markRunProjectWorkspacePreparing({
+      fixture.runs.markRunRepositoryWorkspacePreparing({
         runId: 'run-worktree-state',
-        projectId: 'project-web',
-        workspacePath: '/workspaces/run-worktree-state/project-web',
+        repositoryId: 'repository-web',
+        workspacePath: '/workspaces/run-worktree-state/repository-web',
         branchName: 'slopify/run-worktree-state',
         timestamp,
       })
-      fixture.runs.markRunProjectWorkspaceFailed({
+      fixture.runs.markRunRepositoryWorkspaceFailed({
         runId: 'run-worktree-state',
-        projectId: 'project-web',
-        workspacePath: '/workspaces/run-worktree-state/project-web',
+        repositoryId: 'repository-web',
+        workspacePath: '/workspaces/run-worktree-state/repository-web',
         branchName: 'slopify/run-worktree-state',
         errorMessage: 'Git clone failed',
         timestamp: '2026-08-23T12:00:01Z',
       })
 
-      fixture.runs.markRunProjectWorkspaceCleaned({
+      fixture.runs.markRunRepositoryWorkspaceCleaned({
         runId: 'run-worktree-state',
-        projectId: 'project-api',
+        repositoryId: 'repository-api',
         timestamp: '2026-08-23T12:00:02Z',
       })
 
-      expect(fixture.runs.listRunProjectWorkspaces('run-worktree-state')).toEqual([
+      expect(fixture.runs.listRunRepositoryWorkspaces('run-worktree-state')).toEqual([
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           position: 0,
           status: 'CLEANED',
-          workspacePath: '/workspaces/run-worktree-state/project-api',
+          workspacePath: '/workspaces/run-worktree-state/repository-api',
           branchName: 'slopify/run-worktree-state',
           errorMessage: null,
           preparedAt: '2026-08-23T12:00:01Z',
@@ -210,10 +210,10 @@ describe('run project snapshots', () => {
           updatedAt: '2026-08-23T12:00:02Z',
         },
         {
-          projectId: 'project-web',
+          repositoryId: 'repository-web',
           position: 1,
           status: 'FAILED',
-          workspacePath: '/workspaces/run-worktree-state/project-web',
+          workspacePath: '/workspaces/run-worktree-state/repository-web',
           branchName: 'slopify/run-worktree-state',
           errorMessage: 'Git clone failed',
           preparedAt: null,
@@ -223,9 +223,9 @@ describe('run project snapshots', () => {
       ])
 
       expect(() =>
-        fixture.runs.markRunProjectWorkspacePreparing({
+        fixture.runs.markRunRepositoryWorkspacePreparing({
           runId: 'run-worktree-state',
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           workspacePath: '/different/path',
           branchName: 'slopify/run-worktree-state',
           timestamp: '2026-08-23T12:00:02Z',
@@ -237,7 +237,7 @@ describe('run project snapshots', () => {
   })
 
   it('lists terminal runs whose cloned workspaces still require cleanup', () => {
-    const fixture = createPersistenceFixture(workflowWithProjects())
+    const fixture = createPersistenceFixture(workflowWithRepositories())
 
     try {
       for (const runId of ['run-succeeded', 'run-running']) {
@@ -247,15 +247,15 @@ describe('run project snapshots', () => {
           workflowSnapshot: fixture.workflow,
           variables: {},
           createdAt: timestamp,
-          projects: [
-            project('project-api', 'API', '100', apiSha),
-            project('project-web', 'Web', '200', webSha),
+          repositories: [
+            repository('repository-api', 'API', '100', apiSha),
+            repository('repository-web', 'Web', '200', webSha),
           ],
         })
-        fixture.runs.markRunProjectWorkspacePreparing({
+        fixture.runs.markRunRepositoryWorkspacePreparing({
           runId,
-          projectId: 'project-api',
-          workspacePath: `/workspaces/${runId}/project-api`,
+          repositoryId: 'repository-api',
+          workspacePath: `/workspaces/${runId}/repository-api`,
           branchName: `slopify/${runId}`,
           timestamp,
         })
@@ -266,9 +266,9 @@ describe('run project snapshots', () => {
 
       expect(fixture.runs.listTerminalRunIdsNeedingWorkspaceCleanup()).toEqual(['run-succeeded'])
 
-      fixture.runs.markRunProjectWorkspaceCleaned({
+      fixture.runs.markRunRepositoryWorkspaceCleaned({
         runId: 'run-succeeded',
-        projectId: 'project-api',
+        repositoryId: 'repository-api',
         timestamp,
       })
       expect(fixture.runs.listTerminalRunIdsNeedingWorkspaceCleanup()).toEqual([])

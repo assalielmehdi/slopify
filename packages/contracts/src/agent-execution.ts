@@ -5,7 +5,7 @@ import {
   HarnessThinkingLevelSchema,
   NodeIdSchema,
   OutcomeNameSchema,
-  ProjectIdSchema,
+  RepositoryIdSchema,
   RunIdSchema,
 } from './schemas.js'
 
@@ -29,9 +29,9 @@ const tokenCount = z.number().int().nonnegative().safe()
 
 export const AgentExecutionIdSchema = identifier.brand<'AgentExecutionId'>()
 
-const AgentWorkspaceProjectSchema = z
+const AgentWorkspaceRepositorySchema = z
   .strictObject({
-    projectId: ProjectIdSchema,
+    repositoryId: RepositoryIdSchema,
     path: absolutePath,
   })
   .readonly()
@@ -39,45 +39,45 @@ const AgentWorkspaceProjectSchema = z
 export const AgentWorkspaceSchema = z
   .strictObject({
     rootPath: absolutePath,
-    primaryProjectId: ProjectIdSchema,
-    projects: z.array(AgentWorkspaceProjectSchema).min(1).max(32).readonly(),
+    primaryRepositoryId: RepositoryIdSchema,
+    repositories: z.array(AgentWorkspaceRepositorySchema).min(1).max(32).readonly(),
   })
   .superRefine((workspace, context) => {
-    const projectIds = new Set<string>()
-    const projectPaths = new Set<string>()
+    const repositoryIds = new Set<string>()
+    const repositoryPaths = new Set<string>()
     const workspacePrefix = workspace.rootPath.endsWith('/')
       ? workspace.rootPath
       : `${workspace.rootPath}/`
-    for (const [index, project] of workspace.projects.entries()) {
-      if (projectIds.has(project.projectId)) {
+    for (const [index, repository] of workspace.repositories.entries()) {
+      if (repositoryIds.has(repository.repositoryId)) {
         context.addIssue({
           code: 'custom',
-          message: 'Project IDs must be unique',
-          path: ['projects', index, 'projectId'],
+          message: 'Repository IDs must be unique',
+          path: ['repositories', index, 'repositoryId'],
         })
       }
-      if (projectPaths.has(project.path)) {
+      if (repositoryPaths.has(repository.path)) {
         context.addIssue({
           code: 'custom',
-          message: 'Project paths must be unique',
-          path: ['projects', index, 'path'],
+          message: 'Repository paths must be unique',
+          path: ['repositories', index, 'path'],
         })
       }
-      if (!project.path.startsWith(workspacePrefix)) {
+      if (!repository.path.startsWith(workspacePrefix)) {
         context.addIssue({
           code: 'custom',
-          message: 'Project path must be a child of the workspace root',
-          path: ['projects', index, 'path'],
+          message: 'Repository path must be a child of the workspace root',
+          path: ['repositories', index, 'path'],
         })
       }
-      projectIds.add(project.projectId)
-      projectPaths.add(project.path)
+      repositoryIds.add(repository.repositoryId)
+      repositoryPaths.add(repository.path)
     }
-    if (!projectIds.has(workspace.primaryProjectId)) {
+    if (!repositoryIds.has(workspace.primaryRepositoryId)) {
       context.addIssue({
         code: 'custom',
-        message: 'Primary project must belong to the workspace',
-        path: ['primaryProjectId'],
+        message: 'Primary repository must belong to the workspace',
+        path: ['primaryRepositoryId'],
       })
     }
   })

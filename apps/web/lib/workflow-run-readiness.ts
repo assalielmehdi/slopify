@@ -1,15 +1,15 @@
-import type { HarnessDescriptor, Project } from '@slopify/contracts'
+import type { HarnessDescriptor, Repository } from '@slopify/contracts'
 import { validateWorkflow, type Workflow } from '@slopify/workflow-model'
 
 export interface WorkflowRunReadinessInput {
   readonly harnesses?: readonly HarnessDescriptor[] | undefined
-  readonly projects?: readonly Project[] | undefined
+  readonly repositories?: readonly Repository[] | undefined
   readonly workflow: Workflow
 }
 
 export const workflowRunDisabledReason = ({
   harnesses,
-  projects,
+  repositories,
   workflow,
 }: WorkflowRunReadinessInput): string | undefined => {
   if (workflow.nodes.length === 0) return 'Add an agent before starting a run.'
@@ -20,21 +20,22 @@ export const workflowRunDisabledReason = ({
   }
 
   if (
-    workflow.configuration.projectIds.length === 0 ||
-    workflow.configuration.primaryProjectId === null
+    workflow.configuration.repositoryIds.length === 0 ||
+    workflow.configuration.primaryRepositoryId === null
   ) {
-    return 'Select at least one project and a primary project in workflow configuration.'
+    return 'Select at least one repository and a primary repository in workflow configuration.'
   }
-  if (projects === undefined) {
-    return 'Projects could not be loaded. Resolve project discovery before running.'
+  if (repositories === undefined) {
+    return 'Repositories could not be loaded. Resolve repository discovery before running.'
   }
   if (
-    workflow.configuration.projectIds.some(
-      (projectId) =>
-        projects.find((project) => project.projectId === projectId)?.availability !== 'AVAILABLE',
+    workflow.configuration.repositoryIds.some(
+      (repositoryId) =>
+        repositories.find((repository) => repository.repositoryId === repositoryId)
+          ?.availability !== 'AVAILABLE',
     )
   ) {
-    return 'Every selected project must be available on this machine before running.'
+    return 'Every selected repository must be available on this machine before running.'
   }
 
   if (harnesses === undefined) {

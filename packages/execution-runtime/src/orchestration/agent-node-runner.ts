@@ -16,7 +16,7 @@ import type { RunRepository } from '../persistence/run-repository.js'
 import type { AgentTraceStore } from '../traces/filesystem-agent-trace-store.js'
 import {
   RunWorkspaceProvisioningError,
-  type ProvisionedRunProject,
+  type ProvisionedRunRepository,
   type RunWorkspaceProvisioner,
 } from '../workspaces/run-workspace-provisioner.js'
 import type { NodeRunner } from './execution-worker.js'
@@ -29,29 +29,32 @@ const failed = (code: string, message: string) => ({
   message,
 })
 
-const configuredProjectsPrompt = (projects: readonly ProvisionedRunProject[]): string => {
-  const locations = projects
+const configuredRepositoriesPrompt = (
+  repositories: readonly ProvisionedRunRepository[],
+): string => {
+  const locations = repositories
     .map(
-      (project) =>
-        `- ${project.isPrimary ? 'Primary project — ' : ''}${project.name} (${project.provider} ${project.fullName})\n  Workspace: ${project.workspacePath}\n  Branch: ${project.branchName}\n  Base: ${project.defaultBranch} at ${project.baseSha}`,
+      (repository) =>
+        `- ${repository.isPrimary ? 'Primary repository — ' : ''}${repository.name} (${repository.provider} ${repository.fullName})\n  Workspace: ${repository.workspacePath}\n  Branch: ${repository.branchName}\n  Base: ${repository.defaultBranch} at ${repository.baseSha}`,
     )
     .join('\n')
-  return `\n\nWorkflow projects:\nStart in the primary project. Every path below is a fresh per-run clone shared by this workflow's agents. Work only in these workspaces. Changes made by an earlier agent remain on the shared run branch for later agents. Slopify will not push branches or create pull requests; do that yourself when the task requires it.\n${locations}`
+  return `\n\nWorkflow repositories:\nStart in the primary repository. Every path below is a fresh per-run clone shared by this workflow's agents. Work only in these workspaces. Changes made by an earlier agent remain on the shared run branch for later agents. Slopify will not push branches or create pull requests; do that yourself when the task requires it.\n${locations}`
 }
 
 const workspaceContext = (
-  projects: readonly ProvisionedRunProject[],
+  repositories: readonly ProvisionedRunRepository[],
 ):
   | Readonly<{
       rootPath: string
-      primary: ProvisionedRunProject
+      primary: ProvisionedRunRepository
     }>
   | undefined => {
-  const primary = projects.find(({ isPrimary }) => isPrimary)
-  if (primary === undefined || projects.filter(({ isPrimary }) => isPrimary).length !== 1)
+  const primary = repositories.find(({ isPrimary }) => isPrimary)
+  if (primary === undefined || repositories.filter(({ isPrimary }) => isPrimary).length !== 1)
     return undefined
   const rootPath = dirname(primary.workspacePath)
-  if (projects.some(({ workspacePath }) => dirname(workspacePath) !== rootPath)) return undefined
+  if (repositories.some(({ workspacePath }) => dirname(workspacePath) !== rootPath))
+    return undefined
   return { rootPath, primary }
 }
 
@@ -98,28 +101,28 @@ export const createAgentNodeRunner = (
       return harnessFailure(cause)
     }
 
-    let projects: readonly ProvisionedRunProject[]
+    let repositories: readonly ProvisionedRunRepository[]
     try {
-      projects = await options.workspaces.ensure(run.runId)
+      repositories = await options.workspaces.ensure(run.runId)
     } catch (cause) {
       if (cause instanceof RunWorkspaceProvisioningError) {
         return failed(cause.code, cause.failures[0]?.message ?? cause.message)
       }
       return failed(
         'RUN_WORKSPACE_PROVISIONING_FAILED',
-        'Run project workspaces could not be prepared',
+        'Run repository workspaces could not be prepared',
       )
     }
-    const context = workspaceContext(projects)
+    const context = workspaceContext(repositories)
     if (context === undefined)
-      return failed('RUN_WORKSPACE_INVALID', 'Run project workspaces are invalid')
-    const configuredIds = workflow.data.configuration.projectIds
+      return failed('RUN_WORKSPACE_INVALID', 'Run repository workspaces are invalid')
+    const configuredIds = workflow.data.configuration.repositoryIds
     if (
-      projects.length !== configuredIds.length ||
-      projects.some((project, index) => project.projectId !== configuredIds[index]) ||
-      context.primary.projectId !== workflow.data.configuration.primaryProjectId
+      repositories.length !== configuredIds.length ||
+      repositories.some((repository, index) => repository.repositoryId !== configuredIds[index]) ||
+      context.primary.repositoryId !== workflow.data.configuration.primaryRepositoryId
     ) {
-      return failed('RUN_WORKSPACE_INVALID', 'Run project workspaces do not match the workflow')
+      return failed('RUN_WORKSPACE_INVALID', 'Run repository workspaces do not match the workflow')
     }
 
     const routableOutcomes = getDeclaredOutcomes(workflow.data, node.id)
@@ -131,7 +134,7 @@ export const createAgentNodeRunner = (
         node.prompt,
         workflow.data.configuration.variables,
         run.variables,
-      )}${configuredProjectsPrompt(projects)}\n\nExecution contract:\nFinish by calling the Slopify completion tool (slopify_complete_node) exactly once.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
+      )}${configuredRepositoriesPrompt(repositories)}\n\nExecution contract:\nFinish by calling the Slopify completion tool (slopify_complete_node) exactly once.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
       z.string().min(1).max(1_000_000).parse(renderedPrompt)
     } catch {
       return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')
@@ -143,10 +146,10 @@ export const createAgentNodeRunner = (
       nodeId: node.id,
       workspace: {
         rootPath: context.rootPath,
-        primaryProjectId: context.primary.projectId,
-        projects: projects.map((project) => ({
-          projectId: project.projectId,
-          path: project.workspacePath,
+        primaryRepositoryId: context.primary.repositoryId,
+        repositories: repositories.map((repository) => ({
+          repositoryId: repository.repositoryId,
+          path: repository.workspacePath,
         })),
       },
       ...(node.harness.modelId === undefined ? {} : { model: node.harness.modelId }),
@@ -158,7 +161,7 @@ export const createAgentNodeRunner = (
       timeoutSeconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
     })
     const traceHeader = AgentTraceHeaderSchema.parse({
-      version: 2,
+      version: 3,
       runId: run.runId,
       nodeExecutionId: input.nodeExecutionId,
       attemptId: input.attemptId,
@@ -173,16 +176,16 @@ export const createAgentNodeRunner = (
           : { thinkingLevel: node.harness.thinkingLevel }),
         renderedPrompt,
         workspaceRoot: context.rootPath,
-        primaryProjectId: context.primary.projectId,
-        projects: projects.map((project) => ({
-          projectId: project.projectId,
-          name: project.name,
-          provider: project.provider,
-          fullName: project.fullName,
-          workspacePath: project.workspacePath,
-          branchName: project.branchName,
-          baseSha: project.baseSha,
-          defaultBranch: project.defaultBranch,
+        primaryRepositoryId: context.primary.repositoryId,
+        repositories: repositories.map((repository) => ({
+          repositoryId: repository.repositoryId,
+          name: repository.name,
+          provider: repository.provider,
+          fullName: repository.fullName,
+          workspacePath: repository.workspacePath,
+          branchName: repository.branchName,
+          baseSha: repository.baseSha,
+          defaultBranch: repository.defaultBranch,
         })),
         timeoutSeconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
       },

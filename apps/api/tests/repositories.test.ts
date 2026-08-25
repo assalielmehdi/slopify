@@ -3,8 +3,8 @@ import {
   GitConnectionServiceError,
   createDeletionOperationRepository,
   createDeletionService,
-  createProjectRepository,
-  createProjectService,
+  createRepositoryStore,
+  createRepositoryService,
   type RemoteGitHost,
 } from '@slopify/execution-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -44,8 +44,8 @@ const createFixture = () => {
         : undefined,
     getDefaultBranchSha: async () => 'a'.repeat(40) as never,
   }
-  const projects = createProjectService({
-    projects: createProjectRepository(fixture.database),
+  const repositories = createRepositoryService({
+    repositories: createRepositoryStore(fixture.database),
     connections: {
       requireToken: async (provider) => {
         if (connected.has(provider)) return 'token'
@@ -53,16 +53,16 @@ const createFixture = () => {
       },
     },
     remote,
-    createId: () => 'project-01',
+    createId: () => 'repository-01',
     createDeletionId: () => 'deletion-01',
     now: () => timestamp,
   })
   const deletions = createDeletionService({
     operations: createDeletionOperationRepository(fixture.database),
-    handlers: [projects],
+    handlers: [repositories],
   })
   return {
-    app: createApiApp({ database: fixture.database, deletions, projects }),
+    app: createApiApp({ database: fixture.database, deletions, repositories }),
     disconnect(provider: GitProvider) {
       connected.delete(provider)
     },
@@ -75,23 +75,23 @@ const createFixture = () => {
   }
 }
 
-const addProject = (app: ReturnType<typeof createApiApp>) =>
-  app.request('/api/projects', {
+const addRepository = (app: ReturnType<typeof createApiApp>) =>
+  app.request('/api/repositories', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ provider: 'GITHUB', remoteId: '123' }),
   })
 
-describe('projects API', () => {
+describe('repositories API', () => {
   it('adds a connected remote repository and returns live availability when listing', async () => {
     const fixture = createFixture()
-    const created = await addProject(fixture.app)
+    const created = await addRepository(fixture.app)
     fixture.setRepositoryAvailable(false)
-    const listed = await fixture.app.request('/api/projects')
+    const listed = await fixture.app.request('/api/repositories')
 
     expect(created.status).toBe(201)
     expect(await created.json()).toMatchObject({
-      projectId: 'project-01',
+      repositoryId: 'repository-01',
       name: 'slopify',
       provider: 'GITHUB',
       fullName: 'operator/slopify',
@@ -99,9 +99,9 @@ describe('projects API', () => {
     })
     expect(listed.status).toBe(200)
     expect(await listed.json()).toEqual({
-      projects: [
+      repositories: [
         expect.objectContaining({
-          projectId: 'project-01',
+          repositoryId: 'repository-01',
           availability: 'REPOSITORY_UNAVAILABLE',
         }),
       ],
@@ -111,46 +111,48 @@ describe('projects API', () => {
   it('requires a connected provider and an existing remote repository', async () => {
     const fixture = createFixture()
     fixture.disconnect('GITHUB')
-    const disconnected = await addProject(fixture.app)
+    const disconnected = await addRepository(fixture.app)
 
     expect(disconnected.status).toBe(422)
     expect(await disconnected.json()).toMatchObject({
-      error: { code: 'PROJECT_CONNECTION_REQUIRED' },
+      error: { code: 'REPOSITORY_CONNECTION_REQUIRED' },
     })
 
     const connectedFixture = createFixture()
     connectedFixture.setRepositoryAvailable(false)
-    const missing = await addProject(connectedFixture.app)
+    const missing = await addRepository(connectedFixture.app)
     expect(missing.status).toBe(404)
     expect(await missing.json()).toEqual({
       error: {
-        code: 'PROJECT_REPOSITORY_NOT_FOUND',
+        code: 'REPOSITORY_REMOTE_NOT_FOUND',
         message: 'Repository could not be found',
       },
     })
   })
 
-  it('deletes a project, returns an undo receipt, and restores it through the generic endpoint', async () => {
+  it('deletes a repository, returns an undo receipt, and restores it through the generic endpoint', async () => {
     const fixture = createFixture()
-    await addProject(fixture.app)
+    await addRepository(fixture.app)
 
-    const deleted = await fixture.app.request('/api/projects/project-01', { method: 'DELETE' })
-    const listedAfterDelete = await fixture.app.request('/api/projects')
+    const deleted = await fixture.app.request('/api/repositories/repository-01', {
+      method: 'DELETE',
+    })
+    const listedAfterDelete = await fixture.app.request('/api/repositories')
     const undone = await fixture.app.request('/api/deletions/deletion-01/undo', { method: 'POST' })
-    const listedAfterUndo = await fixture.app.request('/api/projects')
+    const listedAfterUndo = await fixture.app.request('/api/repositories')
 
     expect(deleted.status).toBe(200)
     expect(await deleted.json()).toEqual({
       deletionId: 'deletion-01',
-      subject: { type: 'PROJECT', id: 'project-01' },
+      subject: { type: 'REPOSITORY', id: 'repository-01' },
       deletedAt: '2026-08-21T10:00:00Z',
       undoExpiresAt: '2026-08-21T10:00:10.000Z',
     })
-    expect(await listedAfterDelete.json()).toEqual({ projects: [] })
+    expect(await listedAfterDelete.json()).toEqual({ repositories: [] })
     expect(undone.status).toBe(200)
     expect(await undone.json()).toMatchObject({ deletionId: 'deletion-01', state: 'UNDONE' })
     expect(await listedAfterUndo.json()).toMatchObject({
-      projects: [expect.objectContaining({ projectId: 'project-01' })],
+      repositories: [expect.objectContaining({ repositoryId: 'repository-01' })],
     })
     const undoneAgain = await fixture.app.request('/api/deletions/deletion-01/undo', {
       method: 'POST',
@@ -160,8 +162,8 @@ describe('projects API', () => {
 
   it('rejects undo after the server-authoritative window expires', async () => {
     const fixture = createFixture()
-    await addProject(fixture.app)
-    await fixture.app.request('/api/projects/project-01', { method: 'DELETE' })
+    await addRepository(fixture.app)
+    await fixture.app.request('/api/repositories/repository-01', { method: 'DELETE' })
     fixture.setNow('2026-08-21T10:00:10Z')
 
     const expired = await fixture.app.request('/api/deletions/deletion-01/undo', {

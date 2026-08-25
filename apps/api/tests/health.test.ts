@@ -7,7 +7,7 @@ import { createApiApp } from '../src/app.js'
 const healthyStatus: DatabaseStatus = {
   foreignKeysEnabled: true,
   journalMode: 'wal',
-  schemaVersion: 1,
+  schemaVersion: 2,
   writable: true,
 }
 

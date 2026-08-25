@@ -13,14 +13,14 @@ const executionInput = {
   nodeId: 'plan',
   workspace: {
     rootPath: '/workspaces/run-01',
-    primaryProjectId: 'backend',
-    projects: [
+    primaryRepositoryId: 'backend',
+    repositories: [
       {
-        projectId: 'backend',
+        repositoryId: 'backend',
         path: '/workspaces/run-01/backend',
       },
       {
-        projectId: 'web',
+        repositoryId: 'web',
         path: '/workspaces/run-01/web',
       },
     ],
@@ -53,26 +53,26 @@ describe('agent execution input contract', () => {
     expect(parsed).toEqual(executionInput)
   })
 
-  it('rejects a project-free workspace', () => {
+  it('rejects a repository-free workspace', () => {
     expect(
       AgentExecutionInputSchema.safeParse({
         ...executionInput,
-        workspace: { rootPath: '/', projects: [] },
+        workspace: { rootPath: '/', repositories: [] },
       }).success,
     ).toBe(false)
   })
 
-  it('accepts project paths under the filesystem root', () => {
+  it('accepts repository paths under the filesystem root', () => {
     expect(
       AgentExecutionInputSchema.parse({
         ...executionInput,
         workspace: {
           rootPath: '/',
-          primaryProjectId: 'backend',
-          projects: [{ projectId: 'backend', path: '/backend' }],
+          primaryRepositoryId: 'backend',
+          repositories: [{ repositoryId: 'backend', path: '/backend' }],
         },
       }).workspace,
-    ).toMatchObject({ rootPath: '/', primaryProjectId: 'backend' })
+    ).toMatchObject({ rootPath: '/', primaryRepositoryId: 'backend' })
   })
 
   it.each([
@@ -95,15 +95,15 @@ describe('agent execution input contract', () => {
     expect(AgentExecutionInputSchema.parse(withoutPreferences)).toEqual(withoutPreferences)
   })
 
-  it('rejects duplicate project IDs or paths', () => {
+  it('rejects duplicate repository IDs or paths', () => {
     const duplicateId = {
       ...executionInput,
       workspace: {
         ...executionInput.workspace,
-        projects: [
-          executionInput.workspace.projects[0],
+        repositories: [
+          executionInput.workspace.repositories[0],
           {
-            projectId: 'backend',
+            repositoryId: 'backend',
             path: '/workspaces/run-01/other',
           },
         ],
@@ -113,10 +113,10 @@ describe('agent execution input contract', () => {
       ...executionInput,
       workspace: {
         ...executionInput.workspace,
-        projects: [
-          executionInput.workspace.projects[0],
+        repositories: [
+          executionInput.workspace.repositories[0],
           {
-            projectId: 'other',
+            repositoryId: 'other',
             path: '/workspaces/run-01/backend',
           },
         ],
@@ -127,14 +127,14 @@ describe('agent execution input contract', () => {
     expect(AgentExecutionInputSchema.safeParse(duplicatePath).success).toBe(false)
   })
 
-  it('rejects project paths outside the explicit workspace root', () => {
+  it('rejects repository paths outside the explicit workspace root', () => {
     const input = {
       ...executionInput,
       workspace: {
         ...executionInput.workspace,
-        projects: [
+        repositories: [
           {
-            projectId: 'backend',
+            repositoryId: 'backend',
             path: '/other-run/backend',
           },
         ],
@@ -144,17 +144,17 @@ describe('agent execution input contract', () => {
     expect(AgentExecutionInputSchema.safeParse(input).success).toBe(false)
   })
 
-  it('requires a primary project that belongs to the workspace', () => {
+  it('requires a primary repository that belongs to the workspace', () => {
     expect(
       AgentExecutionInputSchema.safeParse({
         ...executionInput,
-        workspace: { ...executionInput.workspace, primaryProjectId: undefined },
+        workspace: { ...executionInput.workspace, primaryRepositoryId: undefined },
       }).success,
     ).toBe(false)
     expect(
       AgentExecutionInputSchema.safeParse({
         ...executionInput,
-        workspace: { ...executionInput.workspace, primaryProjectId: 'missing' },
+        workspace: { ...executionInput.workspace, primaryRepositoryId: 'missing' },
       }).success,
     ).toBe(false)
   })

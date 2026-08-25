@@ -52,10 +52,41 @@ const availableHarnesses = (): HarnessCatalog => ({
 })
 
 describe('workflow service', () => {
+  it('deletes an existing workflow', () => {
+    const stageDeletion = vi.fn(() => true)
+    const service = createWorkflowService({
+      workflows: {
+        insert: vi.fn(),
+        save: vi.fn(),
+        stageDeletion,
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
+        list: () => [workflow],
+      },
+      harnesses: availableHarnesses(),
+      createDeletionId: () => 'deletion-workflow-01',
+      now: () => '2026-08-25T10:00:00.000Z',
+    })
+
+    expect(service.delete(workflow.workflowId)).toEqual({
+      deletionId: 'deletion-workflow-01',
+      subject: { type: 'WORKFLOW', id: workflow.workflowId },
+      deletedAt: '2026-08-25T10:00:00.000Z',
+      undoExpiresAt: '2026-08-25T10:00:10.000Z',
+    })
+    expect(stageDeletion).toHaveBeenCalledWith(
+      expect.objectContaining({ subject: { type: 'WORKFLOW', id: workflow.workflowId } }),
+    )
+  })
+
   it('lists and gets current workflows', () => {
     const workflows: WorkflowRepository = {
       insert: vi.fn(),
       save: vi.fn(),
+      stageDeletion: vi.fn(),
+      restoreDeletion: vi.fn(),
+      purgeExpired: vi.fn(),
       get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
       list: () => [workflow],
     }
@@ -69,6 +100,9 @@ describe('workflow service', () => {
     const workflows: WorkflowRepository = {
       insert: vi.fn(),
       save: vi.fn(),
+      stageDeletion: vi.fn(),
+      restoreDeletion: vi.fn(),
+      purgeExpired: vi.fn(),
       get: () => undefined,
       list: () => [],
     }
@@ -84,21 +118,29 @@ describe('workflow service', () => {
   it('creates and inserts a canonical empty workflow with server-owned fields', () => {
     const insert = vi.fn()
     const service = createWorkflowService({
-      workflows: { insert, save: vi.fn(), get: () => undefined, list: () => [] },
+      workflows: {
+        insert,
+        save: vi.fn(),
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: () => undefined,
+        list: () => [],
+      },
       harnesses: availableHarnesses(),
       createId: () => 'workflow-release',
       now: () => '2026-08-24T14:00:00.000Z',
     })
 
     const created = service.create({
-      name: 'Release workflow',
+      name: 'release-workflow',
       description: 'Prepare and review a release.',
-      configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     })
 
     expect(created).toMatchObject({
       workflowId: 'workflow-release',
-      name: 'Release workflow',
+      name: 'release-workflow',
       startNodeId: null,
       nodes: [],
       edges: [],
@@ -118,6 +160,9 @@ describe('workflow service', () => {
           })
         },
         save: vi.fn(),
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
         get: () => undefined,
         list: () => [],
       },
@@ -127,15 +172,81 @@ describe('workflow service', () => {
 
     expect(() =>
       service.create({
-        name: 'Release workflow',
+        name: 'release-workflow',
         description: 'Prepare and review a release.',
-        configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       }),
     ).toThrow(
       expect.objectContaining({
         code: 'WORKFLOW_ID_CONFLICT',
       }) satisfies Partial<WorkflowServiceError>,
     )
+  })
+
+  it('rejects a duplicate workflow name when creating', () => {
+    const service = createWorkflowService({
+      workflows: {
+        insert: vi.fn(),
+        save: vi.fn(),
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: () => undefined,
+        list: () => [{ ...workflow, name: 'release-workflow' }],
+      },
+      harnesses: availableHarnesses(),
+    })
+
+    expect(() =>
+      service.create({
+        name: 'release-workflow',
+        description: 'Prepare and review a release.',
+        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+      }),
+    ).toThrow(
+      expect.objectContaining({
+        code: 'WORKFLOW_NAME_CONFLICT',
+      }) satisfies Partial<WorkflowServiceError>,
+    )
+  })
+
+  it('rejects a duplicate workflow name when renaming', async () => {
+    const service = createWorkflowService({
+      workflows: {
+        insert: vi.fn(),
+        save: vi.fn(),
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
+        list: () => [workflow, { ...workflow, workflowId: 'release', name: 'release-workflow' }],
+      },
+      harnesses: availableHarnesses(),
+    })
+
+    await expect(
+      service.update(workflow.workflowId, { ...workflow, name: 'release-workflow' }),
+    ).rejects.toMatchObject({ code: 'WORKFLOW_NAME_CONFLICT' })
+  })
+
+  it('keeps legacy names readable but validates a changed workflow name', async () => {
+    const service = createWorkflowService({
+      workflows: {
+        insert: vi.fn(),
+        save: vi.fn(),
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
+        list: () => [workflow],
+      },
+      harnesses: availableHarnesses(),
+    })
+
+    await expect(service.update(workflow.workflowId, workflow)).resolves.toBeDefined()
+    await expect(
+      service.update(workflow.workflowId, { ...workflow, name: 'Invalid workflow' }),
+    ).rejects.toThrow()
   })
 
   it('updates a schema-valid draft and verifies every selected harness', async () => {
@@ -145,6 +256,9 @@ describe('workflow service', () => {
       workflows: {
         insert: vi.fn(),
         save,
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
         get: (workflowId) => (workflowId === workflow.workflowId ? workflow : undefined),
         list: () => [workflow],
       },
@@ -191,7 +305,15 @@ describe('workflow service', () => {
       }),
     }
     const service = createWorkflowService({
-      workflows: { insert: vi.fn(), save: vi.fn(), get: () => workflow, list: () => [workflow] },
+      workflows: {
+        insert: vi.fn(),
+        save: vi.fn(),
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: () => workflow,
+        list: () => [workflow],
+      },
       harnesses,
     })
 
@@ -205,7 +327,15 @@ describe('workflow service', () => {
     if (firstAgent === undefined) throw new Error('Expected an agent fixture')
     const save = vi.fn()
     const service = createWorkflowService({
-      workflows: { insert: vi.fn(), save, get: () => workflow, list: () => [workflow] },
+      workflows: {
+        insert: vi.fn(),
+        save,
+        stageDeletion: vi.fn(),
+        restoreDeletion: vi.fn(),
+        purgeExpired: vi.fn(),
+        get: () => workflow,
+        list: () => [workflow],
+      },
       harnesses: availableHarnesses(),
     })
     const secondAgent = { ...firstAgent, id: 'review-agent', name: 'Review agent' }

@@ -10,7 +10,7 @@ import { showUndoDeletionToast } from '../lib/undo-deletion-toast'
 const receipt = () =>
   DeletionReceiptSchema.parse({
     deletionId: 'deletion-01' as const,
-    subject: { type: 'PROJECT' as const, id: 'project-01' as const },
+    subject: { type: 'REPOSITORY' as const, id: 'repository-01' as const },
     deletedAt: new Date().toISOString(),
     undoExpiresAt: new Date(Date.now() + 10_000).toISOString(),
   })
@@ -27,10 +27,10 @@ describe('undo deletion toast', () => {
 
     showUndoDeletionToast({
       receipt: receipt(),
-      deletedTitle: 'Project deleted',
-      deletedDescription: 'Project was removed.',
-      restoredTitle: 'Project restored',
-      restoredDescription: 'Project is available again.',
+      deletedTitle: 'Repository deleted',
+      deletedDescription: 'Repository was removed.',
+      restoredTitle: 'Repository restored',
+      restoredDescription: 'Repository is available again.',
       onUndo,
     })
     const options = add.mock.calls[0]?.[0]
@@ -44,7 +44,7 @@ describe('undo deletion toast', () => {
 
     await waitFor(() =>
       expect(add).toHaveBeenLastCalledWith(
-        expect.objectContaining({ title: 'Project restored', type: 'success' }),
+        expect.objectContaining({ title: 'Repository restored', type: 'success' }),
       ),
     )
   })
@@ -55,10 +55,10 @@ describe('undo deletion toast', () => {
 
     showUndoDeletionToast({
       receipt: receipt(),
-      deletedTitle: 'Project deleted',
-      deletedDescription: 'Project was removed.',
-      restoredTitle: 'Project restored',
-      restoredDescription: 'Project is available again.',
+      deletedTitle: 'Repository deleted',
+      deletedDescription: 'Repository was removed.',
+      restoredTitle: 'Repository restored',
+      restoredDescription: 'Repository is available again.',
       onUndo: async () => Promise.reject({ code: 'DELETION_UNDO_EXPIRED' }),
     })
     const options = add.mock.calls[0]?.[0]

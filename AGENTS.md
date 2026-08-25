@@ -4,7 +4,7 @@
 
 Slopify is a native, local workflow orchestrator for already-installed agent harnesses.
 Users define directed graphs of agents, choose a harness, configure prompts, and run
-them against workflow Projects with workflow-defined variables. Pi is the first
+them against workflow Repositories with workflow-defined variables. Pi is the first
 supported harness and runs through its CLI.
 
 ## Architecture invariants
@@ -19,11 +19,11 @@ supported harness and runs through its CLI.
   the captured graph edges.
 - Workflows contain only agent nodes. An empty workflow is a valid draft but is not
   runnable. Agent nodes may be graph leaves; a successful leaf completes its branch.
-- Workflow configuration owns the projects and variable names shared by all its agents.
-  Every configured project identifies a GitHub.com or GitLab.com repository and must
+- Workflow configuration owns the repositories and variable names shared by all its agents.
+  Every configured repository identifies a GitHub.com or GitLab.com repository and must
   resolve through its configured provider connection before run admission. One
-  configured project is primary and is the starting directory for every agent; all
-  configured projects remain available to every node.
+  configured repository is primary and is the starting directory for every agent; all
+  configured repositories remain available to every node.
 - A run must provide exactly one JSON value for every variable name declared by its
   captured workflow. Slopify interpolates only exact `{{ variable }}` placeholders whose
   names are declared there; undeclared placeholders remain literal.
@@ -35,10 +35,10 @@ supported harness and runs through its CLI.
   `COORDINATOR` destinations. Message handling is at least once, so handlers and
   attempts must remain idempotent. `run_events` is append-only audit history, never a
   queue.
-- Run admission captures each configured Project's provider identity, HTTPS clone URL,
+- Run admission captures each configured Repository's provider identity, HTTPS clone URL,
   default branch, and current default-branch commit. Before a harness process starts,
-  the worker creates one fresh clone per captured Project at
-  `~/.slopify/orchestrator/workspaces/<runId>/<projectId>` and checks out the deterministic
+  the worker creates one fresh clone per captured Repository at
+  `~/.slopify/orchestrator/workspaces/<runId>/<repositoryId>` and checks out the deterministic
   branch `slopify/<runId>` from the captured commit. Agents in one run share those clones
   and branches; separate runs never share a clone.
 - Slopify never pushes a run branch or creates a pull request. Agents do so deliberately
@@ -46,7 +46,7 @@ supported harness and runs through its CLI.
   Slopify removes its cloned workspace by default. Durable workspace state lets startup
   polling retry cleanup after interruption.
 - Each agent execution receives a fresh Pi CLI RPC process with no persisted Pi session.
-  It starts in the primary run clone without project-local approval and receives the
+  It starts in the primary run clone without repository-local approval and receives the
   provider, repository, workspace path, branch, and base commit in its execution
   contract. Slopify's adapter-owned
   `slopify_complete_node` bridge is the only routable agent result.
@@ -63,7 +63,7 @@ supported harness and runs through its CLI.
 - Trace capture redacts bounded sensitive-looking values inherited from the harness
   process environment and applies the same redaction to structured node results. Since
   the host harness can read other user files, traces are trusted owner-local data.
-- SQLite owns current workflow, non-secret Git connection metadata, Project, run
+- SQLite owns current workflow, non-secret Git connection metadata, Repository, run
   snapshot, run-workspace state, queue, and
   audit data. `run_events` is append-only audit history and agent transcripts are stored
   as owner-local JSONL traces. Harness state remains owned by the harness on the host.

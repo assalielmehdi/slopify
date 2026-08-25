@@ -35,24 +35,24 @@ const trace = AgentTraceSchema.parse({
       thinkingLevel: 'high',
       renderedPrompt: 'Analyze launch readiness.',
       workspaceRoot: '/Users/developer/.slopify/orchestrator/workspaces/run-01',
-      primaryProjectId: 'project-api',
-      projects: [
+      primaryRepositoryId: 'repository-api',
+      repositories: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           name: 'API',
           provider: 'GITHUB',
           fullName: 'operator/api',
-          workspacePath: '/Users/developer/.slopify/orchestrator/workspaces/run-01/project-api',
+          workspacePath: '/Users/developer/.slopify/orchestrator/workspaces/run-01/repository-api',
           branchName: 'slopify/run-01',
           baseSha: 'a'.repeat(40),
           defaultBranch: 'main',
         },
         {
-          projectId: 'project-web',
+          repositoryId: 'repository-web',
           name: 'Web',
           provider: 'GITLAB',
           fullName: 'operator/web',
-          workspacePath: '/Users/developer/.slopify/orchestrator/workspaces/run-01/project-web',
+          workspacePath: '/Users/developer/.slopify/orchestrator/workspaces/run-01/repository-web',
           branchName: 'slopify/run-01',
           baseSha: 'b'.repeat(40),
           defaultBranch: 'trunk',
@@ -78,12 +78,13 @@ const legacyTrace = AgentTraceSchema.parse({
       harnessVersion: '0.84.2',
       renderedPrompt: 'Analyze launch readiness.',
       workspaceRoot: '/Users/developer/.slopify/orchestrator/worktrees/run-legacy',
-      primaryProjectId: 'project-api',
-      projects: [
+      primaryRepositoryId: 'repository-api',
+      repositories: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           name: 'API',
-          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-legacy/project-api',
+          worktreePath:
+            '/Users/developer/.slopify/orchestrator/worktrees/run-legacy/repository-api',
           baseSha: 'a'.repeat(40),
           sourceBranch: 'main',
         },
@@ -137,7 +138,7 @@ describe('RunNodePanel', () => {
     expect(workspaces.textContent).toContain('API')
     expect(workspaces.textContent).toContain('Primary')
     expect(workspaces.textContent).toContain(
-      '/Users/developer/.slopify/orchestrator/workspaces/run-01/project-api',
+      '/Users/developer/.slopify/orchestrator/workspaces/run-01/repository-api',
     )
     expect(workspaces.textContent).toContain('Web')
     expect(workspaces.textContent).toContain('slopify/run-01')

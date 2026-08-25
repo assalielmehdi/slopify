@@ -5,7 +5,7 @@ import {
   type CreateRunRequest,
   type GitSha,
   type GitProvider,
-  type ProjectId,
+  type RepositoryId,
   type RunId,
 } from '@slopify/contracts'
 import { WorkflowSchema, validateWorkflow } from '@slopify/workflow-model'
@@ -16,8 +16,8 @@ import type { JsonValue } from '../persistence/json.js'
 import type {
   NodeExecutionRecord,
   ListRunsInput,
-  RunProjectSnapshot,
-  RunProjectWorkspace,
+  RunRepositorySnapshot,
+  RunRepositoryWorkspace,
   RunRecord,
   RunRepository,
 } from '../persistence/run-repository.js'
@@ -30,7 +30,7 @@ export type RunServiceErrorCode =
   | 'RUN_VARIABLES_INVALID'
   | 'WORKFLOW_NOT_FOUND'
   | 'WORKFLOW_HARNESS_UNAVAILABLE'
-  | 'WORKFLOW_PROJECT_UNAVAILABLE'
+  | 'WORKFLOW_REPOSITORY_UNAVAILABLE'
   | 'WORKFLOW_NOT_RUNNABLE'
 
 export class RunServiceError extends Error {
@@ -51,8 +51,8 @@ export interface RunDetail {
   readonly run: RunRecord
   readonly events: ReturnType<EventStore['list']>['events']
   readonly nodeExecutions: readonly NodeExecutionRecord[]
-  readonly projects: readonly RunProjectSnapshot[]
-  readonly projectWorkspaces: readonly RunProjectWorkspace[]
+  readonly repositories: readonly RunRepositorySnapshot[]
+  readonly repositoryWorkspaces: readonly RunRepositoryWorkspace[]
 }
 
 export interface RunSummary {
@@ -87,13 +87,13 @@ export interface CreateRunServiceOptions {
   readonly runs: RunRepository
   readonly workflows: WorkflowRepository
   readonly harnesses: Pick<HarnessCatalog, 'requireAvailable'>
-  readonly resolveProject: (projectId: string) => Promise<RunProjectResolution>
+  readonly resolveRepository: (repositoryId: string) => Promise<RunRepositoryResolution>
   readonly now?: () => string
   readonly createRunId?: () => string
 }
 
-export interface RunProjectResolution {
-  readonly projectId: ProjectId
+export interface RunRepositoryResolution {
+  readonly repositoryId: RepositoryId
   readonly name: string
   readonly provider: GitProvider
   readonly remoteId: string
@@ -139,8 +139,8 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         !validation.valid ||
         workflow.startNodeId === null ||
         workflow.nodes.length === 0 ||
-        workflow.configuration.projectIds.length === 0 ||
-        workflow.configuration.primaryProjectId === null
+        workflow.configuration.repositoryIds.length === 0 ||
+        workflow.configuration.primaryRepositoryId === null
       ) {
         throw new RunServiceError('WORKFLOW_NOT_RUNNABLE', 'Workflow is not runnable')
       }
@@ -162,23 +162,26 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         )
       }
 
-      let projects: readonly RunProjectResolution[]
+      let repositories: readonly RunRepositoryResolution[]
       try {
-        projects = await Promise.all(
-          workflow.configuration.projectIds.map((projectId) => options.resolveProject(projectId)),
+        repositories = await Promise.all(
+          workflow.configuration.repositoryIds.map((repositoryId) =>
+            options.resolveRepository(repositoryId),
+          ),
         )
         if (
-          projects.length !== workflow.configuration.projectIds.length ||
-          projects.some(
-            (project, index) => project.projectId !== workflow.configuration.projectIds[index],
+          repositories.length !== workflow.configuration.repositoryIds.length ||
+          repositories.some(
+            (repository, index) =>
+              repository.repositoryId !== workflow.configuration.repositoryIds[index],
           )
         ) {
-          throw new Error('Project resolution did not preserve workflow order')
+          throw new Error('Repository resolution did not preserve workflow order')
         }
       } catch {
         throw new RunServiceError(
-          'WORKFLOW_PROJECT_UNAVAILABLE',
-          'A configured workflow project is unavailable',
+          'WORKFLOW_REPOSITORY_UNAVAILABLE',
+          'A configured workflow repository is unavailable',
         )
       }
 
@@ -201,7 +204,7 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         workflowId,
         workflowSnapshot: WorkflowSchema.parse(cloneJson(validation.workflow)),
         variables,
-        projects,
+        repositories,
         createdAt: now(),
       })
       return run
@@ -223,8 +226,8 @@ export const createRunService = (options: CreateRunServiceOptions): RunService =
         run,
         events,
         nodeExecutions: options.runs.listNodeExecutions(runId),
-        projects: options.runs.listRunProjects(runId),
-        projectWorkspaces: options.runs.listRunProjectWorkspaces(runId),
+        repositories: options.runs.listRunRepositories(runId),
+        repositoryWorkspaces: options.runs.listRunRepositoryWorkspaces(runId),
       }
     },
 

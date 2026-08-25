@@ -15,21 +15,21 @@ describe('default workflow', () => {
       name: 'Release workflow',
       description: 'Prepare and review a release.',
       configuration: {
-        projectIds: ['project-api'],
-        primaryProjectId: 'project-api',
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
         variables: ['release'],
       },
       createdAt: '2026-08-24T13:00:00.000Z',
     })
 
     expect(workflow).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       workflowId: 'release-workflow',
       name: 'Release workflow',
       description: 'Prepare and review a release.',
       configuration: {
-        projectIds: ['project-api'],
-        primaryProjectId: 'project-api',
+        repositoryIds: ['repository-api'],
+        primaryRepositoryId: 'repository-api',
         variables: ['release'],
       },
       startNodeId: null,
@@ -48,7 +48,7 @@ describe('default workflow', () => {
       workflowId: DEFAULT_WORKFLOW_ID,
       name: 'Untitled workflow',
       description: 'Add agents and connect them to build a workflow.',
-      configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       startNodeId: null,
       nodes: [],
       edges: [],

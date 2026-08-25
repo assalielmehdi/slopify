@@ -19,11 +19,11 @@ const agent = (id: string) => ({
 })
 
 const workflow = {
-  schemaVersion: 1 as const,
+  schemaVersion: 2 as const,
   workflowId: 'workflow-01',
   name: 'Parallel workflow',
   description: 'Exercises fan-out and a deterministic join.',
-  configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+  configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'start',
   nodes: [agent('start'), agent('left'), agent('right'), agent('join')],
   edges: [

@@ -39,16 +39,16 @@ describe('workflow API', () => {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
-        name: 'Release workflow',
+        name: 'release-workflow',
         description: 'Prepare and review a release.',
-        configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       }),
     })
 
     expect(response.status).toBe(201)
     expect(await response.json()).toMatchObject({
       workflowId: 'workflow-release',
-      name: 'Release workflow',
+      name: 'release-workflow',
       nodes: [],
       edges: [],
     })
@@ -65,14 +65,43 @@ describe('workflow API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflowId: 'client-owned',
-        name: 'Release workflow',
+        name: 'release-workflow',
         description: 'Prepare and review a release.',
-        configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       }),
     })
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+  })
+
+  it('returns a conflict for a duplicate workflow name', async () => {
+    const { app } = createFixture()
+
+    const input = {
+      name: 'release-workflow',
+      description: 'Duplicate workflow.',
+      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+    }
+    await app.request('/api/workflows', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+
+    const response = await app.request('/api/workflows', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'WORKFLOW_NAME_CONFLICT',
+        message: 'Workflow name already exists',
+      },
+    })
   })
 
   it('lists current workflows and returns one exact workflow', async () => {
@@ -85,6 +114,22 @@ describe('workflow API', () => {
     expect(await listResponse.json()).toEqual({ workflows: [fixture.workflow] })
     expect(workflowResponse.status).toBe(200)
     expect(await workflowResponse.json()).toEqual(fixture.workflow)
+  })
+
+  it('deletes a current workflow while preserving admitted run history', async () => {
+    const { fixture, app } = createFixture()
+    const admittedRun = createRun(fixture)
+
+    const response = await app.request(`/api/workflows/${fixture.workflow.workflowId}`, {
+      method: 'DELETE',
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({
+      subject: { type: 'WORKFLOW', id: fixture.workflow.workflowId },
+    })
+    expect(fixture.workflows.get(fixture.workflow.workflowId)).toBeUndefined()
+    expect(fixture.runs.get(admittedRun.runId)?.workflowSnapshot).toEqual(fixture.workflow)
   })
 
   it('returns the shared not-found envelope for an unknown workflow', async () => {
@@ -104,13 +149,13 @@ describe('workflow API', () => {
     const response = await app.request(`/api/workflows/${fixture.workflow.workflowId}`, {
       method: 'PUT',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ ...fixture.workflow, name: 'Edited workflow' }),
+      body: JSON.stringify({ ...fixture.workflow, name: 'edited-workflow' }),
     })
 
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({
       workflowId: fixture.workflow.workflowId,
-      name: 'Edited workflow',
+      name: 'edited-workflow',
     })
     expect(fixture.runs.get(admittedRun.runId)?.workflowSnapshot).toEqual(fixture.workflow)
   })

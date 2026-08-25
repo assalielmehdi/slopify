@@ -1,16 +1,16 @@
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
-import { RunIdSchema, type ProjectId, type RunId } from '@slopify/contracts'
+import { RunIdSchema, type RepositoryId, type RunId } from '@slopify/contracts'
 
 import type {
-  RunProjectSnapshot,
-  RunProjectWorkspace,
+  RunRepositorySnapshot,
+  RunRepositoryWorkspace,
   RunRepository,
 } from '../persistence/run-repository.js'
 import type { ProcessRunResult, ProcessRunner } from '../processes/process-runner.js'
 import {
   RunWorkspaceProvisioningError,
-  type ProvisionedRunProject,
+  type ProvisionedRunRepository,
   type RunWorkspaceProvisioner,
   type RunWorkspaceProvisioningFailure,
 } from './run-workspace-provisioner.js'
@@ -18,12 +18,12 @@ import {
 export interface CreateNativeGitRunWorkspaceProvisionerOptions {
   readonly runs: Pick<
     RunRepository,
-    | 'listRunProjects'
-    | 'listRunProjectWorkspaces'
-    | 'markRunProjectWorkspacePreparing'
-    | 'markRunProjectWorkspaceReady'
-    | 'markRunProjectWorkspaceFailed'
-    | 'markRunProjectWorkspaceCleaned'
+    | 'listRunRepositories'
+    | 'listRunRepositoryWorkspaces'
+    | 'markRunRepositoryWorkspacePreparing'
+    | 'markRunRepositoryWorkspaceReady'
+    | 'markRunRepositoryWorkspaceFailed'
+    | 'markRunRepositoryWorkspaceCleaned'
   >
   readonly processRunner: ProcessRunner
   readonly workspacesRoot: string
@@ -111,12 +111,12 @@ export const createNativeGitRunWorkspaceProvisioner = (
       .then((result) => successfulOutput(operation, result))
 
   const verifyWorkspace = async (
-    project: RunProjectSnapshot,
+    repository: RunRepositorySnapshot,
     workspacePath: string,
     branchName: string,
   ): Promise<boolean> => {
     if (!(await pathExists(workspacePath))) return false
-    await requireCanonicalDirectory(workspacePath, 'Run project workspace')
+    await requireCanonicalDirectory(workspacePath, 'Run repository workspace')
     const topLevel = resolve(
       await runGit(
         workspacePath,
@@ -138,27 +138,31 @@ export const createNativeGitRunWorkspaceProvisioner = (
       ['-C', workspacePath, 'remote', 'get-url', 'origin'],
       'Git origin inspection',
     )
-    if (origin !== project.cloneUrl) throw new GitWorkspaceError('Run workspace origin changed')
+    if (origin !== repository.cloneUrl) throw new GitWorkspaceError('Run workspace origin changed')
     return true
   }
 
-  const prepareProject = async (
+  const prepareRepository = async (
     runId: RunId,
-    project: RunProjectSnapshot,
-    state: RunProjectWorkspace | undefined,
+    repository: RunRepositorySnapshot,
+    state: RunRepositoryWorkspace | undefined,
     root: string,
-  ): Promise<ProvisionedRunProject> => {
-    if (project.provider === null || project.remoteId === null || project.defaultBranch === null) {
-      throw new GitWorkspaceError('Legacy local projects cannot provision cloned workspaces')
+  ): Promise<ProvisionedRunRepository> => {
+    if (
+      repository.provider === null ||
+      repository.remoteId === null ||
+      repository.defaultBranch === null
+    ) {
+      throw new GitWorkspaceError('Legacy local repositories cannot provision cloned workspaces')
     }
-    const workspacePath = join(root, runId, project.projectId)
+    const workspacePath = join(root, runId, repository.repositoryId)
     const branchName = `slopify/${runId}`
     if (
       state !== undefined &&
       (resolve(state.workspacePath) !== workspacePath ||
         (state.branchName !== null && state.branchName !== branchName))
     ) {
-      throw new GitWorkspaceError('Persisted run project workspace is not deterministic')
+      throw new GitWorkspaceError('Persisted run repository workspace is not deterministic')
     }
 
     try {
@@ -169,14 +173,14 @@ export const createNativeGitRunWorkspaceProvisioner = (
       }
       if (
         state?.status === 'READY' &&
-        (await verifyWorkspace(project, workspacePath, branchName))
+        (await verifyWorkspace(repository, workspacePath, branchName))
       ) {
-        return { ...project, workspacePath, branchName }
+        return { ...repository, workspacePath, branchName }
       }
 
-      options.runs.markRunProjectWorkspacePreparing({
+      options.runs.markRunRepositoryWorkspacePreparing({
         runId,
-        projectId: project.projectId,
+        repositoryId: repository.repositoryId,
         workspacePath,
         branchName,
         timestamp: now(),
@@ -194,20 +198,20 @@ export const createNativeGitRunWorkspaceProvisioner = (
           '--no-checkout',
           '--origin',
           'origin',
-          project.cloneUrl,
+          repository.cloneUrl,
           workspacePath,
         ],
         'Git clone',
       )
-      await requireCanonicalDirectory(workspacePath, 'Run project workspace')
+      await requireCanonicalDirectory(workspacePath, 'Run repository workspace')
       await runGit(
         workspacePath,
-        ['-C', workspacePath, 'checkout', '-b', branchName, project.baseSha],
+        ['-C', workspacePath, 'checkout', '-b', branchName, repository.baseSha],
         'Git run branch creation',
       )
       await runGit(
         workspacePath,
-        ['-C', workspacePath, 'remote', 'set-url', 'origin', project.cloneUrl],
+        ['-C', workspacePath, 'remote', 'set-url', 'origin', repository.cloneUrl],
         'Git origin configuration',
       )
       await runGit(
@@ -215,31 +219,31 @@ export const createNativeGitRunWorkspaceProvisioner = (
         ['-C', workspacePath, 'config', '--local', 'credential.helper', credentialHelper],
         'Git credential configuration',
       )
-      await verifyWorkspace(project, workspacePath, branchName)
-      options.runs.markRunProjectWorkspaceReady({
+      await verifyWorkspace(repository, workspacePath, branchName)
+      options.runs.markRunRepositoryWorkspaceReady({
         runId,
-        projectId: project.projectId,
+        repositoryId: repository.repositoryId,
         workspacePath,
         branchName,
         timestamp: now(),
       })
-      return { ...project, workspacePath, branchName }
+      return { ...repository, workspacePath, branchName }
     } catch (cause) {
       const existing = options.runs
-        .listRunProjectWorkspaces(runId)
-        .find(({ projectId }) => projectId === project.projectId)
+        .listRunRepositoryWorkspaces(runId)
+        .find(({ repositoryId }) => repositoryId === repository.repositoryId)
       if (existing === undefined) {
-        options.runs.markRunProjectWorkspacePreparing({
+        options.runs.markRunRepositoryWorkspacePreparing({
           runId,
-          projectId: project.projectId,
+          repositoryId: repository.repositoryId,
           workspacePath,
           branchName,
           timestamp: now(),
         })
       }
-      options.runs.markRunProjectWorkspaceFailed({
+      options.runs.markRunRepositoryWorkspaceFailed({
         runId,
-        projectId: project.projectId,
+        repositoryId: repository.repositoryId,
         workspacePath,
         branchName,
         errorMessage: boundedErrorMessage(cause),
@@ -249,26 +253,34 @@ export const createNativeGitRunWorkspaceProvisioner = (
     }
   }
 
-  const prepareRun = async (runId: RunId): Promise<readonly ProvisionedRunProject[]> => {
-    const projects = options.runs.listRunProjects(runId)
+  const prepareRun = async (runId: RunId): Promise<readonly ProvisionedRunRepository[]> => {
+    const repositories = options.runs.listRunRepositories(runId)
     let root: string
     try {
       root = await getCanonicalRoot()
     } catch (cause) {
       throw new RunWorkspaceProvisioningError(
-        projects.map(({ projectId }) => ({ projectId, message: boundedErrorMessage(cause) })),
+        repositories.map(({ repositoryId }) => ({
+          repositoryId,
+          message: boundedErrorMessage(cause),
+        })),
       )
     }
-    const states = new Map<ProjectId, RunProjectWorkspace>(
-      options.runs.listRunProjectWorkspaces(runId).map((state) => [state.projectId, state]),
+    const states = new Map<RepositoryId, RunRepositoryWorkspace>(
+      options.runs.listRunRepositoryWorkspaces(runId).map((state) => [state.repositoryId, state]),
     )
-    const workspaces: ProvisionedRunProject[] = []
+    const workspaces: ProvisionedRunRepository[] = []
     const failures: RunWorkspaceProvisioningFailure[] = []
-    for (const project of projects) {
+    for (const repository of repositories) {
       try {
-        workspaces.push(await prepareProject(runId, project, states.get(project.projectId), root))
+        workspaces.push(
+          await prepareRepository(runId, repository, states.get(repository.repositoryId), root),
+        )
       } catch (cause) {
-        failures.push({ projectId: project.projectId, message: boundedErrorMessage(cause) })
+        failures.push({
+          repositoryId: repository.repositoryId,
+          message: boundedErrorMessage(cause),
+        })
       }
     }
     if (failures.length > 0) throw new RunWorkspaceProvisioningError(failures)
@@ -281,11 +293,11 @@ export const createNativeGitRunWorkspaceProvisioner = (
     const runDirectory = join(root, runId)
     if (await pathExists(runDirectory)) await rm(runDirectory, { recursive: true, force: true })
     const timestamp = now()
-    for (const workspace of options.runs.listRunProjectWorkspaces(runId)) {
+    for (const workspace of options.runs.listRunRepositoryWorkspaces(runId)) {
       if (workspace.status === 'LEGACY') continue
-      options.runs.markRunProjectWorkspaceCleaned({
+      options.runs.markRunRepositoryWorkspaceCleaned({
         runId,
-        projectId: workspace.projectId,
+        repositoryId: workspace.repositoryId,
         timestamp,
       })
     }

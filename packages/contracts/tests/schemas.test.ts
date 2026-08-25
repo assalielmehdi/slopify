@@ -13,7 +13,7 @@ import {
   HealthResponseSchema,
   NodeIdSchema,
   OutcomeNameSchema,
-  ProjectCatalogResponseSchema,
+  RepositoryCatalogResponseSchema,
   RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
@@ -50,7 +50,7 @@ describe('branded identifiers', () => {
   })
 })
 
-describe('harness and project catalogs', () => {
+describe('harness and repository catalogs', () => {
   it('describes host-discovered harnesses without exposing host configuration', () => {
     const catalog = HarnessCatalogResponseSchema.parse({
       harnesses: [
@@ -144,11 +144,11 @@ describe('harness and project catalogs', () => {
     expect(GitRepositoryCatalogResponseSchema.parse(response)).toEqual(response)
   })
 
-  it('exposes only current remote project records', () => {
+  it('exposes only current remote repository records', () => {
     const response = {
-      projects: [
+      repositories: [
         {
-          projectId: 'slopify',
+          repositoryId: 'slopify',
           name: 'slopify',
           provider: 'GITHUB',
           remoteId: '123',
@@ -163,15 +163,15 @@ describe('harness and project catalogs', () => {
       ],
     }
 
-    expect(ProjectCatalogResponseSchema.parse(response)).toEqual(response)
+    expect(RepositoryCatalogResponseSchema.parse(response)).toEqual(response)
   })
 })
 
 describe('public API records', () => {
-  it('keeps project deletion receipts closed', () => {
+  it('keeps repository deletion receipts closed', () => {
     const receipt = {
       deletionId: 'deletion-01',
-      subject: { type: 'PROJECT', id: 'project-01' },
+      subject: { type: 'REPOSITORY', id: 'repository-01' },
       deletedAt: '2026-08-22T10:00:00Z',
       undoExpiresAt: '2026-08-22T10:00:10Z',
     }
@@ -187,6 +187,17 @@ describe('public API records', () => {
         subject: { type: 'UNKNOWN', id: 'unknown-01' },
       }).success,
     ).toBe(false)
+  })
+
+  it('accepts workflow deletion receipts', () => {
+    const receipt = {
+      deletionId: 'deletion-workflow-01',
+      subject: { type: 'WORKFLOW', id: 'workflow-01' },
+      deletedAt: '2026-08-25T10:00:00Z',
+      undoExpiresAt: '2026-08-25T10:00:10Z',
+    }
+
+    expect(DeletionReceiptSchema.parse(receipt)).toEqual(receipt)
   })
 
   it('uses strict error and health envelopes', () => {
@@ -288,7 +299,7 @@ describe('run events', () => {
 
 describe('agent traces', () => {
   const header = {
-    version: 2,
+    version: 3,
     runId: 'run-01',
     nodeExecutionId: 'node-execution-01',
     attemptId: 'attempt-01',
@@ -301,10 +312,10 @@ describe('agent traces', () => {
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the primary workspace.',
       workspaceRoot: '/Users/operator/.slopify/orchestrator/workspaces/run-01',
-      primaryProjectId: 'slopify',
-      projects: [
+      primaryRepositoryId: 'slopify',
+      repositories: [
         {
-          projectId: 'slopify',
+          repositoryId: 'slopify',
           name: 'Slopify',
           provider: 'GITHUB',
           fullName: 'operator/slopify',
@@ -329,11 +340,11 @@ describe('agent traces', () => {
         version: 1,
         configuration: {
           ...header.configuration,
-          projects: [
+          repositories: [
             {
-              projectId: 'project-api',
+              repositoryId: 'repository-api',
               name: 'API',
-              worktreePath: '/worktrees/run-01/project-api',
+              worktreePath: '/worktrees/run-01/repository-api',
               baseSha: 'a'.repeat(40),
               sourceBranch: 'main',
             },
@@ -341,6 +352,29 @@ describe('agent traces', () => {
         },
       }).version,
     ).toBe(1)
+  })
+
+  it('normalizes persisted version 2 project keys to repository vocabulary', () => {
+    const parsed = AgentTraceHeaderSchema.parse({
+      ...header,
+      version: 2,
+      configuration: {
+        ...header.configuration,
+        primaryRepositoryId: undefined,
+        repositories: undefined,
+        primaryProjectId: 'slopify',
+        projects: [
+          {
+            ...header.configuration.repositories[0],
+            repositoryId: undefined,
+            projectId: 'slopify',
+          },
+        ],
+      },
+    })
+
+    expect(parsed.configuration.primaryRepositoryId).toBe('slopify')
+    expect(parsed.configuration.repositories[0]?.repositoryId).toBe('slopify')
   })
 
   it('keeps trace headers and event types strict', () => {

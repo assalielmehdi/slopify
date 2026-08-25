@@ -49,7 +49,7 @@ export {
   type OpenDatabaseOptions,
   type WorkbenchDatabase,
 } from './persistence/database.js'
-export { createProjectRepository } from './persistence/project-repository.js'
+export { createRepositoryStore } from './persistence/repository-store.js'
 export { createGitConnectionRepository } from './persistence/git-connection-repository.js'
 export { createDeletionOperationRepository } from './persistence/deletion-operation-repository.js'
 export {
@@ -63,20 +63,20 @@ export {
   type ReversibleDeletionHandler,
 } from './deletions/deletion-service.js'
 export {
-  ProjectServiceError,
-  createProjectService,
-  type ProjectService,
-  type ProjectServiceErrorCode,
-} from './projects/project-service.js'
-export { type ProjectRecord, type ProjectRepository } from './projects/project-repository.js'
-export { createRemoteRunProjectResolver } from './projects/remote-run-project-resolver.js'
+  RepositoryServiceError,
+  createRepositoryService,
+  type RepositoryService,
+  type RepositoryServiceErrorCode,
+} from './repositories/repository-service.js'
+export { type RepositoryRecord, type RepositoryStore } from './repositories/repository-store.js'
+export { createRemoteRunRepositoryResolver } from './repositories/remote-run-repository-resolver.js'
 export {
   createNativeGitRunWorkspaceProvisioner,
   type CreateNativeGitRunWorkspaceProvisionerOptions,
 } from './workspaces/native-git-run-workspace-provisioner.js'
 export {
   RunWorkspaceProvisioningError,
-  type ProvisionedRunProject,
+  type ProvisionedRunRepository,
   type RunWorkspaceProvisioner,
   type RunWorkspaceProvisioningFailure,
 } from './workspaces/run-workspace-provisioner.js'
@@ -126,20 +126,20 @@ export { PersistenceError, type PersistenceErrorCode } from './persistence/error
 export { type JsonPrimitive, type JsonValue } from './persistence/json.js'
 export {
   createRunRepository,
-  type CreateRunProjectInput,
+  type CreateRunRepositoryInput,
   type CreateRunInput,
   type ListRunsInput,
   type NodeExecutionRecord,
   type NodeExecutionStatus,
-  type MarkRunProjectWorkspaceCleanedInput,
-  type MarkRunProjectWorkspaceFailedInput,
-  type MarkRunProjectWorkspacePreparingInput,
-  type MarkRunProjectWorkspaceReadyInput,
+  type MarkRunRepositoryWorkspaceCleanedInput,
+  type MarkRunRepositoryWorkspaceFailedInput,
+  type MarkRunRepositoryWorkspacePreparingInput,
+  type MarkRunRepositoryWorkspaceReadyInput,
   type RunRecord,
   type RunPage,
-  type RunProjectSnapshot,
-  type RunProjectWorkspace,
-  type RunProjectWorkspaceStatus,
+  type RunRepositorySnapshot,
+  type RunRepositoryWorkspace,
+  type RunRepositoryWorkspaceStatus,
   type RunRepository,
 } from './persistence/run-repository.js'
 export {
@@ -169,7 +169,7 @@ export {
   type RunServiceErrorCode,
   type RunSummary,
   type RunSummaryPage,
-  type RunProjectResolution,
+  type RunRepositoryResolution,
 } from './services/run-service.js'
 export {
   WorkflowServiceError,

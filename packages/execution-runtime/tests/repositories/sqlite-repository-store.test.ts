@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createProjectRepository } from '../../src/index.js'
+import { createRepositoryStore } from '../../src/index.js'
 import { createPersistenceFixture } from '../persistence/test-fixture.js'
 
 const fixtures: ReturnType<typeof createPersistenceFixture>[] = []
@@ -9,13 +9,13 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) fixture.cleanup()
 })
 
-describe('SQLite project repository', () => {
-  it('round-trips projects in creation order and enforces unique provider repositories', () => {
+describe('SQLite repository store', () => {
+  it('round-trips repositories in creation order and enforces unique provider repositories', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
-    const projects = createProjectRepository(fixture.database)
+    const repositories = createRepositoryStore(fixture.database)
     const record = {
-      projectId: 'project-01',
+      repositoryId: 'repository-01',
       name: 'slopify',
       provider: 'GITHUB' as const,
       remoteId: '123',
@@ -27,34 +27,34 @@ describe('SQLite project repository', () => {
       updatedAt: '2026-08-21T10:00:00Z',
     }
 
-    projects.add(record)
+    repositories.add(record)
 
-    expect(projects.get('project-01')).toEqual(record)
-    expect(projects.findByRemote('GITHUB', '123')).toEqual(record)
-    expect(projects.list()).toEqual([record])
-    expect(() => projects.add({ ...record, projectId: 'project-02' })).toThrowError(
+    expect(repositories.get('repository-01')).toEqual(record)
+    expect(repositories.findByRemote('GITHUB', '123')).toEqual(record)
+    expect(repositories.list()).toEqual([record])
+    expect(() => repositories.add({ ...record, repositoryId: 'repository-02' })).toThrowError(
       expect.objectContaining({ code: 'PERSISTENCE_CONFLICT' }),
     )
     expect(
-      projects.stageDeletion({
+      repositories.stageDeletion({
         deletionId: 'deletion-01',
-        subject: { type: 'PROJECT', id: 'project-01' },
+        subject: { type: 'REPOSITORY', id: 'repository-01' },
         deletedAt: '2026-08-22T10:00:00Z',
         undoExpiresAt: '2026-08-22T10:00:10Z',
       }),
     ).toBe(true)
-    expect(projects.get('project-01')).toBeUndefined()
-    expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:05Z')).toBe('UNDONE')
-    expect(projects.get('project-01')).toEqual(record)
-    expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:06Z')).toBe('UNDONE')
+    expect(repositories.get('repository-01')).toBeUndefined()
+    expect(repositories.restoreDeletion('deletion-01', '2026-08-22T10:00:05Z')).toBe('UNDONE')
+    expect(repositories.get('repository-01')).toEqual(record)
+    expect(repositories.restoreDeletion('deletion-01', '2026-08-22T10:00:06Z')).toBe('UNDONE')
   })
 
-  it('purges an expired project deletion', () => {
+  it('purges an expired repository deletion', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
-    const projects = createProjectRepository(fixture.database)
-    projects.add({
-      projectId: 'project-01',
+    const repositories = createRepositoryStore(fixture.database)
+    repositories.add({
+      repositoryId: 'repository-01',
       name: 'slopify',
       provider: 'GITHUB',
       remoteId: '123',
@@ -65,16 +65,16 @@ describe('SQLite project repository', () => {
       createdAt: '2026-08-21T10:00:00Z',
       updatedAt: '2026-08-21T10:00:00Z',
     })
-    projects.stageDeletion({
+    repositories.stageDeletion({
       deletionId: 'deletion-01',
-      subject: { type: 'PROJECT', id: 'project-01' },
+      subject: { type: 'REPOSITORY', id: 'repository-01' },
       deletedAt: '2026-08-22T10:00:00Z',
       undoExpiresAt: '2026-08-22T10:00:10Z',
     })
 
-    projects.purgeExpired('2026-08-22T10:00:10Z')
+    repositories.purgeExpired('2026-08-22T10:00:10Z')
 
-    expect(projects.restoreDeletion('deletion-01', '2026-08-22T10:00:10Z')).toBe('EXPIRED')
-    expect(projects.findByRemote('GITHUB', '123')).toBeUndefined()
+    expect(repositories.restoreDeletion('deletion-01', '2026-08-22T10:00:10Z')).toBe('EXPIRED')
+    expect(repositories.findByRemote('GITHUB', '123')).toBeUndefined()
   })
 })

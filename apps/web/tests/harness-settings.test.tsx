@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HarnessDescriptorSchema } from '@slopify/contracts'
@@ -10,7 +10,7 @@ import { HarnessSettings } from '../components/settings/harness-settings'
 afterEach(cleanup)
 
 describe('HarnessSettings', () => {
-  it('shows the host-discovered Pi installation without exposing editable configuration', async () => {
+  it('shows discovered harnesses as repository-style cards with details in a drawer', async () => {
     const descriptor = HarnessDescriptorSchema.parse({
       harnessId: 'pi',
       name: 'Pi',
@@ -24,13 +24,32 @@ describe('HarnessSettings', () => {
     })
     render(<HarnessSettings client={{ listHarnesses: vi.fn(async () => [descriptor]) }} />)
 
-    expect(await screen.findByRole('heading', { name: 'Pi' })).toBeTruthy()
+    const piCard = await screen.findByRole('button', { name: 'Pi, Available' })
+    expect(screen.getByTestId('harness-grid').className).toContain(
+      'sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]',
+    )
+    expect(screen.getByRole('img', { name: 'Pi' }).getAttribute('src')).toContain('/pi-logo.svg')
     expect(screen.getByText('Available')).toBeTruthy()
+    expect(screen.queryByText('Version 0.84.2')).toBeNull()
+    expect(screen.queryByText('/opt/homebrew/bin/pi')).toBeNull()
+    expect(
+      screen.queryByText(
+        'Slopify discovers supported agent harnesses from this machine. Manage harness setup outside Slopify.',
+      ),
+    ).toBeNull()
+
+    fireEvent.click(piCard)
+
+    const panel = await screen.findByRole('dialog', { name: 'Pi' })
+    expect(panel.getAttribute('data-layout')).toBe('floating')
     expect(screen.getByText('Version 0.84.2')).toBeTruthy()
     expect(screen.getByText('/opt/homebrew/bin/pi')).toBeTruthy()
     expect(screen.getByText('1 model')).toBeTruthy()
     expect(screen.queryByRole('textbox')).toBeNull()
     expect(screen.queryByRole('button', { name: /Save|Connect|Configure/ })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Close harness details' }))
+    await waitFor(() => expect(panel.getAttribute('data-open')).toBe('false'))
   })
 
   it('gives an actionable installation link when Pi is unavailable', async () => {
@@ -46,11 +65,14 @@ describe('HarnessSettings', () => {
     })
     render(<HarnessSettings client={{ listHarnesses: vi.fn(async () => [descriptor]) }} />)
 
-    expect(await screen.findByText('Pi was not found on PATH.')).toBeTruthy()
-    expect(screen.getByRole('link', { name: 'Install Pi' }).getAttribute('href')).toBe(
+    fireEvent.click(await screen.findByRole('button', { name: 'Pi, Unavailable' }))
+
+    const panel = await screen.findByRole('dialog', { name: 'Pi' })
+    expect(within(panel).getByText('Pi was not found on PATH.')).toBeTruthy()
+    expect(within(panel).getByRole('link', { name: 'Install Pi' }).getAttribute('href')).toBe(
       'https://pi.dev/',
     )
-    expect(screen.getByText('Unavailable')).toBeTruthy()
+    expect(within(panel).getByText('Unavailable')).toBeTruthy()
   })
 
   it('shows a truthful unavailable state when harness discovery fails', async () => {

@@ -4,7 +4,7 @@ import {
   AgentTraceSchema,
   DeletionReceiptSchema,
   HarnessCatalogResponseSchema,
-  ProjectSchema,
+  RepositorySchema,
   UndoDeletionResponseSchema,
 } from '@slopify/contracts'
 
@@ -54,14 +54,14 @@ describe('API client', () => {
           thinkingLevel: 'medium',
           renderedPrompt: 'Inspect the repository.',
           workspaceRoot: '/workspaces/run-01',
-          primaryProjectId: 'project-api',
-          projects: [
+          primaryRepositoryId: 'repository-api',
+          repositories: [
             {
-              projectId: 'project-api',
+              repositoryId: 'repository-api',
               name: 'API',
               provider: 'GITHUB',
               fullName: 'operator/api',
-              workspacePath: '/workspaces/run-01/project-api',
+              workspacePath: '/workspaces/run-01/repository-api',
               branchName: 'slopify/run-01',
               baseSha: 'a'.repeat(40),
               defaultBranch: 'main',
@@ -127,9 +127,9 @@ describe('API client', () => {
     )
   })
 
-  it('lists, adds, deletes, and restores remote Git projects through the same-origin API', async () => {
-    const project = ProjectSchema.parse({
-      projectId: 'project-01',
+  it('lists, adds, deletes, and restores remote Git repositories through the same-origin API', async () => {
+    const repository = RepositorySchema.parse({
+      repositoryId: 'repository-01',
       name: 'slopify',
       provider: 'GITHUB',
       remoteId: '123',
@@ -143,35 +143,35 @@ describe('API client', () => {
     })
     const deletion = DeletionReceiptSchema.parse({
       deletionId: 'deletion-01',
-      subject: { type: 'PROJECT', id: 'project-01' },
+      subject: { type: 'REPOSITORY', id: 'repository-01' },
       deletedAt: '2026-08-22T10:00:00Z',
       undoExpiresAt: '2026-08-22T10:00:10Z',
     })
     const undone = UndoDeletionResponseSchema.parse({ ...deletion, state: 'UNDONE' })
     const fetchImplementation = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json({ projects: [project] }))
-      .mockResolvedValueOnce(Response.json(project, { status: 201 }))
+      .mockResolvedValueOnce(Response.json({ repositories: [repository] }))
+      .mockResolvedValueOnce(Response.json(repository, { status: 201 }))
       .mockResolvedValueOnce(Response.json(deletion))
       .mockResolvedValueOnce(Response.json(undone))
     const client = createApiClient({ fetch: fetchImplementation })
 
-    await expect(client.listProjects()).resolves.toEqual([project])
-    await expect(client.addProject({ provider: 'GITHUB', remoteId: '123' })).resolves.toEqual(
-      project,
+    await expect(client.listRepositories()).resolves.toEqual([repository])
+    await expect(client.addRepository({ provider: 'GITHUB', remoteId: '123' })).resolves.toEqual(
+      repository,
     )
-    await expect(client.deleteProject('project-01')).resolves.toEqual(deletion)
+    await expect(client.deleteRepository('repository-01')).resolves.toEqual(deletion)
     await expect(client.undoDeletion('deletion-01')).resolves.toEqual(undone)
-    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/projects', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/repositories', {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/projects', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/repositories', {
       body: JSON.stringify({ provider: 'GITHUB', remoteId: '123' }),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
       method: 'POST',
     })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/projects/project-01', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/repositories/repository-01', {
       method: 'DELETE',
       headers: { accept: 'application/json' },
     })
@@ -220,7 +220,7 @@ describe('API client', () => {
     })
   })
 
-  it('loads and validates the workflow catalog and current workflow', async () => {
+  it('loads, validates, and deletes workflows through the same-origin API', async () => {
     const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
       modelId: 'test-model',
@@ -234,10 +234,21 @@ describe('API client', () => {
         }),
       )
       .mockResolvedValueOnce(Response.json(workflow))
+      .mockResolvedValueOnce(
+        Response.json({
+          deletionId: 'deletion-workflow-01',
+          subject: { type: 'WORKFLOW', id: workflow.workflowId },
+          deletedAt: '2026-08-25T10:00:00Z',
+          undoExpiresAt: '2026-08-25T10:00:10Z',
+        }),
+      )
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(client.listWorkflows()).resolves.toEqual([workflow])
     await expect(client.getWorkflow(workflow.workflowId)).resolves.toEqual(workflow)
+    await expect(client.deleteWorkflow(workflow.workflowId)).resolves.toMatchObject({
+      subject: { type: 'WORKFLOW', id: workflow.workflowId },
+    })
     expect(fetchImplementation).toHaveBeenNthCalledWith(1, '/api/workflows', {
       headers: { accept: 'application/json' },
       method: 'GET',
@@ -245,6 +256,10 @@ describe('API client', () => {
     expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/default-workflow', {
       headers: { accept: 'application/json' },
       method: 'GET',
+    })
+    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/workflows/default-workflow', {
+      headers: { accept: 'application/json' },
+      method: 'DELETE',
     })
   })
 
@@ -255,9 +270,9 @@ describe('API client', () => {
       thinkingLevel: 'high',
     })
     const input = {
-      name: 'Release workflow',
+      name: 'release-workflow',
       description: 'Prepare and review a release.',
-      configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     } as const
     const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValueOnce(Response.json(workflow))
     const client = createApiClient({ fetch: fetchImplementation })
@@ -335,7 +350,7 @@ describe('API client', () => {
     })
   })
 
-  it('loads immutable project and cloned workspace evidence with run details', async () => {
+  it('loads immutable repository and cloned workspace evidence with run details', async () => {
     const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
       modelId: 'test-model',
@@ -355,9 +370,9 @@ describe('API client', () => {
       },
       events: [],
       nodeExecutions: [],
-      projects: [
+      repositories: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           position: 0,
           name: 'API',
           provider: 'GITHUB',
@@ -369,12 +384,12 @@ describe('API client', () => {
           isPrimary: true,
         },
       ],
-      projectWorkspaces: [
+      repositoryWorkspaces: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           position: 0,
           status: 'READY',
-          workspacePath: '/workspaces/run-01/project-api',
+          workspacePath: '/workspaces/run-01/repository-api',
           branchName: 'slopify/run-01',
           errorMessage: null,
           preparedAt: '2026-08-23T12:00:01Z',

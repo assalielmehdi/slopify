@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { AgentExecutionEventSchema, type AgentExecutor } from '@slopify/agent-runtimes'
-import { GitShaSchema, ProjectIdSchema } from '@slopify/contracts'
+import { GitShaSchema, RepositoryIdSchema } from '@slopify/contracts'
 import {
   createAgentNodeRunner,
   createEventStore,
@@ -61,8 +61,8 @@ describe('orchestrated run HTTP flow', () => {
     const workflows = createWorkflowRepository(database)
     const workflow = createTestAgentWorkflow({
       createdAt: '2026-08-20T12:00:00.000Z',
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     })
     workflows.save(workflow)
     const runs = createRunRepository(database)
@@ -78,8 +78,8 @@ describe('orchestrated run HTTP flow', () => {
     const agent: AgentExecutor = {
       execute(input) {
         return (async function* () {
-          const primary = input.workspace.projects.find(
-            ({ projectId }) => projectId === input.workspace.primaryProjectId,
+          const primary = input.workspace.repositories.find(
+            ({ repositoryId }) => repositoryId === input.workspace.primaryRepositoryId,
           )
           if (primary === undefined) throw new Error('Expected a primary run workspace')
           if (!existsSync(join(primary.path, 'README.md'))) throw new Error('Clone was not ready')
@@ -156,8 +156,8 @@ describe('orchestrated run HTTP flow', () => {
       runs,
       workflows,
       harnesses,
-      resolveProject: async (projectId) => ({
-        projectId: ProjectIdSchema.parse(projectId),
+      resolveRepository: async (repositoryId) => ({
+        repositoryId: RepositoryIdSchema.parse(repositoryId),
         name: 'API',
         provider: 'GITHUB',
         remoteId: '123',
@@ -212,12 +212,12 @@ describe('orchestrated run HTTP flow', () => {
         'RUN_COMPLETED',
       ]),
     )
-    const workspacePath = join(realpathSync(workspacesRoot), 'run-e2e', 'project-api')
+    const workspacePath = join(realpathSync(workspacesRoot), 'run-e2e', 'repository-api')
     expect(existsSync(workspacePath)).toBe(false)
     expect(existsSync(join(sourceRepository, 'agent-result.txt'))).toBe(false)
-    expect(runs.listRunProjectWorkspaces('run-e2e')).toMatchObject([
+    expect(runs.listRunRepositoryWorkspaces('run-e2e')).toMatchObject([
       {
-        projectId: 'project-api',
+        repositoryId: 'repository-api',
         status: 'CLEANED',
         workspacePath,
         branchName: 'slopify/run-e2e',

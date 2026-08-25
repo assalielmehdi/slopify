@@ -60,8 +60,8 @@ const detail = {
       durationMs: 60_000,
     },
   ],
-  projects: [],
-  projectWorkspaces: [],
+  repositories: [],
+  repositoryWorkspaces: [],
 } as unknown as RunDetailResponse
 
 beforeEach(() => {

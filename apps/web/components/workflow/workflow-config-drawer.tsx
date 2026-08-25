@@ -1,6 +1,6 @@
 'use client'
 
-import type { Project } from '@slopify/contracts'
+import type { Repository } from '@slopify/contracts'
 import type { CreateWorkflowInput, WorkflowConfiguration } from '@slopify/workflow-model'
 import {
   BracesIcon,
@@ -26,12 +26,12 @@ interface VariableRow {
 }
 
 export interface WorkflowConfigDrawerProps {
-  readonly mode: 'create' | 'edit'
   readonly value: CreateWorkflowInput
-  readonly projects: readonly Project[]
+  readonly repositories: readonly Repository[]
   readonly error?: string | undefined
   readonly saving?: boolean | undefined
   readonly onClose: () => void
+  readonly onDelete: () => Promise<boolean>
   readonly onSubmit: (value: CreateWorkflowInput) => Promise<boolean>
 }
 
@@ -55,39 +55,39 @@ const sameMembers = (left: readonly string[], right: readonly string[]): boolean
   return left.every((value) => rightMembers.has(value))
 }
 
-function WorkflowProjectsFields({
-  onPrimaryProjectChange,
-  onProjectToggle,
-  primaryProjectId,
-  projects,
-  selectedProjectIds,
+function WorkflowRepositoriesFields({
+  onPrimaryRepositoryChange,
+  onRepositoryToggle,
+  primaryRepositoryId,
+  repositories,
+  selectedRepositoryIds,
 }: Readonly<{
-  onPrimaryProjectChange: (projectId: Project['projectId']) => void
-  onProjectToggle: (project: Project, selected: boolean) => void
-  primaryProjectId: WorkflowConfiguration['primaryProjectId']
-  projects: readonly Project[]
-  selectedProjectIds: ReadonlySet<Project['projectId']>
+  onPrimaryRepositoryChange: (repositoryId: Repository['repositoryId']) => void
+  onRepositoryToggle: (repository: Repository, selected: boolean) => void
+  primaryRepositoryId: WorkflowConfiguration['primaryRepositoryId']
+  repositories: readonly Repository[]
+  selectedRepositoryIds: ReadonlySet<Repository['repositoryId']>
 }>) {
   return (
     <section className="grid gap-3">
       <div className="flex items-start gap-3">
         <FolderGit2Icon aria-hidden="true" className="mt-0.5 size-4 text-muted-foreground" />
         <div>
-          <h3 className="text-sm/5 font-semibold">Projects</h3>
+          <h3 className="text-sm/5 font-semibold">Repositories</h3>
           <p className="mt-1 text-xs/4 text-muted-foreground">
             Every agent can work in each selected Git repository.
           </p>
         </div>
       </div>
-      {projects.length === 0 ? (
+      {repositories.length === 0 ? (
         <p className="rounded-md border border-dashed p-3 text-xs/4 text-muted-foreground">
-          No projects are configured in Slopify yet.
+          No repositories are configured in Slopify yet.
         </p>
       ) : (
         <div className="grid gap-2">
-          {projects.map((project) => {
-            const selected = selectedProjectIds.has(project.projectId)
-            const unavailable = project.availability !== 'AVAILABLE'
+          {repositories.map((repository) => {
+            const selected = selectedRepositoryIds.has(repository.repositoryId)
+            const unavailable = repository.availability !== 'AVAILABLE'
             return (
               <div
                 className={cn(
@@ -95,33 +95,35 @@ function WorkflowProjectsFields({
                   selected && 'border-foreground/25 bg-muted/55',
                   unavailable && !selected && 'opacity-60',
                 )}
-                key={project.projectId}
+                key={repository.repositoryId}
               >
                 <label className="flex min-w-0 flex-1 cursor-pointer items-start gap-3 has-[:disabled]:cursor-not-allowed">
                   <input
                     checked={selected}
                     className="mt-0.5 size-4 rounded border-input accent-foreground"
                     disabled={unavailable && !selected}
-                    onChange={(event) => onProjectToggle(project, event.currentTarget.checked)}
+                    onChange={(event) =>
+                      onRepositoryToggle(repository, event.currentTarget.checked)
+                    }
                     type="checkbox"
                   />
                   <span className="min-w-0">
-                    <span className="block text-sm/5 font-medium">{project.name}</span>
+                    <span className="block text-sm/5 font-medium">{repository.name}</span>
                     <span className="block break-all font-mono text-xs/4 text-muted-foreground">
                       {unavailable
-                        ? `${project.fullName} · ${project.availability === 'CONNECTION_MISSING' ? 'Connection missing' : 'Repository unavailable'}`
-                        : project.fullName}
+                        ? `${repository.fullName} · ${repository.availability === 'CONNECTION_MISSING' ? 'Connection missing' : 'Repository unavailable'}`
+                        : repository.fullName}
                     </span>
                   </span>
                 </label>
                 {selected ? (
                   <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs/4 font-medium text-muted-foreground">
                     <input
-                      aria-label={`${project.name} as primary project`}
-                      checked={primaryProjectId === project.projectId}
+                      aria-label={`${repository.name} as primary repository`}
+                      checked={primaryRepositoryId === repository.repositoryId}
                       className="size-4 border-input accent-foreground"
-                      name="primary-project"
-                      onChange={() => onPrimaryProjectChange(project.projectId)}
+                      name="primary-repository"
+                      onChange={() => onPrimaryRepositoryChange(repository.repositoryId)}
                       type="radio"
                     />
                     Primary
@@ -211,12 +213,12 @@ function WorkflowVariableFields({
 }
 
 export function WorkflowConfigDrawer({
-  mode,
   value,
-  projects,
+  repositories,
   error,
   saving = false,
   onClose,
+  onDelete,
   onSubmit,
 }: WorkflowConfigDrawerProps) {
   const { configuration } = value
@@ -224,16 +226,20 @@ export function WorkflowConfigDrawer({
   const openFrameRef = useRef<number | undefined>(undefined)
   const closeTimerRef = useRef<number | undefined>(undefined)
   const closingRef = useRef(false)
+  const confirmationInputRef = useRef<HTMLInputElement>(null)
   const nextVariableId = useRef(configuration.variables.length)
   const [open, setOpen] = useState(false)
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [confirmationName, setConfirmationName] = useState('')
+  const [deleting, setDeleting] = useState(false)
   const [name, setName] = useState(value.name)
   const [description, setDescription] = useState(value.description)
-  const [selectedProjectIds, setSelectedProjectIds] = useState<Set<Project['projectId']>>(
-    () => new Set(configuration.projectIds),
-  )
-  const [primaryProjectId, setPrimaryProjectId] = useState<
-    WorkflowConfiguration['primaryProjectId']
-  >(configuration.primaryProjectId)
+  const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<
+    Set<Repository['repositoryId']>
+  >(() => new Set(configuration.repositoryIds))
+  const [primaryRepositoryId, setPrimaryRepositoryId] = useState<
+    WorkflowConfiguration['primaryRepositoryId']
+  >(configuration.primaryRepositoryId)
   const [variables, setVariables] = useState<readonly VariableRow[]>(() =>
     configuration.variables.map((name, index) => ({ id: `variable-${index}`, name })),
   )
@@ -247,7 +253,7 @@ export function WorkflowConfigDrawer({
   }, [onClose])
 
   const requestClose = useCallback(() => {
-    if (closingRef.current || saving) return
+    if (closingRef.current || saving || deleting) return
     closingRef.current = true
     setOpen(false)
     if (prefersReducedMotion()) {
@@ -260,7 +266,7 @@ export function WorkflowConfigDrawer({
       ),
     )
     closeTimerRef.current = window.setTimeout(completeClose, duration + 50)
-  }, [completeClose, saving])
+  }, [completeClose, deleting, saving])
 
   useEffect(() => {
     openFrameRef.current = window.requestAnimationFrame(() => {
@@ -272,26 +278,30 @@ export function WorkflowConfigDrawer({
     }
   }, [])
 
+  useEffect(() => {
+    if (confirmingDelete) confirmationInputRef.current?.focus()
+  }, [confirmingDelete])
+
   const trimmedVariables = variables.map(({ name }) => name.trim())
   const trimmedName = name.trim()
   const trimmedDescription = description.trim()
   const variablesValid =
     trimmedVariables.every((name) => name.length > 0) &&
     new Set(trimmedVariables).size === trimmedVariables.length
-  const selectedProjects: Project['projectId'][] = []
-  for (const project of projects) {
-    if (selectedProjectIds.has(project.projectId)) selectedProjects.push(project.projectId)
+  const selectedRepositories: Repository['repositoryId'][] = []
+  for (const repository of repositories) {
+    if (selectedRepositoryIds.has(repository.repositoryId))
+      selectedRepositories.push(repository.repositoryId)
   }
   const isDirty =
-    mode === 'create' ||
     trimmedName !== value.name ||
     trimmedDescription !== value.description ||
-    !sameMembers(selectedProjects, configuration.projectIds) ||
-    primaryProjectId !== configuration.primaryProjectId ||
+    !sameMembers(selectedRepositories, configuration.repositoryIds) ||
+    primaryRepositoryId !== configuration.primaryRepositoryId ||
     !sameValues(trimmedVariables, configuration.variables)
-  const projectsValid =
-    (selectedProjects.length === 0 && primaryProjectId === null) ||
-    (primaryProjectId !== null && selectedProjects.includes(primaryProjectId))
+  const repositoriesValid =
+    (selectedRepositories.length === 0 && primaryRepositoryId === null) ||
+    (primaryRepositoryId !== null && selectedRepositories.includes(primaryRepositoryId))
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -299,7 +309,7 @@ export function WorkflowConfigDrawer({
       trimmedName.length === 0 ||
       trimmedDescription.length === 0 ||
       !variablesValid ||
-      !projectsValid ||
+      !repositoriesValid ||
       !isDirty
     )
       return
@@ -307,18 +317,33 @@ export function WorkflowConfigDrawer({
       name: trimmedName,
       description: trimmedDescription,
       configuration: {
-        projectIds: selectedProjects,
-        primaryProjectId,
+        repositoryIds: selectedRepositories,
+        primaryRepositoryId,
         variables: trimmedVariables,
       },
     })
     if (!saved) return
     toast.add({
-      title: mode === 'create' ? 'Workflow created' : 'Workflow saved',
-      description:
-        mode === 'create'
-          ? `${trimmedName} is ready to configure.`
-          : 'Details, projects, and run variables were saved.',
+      title: 'Workflow saved',
+      description: 'Details, repositories, and run variables were saved.',
+      type: 'success',
+    })
+    requestClose()
+  }
+
+  const deleteWorkflow = async () => {
+    if (!confirmingDelete) {
+      setConfirmingDelete(true)
+      return
+    }
+    if (confirmationName !== value.name) return
+    setDeleting(true)
+    const deleted = await onDelete()
+    setDeleting(false)
+    if (!deleted) return
+    toast.add({
+      title: 'Workflow deleted',
+      description: `${value.name} was removed from Slopify.`,
       type: 'success',
     })
     requestClose()
@@ -337,7 +362,7 @@ export function WorkflowConfigDrawer({
       }}
     >
       <aside
-        aria-label={mode === 'create' ? 'Create workflow' : 'Workflow configuration'}
+        aria-label="Workflow configuration"
         data-open={open}
         className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
       >
@@ -347,13 +372,9 @@ export function WorkflowConfigDrawer({
               <Settings2Icon aria-hidden="true" className="size-5" />
             </span>
             <div className="min-w-0">
-              <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]">
-                {mode === 'create' ? 'Create workflow' : 'Edit workflow'}
-              </h2>
+              <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]">Edit workflow</h2>
               <p className="text-xs/4 text-muted-foreground">
-                {mode === 'create'
-                  ? 'Start with details and shared workflow configuration.'
-                  : 'Update details and configuration shared by every agent.'}
+                Update details and configuration shared by every agent.
               </p>
             </div>
           </div>
@@ -361,9 +382,7 @@ export function WorkflowConfigDrawer({
             type="button"
             variant="ghost"
             size="icon-sm"
-            aria-label={
-              mode === 'create' ? 'Close create workflow' : 'Close workflow configuration'
-            }
+            aria-label="Close workflow configuration"
             onClick={requestClose}
             className="absolute top-3 right-3"
           >
@@ -375,9 +394,7 @@ export function WorkflowConfigDrawer({
           <div className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto p-6">
             {error === undefined ? null : (
               <Alert variant="destructive">
-                <AlertTitle>
-                  {mode === 'create' ? 'Workflow not created' : 'Workflow not saved'}
-                </AlertTitle>
+                <AlertTitle>Workflow action failed</AlertTitle>
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -392,10 +409,9 @@ export function WorkflowConfigDrawer({
               <Field>
                 <FieldLabel htmlFor="workflow-name">Name</FieldLabel>
                 <Input
-                  autoFocus={mode === 'create'}
                   id="workflow-name"
                   onChange={(event) => setName(event.currentTarget.value)}
-                  placeholder="Release workflow"
+                  placeholder="release-workflow"
                   value={name}
                 />
               </Field>
@@ -410,24 +426,25 @@ export function WorkflowConfigDrawer({
               </Field>
             </section>
 
-            <WorkflowProjectsFields
-              onPrimaryProjectChange={setPrimaryProjectId}
-              onProjectToggle={(project, selected) => {
-                const next = new Set(selectedProjectIds)
-                if (selected) next.add(project.projectId)
-                else next.delete(project.projectId)
-                setSelectedProjectIds(next)
-                if (selected && primaryProjectId === null) {
-                  setPrimaryProjectId(project.projectId)
-                } else if (!selected && primaryProjectId === project.projectId) {
-                  setPrimaryProjectId(
-                    projects.find(({ projectId }) => next.has(projectId))?.projectId ?? null,
+            <WorkflowRepositoriesFields
+              onPrimaryRepositoryChange={setPrimaryRepositoryId}
+              onRepositoryToggle={(repository, selected) => {
+                const next = new Set(selectedRepositoryIds)
+                if (selected) next.add(repository.repositoryId)
+                else next.delete(repository.repositoryId)
+                setSelectedRepositoryIds(next)
+                if (selected && primaryRepositoryId === null) {
+                  setPrimaryRepositoryId(repository.repositoryId)
+                } else if (!selected && primaryRepositoryId === repository.repositoryId) {
+                  setPrimaryRepositoryId(
+                    repositories.find(({ repositoryId }) => next.has(repositoryId))?.repositoryId ??
+                      null,
                   )
                 }
               }}
-              primaryProjectId={primaryProjectId}
-              projects={projects}
-              selectedProjectIds={selectedProjectIds}
+              primaryRepositoryId={primaryRepositoryId}
+              repositories={repositories}
+              selectedRepositoryIds={selectedRepositoryIds}
             />
 
             <WorkflowVariableFields
@@ -447,25 +464,52 @@ export function WorkflowConfigDrawer({
               variables={variables}
             />
 
+            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+              <div
+                aria-hidden={!confirmingDelete}
+                className={cn(
+                  't-resize min-w-0 justify-self-end overflow-hidden',
+                  confirmingDelete ? 'w-full' : 'w-0',
+                )}
+              >
+                <Input
+                  ref={confirmationInputRef}
+                  aria-label="Workflow name confirmation"
+                  aria-invalid={confirmationName.length > 0 && confirmationName !== value.name}
+                  autoComplete="off"
+                  disabled={!confirmingDelete || deleting}
+                  onChange={(event) => setConfirmationName(event.currentTarget.value)}
+                  placeholder="Enter workflow name"
+                  tabIndex={confirmingDelete ? 0 : -1}
+                  value={confirmationName}
+                />
+              </div>
+              <Button
+                className="col-start-2 ml-auto min-w-32"
+                disabled={deleting || (confirmingDelete && confirmationName !== value.name)}
+                onClick={() => void deleteWorkflow()}
+                type="button"
+                variant="destructive"
+              >
+                <Trash2Icon aria-hidden="true" />
+                {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete workflow'}
+              </Button>
+            </div>
+
             <footer className="flex justify-end">
               <Button
                 type="submit"
                 disabled={
                   saving ||
+                  deleting ||
                   trimmedName.length === 0 ||
                   trimmedDescription.length === 0 ||
                   !variablesValid ||
-                  !projectsValid ||
+                  !repositoriesValid ||
                   !isDirty
                 }
               >
-                {saving
-                  ? mode === 'create'
-                    ? 'Creating workflow…'
-                    : 'Saving changes…'
-                  : mode === 'create'
-                    ? 'Create workflow'
-                    : 'Save changes'}
+                {saving ? 'Saving changes…' : 'Save changes'}
               </Button>
             </footer>
           </div>

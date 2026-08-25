@@ -33,12 +33,12 @@ const header = AgentTraceHeaderSchema.parse({
     thinkingLevel: 'medium',
     renderedPrompt: 'Inspect the repository.',
     workspaceRoot: '/workspace/run-01',
-    primaryProjectId: 'project-api',
-    projects: [
+    primaryRepositoryId: 'repository-api',
+    repositories: [
       {
-        projectId: 'project-api',
+        repositoryId: 'repository-api',
         name: 'API',
-        worktreePath: '/workspace/run-01/project-api',
+        worktreePath: '/workspace/run-01/repository-api',
         baseSha: 'a'.repeat(40),
         sourceBranch: 'main',
       },

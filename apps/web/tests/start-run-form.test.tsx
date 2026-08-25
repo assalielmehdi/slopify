@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HarnessDescriptorSchema, ProjectSchema } from '@slopify/contracts'
+import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/contracts'
 import { WorkflowSchema } from '@slopify/workflow-model'
 
 import { StartRunForm } from '../components/runs/start-run-form'
@@ -23,8 +23,8 @@ const baseWorkflow = createAgentWorkflowFixture({
 const workflow = WorkflowSchema.parse({
   ...baseWorkflow,
   configuration: {
-    projectIds: ['project-api'],
-    primaryProjectId: 'project-api',
+    repositoryIds: ['repository-api'],
+    primaryRepositoryId: 'repository-api',
     variables: ['task', 'iterations'],
   },
   nodes: baseWorkflow.nodes.map((node) => ({
@@ -52,9 +52,9 @@ const harnesses = HarnessDescriptorSchema.array().parse([
     models: [{ id: 'test-model', name: 'Test model', thinkingLevels: ['high'] }],
   },
 ])
-const projects = ProjectSchema.array().parse([
+const repositories = RepositorySchema.array().parse([
   {
-    projectId: 'project-api',
+    repositoryId: 'repository-api',
     name: 'API',
     provider: 'GITHUB',
     remoteId: '101',
@@ -84,7 +84,7 @@ const createClient = (overrides: Partial<ApiClient> = {}) =>
   ({
     listWorkflows: vi.fn(async () => [workflow]),
     listHarnesses: vi.fn(async () => harnesses),
-    listProjects: vi.fn(async () => projects),
+    listRepositories: vi.fn(async () => repositories),
     startRun: vi.fn(async () => startedRun),
     ...overrides,
   }) as unknown as ApiClient
@@ -206,14 +206,14 @@ describe('StartRunForm', () => {
     expect(startRun).not.toHaveBeenCalled()
   })
 
-  it('keeps starting disabled when a configured project is missing from the host', async () => {
-    render(<StartRunForm client={createClient({ listProjects: vi.fn(async () => []) })} />)
+  it('keeps starting disabled when a configured repository is missing from the host', async () => {
+    render(<StartRunForm client={createClient({ listRepositories: vi.fn(async () => []) })} />)
     await fillRequiredVariables()
 
     expect((screen.getByRole('button', { name: 'Start run' }) as HTMLButtonElement).disabled).toBe(
       true,
     )
-    expect(screen.getByText(/Every selected project must be available/)).toBeTruthy()
+    expect(screen.getByText(/Every selected repository must be available/)).toBeTruthy()
   })
 
   it('shows a run admission error', async () => {

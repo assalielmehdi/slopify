@@ -1,12 +1,12 @@
-import { DeletionReceiptSchema, GitProviderSchema, ProjectIdSchema } from '@slopify/contracts'
+import { DeletionReceiptSchema, GitProviderSchema, RepositoryIdSchema } from '@slopify/contracts'
 
-import type { ProjectRecord, ProjectRepository } from '../projects/project-repository.js'
+import type { RepositoryRecord, RepositoryStore } from '../repositories/repository-store.js'
 import type { WorkbenchDatabase } from './database.js'
 import { getDatabaseHandle } from './database.js'
 import { mapPersistenceError, PersistenceError } from './errors.js'
 
-interface ProjectRow {
-  readonly project_id: string
+interface RepositoryRow {
+  readonly repository_id: string
   readonly name: string
   readonly provider: string
   readonly remote_id: string
@@ -18,11 +18,11 @@ interface ProjectRow {
   readonly updated_at: string
 }
 
-const selection = `project_id, name, provider, remote_id, repository_full_name,
+const selection = `repository_id, name, provider, remote_id, repository_full_name,
   clone_url, web_url, default_branch, created_at, updated_at`
 
-const parseRow = (row: ProjectRow): ProjectRecord => ({
-  projectId: ProjectIdSchema.parse(row.project_id),
+const parseRow = (row: RepositoryRow): RepositoryRecord => ({
+  repositoryId: RepositoryIdSchema.parse(row.repository_id),
   name: row.name,
   provider: GitProviderSchema.parse(row.provider),
   remoteId: row.remote_id,
@@ -41,91 +41,93 @@ const isConstraintError = (cause: unknown): boolean =>
   typeof cause.code === 'string' &&
   cause.code.startsWith('SQLITE_CONSTRAINT')
 
-export const createProjectRepository = (database: WorkbenchDatabase): ProjectRepository => {
+export const createRepositoryStore = (database: WorkbenchDatabase): RepositoryStore => {
   const connection = getDatabaseHandle(database)
   return {
-    add(project) {
+    add(repository) {
       try {
         connection
           .prepare(
-            `INSERT INTO projects (
-               project_id, name, provider, remote_id, repository_full_name,
+            `INSERT INTO repositories (
+               repository_id, name, provider, remote_id, repository_full_name,
                clone_url, web_url, default_branch, created_at, updated_at
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .run(
-            ProjectIdSchema.parse(project.projectId),
-            project.name,
-            GitProviderSchema.parse(project.provider),
-            project.remoteId,
-            project.fullName,
-            project.cloneUrl,
-            project.webUrl,
-            project.defaultBranch,
-            project.createdAt,
-            project.updatedAt,
+            RepositoryIdSchema.parse(repository.repositoryId),
+            repository.name,
+            GitProviderSchema.parse(repository.provider),
+            repository.remoteId,
+            repository.fullName,
+            repository.cloneUrl,
+            repository.webUrl,
+            repository.defaultBranch,
+            repository.createdAt,
+            repository.updatedAt,
           )
       } catch (cause) {
         if (isConstraintError(cause)) {
           throw new PersistenceError({
             code: 'PERSISTENCE_CONFLICT',
-            message: 'Project already exists',
+            message: 'Repository already exists',
             cause,
           })
         }
-        throw mapPersistenceError(cause, 'Could not persist project')
+        throw mapPersistenceError(cause, 'Could not persist repository')
       }
     },
-    get(projectId) {
+    get(repositoryId) {
       const row = connection
-        .prepare(`SELECT ${selection} FROM projects WHERE project_id = ? AND deletion_id IS NULL`)
-        .get(ProjectIdSchema.parse(projectId)) as ProjectRow | undefined
+        .prepare(
+          `SELECT ${selection} FROM repositories WHERE repository_id = ? AND deletion_id IS NULL`,
+        )
+        .get(RepositoryIdSchema.parse(repositoryId)) as RepositoryRow | undefined
       return row === undefined ? undefined : parseRow(row)
     },
     findByRemote(provider, remoteId) {
       const row = connection
         .prepare(
-          `SELECT ${selection} FROM projects
+          `SELECT ${selection} FROM repositories
            WHERE provider = ? AND remote_id = ? AND deletion_id IS NULL`,
         )
-        .get(GitProviderSchema.parse(provider), remoteId) as ProjectRow | undefined
+        .get(GitProviderSchema.parse(provider), remoteId) as RepositoryRow | undefined
       return row === undefined ? undefined : parseRow(row)
     },
     list() {
       return (
         connection
           .prepare(
-            `SELECT ${selection} FROM projects
-             WHERE deletion_id IS NULL ORDER BY created_at, project_id`,
+            `SELECT ${selection} FROM repositories
+             WHERE deletion_id IS NULL ORDER BY created_at, repository_id`,
           )
-          .all() as ProjectRow[]
+          .all() as RepositoryRow[]
       ).map(parseRow)
     },
     stageDeletion(input) {
       const receipt = DeletionReceiptSchema.parse(input)
-      if (receipt.subject.type !== 'PROJECT') return false
+      if (receipt.subject.type !== 'REPOSITORY') return false
       const stage = connection.transaction(() => {
         connection
           .prepare(
             `INSERT INTO deletion_operations (
               deletion_id, subject_type, subject_id, state, deleted_at, undo_expires_at
-            ) VALUES (?, 'PROJECT', ?, 'PENDING', ?, ?)`,
+            ) VALUES (?, 'REPOSITORY', ?, 'PENDING', ?, ?)`,
           )
           .run(receipt.deletionId, receipt.subject.id, receipt.deletedAt, receipt.undoExpiresAt)
         const updated = connection
           .prepare(
-            `UPDATE projects SET deletion_id = ?, deleted_at = ?
-             WHERE project_id = ? AND deletion_id IS NULL`,
+            `UPDATE repositories SET deletion_id = ?, deleted_at = ?
+             WHERE repository_id = ? AND deletion_id IS NULL`,
           )
           .run(receipt.deletionId, receipt.deletedAt, receipt.subject.id)
-        if (updated.changes === 0) throw new Error('PROJECT_NOT_FOUND')
+        if (updated.changes === 0) throw new Error('REPOSITORY_NOT_FOUND')
         return true
       })
       try {
         return stage.immediate() as boolean
       } catch (cause) {
-        if (cause instanceof Error && cause.message === 'PROJECT_NOT_FOUND') return false
-        throw mapPersistenceError(cause, 'Could not stage project deletion')
+        if (cause instanceof Error && cause.message === 'REPOSITORY_NOT_FOUND') return false
+        throw mapPersistenceError(cause, 'Could not stage repository deletion')
       }
     },
     restoreDeletion(deletionId, now) {
@@ -133,7 +135,7 @@ export const createProjectRepository = (database: WorkbenchDatabase): ProjectRep
         const operation = connection
           .prepare(
             `SELECT state, undo_expires_at FROM deletion_operations
-             WHERE deletion_id = ? AND subject_type = 'PROJECT'`,
+             WHERE deletion_id = ? AND subject_type = 'REPOSITORY'`,
           )
           .get(deletionId) as
           Readonly<{ state: 'PENDING' | 'UNDONE' | 'PURGED'; undo_expires_at: string }> | undefined
@@ -141,7 +143,7 @@ export const createProjectRepository = (database: WorkbenchDatabase): ProjectRep
         if (operation.state === 'UNDONE') return 'UNDONE' as const
         if (operation.state === 'PURGED') return 'EXPIRED' as const
         if (Date.parse(operation.undo_expires_at) <= Date.parse(now)) {
-          connection.prepare('DELETE FROM projects WHERE deletion_id = ?').run(deletionId)
+          connection.prepare('DELETE FROM repositories WHERE deletion_id = ?').run(deletionId)
           connection
             .prepare(
               `UPDATE deletion_operations SET state = 'PURGED', purged_at = ?
@@ -152,7 +154,7 @@ export const createProjectRepository = (database: WorkbenchDatabase): ProjectRep
         }
         connection
           .prepare(
-            'UPDATE projects SET deletion_id = NULL, deleted_at = NULL WHERE deletion_id = ?',
+            'UPDATE repositories SET deletion_id = NULL, deleted_at = NULL WHERE deletion_id = ?',
           )
           .run(deletionId)
         connection
@@ -166,16 +168,16 @@ export const createProjectRepository = (database: WorkbenchDatabase): ProjectRep
       try {
         return restore.immediate() as 'UNDONE' | 'EXPIRED' | 'NOT_FOUND'
       } catch (cause) {
-        throw mapPersistenceError(cause, 'Could not restore project deletion')
+        throw mapPersistenceError(cause, 'Could not restore repository deletion')
       }
     },
     purgeExpired(now) {
       const purge = connection.transaction(() => {
         connection
           .prepare(
-            `DELETE FROM projects WHERE deletion_id IN (
+            `DELETE FROM repositories WHERE deletion_id IN (
                SELECT deletion_id FROM deletion_operations
-               WHERE subject_type = 'PROJECT' AND state = 'PENDING'
+               WHERE subject_type = 'REPOSITORY' AND state = 'PENDING'
                  AND julianday(undo_expires_at) <= julianday(?)
              )`,
           )
@@ -183,7 +185,7 @@ export const createProjectRepository = (database: WorkbenchDatabase): ProjectRep
         connection
           .prepare(
             `UPDATE deletion_operations SET state = 'PURGED', purged_at = ?
-             WHERE subject_type = 'PROJECT' AND state = 'PENDING'
+             WHERE subject_type = 'REPOSITORY' AND state = 'PENDING'
                AND julianday(undo_expires_at) <= julianday(?)`,
           )
           .run(now, now)
@@ -191,7 +193,7 @@ export const createProjectRepository = (database: WorkbenchDatabase): ProjectRep
       try {
         purge.immediate()
       } catch (cause) {
-        throw mapPersistenceError(cause, 'Could not purge project deletions')
+        throw mapPersistenceError(cause, 'Could not purge repository deletions')
       }
     },
   }

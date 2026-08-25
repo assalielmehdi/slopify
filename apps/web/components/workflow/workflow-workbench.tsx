@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useReducer, useRef } from 'react'
 
-import type { HarnessDescriptor, Project } from '@slopify/contracts'
+import type { HarnessDescriptor, Repository } from '@slopify/contracts'
 import {
   AgentNodeSchema,
   WorkflowEdgeSchema,
@@ -18,18 +18,18 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { AgentDrawer } from '@/components/workflow/agent-drawer'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
 import { WorkflowConfigDrawer } from '@/components/workflow/workflow-config-drawer'
-import { WorkflowSwitcher } from '@/components/workflow/workflow-switcher'
 import { createAgentId, type AgentDrawerMode, type AgentFormValue } from '@/lib/agent-drawer'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
 import { showUndoDeletionToast } from '@/lib/undo-deletion-toast'
+import { announceWorkflowCatalogChanged } from '@/lib/workflow-catalog-events'
 import { workflowRunDisabledReason } from '@/lib/workflow-run-readiness'
 
 type WorkflowEditorClient = Pick<
   ApiClient,
-  | 'createWorkflow'
+  | 'deleteWorkflow'
   | 'getWorkflow'
   | 'listHarnesses'
-  | 'listProjects'
+  | 'listRepositories'
   | 'listWorkflows'
   | 'startRun'
   | 'updateWorkflow'
@@ -42,21 +42,18 @@ export interface WorkflowWorkbenchProps {
 
 interface WorkflowWorkbenchState {
   readonly workflow: Workflow | undefined
-  readonly workflows: readonly Workflow[]
   readonly selectedNodeId: string | undefined
   readonly drawer: AgentDrawerMode | undefined
   readonly runDrawerOpen: boolean
   readonly configDrawerOpen: boolean
-  readonly createWorkflowDrawerOpen: boolean
   readonly draftSourceNodeId: string | undefined
   readonly harnesses: readonly HarnessDescriptor[]
-  readonly projects: readonly Project[]
+  readonly repositories: readonly Repository[]
   readonly loading: boolean
   readonly saving: boolean
-  readonly switching: boolean
   readonly error: string | undefined
   readonly harnessError: string | undefined
-  readonly projectCatalogError: string | undefined
+  readonly repositoryCatalogError: string | undefined
   readonly saveError: string | undefined
 }
 
@@ -66,21 +63,18 @@ type WorkflowWorkbenchUpdate =
 
 const initialWorkflowWorkbenchState: WorkflowWorkbenchState = {
   workflow: undefined,
-  workflows: [],
   selectedNodeId: undefined,
   drawer: undefined,
   runDrawerOpen: false,
   configDrawerOpen: false,
-  createWorkflowDrawerOpen: false,
   draftSourceNodeId: undefined,
   harnesses: [],
-  projects: [],
+  repositories: [],
   loading: true,
   saving: false,
-  switching: false,
   error: undefined,
   harnessError: undefined,
-  projectCatalogError: undefined,
+  repositoryCatalogError: undefined,
   saveError: undefined,
 }
 
@@ -111,14 +105,14 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
 
     const load = async () => {
       try {
-        const [workflows, harnesses, projects] = await Promise.all([
+        const [workflows, harnesses, repositories] = await Promise.all([
           client.listWorkflows(),
           client.listHarnesses().catch((cause: unknown) => {
             if (active) update({ harnessError: errorMessage(cause) })
             return [] as readonly HarnessDescriptor[]
           }),
-          client.listProjects().catch((cause: unknown) => {
-            if (active) update({ projectCatalogError: errorMessage(cause) })
+          client.listRepositories().catch((cause: unknown) => {
+            if (active) update({ repositoryCatalogError: errorMessage(cause) })
             return [] as const
           }),
         ])
@@ -128,7 +122,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
           activeWorkflowId.current = undefined
           loadedWorkflowId.current = undefined
           if (active && sequence === loadSequence.current) {
-            update({ workflow: undefined, workflows, harnesses, projects, error: undefined })
+            update({ workflow: undefined, harnesses, repositories, error: undefined })
           }
           return
         }
@@ -140,7 +134,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
         const current = await client.getWorkflow(catalogEntry.workflowId)
         if (!active || sequence !== loadSequence.current) return
         loadedWorkflowId.current = current.workflowId
-        update({ workflow: current, workflows, harnesses, projects, error: undefined })
+        update({ workflow: current, harnesses, repositories, error: undefined })
       } catch (cause) {
         if (active && sequence === loadSequence.current) {
           const previousWorkflowId = loadedWorkflowId.current
@@ -161,28 +155,6 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     }
   }, [client, requestedWorkflowId, router])
 
-  const createWorkflow = async (input: CreateWorkflowInput) => {
-    update({ saving: true, saveError: undefined })
-    try {
-      const created = await client.createWorkflow(input)
-      ++loadSequence.current
-      activeWorkflowId.current = created.workflowId
-      loadedWorkflowId.current = created.workflowId
-      update((current) => ({
-        workflow: created,
-        workflows: [created, ...current.workflows],
-        createWorkflowDrawerOpen: false,
-      }))
-      router.push(`/?workflowId=${encodeURIComponent(created.workflowId)}`)
-      return true
-    } catch (cause) {
-      update({ saveError: errorMessage(cause) })
-      return false
-    } finally {
-      update({ saving: false })
-    }
-  }
-
   const { workflow } = state
   if (workflow === undefined) {
     return {
@@ -190,13 +162,6 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
       empty: !state.loading && state.error === undefined,
       error: state.error,
       loading: state.loading,
-      projects: state.projects,
-      saving: state.saving,
-      saveError: state.saveError,
-      createWorkflowDrawerOpen: state.createWorkflowDrawerOpen,
-      createWorkflow,
-      closeCreateWorkflowDrawer: () => update({ createWorkflowDrawerOpen: false }),
-      openCreateWorkflowDrawer: () => update({ createWorkflowDrawerOpen: true }),
     }
   }
 
@@ -214,7 +179,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
   const runDisabledReason = workflowRunDisabledReason({
     workflow,
     ...(state.harnessError === undefined ? { harnesses: state.harnesses } : {}),
-    ...(state.projectCatalogError === undefined ? { projects: state.projects } : {}),
+    ...(state.repositoryCatalogError === undefined ? { repositories: state.repositories } : {}),
   })
   const runnable = runDisabledReason === undefined
 
@@ -223,13 +188,9 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     try {
       const saved = await client.updateWorkflow(workflow.workflowId, next)
       if (activeWorkflowId.current === saved.workflowId) {
-        update((current) => ({
-          workflow: saved,
-          workflows: current.workflows.map((candidate) =>
-            candidate.workflowId === saved.workflowId ? saved : candidate,
-          ),
-        }))
+        update({ workflow: saved })
       }
+      if (saved.name !== workflow.name) announceWorkflowCatalogChanged()
       return saved
     } catch (cause) {
       update({ saveError: errorMessage(cause) })
@@ -298,6 +259,29 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
 
   const saveWorkflowConfiguration = async (value: CreateWorkflowInput) =>
     (await persist({ ...workflow, ...value })) !== undefined
+
+  const deleteWorkflow = async () => {
+    update({ saving: true, saveError: undefined })
+    try {
+      await client.deleteWorkflow(workflow.workflowId)
+      const remainingWorkflows = (await client.listWorkflows()).filter(
+        ({ workflowId }) => workflowId !== workflow.workflowId,
+      )
+      announceWorkflowCatalogChanged()
+      const nextWorkflow = remainingWorkflows[0]
+      router.replace(
+        nextWorkflow === undefined
+          ? '/'
+          : `/?workflowId=${encodeURIComponent(nextWorkflow.workflowId)}`,
+      )
+      return true
+    } catch (cause) {
+      update({ saveError: errorMessage(cause) })
+      return false
+    } finally {
+      update({ saving: false })
+    }
+  }
 
   const deleteAgent = async () => {
     if (state.drawer?.kind !== 'edit') return false
@@ -412,38 +396,6 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
   const closeAgentDrawer = () =>
     update({ draftSourceNodeId: undefined, selectedNodeId: undefined, drawer: undefined })
 
-  const selectWorkflow = async (workflowId: string) => {
-    if (workflowId === workflow.workflowId || state.saving || state.switching) return
-    const sequence = ++loadSequence.current
-    activeWorkflowId.current = workflowId
-    update({
-      switching: true,
-      draftSourceNodeId: undefined,
-      selectedNodeId: undefined,
-      drawer: undefined,
-      runDrawerOpen: false,
-      configDrawerOpen: false,
-      createWorkflowDrawerOpen: false,
-      error: undefined,
-      saveError: undefined,
-    })
-    router.push(`/?workflowId=${encodeURIComponent(workflowId)}`)
-    try {
-      const selected = await client.getWorkflow(workflowId)
-      if (sequence !== loadSequence.current || activeWorkflowId.current !== workflowId) return
-      loadedWorkflowId.current = selected.workflowId
-      update({ workflow: selected })
-    } catch (cause) {
-      if (sequence === loadSequence.current) {
-        activeWorkflowId.current = workflow.workflowId
-        router.replace(`/?workflowId=${encodeURIComponent(workflow.workflowId)}`)
-        update({ error: errorMessage(cause) })
-      }
-    } finally {
-      if (sequence === loadSequence.current) update({ switching: false })
-    }
-  }
-
   return {
     ready: true as const,
     ...state,
@@ -455,21 +407,18 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
     selectNode,
     saveAgent,
     saveWorkflowConfiguration,
+    deleteWorkflow,
     deleteAgent,
     connectAgents,
     deleteEdge,
     closeAgentDrawer,
-    createWorkflow,
-    selectWorkflow,
     closeConfigDrawer: () => update({ configDrawerOpen: false }),
-    closeCreateWorkflowDrawer: () => update({ createWorkflowDrawerOpen: false }),
     closeRunDrawer: () => update({ runDrawerOpen: false }),
     openCreateDrawer: (sourceNodeId?: string) => {
       if (addAgentDisabledReason !== undefined) return
       update({
         runDrawerOpen: false,
         configDrawerOpen: false,
-        createWorkflowDrawerOpen: false,
         draftSourceNodeId: sourceNodeId,
         selectedNodeId:
           sourceNodeId === undefined
@@ -486,7 +435,6 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
         selectedNodeId: undefined,
         drawer: undefined,
         configDrawerOpen: false,
-        createWorkflowDrawerOpen: false,
         runDrawerOpen: true,
       })
     },
@@ -496,18 +444,7 @@ function useWorkflowWorkbench(client: WorkflowEditorClient, selectedWorkflowId?:
         selectedNodeId: undefined,
         drawer: undefined,
         runDrawerOpen: false,
-        createWorkflowDrawerOpen: false,
         configDrawerOpen: true,
-        saveError: undefined,
-      }),
-    openCreateWorkflowDrawer: () =>
-      update({
-        draftSourceNodeId: undefined,
-        selectedNodeId: undefined,
-        drawer: undefined,
-        runDrawerOpen: false,
-        configDrawerOpen: false,
-        createWorkflowDrawerOpen: true,
         saveError: undefined,
       }),
   }
@@ -523,38 +460,16 @@ export function WorkflowWorkbench({
     if (state.empty) {
       return (
         <section aria-label="Editor" className="relative flex h-full min-h-0 flex-col">
-          <WorkflowSwitcher
-            disabled={state.saving}
-            onCreate={state.openCreateWorkflowDrawer}
-            onSelect={() => undefined}
-            projects={state.projects}
-            workflows={[]}
-          />
           <div className="grid min-h-0 flex-1 place-items-center p-6 text-center">
             <div className="max-w-sm">
               <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]">
                 Create your first workflow
               </h2>
               <p className="mt-2 text-sm/5 text-muted-foreground">
-                Workflows keep each project process, graph, and run configuration independent.
+                Workflows keep each repository process, graph, and run configuration independent.
               </p>
             </div>
           </div>
-          {state.createWorkflowDrawerOpen ? (
-            <WorkflowConfigDrawer
-              error={state.saveError}
-              mode="create"
-              onClose={state.closeCreateWorkflowDrawer}
-              onSubmit={state.createWorkflow}
-              projects={state.projects}
-              saving={state.saving}
-              value={{
-                name: '',
-                description: '',
-                configuration: { projectIds: [], primaryProjectId: null, variables: [] },
-              }}
-            />
-          ) : null}
         </section>
       )
     }
@@ -579,19 +494,7 @@ export function WorkflowWorkbench({
   }
 
   return (
-    <section
-      aria-busy={state.switching}
-      aria-label="Editor"
-      className="relative flex h-full min-h-0 min-w-0 flex-col"
-    >
-      <WorkflowSwitcher
-        disabled={state.saving || state.switching}
-        onCreate={state.openCreateWorkflowDrawer}
-        onSelect={(workflowId) => void state.selectWorkflow(workflowId)}
-        projects={state.projects}
-        selectedWorkflowId={state.workflow.workflowId}
-        workflows={state.workflows}
-      />
+    <section aria-label="Editor" className="relative flex h-full min-h-0 min-w-0 flex-col">
       {state.error === undefined ? null : (
         <Alert className="mx-4 mt-4" variant="destructive">
           <AlertTitle>Workflow not switched</AlertTitle>
@@ -631,32 +534,16 @@ export function WorkflowWorkbench({
 
       {state.configDrawerOpen ? (
         <WorkflowConfigDrawer
-          error={state.projectCatalogError ?? state.saveError}
-          mode="edit"
+          error={state.repositoryCatalogError ?? state.saveError}
           onClose={state.closeConfigDrawer}
+          onDelete={state.deleteWorkflow}
           onSubmit={state.saveWorkflowConfiguration}
-          projects={state.projects}
+          repositories={state.repositories}
           saving={state.saving}
           value={{
             name: state.workflow.name,
             description: state.workflow.description,
             configuration: state.workflow.configuration,
-          }}
-        />
-      ) : null}
-
-      {state.createWorkflowDrawerOpen ? (
-        <WorkflowConfigDrawer
-          error={state.saveError}
-          mode="create"
-          onClose={state.closeCreateWorkflowDrawer}
-          onSubmit={state.createWorkflow}
-          projects={state.projects}
-          saving={state.saving}
-          value={{
-            name: '',
-            description: '',
-            configuration: { projectIds: [], primaryProjectId: null, variables: [] },
           }}
         />
       ) : null}

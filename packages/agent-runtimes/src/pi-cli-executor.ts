@@ -405,12 +405,12 @@ const parseCompletion = (
 }
 
 const prompt = (input: AgentExecutionInput): string => {
-  const projects = input.workspace.projects.map(({ projectId, path }) => ({
-    projectId,
+  const repositories = input.workspace.repositories.map(({ repositoryId, path }) => ({
+    repositoryId,
     path,
-    primary: projectId === input.workspace.primaryProjectId,
+    primary: repositoryId === input.workspace.primaryRepositoryId,
   }))
-  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun projects: ${JSON.stringify(projects)}\nComplete all work inside these run workspaces. Call slopify_complete_node exactly once with one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Do not finish without calling it.\n</slopify_execution_protocol>`
+  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun repositories: ${JSON.stringify(repositories)}\nComplete all work inside these run workspaces. Call slopify_complete_node exactly once with one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Do not finish without calling it.\n</slopify_execution_protocol>`
 }
 
 export const createPiCliAgentExecutor = (
@@ -459,8 +459,8 @@ export const createPiCliAgentExecutor = (
         if (activeExecutions.has(input.executionId)) {
           throw new PiExecutionError('AGENT_SESSION_FAILED', failureMessages.AGENT_SESSION_FAILED)
         }
-        const primary = input.workspace.projects.find(
-          ({ projectId }) => projectId === input.workspace.primaryProjectId,
+        const primary = input.workspace.repositories.find(
+          ({ repositoryId }) => repositoryId === input.workspace.primaryRepositoryId,
         )
         if (primary === undefined) {
           throw new PiExecutionError('AGENT_SESSION_FAILED', failureMessages.AGENT_SESSION_FAILED)

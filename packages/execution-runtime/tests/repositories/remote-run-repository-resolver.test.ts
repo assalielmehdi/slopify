@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createRemoteRunProjectResolver } from '../../src/index.js'
+import { createRemoteRunRepositoryResolver } from '../../src/index.js'
 
-const project = {
-  projectId: 'project-api',
+const repository = {
+  repositoryId: 'repository-api',
   name: 'api',
   provider: 'GITLAB' as const,
   remoteId: '42',
@@ -16,11 +16,11 @@ const project = {
   updatedAt: '2026-08-24T00:00:00Z',
 }
 
-describe('remote run project resolver', () => {
+describe('remote run repository resolver', () => {
   it('captures immutable remote repository metadata and the exact default-branch SHA', async () => {
     const getDefaultBranchSha = vi.fn(async () => 'a'.repeat(40) as never)
-    const resolve = createRemoteRunProjectResolver({
-      projects: { requireAvailable: async () => project },
+    const resolve = createRemoteRunRepositoryResolver({
+      repositories: { requireAvailable: async () => repository },
       connections: { requireToken: async () => 'gitlab-token' },
       remote: {
         authenticate: async () => ({ provider: 'GITLAB', accountUsername: 'operator' }),
@@ -30,8 +30,8 @@ describe('remote run project resolver', () => {
       },
     })
 
-    await expect(resolve('project-api')).resolves.toEqual({
-      projectId: 'project-api',
+    await expect(resolve('repository-api')).resolves.toEqual({
+      repositoryId: 'repository-api',
       name: 'api',
       provider: 'GITLAB',
       remoteId: '42',

@@ -2,7 +2,7 @@
 
 Slopify is a native, local workbench for orchestrating workflows of already-configured
 AI agent harnesses. A workflow is a directed graph of agents with shared GitHub or
-GitLab projects and declared run variables. Pi is the first supported harness.
+GitLab repositories and declared run variables. Pi is the first supported harness.
 
 Slopify owns workflow definitions, run coordination, isolated Git clones, and execution
 traces. Harness installation and setup stay external to Slopify.
@@ -19,7 +19,7 @@ The Harnesses screen reports whether Pi is available and shows the models Pi exp
 the current host.
 
 Connect GitHub or GitLab from Settings with a personal access token before adding
-Projects. Tokens are stored in the operating system credential store, not SQLite.
+Repositories. Tokens are stored in the operating system credential store, not SQLite.
 
 ## Run locally
 
@@ -45,13 +45,13 @@ and caching; individual package scripts only operate on their own package.
 
 Slopify stores owner-local state under `~/.slopify/orchestrator/` by default:
 
-- `~/.slopify/orchestrator/slopify.db` contains workflows, Projects, immutable run
+- `~/.slopify/orchestrator/slopify.db` contains workflows, Repositories, immutable run
   snapshots, queue state, and audit events.
 - `~/.slopify/orchestrator/traces/` contains per-agent JSONL transcripts.
-- `~/.slopify/orchestrator/workspaces/<runId>/<projectId>/` contains one fresh clone for
-  every Project captured by an active run.
+- `~/.slopify/orchestrator/workspaces/<runId>/<repositoryId>/` contains one fresh clone for
+  every Repository captured by an active run.
 
-Every agent in a run starts in the configured primary Project clone and can use every
+Every agent in a run starts in the configured primary Repository clone and can use every
 other clone from that run. Slopify creates the deterministic branch `slopify/<runId>` in
 each clone, so later agents see changes made by earlier agents. Separate runs never
 share a clone. Slopify validates canonical workspace paths before every agent starts and
@@ -66,9 +66,9 @@ its cloned workspaces by default and records the cleanup durably.
 Pi runs directly as the user who started Slopify and uses that user's existing Pi and
 host configuration. Fresh run clones isolate Git state between concurrent runs. They do
 not restrict access to the rest of the host, so
-run Slopify only with harnesses and projects you trust.
+run Slopify only with harnesses and repositories you trust.
 
-Slopify starts Pi without project-local approval and uses a small completion bridge to
+Slopify starts Pi without repository-local approval and uses a small completion bridge to
 capture each node result. Sensitive-looking environment values are redacted from events
 and structured results, but the harness can still read other user files. Execution
 traces therefore remain trusted, owner-local data.

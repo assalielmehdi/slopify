@@ -6,7 +6,7 @@ import {
   createTestHarnessCatalog,
   createTestAgentWorkflow,
   createPersistenceFixture,
-  resolveTestProject,
+  resolveTestRepository,
 } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
 import { createApiApp } from '../src/app.js'
 
@@ -20,8 +20,8 @@ const createFixture = () => {
   const fixture = createPersistenceFixture(
     createTestAgentWorkflow({
       createdAt: '2026-08-18T23:15:00Z',
-      projectIds: ['project-api'],
-      primaryProjectId: 'project-api',
+      repositoryIds: ['repository-api'],
+      primaryRepositoryId: 'repository-api',
     }),
   )
   fixtures.push(fixture)
@@ -31,7 +31,7 @@ const createFixture = () => {
     runs: fixture.runs,
     workflows: fixture.workflows,
     harnesses: createTestHarnessCatalog(),
-    resolveProject: resolveTestProject,
+    resolveRepository: resolveTestRepository,
     now: () => '2026-08-18T23:15:00Z',
     createRunId: () => `run-api-${++identity}`,
   })
@@ -63,8 +63,8 @@ describe('run JSON API', () => {
       run: expect.any(Object),
       events: expect.any(Array),
       nodeExecutions: expect.any(Array),
-      projects: expect.any(Array),
-      projectWorkspaces: expect.any(Array),
+      repositories: expect.any(Array),
+      repositoryWorkspaces: expect.any(Array),
     })
   })
 

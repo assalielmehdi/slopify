@@ -15,7 +15,7 @@ export interface CreateWorkflowDraftInput extends CreateWorkflowInput {
 
 export function createWorkflowDraft(input: CreateWorkflowDraftInput): Workflow {
   return WorkflowSchema.parse({
-    schemaVersion: 1,
+    schemaVersion: 2,
     workflowId: input.workflowId,
     name: input.name,
     description: input.description,
@@ -34,7 +34,7 @@ export function createDefaultWorkflow(input: CreateDefaultWorkflowInput): Workfl
     workflowId: DEFAULT_WORKFLOW_ID,
     name: 'Untitled workflow',
     description: 'Add agents and connect them to build a workflow.',
-    configuration: { projectIds: [], primaryProjectId: null, variables: [] },
+    configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: input.createdAt,
   })
 }

@@ -4,7 +4,7 @@ import { DeletionServiceError, createDeletionService } from '../../src/index.js'
 
 const operation = {
   deletionId: 'deletion-01',
-  subject: { type: 'PROJECT' as const, id: 'project-01' },
+  subject: { type: 'REPOSITORY' as const, id: 'repository-01' },
   deletedAt: '2026-08-22T10:00:00Z',
   undoExpiresAt: '2026-08-22T10:00:10Z',
   state: 'PENDING' as const,
@@ -15,7 +15,7 @@ describe('deletion service', () => {
     const undoDeletion = vi.fn(async () => 'UNDONE' as const)
     const service = createDeletionService({
       operations: { get: () => operation },
-      handlers: [{ subjectType: 'PROJECT', undoDeletion }],
+      handlers: [{ subjectType: 'REPOSITORY', undoDeletion }],
     })
 
     await expect(service.undo('deletion-01')).resolves.toEqual({

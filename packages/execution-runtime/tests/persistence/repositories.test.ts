@@ -50,11 +50,34 @@ describe('current repositories', () => {
     expect(fixture.workflows.list()).toEqual([updated])
   })
 
-  it('persists current remote projects by provider repository identity', () => {
+  it('deletes a current workflow without removing immutable run history', () => {
     const fixture = createPersistenceFixture()
     fixtures.push(fixture)
-    const project = {
-      projectId: 'project-api',
+    const admittedRun = createRun(fixture)
+
+    const receipt = {
+      deletionId: 'deletion-workflow-01',
+      subject: { type: 'WORKFLOW' as const, id: fixture.workflow.workflowId },
+      deletedAt: '2026-08-25T10:00:00.000Z',
+      undoExpiresAt: '2026-08-25T10:00:10.000Z',
+    }
+
+    expect(fixture.workflows.stageDeletion(receipt)).toBe(true)
+
+    expect(fixture.workflows.get(fixture.workflow.workflowId)).toBeUndefined()
+    expect(fixture.workflows.list()).toEqual([])
+    expect(fixture.runs.get(admittedRun.runId)?.workflowSnapshot).toEqual(fixture.workflow)
+    expect(fixture.workflows.restoreDeletion(receipt.deletionId, '2026-08-25T10:00:05.000Z')).toBe(
+      'UNDONE',
+    )
+    expect(fixture.workflows.get(fixture.workflow.workflowId)).toEqual(fixture.workflow)
+  })
+
+  it('persists current remote repositories by provider repository identity', () => {
+    const fixture = createPersistenceFixture()
+    fixtures.push(fixture)
+    const repository = {
+      repositoryId: 'repository-api',
       name: 'API',
       provider: 'GITHUB',
       remoteId: '123',
@@ -66,16 +89,18 @@ describe('current repositories', () => {
       updatedAt: '2026-08-23T12:00:00.000Z',
     } as const
 
-    fixture.projects.add(project)
+    fixture.repositories.add(repository)
 
-    expect(fixture.projects.get(project.projectId)).toEqual(project)
-    expect(fixture.projects.findByRemote(project.provider, project.remoteId)).toEqual(project)
-    expect(fixture.projects.list()).toEqual([project])
+    expect(fixture.repositories.get(repository.repositoryId)).toEqual(repository)
+    expect(fixture.repositories.findByRemote(repository.provider, repository.remoteId)).toEqual(
+      repository,
+    )
+    expect(fixture.repositories.list()).toEqual([repository])
   })
 
-  it('atomically stores immutable workflow, variable, and project snapshots', () => {
+  it('atomically stores immutable workflow, variable, and repository snapshots', () => {
     const workflow = createTestAgentWorkflow({
-      projectIds: ['project-api'],
+      repositoryIds: ['repository-api'],
       variables: ['task'],
       prompt: 'Implement {{ task }}.',
     })
@@ -90,9 +115,9 @@ describe('current repositories', () => {
       workflowSnapshot: mutableWorkflow,
       variables: mutableVariables,
       createdAt: workflow.createdAt,
-      projects: [
+      repositories: [
         {
-          projectId: 'project-api',
+          repositoryId: 'repository-api',
           name: 'API',
           provider: 'GITHUB',
           remoteId: '123',
@@ -111,9 +136,9 @@ describe('current repositories', () => {
       variables: { task: { title: 'Persistence cleanup' } },
       status: 'PENDING',
     })
-    expect(fixture.runs.listRunProjects(TEST_RUN_ID)).toMatchObject([
+    expect(fixture.runs.listRunRepositories(TEST_RUN_ID)).toMatchObject([
       {
-        projectId: 'project-api',
+        repositoryId: 'repository-api',
         provider: 'GITHUB',
         fullName: 'operator/api',
         isPrimary: true,
@@ -189,8 +214,8 @@ describe('current repositories', () => {
     ).toThrow()
   })
 
-  it('rolls back a run whose project evidence does not match the workflow', () => {
-    const workflow = createTestAgentWorkflow({ projectIds: ['project-api'] })
+  it('rolls back a run whose repository evidence does not match the workflow', () => {
+    const workflow = createTestAgentWorkflow({ repositoryIds: ['repository-api'] })
     const fixture = createPersistenceFixture(workflow)
     fixtures.push(fixture)
 
@@ -201,7 +226,7 @@ describe('current repositories', () => {
         workflowSnapshot: workflow,
         variables: {},
         createdAt: workflow.createdAt,
-        projects: [],
+        repositories: [],
       }),
     ).toThrowError(
       expect.objectContaining({

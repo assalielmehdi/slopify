@@ -1,19 +1,52 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AppShell } from '../components/app-shell'
+import { createWorkflowDraft } from '@slopify/workflow-model'
 
-const navigation = vi.hoisted(() => ({ pathname: '/' }))
+import { AppShell } from '../components/app-shell'
+import { announceWorkflowCatalogChanged } from '../lib/workflow-catalog-events'
+
+const navigation = vi.hoisted(() => ({ pathname: '/', search: '', push: vi.fn() }))
 const storedPreferences = new Map<string, string>()
 
 vi.mock('next/navigation', () => ({
   usePathname: () => navigation.pathname,
+  useRouter: () => ({ push: navigation.push }),
+  useSearchParams: () => new URLSearchParams(navigation.search),
 }))
+
+const workflows = [
+  createWorkflowDraft({
+    workflowId: 'default-workflow',
+    name: 'default-workflow',
+    description: 'Default workflow description.',
+    configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+    createdAt: '2026-08-25T00:00:00.000Z',
+  }),
+  createWorkflowDraft({
+    workflowId: 'release-workflow',
+    name: 'release-workflow',
+    description: 'Release workflow description.',
+    configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+    createdAt: '2026-08-25T00:00:00.000Z',
+  }),
+]
+const defaultWorkflow = workflows[0]
+if (defaultWorkflow === undefined) throw new Error('Expected a default workflow fixture')
+
+const workflowClient = {
+  createWorkflow: vi.fn(async () => defaultWorkflow),
+  listWorkflows: vi.fn(async () => workflows),
+}
 
 beforeEach(() => {
   navigation.pathname = '/'
+  navigation.search = ''
+  navigation.push.mockReset()
+  workflowClient.createWorkflow.mockReset().mockResolvedValue(defaultWorkflow)
+  workflowClient.listWorkflows.mockReset().mockResolvedValue(workflows)
   storedPreferences.clear()
   Object.defineProperty(window, 'localStorage', {
     configurable: true,
@@ -57,9 +90,11 @@ describe('AppShell', () => {
     expect(screen.getByRole('main').getAttribute('data-surface')).toBe('base')
   })
 
-  it('renders the approved navigation hierarchy and clickable breadcrumbs', () => {
+  it('renders workflows as an expanded menu with one entry per workflow', async () => {
+    navigation.search = 'workflowId=release-workflow'
+
     render(
-      <AppShell>
+      <AppShell client={workflowClient}>
         <p>Workflow graph</p>
       </AppShell>,
     )
@@ -68,21 +103,104 @@ describe('AppShell', () => {
     const breadcrumb = screen.getByRole('navigation', { name: 'Breadcrumb' })
 
     expect(primaryNavigation.getAttribute('data-state')).toBe('expanded')
-    expect(within(primaryNavigation).getByText('Workflow')).toBeTruthy()
-    expect(within(primaryNavigation).getByText('Configuration')).toBeTruthy()
+    const workflowsButton = within(primaryNavigation).getByRole('button', { name: 'Workflows' })
+    expect(workflowsButton.getAttribute('aria-expanded')).toBe('true')
+    await waitFor(() => expect(workflowClient.listWorkflows).toHaveBeenCalledOnce())
+    await within(primaryNavigation).findByRole('link', { name: 'release-workflow' })
     expect(
-      within(primaryNavigation).getByRole('link', { name: 'Editor' }).getAttribute('aria-current'),
+      within(primaryNavigation)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('aria-label')),
+    ).toEqual(['default-workflow', 'release-workflow', 'Runs', 'Harnesses', 'Repositories'])
+    expect(
+      within(primaryNavigation)
+        .getByRole('link', { name: 'default-workflow' })
+        .getAttribute('href'),
+    ).toBe('/?workflowId=default-workflow')
+    expect(
+      within(primaryNavigation)
+        .getByRole('link', { name: 'release-workflow' })
+        .getAttribute('aria-current'),
     ).toBe('page')
+
+    fireEvent.click(workflowsButton)
+
+    expect(workflowsButton.getAttribute('aria-expanded')).toBe('false')
+    expect(primaryNavigation.querySelector('[data-slot="collapsible-content"]')).not.toBeNull()
+    expect(within(primaryNavigation).queryByRole('link', { name: 'default-workflow' })).toBeNull()
+    expect(within(primaryNavigation).queryByText('Workflow')).toBeNull()
+    expect(within(primaryNavigation).queryByText('Configuration')).toBeNull()
     expect(
       within(primaryNavigation).getByRole('link', { name: 'Harnesses' }).getAttribute('href'),
     ).toBe('/harnesses')
     expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('href')).toBe('/settings')
-    expect(within(breadcrumb).getByRole('link', { name: 'Workflow' }).getAttribute('href')).toBe(
+    expect(within(breadcrumb).getByRole('link', { name: 'Workflows' }).getAttribute('href')).toBe(
       '/',
     )
-    expect(within(breadcrumb).getByRole('link', { name: 'Editor' }).getAttribute('href')).toBe('/')
+    expect(
+      within(breadcrumb).getByRole('link', { name: 'release-workflow' }).getAttribute('href'),
+    ).toBe('/?workflowId=release-workflow')
     expect(screen.getByRole('main').className).not.toContain('p-6')
     expect(screen.getByText('Workflow graph')).toBeTruthy()
+  })
+
+  it('creates a uniquely named workflow from a popover with keyboard controls', async () => {
+    const created = createWorkflowDraft({
+      workflowId: 'review-workflow',
+      name: 'review-workflow',
+      description: 'review-workflow workflow.',
+      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+      createdAt: '2026-08-25T00:00:00.000Z',
+    })
+    workflowClient.createWorkflow.mockResolvedValue(created)
+
+    render(
+      <AppShell client={workflowClient}>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    await within(primaryNavigation).findByRole('link', { name: 'default-workflow' })
+    const addWorkflow = screen.getByRole('button', { name: 'Add workflow' })
+    fireEvent.click(addWorkflow)
+
+    const input = screen.getByRole('textbox', { name: 'New workflow name' })
+    await waitFor(() => expect(document.activeElement).toBe(input))
+    expect(input.closest('[data-slot="popover-content"]')).not.toBeNull()
+    expect(
+      within(primaryNavigation).queryByRole('textbox', { name: 'New workflow name' }),
+    ).toBeNull()
+
+    fireEvent.change(input, { target: { value: 'Review Workflow' } })
+    expect(screen.getByRole('alert').textContent).toContain(
+      'Use 1–100 lowercase letters, numbers, and single hyphens',
+    )
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(workflowClient.createWorkflow).not.toHaveBeenCalled()
+
+    fireEvent.change(input, { target: { value: 'default-workflow' } })
+    expect(screen.getByRole('alert').textContent).toBe('A workflow with this name already exists.')
+
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.queryByRole('textbox', { name: 'New workflow name' })).toBeNull()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Add workflow' }))
+    const retryInput = screen.getByRole('textbox', { name: 'New workflow name' })
+    fireEvent.change(retryInput, { target: { value: 'review-workflow' } })
+    fireEvent.keyDown(retryInput, { key: 'Enter' })
+
+    await waitFor(() =>
+      expect(workflowClient.createWorkflow).toHaveBeenCalledWith({
+        name: 'review-workflow',
+        description: 'review-workflow workflow.',
+        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+      }),
+    )
+    expect(
+      await within(primaryNavigation).findByRole('link', { name: 'review-workflow' }),
+    ).toBeTruthy()
+    expect(navigation.push).toHaveBeenCalledWith('/?workflowId=review-workflow')
   })
 
   it('places the collapse control in the title row and toggles with B outside inputs', () => {
@@ -111,6 +229,31 @@ describe('AppShell', () => {
     expect(navigation.getAttribute('data-state')).toBe('collapsed')
   })
 
+  it('refreshes workflow entries when the catalog changes', async () => {
+    workflowClient.listWorkflows
+      .mockResolvedValueOnce(workflows.slice(0, 1))
+      .mockResolvedValueOnce(workflows)
+
+    render(
+      <AppShell client={workflowClient}>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
+    expect(
+      await within(primaryNavigation).findByRole('link', { name: 'default-workflow' }),
+    ).toBeTruthy()
+    expect(within(primaryNavigation).queryByRole('link', { name: 'release-workflow' })).toBeNull()
+
+    announceWorkflowCatalogChanged()
+
+    expect(
+      await within(primaryNavigation).findByRole('link', { name: 'release-workflow' }),
+    ).toBeTruthy()
+    expect(workflowClient.listWorkflows).toHaveBeenCalledTimes(2)
+  })
+
   it('uses D for a persisted direct light and dark toggle', () => {
     window.localStorage.setItem('slopify-theme', 'dark')
 
@@ -134,7 +277,7 @@ describe('AppShell', () => {
     ['/runs/new', 'Runs', ['Runs', 'New run']],
     ['/runs/run-123', 'Runs', ['Runs', '123']],
     ['/harnesses', 'Harnesses', ['Harnesses']],
-    ['/projects', 'Projects', ['Projects']],
+    ['/repositories', 'Repositories', ['Repositories']],
     ['/settings', 'Settings', ['Settings']],
   ])('maps %s to the %s destination and breadcrumb', (pathname, linkName, crumbs) => {
     navigation.pathname = pathname
@@ -165,7 +308,7 @@ describe('AppShell', () => {
     ).toEqual(crumbs)
   })
 
-  it.each(['/harnesses', '/projects', '/runs', '/runs/run-123'])(
+  it.each(['/harnesses', '/repositories', '/runs', '/runs/run-123'])(
     'does not add shell padding around the full-width route %s',
     (pathname) => {
       navigation.pathname = pathname
