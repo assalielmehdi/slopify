@@ -66,6 +66,10 @@ node runner`. Node facts return through the run journal. Message handling is at 
   workflows, immutable run snapshots, projections, journals, workspaces, and owner-local
   JSONL agent traces. SQLite is read only by the one-time legacy migration path. Harness
   state remains owned by the harness on the host.
+- `SLOPIFY_HOME` is the only runtime state-root override. Editable JSON resources are
+  validated as complete documents and may change outside the UI. Startup must fail
+  closed on conflicting filesystem and legacy state; migration preserves a verified,
+  resumable backup before installing converted resources.
 
 ## Code map
 

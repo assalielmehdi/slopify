@@ -125,7 +125,7 @@ export function RunNodePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div className="grid shrink-0 content-start gap-8 p-6">
+      <div className="grid min-w-0 shrink-0 content-start gap-8 p-6">
         {execution?.errorMessage === null || execution?.errorMessage === undefined ? null : (
           <Alert variant="destructive">
             <AlertTitle>{execution.errorCode ?? 'Execution failed'}</AlertTitle>
@@ -138,7 +138,7 @@ export function RunNodePanel({
         </section>
 
         {workspaceRepositories.length === 0 ? null : (
-          <section className="grid gap-3" aria-label="Run workspaces">
+          <section className="grid min-w-0 gap-3" aria-label="Run workspaces">
             <div>
               <h3 className="text-sm/5 font-semibold">Run workspaces</h3>
               <p className="mt-1 text-xs/4 text-muted-foreground">
@@ -149,9 +149,12 @@ export function RunNodePanel({
                   : ' these fresh repository clones with the run.'}
               </p>
             </div>
-            <ul className="grid gap-2">
+            <ul className="grid min-w-0 gap-2">
               {workspaceRepositories.map((repository) => (
-                <li className="rounded-md border border-border p-3" key={repository.repositoryId}>
+                <li
+                  className="min-w-0 rounded-md border border-border p-3"
+                  key={repository.repositoryId}
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm/5 font-medium">{repository.name}</p>
                     {repository.repositoryId === primaryRepositoryId ? (

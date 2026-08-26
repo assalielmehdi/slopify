@@ -341,6 +341,20 @@ text color of their role.
 - An unavailable Repository remains in its original catalog position with a muted tile and
   the explicit status `Connection missing` or `Repository unavailable`.
 
+### Local resource state
+
+- Treat settings, Repositories, and workflow definitions as editable local resources,
+  not hidden application records. Reflect valid external file changes without requiring
+  a restart.
+- When a clean form receives an external update, replace it with the validated resource.
+  When a dirty form receives one, preserve the user's draft and present an explicit
+  conflict with reload and retry paths; never merge JSON silently.
+- Invalid files remain visible as actionable error states. Name the resource and explain
+  that its JSON must match the published schema without exposing private paths or file
+  contents in generic error surfaces.
+- Run snapshots, event journals, projections, and traces are historical inspection data.
+  The UI never offers controls that imply they are editable resources.
+
 ### Workflow editor
 
 - The workflow editor presents one selected current workflow graph at a time. Selection lives

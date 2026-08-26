@@ -142,6 +142,10 @@ describe('RunNodePanel', () => {
     )
     expect(workspaces.textContent).toContain('Web')
     expect(workspaces.textContent).toContain('slopify/run-01')
+    expect(workspaces.querySelector('ul')?.className).toContain('min-w-0')
+    for (const repository of workspaces.querySelectorAll('li')) {
+      expect(repository.className).toContain('min-w-0')
+    }
     expect(screen.queryByRole('heading', { name: 'Exchange' })).toBeNull()
     expect(
       screen.queryByText('Complete recorded prompt, model output, reasoning, and tool activity.'),
