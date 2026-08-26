@@ -12,10 +12,9 @@ import {
   createLegacyCatalogConverter,
   createLegacyMigrationInstaller,
   createLegacyMigrationService,
-  openDatabase,
   resolveSlopifyPaths,
 } from '../../src/index.js'
-import { getDatabaseHandle } from '../../src/persistence/database.js'
+import { createLegacyTestDatabase } from './legacy-database-fixture.js'
 
 const roots: string[] = []
 
@@ -59,8 +58,8 @@ const createFixture = async (includeWorkflow = true) => {
   roots.push(root)
   mkdirSync(root, { recursive: true })
   const databasePath = join(root, 'legacy.sqlite')
-  const database = openDatabase({ path: databasePath })
-  const connection = getDatabaseHandle(database)
+  const database = createLegacyTestDatabase(databasePath)
+  const connection = database
   connection
     .prepare(
       `INSERT INTO git_connections (

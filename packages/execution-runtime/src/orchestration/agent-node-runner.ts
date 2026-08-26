@@ -5,6 +5,7 @@ import {
   AgentExecutionInputSchema,
   AgentTraceHeaderSchema,
   RunIdSchema,
+  type RunId,
   type AgentExecutionEvent,
   type AgentExecutor,
 } from '@slopify/contracts'
@@ -12,14 +13,20 @@ import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@slo
 import { z } from 'zod'
 
 import type { HarnessCatalog } from '../harnesses/harness-catalog.js'
-import type { RunRepository } from '../persistence/run-repository.js'
+import type { JsonValue } from '../json-value.js'
 import type { AgentTraceStore } from '../traces/filesystem-agent-trace-store.js'
 import {
   RunWorkspaceProvisioningError,
   type ProvisionedRunRepository,
   type RunWorkspaceProvisioner,
 } from '../workspaces/run-workspace-provisioner.js'
-import type { NodeRunner } from './execution-worker.js'
+import type { NodeRunner } from './node-runner.js'
+
+export interface AgentNodeRunRecord {
+  readonly runId: RunId
+  readonly workflowSnapshot: unknown
+  readonly variables: Readonly<Record<string, JsonValue>>
+}
 
 const AGENT_EXECUTION_TIMEOUT_SECONDS = 300
 
@@ -71,7 +78,7 @@ export const createAgentNodeRunner = (
     harnesses: Pick<HarnessCatalog, 'requireAvailable'>
     resolveHarness(harnessId: string): AgentExecutor | undefined
     workspaces: RunWorkspaceProvisioner
-    runs: Pick<RunRepository, 'get'>
+    runs: Readonly<{ get(runId: string): AgentNodeRunRecord | undefined }>
     traces?: AgentTraceStore
     now?: () => string
   }>,

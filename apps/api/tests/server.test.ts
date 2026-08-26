@@ -20,45 +20,24 @@ afterEach(() => {
   for (const directory of directories.splice(0)) rmSync(directory, { force: true, recursive: true })
 })
 
-const database = {
-  isOpen: true,
-  status: () => ({
-    foreignKeysEnabled: true,
-    journalMode: 'wal',
-    schemaVersion: 2,
-    writable: true,
-  }),
-}
-
 describe('API server configuration', () => {
-  it('configures only the database, traces, and cloned workspaces under owner-local state', () => {
+  it('configures only the HTTP server and shutdown grace period', () => {
     expect(
       resolveApiServerConfiguration({
         API_HOST: '127.0.0.2',
         API_PORT: '4310',
         API_SHUTDOWN_GRACE_MS: '2500',
-        DATABASE_PATH: '/var/lib/workbench/workbench.sqlite',
-        TRACES_ROOT: '/var/lib/workbench/traces',
-        WORKSPACES_ROOT: '/var/lib/workbench/workspaces',
       }),
     ).toEqual({
       hostname: '127.0.0.2',
       port: 4310,
       shutdownGracePeriodMs: 2_500,
-      databasePath: '/var/lib/workbench/workbench.sqlite',
-      tracesRoot: '/var/lib/workbench/traces',
-      workspacesRoot: '/var/lib/workbench/workspaces',
     })
-    expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toMatchObject({
+    expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toEqual({
       hostname: '127.0.0.1',
       port: 3001,
-      databasePath: '/tmp/slopify-test/slopify.db',
-      tracesRoot: '/tmp/slopify-test/traces',
-      workspacesRoot: '/tmp/slopify-test/workspaces',
+      shutdownGracePeriodMs: 10_000,
     })
-    expect(resolveApiServerConfiguration({}).databasePath).toMatch(
-      /\.slopify\/orchestrator\/slopify\.db$/u,
-    )
   })
 
   it.each(['0', '65536', '3.14', 'invalid'])(
@@ -88,13 +67,10 @@ describe('API server configuration', () => {
       stop,
     }))
     const server = startApiServer({
-      app: createApiApp({ database }),
+      app: createApiApp(),
       configuration: {
         hostname: '127.0.0.1',
         port: 0,
-        databasePath: '/unused-in-this-test.sqlite',
-        tracesRoot: '/traces',
-        workspacesRoot: '/workspaces',
         shutdownGracePeriodMs: 10_000,
       },
       serve,
@@ -128,8 +104,6 @@ describe('API server configuration', () => {
     const server = await startConfiguredApiServer(
       {
         SLOPIFY_HOME: home,
-        DATABASE_PATH: join(home, 'legacy.db'),
-        TRACES_ROOT: join(home, 'legacy-traces'),
         API_PORT: '4310',
       },
       { serve, registerSignals, pollIntervalMs: 1_000 },
@@ -155,7 +129,7 @@ describe('API server configuration', () => {
     type ServeFactory = NonNullable<Parameters<typeof startApiServer>[0]['serve']>
     type ServeOptions = Parameters<ServeFactory>[0]
 
-    const app = createApiApp({ database })
+    const app = createApiApp()
     const stop = vi.fn(async () => undefined)
     let fetchHandler: ServeOptions['fetch'] | undefined
     const serve: ServeFactory = (options) => {
@@ -174,9 +148,6 @@ describe('API server configuration', () => {
       configuration: {
         hostname: '127.0.0.1',
         port: 0,
-        databasePath: '/unused-in-this-test.sqlite',
-        tracesRoot: '/traces',
-        workspacesRoot: '/workspaces',
         shutdownGracePeriodMs: 10_000,
       },
       serve,

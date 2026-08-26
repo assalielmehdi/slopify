@@ -38,7 +38,7 @@ export const createLegacyCatalogConverter = (options: {
       const hasWalFrames = snapshot.manifest.sidecars.some(
         (sidecar) => sidecar.kind === 'WAL' && sidecar.backup.sizeBytes > 0,
       )
-      const reader = openLegacySqliteReader(snapshot.databasePath, {
+      const reader = await openLegacySqliteReader(snapshot.databasePath, {
         immutable: !hasWalFrames,
       })
       try {

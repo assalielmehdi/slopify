@@ -10,7 +10,6 @@ import {
   type GitConnectionService,
 } from '../git/git-connection-service.js'
 import type { RemoteGitHost } from '../git/remote-git-host.js'
-import { PersistenceError } from '../persistence/errors.js'
 import {
   RepositoryStoreError,
   type RepositoryRecord,
@@ -134,10 +133,7 @@ export const createRepositoryService = (
       try {
         await options.repositories.add(record)
       } catch (cause) {
-        if (
-          (cause instanceof PersistenceError && cause.code === 'PERSISTENCE_CONFLICT') ||
-          (cause instanceof RepositoryStoreError && cause.code === 'REPOSITORY_CONFLICT')
-        ) {
+        if (cause instanceof RepositoryStoreError && cause.code === 'REPOSITORY_CONFLICT') {
           throw new RepositoryServiceError(
             'REPOSITORY_REMOTE_CONFLICT',
             'Repository already exists',

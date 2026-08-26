@@ -22,6 +22,7 @@ import {
   publishManagedJsonSchemas,
   resolveSlopifyPaths,
   type AgentTraceStore,
+  type AgentNodeRunRecord,
   type FilesystemRunAdmissionService,
   type FilesystemRunEventFeed,
   type FilesystemRunIndex,
@@ -36,7 +37,6 @@ import {
   type NodeRunner,
   type ProcessRunner,
   type RunAgentTraceStore,
-  type RunRecord,
   type RunRecoveryService,
   type RunWorkspaceProvisioner,
   type SlopifyPaths,
@@ -92,16 +92,10 @@ export interface FilesystemRuntimeLifecycle {
 
 const legacyRunRecord = (
   detail: Extract<Awaited<ReturnType<FilesystemRunReader['get']>>, { readonly status: 'READY' }>,
-): RunRecord => ({
+): AgentNodeRunRecord => ({
   runId: detail.run.runId,
-  workflowId: detail.run.workflowId,
   workflowSnapshot: workflowFileToWorkflow(detail.workflowSnapshot.workflow),
   variables: detail.variablesSnapshot.values,
-  status: detail.run.status,
-  transitionCount: detail.run.transitionCount,
-  createdAt: detail.run.createdAt,
-  startedAt: detail.run.startedAt,
-  completedAt: detail.run.completedAt,
 })
 
 const createFilesystemNodeRunner = (options: {
@@ -134,6 +128,7 @@ const createFilesystemNodeRunner = (options: {
           remoteId: repository.remoteId,
           fullName: repository.fullName,
           cloneUrl: repository.cloneUrl,
+          webUrl: repository.webUrl,
           defaultBranch: repository.defaultBranch,
           baseSha: repository.baseSha,
           isPrimary: repository.isPrimary,

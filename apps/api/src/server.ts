@@ -1,6 +1,5 @@
 import { readdir } from 'node:fs/promises'
-import { homedir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import { createPiCliAgentExecutor, createPiHarnessInspector } from '@slopify/agent-runtimes'
@@ -39,7 +38,7 @@ import {
 import { prepareFilesystemStartup } from './startup-state.js'
 
 export type ServerConfigurationErrorCode =
-  'API_HOST_INVALID' | 'API_PORT_INVALID' | 'API_SHUTDOWN_GRACE_INVALID' | 'DATABASE_PATH_INVALID'
+  'API_HOST_INVALID' | 'API_PORT_INVALID' | 'API_SHUTDOWN_GRACE_INVALID'
 
 export class ServerConfigurationError extends Error {
   readonly code: ServerConfigurationErrorCode
@@ -54,9 +53,6 @@ export class ServerConfigurationError extends Error {
 export interface ApiServerConfiguration {
   readonly hostname: string
   readonly port: number
-  readonly databasePath: string
-  readonly tracesRoot: string
-  readonly workspacesRoot: string
   readonly shutdownGracePeriodMs: number
 }
 
@@ -151,7 +147,7 @@ export const createEditableResourceWatcher = (options: {
 const nonBlank = (
   value: string | undefined,
   fallback: string,
-  code: 'API_HOST_INVALID' | 'DATABASE_PATH_INVALID',
+  code: 'API_HOST_INVALID',
 ): string => {
   if (value === undefined) return fallback
   if (value.trim() === '')
@@ -185,29 +181,11 @@ const shutdownGracePeriod = (value: string | undefined): number => {
 
 export const resolveApiServerConfiguration = (
   environment: ApiEnvironment = process.env,
-): ApiServerConfiguration => {
-  const stateRoot = resolve(
-    nonBlank(
-      environment.SLOPIFY_HOME,
-      join(homedir(), '.slopify', 'orchestrator'),
-      'DATABASE_PATH_INVALID',
-    ),
-  )
-  return {
-    hostname: nonBlank(environment.API_HOST, '127.0.0.1', 'API_HOST_INVALID'),
-    port: port(environment.API_PORT),
-    databasePath: resolve(
-      nonBlank(environment.DATABASE_PATH, join(stateRoot, 'slopify.db'), 'DATABASE_PATH_INVALID'),
-    ),
-    tracesRoot: resolve(
-      nonBlank(environment.TRACES_ROOT, join(stateRoot, 'traces'), 'DATABASE_PATH_INVALID'),
-    ),
-    workspacesRoot: resolve(
-      nonBlank(environment.WORKSPACES_ROOT, join(stateRoot, 'workspaces'), 'DATABASE_PATH_INVALID'),
-    ),
-    shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
-  }
-}
+): ApiServerConfiguration => ({
+  hostname: nonBlank(environment.API_HOST, '127.0.0.1', 'API_HOST_INVALID'),
+  port: port(environment.API_PORT),
+  shutdownGracePeriodMs: shutdownGracePeriod(environment.API_SHUTDOWN_GRACE_MS),
+})
 
 export const startApiServer = (input: {
   readonly app: Hono
@@ -239,10 +217,12 @@ export const startConfiguredApiServer = async (
 ): Promise<ApiServer> => {
   const configuration = resolveApiServerConfiguration(environment)
   const paths = resolveSlopifyPaths({ environment })
+  const legacyRoot =
+    environment.SLOPIFY_HOME === undefined ? join(paths.home, 'orchestrator') : paths.home
   await prepareFilesystemStartup({
     paths,
-    databasePath: configuration.databasePath,
-    legacyTracesRoot: configuration.tracesRoot,
+    databasePath: join(legacyRoot, 'slopify.db'),
+    legacyTracesRoot: join(legacyRoot, 'traces'),
   })
   const resourceEvents = createResourceEventFeed()
   const resourceWatcher = createEditableResourceWatcher({

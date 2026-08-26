@@ -2,9 +2,9 @@ import { GitConnectionSchema } from '@slopify/contracts'
 import { pathToFileURL } from 'node:url'
 import { z } from 'zod'
 
-import { SLOPIFY_DATABASE_APPLICATION_ID } from '../persistence/schema.js'
-import { Database } from '../persistence/sqlite.js'
 import { RepositoryRecordSchema, type RepositoryRecord } from '../repositories/repository-store.js'
+
+const SLOPIFY_DATABASE_APPLICATION_ID = 0x534c5059
 
 const SchemaMarkerSchema = z.object({
   version: z.number().int().min(1).max(4),
@@ -167,12 +167,13 @@ const invalidDatabase = (message: string, cause?: unknown): LegacySqliteReaderEr
     cause === undefined ? undefined : { cause },
   )
 
-export const openLegacySqliteReader = (
+export const openLegacySqliteReader = async (
   path: string,
   options: Readonly<{ immutable?: boolean }> = {},
-): LegacySqliteReader => {
-  let database: Database
+): Promise<LegacySqliteReader> => {
+  let database: import('./legacy-sqlite.js').Database
   try {
+    const { Database } = await import('./legacy-sqlite.js')
     const filename = options.immutable
       ? (() => {
           const url = pathToFileURL(path)

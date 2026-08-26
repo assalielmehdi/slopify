@@ -1,13 +1,12 @@
 import type { RepositoryId, RunId } from '@slopify/contracts'
 
-import type { RunRepositorySnapshot } from '../persistence/run-repository.js'
 import type { JournalRunLocator } from '../orchestration/journal-execution-worker.js'
 import type {
   RunRepositorySnapshotArtifact,
   RunWorkspaceProjection,
 } from '../runs/run-artifacts.js'
 
-export interface ProvisionedRunRepository extends RunRepositorySnapshot {
+export interface ProvisionedRunRepository extends RunRepositorySnapshotArtifact {
   readonly workspacePath: string
   readonly branchName: string
 }

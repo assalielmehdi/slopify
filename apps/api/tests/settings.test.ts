@@ -8,22 +8,19 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []
-const database = {
-  isOpen: true,
-  status: () => ({
-    foreignKeysEnabled: true,
-    journalMode: 'wal',
-    schemaVersion: 2,
-    writable: true,
-  }),
-}
-
 const createFixture = () => {
   const home = mkdtempSync(join(tmpdir(), 'slopify-settings-api-'))
   directories.push(home)
   const paths = resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } })
   const settings = createFilesystemSettingsStore({ paths })
-  return { app: createApiApp({ database, settings }), paths, settings }
+  return {
+    app: createApiApp({
+      settings,
+      filesystemHealth: { status: async () => ({ owned: true, writable: true }) },
+    }),
+    paths,
+    settings,
+  }
 }
 
 const patchSettings = (app: ReturnType<typeof createApiApp>, etag: string | null, theme: string) =>

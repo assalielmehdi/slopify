@@ -1,8 +1,4 @@
-import {
-  RunEventFeedError,
-  type FilesystemRunEventFeed,
-  type RunEventFeed,
-} from '@slopify/execution-runtime'
+import { RunEventFeedError, type FilesystemRunEventFeed } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 
@@ -18,10 +14,7 @@ const cursor = (value: string | undefined): number | undefined => {
   return parsed
 }
 
-export const registerRunEventRoutes = (
-  app: Hono,
-  eventFeed: RunEventFeed | FilesystemRunEventFeed,
-): void => {
+export const registerRunEventRoutes = (app: Hono, eventFeed: FilesystemRunEventFeed): void => {
   app.get('/api/runs/:runId/events', (context) => {
     const queryCursor = cursor(context.req.query('afterSequence'))
     const headerCursor = cursor(context.req.header('Last-Event-ID'))

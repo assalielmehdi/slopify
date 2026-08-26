@@ -8,10 +8,12 @@ import {
   type AtomicJsonResourceIO,
 } from '../filesystem/atomic-json-resource.js'
 import type { SlopifyPaths } from '../filesystem/slopify-home.js'
-import type { RunRepositoryWorkspace } from '../persistence/run-repository.js'
 import type { ProcessRunner } from '../processes/process-runner.js'
 import { createFilesystemRunJournal } from '../runs/filesystem-run-journal.js'
-import { RunRepositoriesSnapshotSchema } from '../runs/run-artifacts.js'
+import {
+  RunRepositoriesSnapshotSchema,
+  type RunWorkspaceProjection,
+} from '../runs/run-artifacts.js'
 import type { RunJournal } from '../runs/run-journal.js'
 import type { JournalRunLocator } from '../orchestration/journal-execution-worker.js'
 import { createNativeGitRunWorkspaceProvisioner } from './native-git-run-workspace-provisioner.js'
@@ -46,7 +48,7 @@ const requireDirectory = async (path: string, label: string): Promise<void> => {
   if ((await realpath(path)) !== path) throw new Error(`${label} path contains a symbolic link`)
 }
 
-const workspaceState = async (journal: RunJournal): Promise<readonly RunRepositoryWorkspace[]> => {
+const workspaceState = async (journal: RunJournal): Promise<readonly RunWorkspaceProjection[]> => {
   const repaired = await journal.repairProjections()
   if (repaired.status === 'CORRUPT') throw new Error(repaired.diagnostic.message)
   return repaired.projection.workspaces.workspaces

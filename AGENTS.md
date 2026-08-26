@@ -30,15 +30,14 @@ supported harness and runs through its CLI.
 - Only the coordinator interprets workflow topology, readiness, joins, transitions, and
   terminal state. Workers and node runners are graph-neutral.
 - Execution is durable and asynchronous:
-  `Run API -> coordinator -> SQLite execution_messages -> worker -> node runner`, with
-  node facts returning through the same table. One table has separate `WORKER` and
-  `COORDINATOR` destinations. Message handling is at least once, so handlers and
-  attempts must remain idempotent. `run_events` is append-only audit history, never a
-  queue.
+  `Run API -> filesystem journal -> coordinator -> scheduled-node journal -> worker ->
+node runner`. Node facts return through the run journal. Message handling is at least
+  once, so handlers and attempts must remain idempotent. The event journal is
+  append-only audit history, never a queue.
 - Run admission captures each configured Repository's provider identity, HTTPS clone URL,
   default branch, and current default-branch commit. Before a harness process starts,
   the worker creates one fresh clone per captured Repository at
-  `~/.slopify/orchestrator/workspaces/<runId>/<repositoryId>` and checks out the deterministic
+  `~/.slopify/workflows/<workflowId>/runs/<runId>/workspaces/<repositoryId>` and checks out the deterministic
   branch `slopify/<runId>` from the captured commit. Agents in one run share those clones
   and branches; separate runs never share a clone.
 - Slopify never pushes a run branch or creates a pull request. Agents do so deliberately
@@ -63,10 +62,10 @@ supported harness and runs through its CLI.
 - Trace capture redacts bounded sensitive-looking values inherited from the harness
   process environment and applies the same redaction to structured node results. Since
   the host harness can read other user files, traces are trusted owner-local data.
-- SQLite owns current workflow, non-secret Git connection metadata, Repository, run
-  snapshot, run-workspace state, queue, and
-  audit data. `run_events` is append-only audit history and agent transcripts are stored
-  as owner-local JSONL traces. Harness state remains owned by the harness on the host.
+- `~/.slopify` owns settings, non-secret Git connection metadata, Repositories,
+  workflows, immutable run snapshots, projections, journals, workspaces, and owner-local
+  JSONL agent traces. SQLite is read only by the one-time legacy migration path. Harness
+  state remains owned by the harness on the host.
 
 ## Code map
 

@@ -6,16 +6,17 @@ import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import {
   type HarnessCatalog,
-  type LegacyWorkflowCatalog,
+  type AgentNodeRunRecord,
   type RepositoryRecord,
   type RunRepositoryResolution,
-  createEventStore,
-  createRunRepository,
-  openDatabase,
+  type RunRepositorySnapshotArtifact,
+  type RunWorkspaceProjection,
   type JsonValue,
-  type WorkbenchDatabase,
 } from '../../src/index.js'
-import { getDatabaseHandle } from '../../src/persistence/database.js'
+import {
+  createLegacyTestDatabase,
+  type LegacyTestDatabase,
+} from '../migration/legacy-database-fixture.js'
 
 export const TEST_TIMESTAMP = '2026-08-23T12:00:00.000Z'
 export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('test-workflow')
@@ -115,10 +116,10 @@ export const createTestRunRepositories = (workflow: Workflow): readonly RunRepos
   }))
 
 export const insertLegacyRepository = (
-  database: WorkbenchDatabase,
+  database: LegacyTestDatabase,
   repository: RepositoryRecord,
 ): void => {
-  getDatabaseHandle(database)
+  database
     .prepare(
       `INSERT INTO repositories (
          repository_id, name, provider, remote_id, repository_full_name,
@@ -139,13 +140,14 @@ export const insertLegacyRepository = (
     )
 }
 
-export const insertLegacyWorkflow = (database: WorkbenchDatabase, workflow: Workflow): void => {
-  getDatabaseHandle(database)
+export const insertLegacyWorkflow = (database: LegacyTestDatabase, workflow: Workflow): void => {
+  database
     .prepare('INSERT INTO workflows (workflow_id, definition_json) VALUES (?, json(?))')
     .run(workflow.workflowId, JSON.stringify(workflow))
 }
 
-type TestWorkflowCatalog = LegacyWorkflowCatalog & {
+interface TestWorkflowCatalog {
+  get(workflowId: string): Workflow | undefined
   save(workflow: Workflow): void
 }
 
@@ -159,34 +161,170 @@ const createTestWorkflowCatalog = (initial: Workflow): TestWorkflowCatalog => {
   }
 }
 
+interface TestRunInput {
+  readonly runId: string
+  readonly workflowId: string
+  readonly workflowSnapshot: Workflow
+  readonly variables: Readonly<Record<string, JsonValue>>
+  readonly repositories: readonly RunRepositoryResolution[]
+  readonly createdAt: string
+}
+
+const createTestRunStore = () => {
+  const runs = new Map<string, AgentNodeRunRecord>()
+  const repositories = new Map<string, readonly RunRepositorySnapshotArtifact[]>()
+  const workspaces = new Map<string, RunWorkspaceProjection[]>()
+  const updateWorkspace = (
+    input: Readonly<{
+      runId: string
+      repositoryId: string
+      workspacePath?: string
+      branchName?: string
+      timestamp: string
+      errorMessage?: string
+    }>,
+    status: RunWorkspaceProjection['status'],
+  ): RunWorkspaceProjection => {
+    const entries = workspaces.get(input.runId) ?? []
+    const repository = repositories
+      .get(input.runId)
+      ?.find(({ repositoryId }) => repositoryId === input.repositoryId)
+    if (repository === undefined) throw new Error('Test repository was not found')
+    const current = entries.find(({ repositoryId }) => repositoryId === input.repositoryId)
+    const next: RunWorkspaceProjection = {
+      repositoryId: repository.repositoryId,
+      position: repository.position,
+      status,
+      workspacePath: input.workspacePath ?? current?.workspacePath ?? '',
+      branchName: input.branchName ?? current?.branchName ?? null,
+      errorMessage: input.errorMessage ?? null,
+      preparedAt: status === 'READY' ? input.timestamp : (current?.preparedAt ?? null),
+      cleanedAt: status === 'CLEANED' ? input.timestamp : null,
+      updatedAt: input.timestamp,
+    }
+    workspaces.set(input.runId, [...entries.filter((entry) => entry !== current), next])
+    return next
+  }
+  return {
+    create(input: TestRunInput) {
+      const record: AgentNodeRunRecord = {
+        runId: RunIdSchema.parse(input.runId),
+        workflowSnapshot: structuredClone(input.workflowSnapshot),
+        variables: structuredClone(input.variables),
+      }
+      runs.set(input.runId, record)
+      repositories.set(
+        input.runId,
+        input.repositories.map((repository, position) => ({
+          ...repository,
+          position,
+          webUrl: `https://${repository.provider === 'GITHUB' ? 'github.com' : 'gitlab.com'}/${repository.fullName}`,
+          isPrimary:
+            repository.repositoryId === input.workflowSnapshot.configuration.primaryRepositoryId,
+        })),
+      )
+      return record
+    },
+    get: (runId: string) => runs.get(runId),
+    listRunRepositories: (runId: string) => repositories.get(runId) ?? [],
+    listRunRepositoryWorkspaces: (runId: string) => workspaces.get(runId) ?? [],
+    markRunRepositoryWorkspacePreparing: (input: {
+      runId: string
+      repositoryId: string
+      workspacePath: string
+      branchName: string
+      timestamp: string
+    }) => updateWorkspace(input, 'PREPARING'),
+    markRunRepositoryWorkspaceReady: (input: {
+      runId: string
+      repositoryId: string
+      workspacePath: string
+      branchName: string
+      timestamp: string
+    }) => updateWorkspace(input, 'READY'),
+    markRunRepositoryWorkspaceFailed: (input: {
+      runId: string
+      repositoryId: string
+      workspacePath: string
+      branchName: string
+      timestamp: string
+      errorMessage: string
+    }) => updateWorkspace(input, 'FAILED'),
+    markRunRepositoryWorkspaceCleaned: (input: {
+      runId: string
+      repositoryId: string
+      timestamp: string
+    }) => updateWorkspace(input, 'CLEANED'),
+  }
+}
+
 export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) => {
   const directory = join(tmpdir(), `slopify-persistence-${crypto.randomUUID()}`)
-  const path = join(directory, 'state', 'workbench.sqlite')
-  const database = openDatabase({ path })
+  const path = join(directory, 'state', 'slopify.db')
+  const database = createLegacyTestDatabase(path)
   const workflows = createTestWorkflowCatalog(workflow)
-  const runs = createRunRepository(database)
-  const events = createEventStore(database)
+  const runs = createTestRunStore()
 
   insertLegacyWorkflow(database, workflow)
 
   const cleanup = (): void => {
-    if (database.isOpen) database.close()
+    if (database.open) database.close()
     rmSync(directory, { force: true, recursive: true })
   }
 
-  return { database, events, path, workflow, runs, workflows, cleanup }
+  return { database, path, workflow, runs, workflows, cleanup }
 }
 
 export const createRun = (
   fixture: ReturnType<typeof createPersistenceFixture>,
   workflowSnapshot: Workflow = fixture.workflow,
   variables: Readonly<Record<string, JsonValue>> = {},
-) =>
-  fixture.runs.create({
+) => {
+  const input = {
     runId: TEST_RUN_ID,
     workflowId: workflowSnapshot.workflowId,
     workflowSnapshot,
     variables,
     createdAt: TEST_TIMESTAMP,
     repositories: createTestRunRepositories(workflowSnapshot),
-  })
+  }
+  const record = fixture.runs.create(input)
+  const connection = fixture.database
+  connection
+    .prepare(
+      `INSERT INTO runs (
+         run_id, workflow_id, variables_json, workflow_snapshot_json, status,
+         transition_count, created_at, started_at, completed_at
+       ) VALUES (?, ?, json(?), json(?), 'PENDING', 0, ?, NULL, NULL)`,
+    )
+    .run(
+      input.runId,
+      input.workflowId,
+      JSON.stringify(input.variables),
+      JSON.stringify(input.workflowSnapshot),
+      input.createdAt,
+    )
+  for (const [position, repository] of input.repositories.entries()) {
+    connection
+      .prepare(
+        `INSERT INTO run_repositories (
+           run_id, repository_id, repository_position, name, provider, remote_id,
+           repository_full_name, clone_url, default_branch, base_sha, is_primary
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.runId,
+        repository.repositoryId,
+        position,
+        repository.name,
+        repository.provider,
+        repository.remoteId,
+        repository.fullName,
+        repository.cloneUrl,
+        repository.defaultBranch,
+        repository.baseSha,
+        repository.repositoryId === workflowSnapshot.configuration.primaryRepositoryId ? 1 : 0,
+      )
+  }
+  return record
+}

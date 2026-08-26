@@ -307,7 +307,7 @@ export const createLegacyMigrationService = (
             copyFile(sidecar.path, `${inspectionDatabasePath}${sidecar.suffix}`),
           ),
         )
-        const reader = openLegacySqliteReader(inspectionDatabasePath, {
+        const reader = await openLegacySqliteReader(inspectionDatabasePath, {
           immutable: !hasWalFrames,
         })
         try {

@@ -21,68 +21,6 @@ export interface ShutdownCoordinator {
   shutdown(signal: ShutdownSignal): Promise<ShutdownResult>
 }
 
-export interface CreateShutdownCoordinatorOptions {
-  readonly server: ShutdownServer
-  readonly runs: Readonly<{ stopAdmissions(): void }>
-  readonly cancellation: Readonly<{ cancelActive(reason?: string): Promise<unknown> }>
-  readonly execution?: Readonly<{ stop(): Promise<void> }>
-  readonly database: Readonly<{ readonly isOpen: boolean; close(): void }>
-  readonly gracePeriodMs: number
-}
-
-export const createShutdownCoordinator = (
-  options: CreateShutdownCoordinatorOptions,
-): ShutdownCoordinator => {
-  if (!Number.isSafeInteger(options.gracePeriodMs) || options.gracePeriodMs < 1) {
-    throw new RangeError('Shutdown grace period must be a positive safe integer')
-  }
-  let inFlight: Promise<ShutdownResult> | undefined
-
-  const closeDatabase = (): void => {
-    if (options.database.isOpen) options.database.close()
-  }
-
-  return {
-    shutdown(signal) {
-      if (inFlight !== undefined) return inFlight
-
-      options.runs.stopAdmissions()
-      const serverStopped = options.server.stop().catch(() => undefined)
-
-      const graceful = (async (): Promise<ShutdownResult> => {
-        try {
-          await options.cancellation.cancelActive(`Process received ${signal}`)
-        } catch {
-          // Shutdown still has to close persistence and exit within its deadline.
-        }
-        await options.execution?.stop()
-        await serverStopped
-        closeDatabase()
-        return { signal, forced: false }
-      })()
-
-      let deadline: ReturnType<typeof setTimeout>
-      const forced = new Promise<ShutdownResult>((resolve) => {
-        deadline = setTimeout(() => {
-          void options.server.stop(true).then(
-            () => {
-              closeDatabase()
-              resolve({ signal, forced: true })
-            },
-            () => {
-              closeDatabase()
-              resolve({ signal, forced: true })
-            },
-          )
-        }, options.gracePeriodMs)
-      })
-
-      inFlight = Promise.race([graceful, forced]).finally(() => clearTimeout(deadline))
-      return inFlight
-    },
-  }
-}
-
 export interface CreateFilesystemShutdownCoordinatorOptions {
   readonly server: ShutdownServer
   readonly runs: Readonly<{ stopAdmissions(): void }>

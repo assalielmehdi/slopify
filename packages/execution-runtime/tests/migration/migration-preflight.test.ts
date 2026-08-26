@@ -7,10 +7,9 @@ import { afterEach, describe, expect, it } from 'vitest'
 import {
   LegacyMigrationError,
   createLegacyMigrationService,
-  openDatabase,
   resolveSlopifyPaths,
 } from '../../src/index.js'
-import { getDatabaseHandle } from '../../src/persistence/database.js'
+import { createLegacyTestDatabase, openLegacyTestDatabase } from './legacy-database-fixture.js'
 
 const roots: string[] = []
 
@@ -23,7 +22,7 @@ const createRoot = (): string => {
 
 const createLegacyDatabase = (root: string): string => {
   const path = join(root, 'legacy.sqlite')
-  openDatabase({ path }).close()
+  createLegacyTestDatabase(path).close()
   return path
 }
 
@@ -69,8 +68,8 @@ describe('legacy SQLite migration preflight', () => {
     async (status) => {
       const root = createRoot()
       const databasePath = createLegacyDatabase(root)
-      const database = openDatabase({ path: databasePath })
-      const connection = getDatabaseHandle(database)
+      const database = openLegacyTestDatabase(databasePath)
+      const connection = database
       connection
         .prepare(
           `INSERT INTO workflows (workflow_id, definition_json)
@@ -136,8 +135,9 @@ describe('legacy SQLite migration preflight', () => {
   it('backs up and hashes uncheckpointed WAL data without changing the source', async () => {
     const root = createRoot()
     const databasePath = join(root, 'legacy.sqlite')
-    const database = openDatabase({ path: databasePath })
-    getDatabaseHandle(database)
+    const database = createLegacyTestDatabase(databasePath)
+    database.pragma('journal_mode = WAL')
+    database
       .prepare(
         `INSERT INTO git_connections (
            provider, account_username, connected_at, updated_at

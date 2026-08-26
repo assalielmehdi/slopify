@@ -3,10 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   RunDomainEventSchema,
   RunProjectionError,
-  createInMemoryCoordinatorStateStore,
-  createInMemoryExecutionMessageQueue,
   createRunProjectionState,
-  createWorkflowCoordinator,
   reduceRunEvents,
   type RunDomainEvent,
 } from '../../src/index.js'
@@ -194,93 +191,6 @@ describe('run projection reducer', () => {
       failureCode: 'TRANSITION_LIMIT_EXCEEDED',
     })
     expect(cancelled.run).toMatchObject({ status: 'CANCELLED', failureCode: null })
-  })
-
-  it('matches the active coordinator leaf fixture at terminal state', () => {
-    const queue = createInMemoryExecutionMessageQueue()
-    const coordinatorState = createInMemoryCoordinatorStateStore()
-    let identity = 0
-    const coordinator = createWorkflowCoordinator({
-      coordinatorId: 'coordinator-01',
-      queue,
-      state: coordinatorState,
-      now: () => timestamp,
-      createId: (prefix) => `${prefix}-${++identity}`,
-    })
-    coordinator.start({
-      runId: 'run-01',
-      workflow: {
-        schemaVersion: 2,
-        workflowId: 'release-review',
-        name: 'Leaf fixture',
-        description: 'Coordinator parity fixture.',
-        configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
-        startNodeId: 'review',
-        nodes: [
-          {
-            type: 'agent',
-            id: 'review',
-            name: 'Review',
-            prompt: 'Review the change.',
-            harness: { harnessId: 'pi' },
-          },
-        ],
-        edges: [],
-        maxTransitions: 0,
-        createdAt: timestamp,
-        updatedAt: timestamp,
-      },
-    })
-    const execution = coordinatorState.get('run-01')?.executions[0]
-    if (execution === undefined) throw new Error('Expected coordinator execution')
-    queue.enqueue({
-      id: 'message-success',
-      destination: 'COORDINATOR',
-      type: 'NODE_EXECUTION_SUCCEEDED',
-      runId: 'run-01',
-      nodeExecutionId: execution.nodeExecutionId,
-      attemptId: execution.attemptId,
-      payload: {
-        version: 1,
-        outcome: 'completed',
-        output: {},
-        completedAt: timestamp,
-        durationMs: 1,
-      },
-      availableAt: timestamp,
-      createdAt: timestamp,
-    })
-    coordinator.runOnce()
-
-    const projected = reduceRunEvents(initial(), [
-      event(1, 'RUN_STARTED', {}),
-      event(2, 'NODE_SCHEDULED', {
-        nodeExecutionId: execution.nodeExecutionId,
-        attemptId: execution.attemptId,
-        nodeId: 'review',
-        executionIndex: 0,
-        causationId: 'event-1',
-      }),
-      event(3, 'NODE_SUCCEEDED', {
-        nodeExecutionId: execution.nodeExecutionId,
-        attemptId: execution.attemptId,
-        outcome: 'completed',
-        output: {},
-        durationMs: 1,
-      }),
-      event(4, 'RUN_SUCCEEDED', {}),
-    ])
-    const current = coordinatorState.get('run-01')
-
-    expect({
-      status: projected.run.status,
-      transitionCount: projected.run.transitionCount,
-      executions: projected.executions.map(({ nodeId, status }) => ({ nodeId, status })),
-    }).toEqual({
-      status: current?.status,
-      transitionCount: current?.transitionCount,
-      executions: current?.executions.map(({ nodeId, status }) => ({ nodeId, status })),
-    })
   })
 
   it('rejects gaps and facts for a different run', () => {

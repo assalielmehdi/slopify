@@ -4,19 +4,9 @@ import { describe, expect, it } from 'vitest'
 
 import { ApiApplicationError, createApiApp, parseJsonBody } from '../src/app.js'
 
-const database = {
-  isOpen: true,
-  status: () => ({
-    foreignKeysEnabled: true,
-    journalMode: 'wal',
-    schemaVersion: 2,
-    writable: true,
-  }),
-}
-
 describe('API error boundary', () => {
   it('serializes an explicit domain error with its stable status and details', async () => {
-    const app = createApiApp({ database })
+    const app = createApiApp()
     app.get('/domain-error', () => {
       throw new ApiApplicationError({
         status: 409,
@@ -41,7 +31,7 @@ describe('API error boundary', () => {
 
   it('maps Zod failures without reflecting rejected input values', async () => {
     const secretInput = 'secret-invalid-value'
-    const app = createApiApp({ database })
+    const app = createApiApp()
     app.post('/validation-error', async (context) => {
       const body: unknown = await context.req.json()
       z.strictObject({ count: z.number().int().positive() }).parse(body)
@@ -67,7 +57,7 @@ describe('API error boundary', () => {
   })
 
   it('maps malformed JSON to the same validation envelope', async () => {
-    const app = createApiApp({ database })
+    const app = createApiApp()
     app.post('/malformed-json', async (context) => {
       await parseJsonBody(context)
       return context.body(null, 204)
@@ -87,7 +77,7 @@ describe('API error boundary', () => {
 
   it('hides unexpected exception and sensitive details', async () => {
     const secret = 'private-host-value'
-    const app = createApiApp({ database })
+    const app = createApiApp()
     app.get('/unexpected-error', () => {
       throw new Error(`Harness process failed with ${secret}`)
     })
@@ -103,7 +93,7 @@ describe('API error boundary', () => {
   })
 
   it('uses the same error envelope for unknown routes', async () => {
-    const response = await createApiApp({ database }).request('/missing')
+    const response = await createApiApp().request('/missing')
 
     expect(response.status).toBe(404)
     expect(await response.json()).toEqual({

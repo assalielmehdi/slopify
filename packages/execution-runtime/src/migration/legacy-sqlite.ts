@@ -9,14 +9,6 @@ export interface Statement {
   pluck(): Statement
 }
 
-type Transaction<Parameters extends readonly unknown[], Result> = ((
-  ...parameters: Parameters
-) => Result) & {
-  deferred(...parameters: Parameters): Result
-  immediate(...parameters: Parameters): Result
-  exclusive(...parameters: Parameters): Result
-}
-
 class StatementAdapter implements Statement {
   constructor(
     private readonly statement: ReturnType<BunDatabase['prepare']>,
@@ -78,11 +70,5 @@ export class Database {
     const statement = this.database.prepare(`PRAGMA ${source}`)
     if (options?.simple === true) return statement.values()[0]?.[0]
     return statement.all()
-  }
-
-  transaction<Parameters extends readonly unknown[], Result>(
-    callback: (...parameters: Parameters) => Result,
-  ): Transaction<Parameters, Result> {
-    return this.database.transaction(callback) as Transaction<Parameters, Result>
   }
 }

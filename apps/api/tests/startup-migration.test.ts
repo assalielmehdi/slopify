@@ -14,7 +14,6 @@ import {
   loadLegacyMigrationPreparation,
   resolveSlopifyPaths,
 } from '@slopify/execution-runtime'
-import { getDatabaseHandle } from '../../../packages/execution-runtime/src/persistence/database.js'
 import {
   TEST_RUN_ID,
   TEST_RUN_REPOSITORY,
@@ -56,7 +55,7 @@ const createLegacyFixture = async () => {
     updatedAt: TEST_TIMESTAMP,
   })
   createRun(fixture)
-  const connection = getDatabaseHandle(fixture.database)
+  const connection = fixture.database
   connection
     .prepare(
       `UPDATE runs SET status = 'SUCCEEDED', started_at = ?, completed_at = ?
@@ -140,8 +139,6 @@ describe('filesystem startup preparation', () => {
     const server = await startConfiguredApiServer(
       {
         SLOPIFY_HOME: paths.home,
-        DATABASE_PATH: fixture.path,
-        TRACES_ROOT: join(root, 'legacy-traces'),
       },
       {
         serve(options) {

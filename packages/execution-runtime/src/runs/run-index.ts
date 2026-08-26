@@ -9,7 +9,6 @@ import {
   type AtomicJsonResourceIO,
 } from '../filesystem/atomic-json-resource.js'
 import type { SlopifyPaths } from '../filesystem/slopify-home.js'
-import type { ListRunsInput } from '../persistence/run-repository.js'
 import { createFilesystemRunJournal } from './filesystem-run-journal.js'
 import {
   RunProjectionSchema,
@@ -28,6 +27,17 @@ import type { RunDomainEvent } from './run-events.js'
 export interface FilesystemRunLocator {
   readonly workflowId: string
   readonly runId: string
+}
+
+export interface ListRunsInput {
+  readonly page: number
+  readonly pageSize: number
+  readonly runId?: string | undefined
+  readonly statuses?: readonly RunStatus[] | undefined
+  readonly startedFrom?: string | undefined
+  readonly startedTo?: string | undefined
+  readonly durationMinMs?: number | undefined
+  readonly durationMaxMs?: number | undefined
 }
 
 export interface FilesystemRunDiagnostic {

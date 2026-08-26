@@ -5,7 +5,7 @@ import type { RunDomainEvent } from '../runs/run-events.js'
 import type { RunJournal } from '../runs/run-journal.js'
 import type { JournalCoordinatorStore } from './journal-coordinator-store.js'
 import type { JournalWorkflowCoordinator } from './journal-workflow-coordinator.js'
-import type { NodeRunInput, NodeRunResult, NodeRunner } from './execution-worker.js'
+import type { NodeRunInput, NodeRunResult, NodeRunner } from './node-runner.js'
 import {
   createScheduledNodeClaims,
   type ScheduledNodeClaim,

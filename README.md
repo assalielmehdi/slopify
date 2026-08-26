@@ -19,7 +19,7 @@ The Harnesses screen reports whether Pi is available and shows the models Pi exp
 the current host.
 
 Connect GitHub or GitLab from Settings with a personal access token before adding
-Repositories. Tokens are stored in the operating system credential store, not SQLite.
+Repositories. Tokens are stored in the operating system credential store, not JSON files.
 
 ## Run locally
 
@@ -43,13 +43,14 @@ and caching; individual package scripts only operate on their own package.
 
 ## Local state and run workspaces
 
-Slopify stores owner-local state under `~/.slopify/orchestrator/` by default:
+Slopify stores all owner-local configuration and data under `~/.slopify/` by default:
 
-- `~/.slopify/orchestrator/slopify.db` contains workflows, Repositories, immutable run
-  snapshots, queue state, and audit events.
-- `~/.slopify/orchestrator/traces/` contains per-agent JSONL transcripts.
-- `~/.slopify/orchestrator/workspaces/<runId>/<repositoryId>/` contains one fresh clone for
-  every Repository captured by an active run.
+- `~/.slopify/settings.json` contains interface and non-secret Git connection settings.
+- `~/.slopify/repositories.json` contains the Repository catalog.
+- `~/.slopify/workflows/<workflowId>/workflow.json` contains each workflow definition.
+- `~/.slopify/workflows/<workflowId>/runs/<runId>/` contains immutable snapshots,
+  projections, append-only event journals, per-agent JSONL traces, and fresh Repository
+  clones for that run.
 
 Every agent in a run starts in the configured primary Repository clone and can use every
 other clone from that run. Slopify creates the deterministic branch `slopify/<runId>` in

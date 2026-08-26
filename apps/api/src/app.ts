@@ -1,6 +1,5 @@
 import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/contracts'
 import {
-  CancellationServiceError,
   AgentTraceStoreError,
   GitConnectionServiceError,
   JournalCancellationServiceError,
@@ -11,17 +10,12 @@ import {
   RunServiceError,
   SettingsStoreError,
   WorkflowServiceError,
-  type CancellationService,
-  type AgentTraceStore,
   type GitConnectionService,
   type FilesystemRunEventFeed,
   type HarnessCatalog,
   type RepositoryService,
-  type RunService,
-  type RunEventFeed,
   type ResourceEventFeed,
   type SettingsStore,
-  type WorkbenchDatabase,
   type WorkflowDefinitionService,
 } from '@slopify/execution-runtime'
 import { Hono, type Context } from 'hono'
@@ -31,7 +25,6 @@ import { ApiApplicationError } from './api-error.js'
 import { registerGitConnectionRoutes } from './routes/git-connections.js'
 import { registerHarnessRoutes } from './routes/harnesses.js'
 import { registerRepositoryRoutes } from './routes/repositories.js'
-import { registerRunRoutes } from './routes/runs.js'
 import { registerFilesystemRunRoutes, type FilesystemRunRouteServices } from './routes/runs.js'
 import { registerRunEventRoutes } from './routes/run-events.js'
 import { registerResourceEventRoutes } from './routes/resource-events.js'
@@ -41,17 +34,13 @@ import { registerWorkflowRoutes } from './routes/workflows.js'
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
 export interface CreateApiAppOptions {
-  readonly cancellation?: CancellationService
-  readonly traces?: AgentTraceStore
-  readonly database?: Pick<WorkbenchDatabase, 'isOpen' | 'status'>
   readonly filesystemHealth?: FilesystemHealth
   readonly gitConnections?: GitConnectionService
   readonly harnesses?: HarnessCatalog
   readonly repositories?: RepositoryService
-  readonly runs?: RunService
   readonly filesystemRuns?: FilesystemRunRouteServices
   readonly settings?: SettingsStore
-  readonly eventFeed?: RunEventFeed | FilesystemRunEventFeed
+  readonly eventFeed?: FilesystemRunEventFeed
   readonly resourceEvents?: ResourceEventFeed
   readonly workflows?: WorkflowDefinitionService
 }
@@ -73,15 +62,6 @@ const errorBody = (input: {
     },
   })
 
-const persistenceUnavailable = (context: Context): Response =>
-  context.json(
-    errorBody({
-      code: 'DATABASE_UNAVAILABLE',
-      message: 'Local persistence is unavailable',
-    }),
-    503,
-  )
-
 const filesystemUnavailable = (context: Context): Response =>
   context.json(
     errorBody({
@@ -91,32 +71,17 @@ const filesystemUnavailable = (context: Context): Response =>
     503,
   )
 
-export const createApiApp = (options: CreateApiAppOptions): Hono => {
-  if (options.runs !== undefined && options.filesystemRuns !== undefined) {
-    throw new TypeError('Only one run persistence API may be registered')
-  }
-  if (options.database !== undefined && options.filesystemHealth !== undefined) {
-    throw new TypeError('Only one persistence health source may be registered')
-  }
+export const createApiApp = (options: CreateApiAppOptions = {}): Hono => {
   const app = new Hono()
 
   app.get('/healthz', async (context) => {
-    if (options.filesystemHealth !== undefined) {
-      try {
-        const status = await options.filesystemHealth.status()
-        if (!status.owned || !status.writable) return filesystemUnavailable(context)
-        return context.json(HealthResponseSchema.parse({ status: 'ok' }), 200)
-      } catch {
-        return filesystemUnavailable(context)
-      }
-    }
-    if (options.database?.isOpen !== true) return persistenceUnavailable(context)
-
+    if (options.filesystemHealth === undefined) return filesystemUnavailable(context)
     try {
-      if (!options.database.status().writable) return persistenceUnavailable(context)
+      const status = await options.filesystemHealth.status()
+      if (!status.owned || !status.writable) return filesystemUnavailable(context)
       return context.json(HealthResponseSchema.parse({ status: 'ok' }), 200)
     } catch {
-      return persistenceUnavailable(context)
+      return filesystemUnavailable(context)
     }
   })
 
@@ -124,8 +89,6 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
   if (options.gitConnections !== undefined) registerGitConnectionRoutes(app, options.gitConnections)
   if (options.harnesses !== undefined) registerHarnessRoutes(app, options.harnesses)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
-  if (options.runs !== undefined)
-    registerRunRoutes(app, options.runs, options.cancellation, options.traces)
   if (options.filesystemRuns !== undefined) registerFilesystemRunRoutes(app, options.filesystemRuns)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
   if (options.resourceEvents !== undefined) registerResourceEventRoutes(app, options.resourceEvents)
@@ -159,12 +122,6 @@ export const createApiApp = (options: CreateApiAppOptions): Hono => {
     if (error instanceof AgentTraceStoreError) {
       const status = error.code === 'TRACE_NOT_FOUND' ? 404 : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)
-    }
-    if (error instanceof CancellationServiceError) {
-      return context.json(
-        errorBody({ code: error.code, message: error.message }),
-        error.code === 'RUN_NOT_FOUND' ? 404 : 409,
-      )
     }
     if (error instanceof JournalCancellationServiceError) {
       return context.json(errorBody({ code: error.code, message: error.message }), 409)

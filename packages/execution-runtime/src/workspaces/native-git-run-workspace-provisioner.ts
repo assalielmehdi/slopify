@@ -2,12 +2,11 @@ import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { RunIdSchema, type RepositoryId, type RunId } from '@slopify/contracts'
 
-import type {
-  RunRepositorySnapshot,
-  RunRepositoryWorkspace,
-  RunRepository,
-} from '../persistence/run-repository.js'
 import type { ProcessRunResult, ProcessRunner } from '../processes/process-runner.js'
+import type {
+  RunRepositorySnapshotArtifact,
+  RunWorkspaceProjection,
+} from '../runs/run-artifacts.js'
 import {
   RunWorkspaceProvisioningError,
   type ProvisionedRunRepository,
@@ -19,22 +18,16 @@ export interface CreateNativeGitRunWorkspaceProvisionerOptions {
   readonly runs: {
     listRunRepositories(
       runId: RunId,
-    ): readonly RunRepositorySnapshot[] | Promise<readonly RunRepositorySnapshot[]>
+    ): readonly RunRepositorySnapshotArtifact[] | Promise<readonly RunRepositorySnapshotArtifact[]>
     listRunRepositoryWorkspaces(
       runId: RunId,
-    ): readonly RunRepositoryWorkspace[] | Promise<readonly RunRepositoryWorkspace[]>
-    markRunRepositoryWorkspacePreparing(
-      input: Parameters<RunRepository['markRunRepositoryWorkspacePreparing']>[0],
-    ): unknown
-    markRunRepositoryWorkspaceReady(
-      input: Parameters<RunRepository['markRunRepositoryWorkspaceReady']>[0],
-    ): unknown
+    ): readonly RunWorkspaceProjection[] | Promise<readonly RunWorkspaceProjection[]>
+    markRunRepositoryWorkspacePreparing(input: WorkspacePreparingInput): unknown
+    markRunRepositoryWorkspaceReady(input: WorkspacePreparingInput): unknown
     markRunRepositoryWorkspaceFailed(
-      input: Parameters<RunRepository['markRunRepositoryWorkspaceFailed']>[0],
+      input: WorkspacePreparingInput & { errorMessage: string },
     ): unknown
-    markRunRepositoryWorkspaceCleaned(
-      input: Parameters<RunRepository['markRunRepositoryWorkspaceCleaned']>[0],
-    ): unknown
+    markRunRepositoryWorkspaceCleaned(input: WorkspaceIdentityInput): unknown
   }
   readonly processRunner: ProcessRunner
   readonly workspacesRoot: string
@@ -42,6 +35,17 @@ export interface CreateNativeGitRunWorkspaceProvisionerOptions {
   readonly credentialHelper: string
   readonly timeoutMs?: number
   readonly now?: () => string
+}
+
+interface WorkspaceIdentityInput {
+  readonly runId: RunId
+  readonly repositoryId: string
+  readonly timestamp: string
+}
+
+interface WorkspacePreparingInput extends WorkspaceIdentityInput {
+  readonly workspacePath: string
+  readonly branchName: string
 }
 
 class GitWorkspaceError extends Error {}
@@ -123,7 +127,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
       .then((result) => successfulOutput(operation, result))
 
   const verifyWorkspace = async (
-    repository: RunRepositorySnapshot,
+    repository: RunRepositorySnapshotArtifact,
     workspacePath: string,
     branchName: string,
   ): Promise<boolean> => {
@@ -156,8 +160,8 @@ export const createNativeGitRunWorkspaceProvisioner = (
 
   const prepareRepository = async (
     runId: RunId,
-    repository: RunRepositorySnapshot,
-    state: RunRepositoryWorkspace | undefined,
+    repository: RunRepositorySnapshotArtifact,
+    state: RunWorkspaceProjection | undefined,
     runDirectory: string,
   ): Promise<ProvisionedRunRepository> => {
     if (
@@ -291,7 +295,7 @@ export const createNativeGitRunWorkspaceProvisioner = (
         })),
       )
     }
-    const states = new Map<RepositoryId, RunRepositoryWorkspace>(
+    const states = new Map<RepositoryId, RunWorkspaceProjection>(
       (await options.runs.listRunRepositoryWorkspaces(runId)).map((state) => [
         state.repositoryId,
         state,
@@ -339,7 +343,6 @@ export const createNativeGitRunWorkspaceProvisioner = (
     if (await pathExists(runDirectory)) await rm(runDirectory, { recursive: true, force: true })
     const timestamp = now()
     for (const workspace of await options.runs.listRunRepositoryWorkspaces(runId)) {
-      if (workspace.status === 'LEGACY') continue
       await options.runs.markRunRepositoryWorkspaceCleaned({
         runId,
         repositoryId: workspace.repositoryId,

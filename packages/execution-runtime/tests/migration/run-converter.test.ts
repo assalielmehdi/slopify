@@ -15,7 +15,6 @@ import {
   createRunFilesystemAgentTraceStore,
   resolveSlopifyPaths,
 } from '../../src/index.js'
-import { getDatabaseHandle } from '../../src/persistence/database.js'
 import {
   TEST_RUN_ID,
   TEST_RUN_REPOSITORY,
@@ -53,7 +52,7 @@ describe('legacy terminal run converter', () => {
       updatedAt: TEST_TIMESTAMP,
     })
     createRun(fixture)
-    const connection = getDatabaseHandle(fixture.database)
+    const connection = fixture.database
     connection
       .prepare(
         `UPDATE runs SET status = 'SUCCEEDED', started_at = ?, completed_at = ?
