@@ -5,10 +5,12 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveSlopifyPaths, type ResourceEventFeed } from '@slopify/execution-runtime'
+import type { AgentExecutor } from '@slopify/contracts'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
   createEditableResourceWatcher,
+  createSupportedHarnessRuntime,
   resolveApiServerConfiguration,
   startApiServer,
   startConfiguredApiServer,
@@ -35,7 +37,7 @@ describe('API server configuration', () => {
     })
     expect(resolveApiServerConfiguration({ SLOPIFY_HOME: '/tmp/slopify-test' })).toEqual({
       hostname: '127.0.0.1',
-      port: 3001,
+      port: 7311,
       shutdownGracePeriodMs: 10_000,
     })
   })
@@ -123,6 +125,43 @@ describe('API server configuration', () => {
     await server.stop()
     expect(stop).toHaveBeenCalledOnce()
     expect(await Bun.file(join(home, 'runtime/instance.lock')).exists()).toBe(false)
+  })
+
+  it('registers and routes Pi and Codex as supported host harnesses', async () => {
+    const executor = (): AgentExecutor => ({
+      execute: async function* () {
+        return
+      },
+      cancel: vi.fn(async () => ({ status: 'cancelled' })),
+    })
+    const pi = executor()
+    const codex = executor()
+    const harness = (harnessId: 'pi' | 'codex', name: 'Pi' | 'Codex') => ({
+      harnessId,
+      inspect: vi.fn(async () => ({
+        harnessId,
+        name,
+        description: `${name} harness`,
+        availability: 'UNAVAILABLE' as const,
+        unavailableReason: `${name} unavailable`,
+        installHref: 'https://example.com/',
+        installLabel: `Install ${name}`,
+        models: [],
+      })),
+    })
+    const runtime = createSupportedHarnessRuntime({
+      inspectors: [harness('pi', 'Pi'), harness('codex', 'Codex')],
+      pi,
+      codex,
+    })
+
+    await expect(runtime.harnesses.list()).resolves.toMatchObject([
+      { harnessId: 'pi' },
+      { harnessId: 'codex' },
+    ])
+    expect(runtime.resolveHarness('pi')).toBe(pi)
+    expect(runtime.resolveHarness('codex')).toBe(codex)
+    expect(runtime.resolveHarness('unsupported')).toBeUndefined()
   })
 
   it('disables the idle timeout only for exact GET event streams', async () => {

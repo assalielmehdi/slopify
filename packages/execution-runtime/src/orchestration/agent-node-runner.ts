@@ -141,7 +141,7 @@ export const createAgentNodeRunner = (
         node.prompt,
         workflow.data.configuration.variables,
         run.variables,
-      )}${configuredRepositoriesPrompt(repositories)}\n\nExecution contract:\nFinish by calling the Slopify completion tool (slopify_complete_node) exactly once.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
+      )}${configuredRepositoriesPrompt(repositories)}\n\nExecution contract:\nFinish exactly once using the configured harness completion protocol.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
       z.string().min(1).max(1_000_000).parse(renderedPrompt)
     } catch {
       return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')

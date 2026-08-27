@@ -4,8 +4,8 @@
 
 Slopify is a native, local workflow orchestrator for already-installed agent harnesses.
 Users define directed graphs of agents, choose a harness, configure prompts, and run
-them against workflow Repositories with workflow-defined variables. Pi is the first
-supported harness and runs through its CLI.
+them against workflow Repositories with workflow-defined variables. Pi and Codex are
+supported harnesses and run through their CLIs.
 
 ## Architecture invariants
 
@@ -44,12 +44,13 @@ node runner`. Node facts return through the run journal. Message handling is at 
   when their task requires it. Once a run reaches `SUCCEEDED`, `FAILED`, or `CANCELLED`,
   Slopify removes its cloned workspace by default. Durable workspace state lets startup
   polling retry cleanup after interruption.
-- Each agent execution receives a fresh Pi CLI RPC process with no persisted Pi session.
-  It starts in the primary run clone without repository-local approval and receives the
-  provider, repository, workspace path, branch, and base commit in its execution
-  contract. Slopify's adapter-owned
-  `slopify_complete_node` bridge is the only routable agent result.
-- Pi runs directly as the Slopify host user and uses the existing host-level Pi setup.
+- Each agent execution receives a fresh harness process with no persisted session: Pi
+  uses CLI RPC and Codex uses ephemeral JSONL execution. It starts in the primary run
+  clone without repository-local approval and receives the provider, repository,
+  workspace path, branch, and base commit in its execution contract. The adapter-owned
+  result protocol is the only routable agent result: Pi uses the `slopify_complete_node`
+  bridge and Codex uses a structured output schema.
+- Harnesses run directly as the Slopify host user and use the existing host-level setup.
   Harness setup is external to Slopify. Fresh Git clones isolate concurrent run state;
   they do not restrict access to other host paths.
 - Harness availability and model metadata are discovered live through application
@@ -79,7 +80,7 @@ node runner`. Node facts return through the run journal. Message handling is at 
 - `packages/execution-runtime`: use cases, ports, coordinator, worker, persistence,
   clone provisioning, harness discovery, and node runners.
 - `packages/agent-runtimes`: infrastructure adapters for host harnesses; currently Pi
-  CLI inspection and RPC execution.
+  CLI inspection/RPC execution and Codex CLI inspection/ephemeral JSONL execution.
 - `packages/contracts`: shared application contracts.
 
 ## Frontend

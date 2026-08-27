@@ -1,4 +1,4 @@
-export const DEFAULT_API_INTERNAL_URL = 'http://127.0.0.1:3001'
+export const DEFAULT_API_INTERNAL_URL = 'http://127.0.0.1:7311'
 
 export function internalApiOrigin(
   environment: Readonly<Record<string, string | undefined>> = process.env,

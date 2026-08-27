@@ -52,6 +52,29 @@ describe('HarnessSettings', () => {
     await waitFor(() => expect(panel.getAttribute('data-open')).toBe('false'))
   })
 
+  it('renders Codex with its own harness identity', async () => {
+    const descriptor = HarnessDescriptorSchema.parse({
+      harnessId: 'codex',
+      name: 'Codex',
+      description: 'Runs workflow agents through the Codex CLI.',
+      availability: 'AVAILABLE',
+      executablePath: '/opt/homebrew/bin/codex',
+      version: '0.149.1',
+      installHref: 'https://developers.openai.com/codex/cli/',
+      installLabel: 'Install Codex',
+      models: [{ id: 'gpt-5.6-sol', name: 'gpt-5.6-sol', thinkingLevels: ['high', 'ultra'] }],
+    })
+    render(<HarnessSettings client={{ listHarnesses: vi.fn(async () => [descriptor]) }} />)
+
+    const codexCard = await screen.findByRole('button', { name: 'Codex, Available' })
+    expect(within(codexCard).getByTestId('harness-icon-codex')).toBeTruthy()
+
+    fireEvent.click(codexCard)
+    const panel = await screen.findByRole('dialog', { name: 'Codex' })
+    expect(within(panel).getByTestId('harness-icon-codex')).toBeTruthy()
+    expect(within(panel).getByText('Version 0.149.1')).toBeTruthy()
+  })
+
   it('gives an actionable installation link when Pi is unavailable', async () => {
     const descriptor = HarnessDescriptorSchema.parse({
       harnessId: 'pi',

@@ -1,7 +1,7 @@
 'use client'
 
 import type { HarnessDescriptor } from '@slopify/contracts'
-import { ExternalLinkIcon, XIcon } from 'lucide-react'
+import { ExternalLinkIcon, SquareTerminalIcon, XIcon } from 'lucide-react'
 import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 
@@ -26,10 +26,18 @@ const prefersReducedMotion = (): boolean =>
 const statusLabel = (harness: HarnessDescriptor): string =>
   harness.availability === 'AVAILABLE' ? 'Available' : 'Unavailable'
 
-function HarnessIcon() {
+function HarnessIcon({ harness }: Readonly<{ harness: HarnessDescriptor }>) {
   return (
     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
-      <Image alt="Pi" height={20} src="/pi-logo.svg" width={20} />
+      {harness.harnessId === 'codex' ? (
+        <SquareTerminalIcon
+          aria-hidden="true"
+          className="size-5 text-foreground"
+          data-testid="harness-icon-codex"
+        />
+      ) : (
+        <Image alt="Pi" height={20} src="/pi-logo.svg" width={20} />
+      )}
     </span>
   )
 }
@@ -66,7 +74,7 @@ function HarnessTile({
       variant="ghost"
     >
       <span className="flex min-h-0 flex-1 items-start gap-3.5 p-4">
-        <HarnessIcon />
+        <HarnessIcon harness={harness} />
         <span className="flex min-w-0 flex-1 self-stretch flex-col gap-1">
           <span className="truncate text-[14px]/5 font-semibold tracking-[-0.01em] text-foreground">
             {harness.name}
@@ -139,7 +147,7 @@ function HarnessPanel({ harness, isOpen, onClose, onExited, panelRef }: HarnessP
       >
         <header className="relative shrink-0 border-b border-border p-6 pr-14">
           <div className="flex items-center gap-3">
-            <HarnessIcon />
+            <HarnessIcon harness={harness} />
             <div className="min-w-0">
               <h2
                 id="harness-panel-title"

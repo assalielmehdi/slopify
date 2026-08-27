@@ -2,8 +2,13 @@ import { readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { createPiCliAgentExecutor, createPiHarnessInspector } from '@slopify/agent-runtimes'
-import { WorkflowIdSchema } from '@slopify/contracts'
+import {
+  createCodexCliAgentExecutor,
+  createCodexHarnessInspector,
+  createPiCliAgentExecutor,
+  createPiHarnessInspector,
+} from '@slopify/agent-runtimes'
+import { WorkflowIdSchema, type AgentExecutor } from '@slopify/contracts'
 import {
   createBunGitSecretStore,
   createFetchRemoteGitHost,
@@ -20,6 +25,8 @@ import {
   createRemoteRunRepositoryResolver,
   gitCredentialHelperPath,
   resolveSlopifyPaths,
+  type HarnessCatalog,
+  type HarnessInspector,
   type ResourceEventFeed,
   type ResourceWatcher,
   type SlopifyPaths,
@@ -85,6 +92,27 @@ export interface EditableResourceWatcher {
   start(): Promise<void>
   reconcile(): Promise<void>
   stop(): Promise<void>
+}
+
+export const createSupportedHarnessRuntime = (
+  options: Readonly<{
+    inspectors?: readonly HarnessInspector[]
+    pi?: AgentExecutor
+    codex?: AgentExecutor
+  }> = {},
+): Readonly<{
+  harnesses: HarnessCatalog
+  resolveHarness: (harnessId: string) => AgentExecutor | undefined
+}> => {
+  const pi = options.pi ?? createPiCliAgentExecutor()
+  const codex = options.codex ?? createCodexCliAgentExecutor()
+  return {
+    harnesses: createHarnessCatalog({
+      inspectors: options.inspectors ?? [createPiHarnessInspector(), createCodexHarnessInspector()],
+    }),
+    resolveHarness: (harnessId) =>
+      harnessId === 'pi' ? pi : harnessId === 'codex' ? codex : undefined,
+  }
 }
 
 const workflowResources = async (paths: SlopifyPaths): Promise<readonly WatchedResource[]> => {
@@ -156,7 +184,7 @@ const nonBlank = (
 }
 
 const port = (value: string | undefined): number => {
-  if (value === undefined) return 3_001
+  if (value === undefined) return 7_311
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed < 1 || parsed > 65_535) {
     throw new ServerConfigurationError(
@@ -251,8 +279,8 @@ export const startConfiguredApiServer = async (
   }
   const settings = createFilesystemSettingsStore({ paths })
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
-  const harnesses = createHarnessCatalog({ inspectors: [createPiHarnessInspector()] })
-  const pi = createPiCliAgentExecutor()
+  const harnessRuntime = createSupportedHarnessRuntime()
+  const harnesses = harnessRuntime.harnesses
   const remoteGit = createFetchRemoteGitHost()
   const gitConnections = createGitConnectionService({
     connections: createFilesystemGitConnectionRepository({ settings }),
@@ -268,7 +296,7 @@ export const startConfiguredApiServer = async (
   const runtime = createFilesystemRuntime({
     paths,
     harnesses,
-    resolveHarness: (harnessId) => (harnessId === 'pi' ? pi : undefined),
+    resolveHarness: harnessRuntime.resolveHarness,
     resolveRepository: createRemoteRunRepositoryResolver({
       repositories,
       connections: gitConnections,

@@ -12,7 +12,7 @@ interface AgentWorkflowFixtureInput {
   readonly nodeId?: string
   readonly nodeName?: string
   readonly prompt?: string
-  readonly thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'
+  readonly thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
   readonly workflowName?: string
 }
 

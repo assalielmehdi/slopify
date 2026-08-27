@@ -6,8 +6,8 @@
   "scripts": {
     "build": "bun run clean && bun --bun next typegen && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit && bun --bun next build",
     "clean": "bun -e \"import { rmSync } from 'node:fs'; rmSync('.next', { force: true, recursive: true })\"",
-    "dev": "bun --bun next dev",
-    "start": "bun --bun next start",
+    "dev": "bun --bun next dev --port 7310",
+    "start": "bun --bun next start --port 7310",
     "lint": "bun --bun eslint . --max-warnings 0",
     "test": "bun --bun vitest run --config vitest.config.ts",
     "typecheck": "bun --bun next typegen && bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit"

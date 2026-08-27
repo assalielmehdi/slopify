@@ -114,12 +114,13 @@ export const HarnessThinkingLevelSchema = z.enum([
   'high',
   'xhigh',
   'max',
+  'ultra',
 ])
 
 export const HarnessModelOptionSchema = z.strictObject({
   id: z.string().trim().min(1).max(256),
   name: z.string().trim().min(1).max(128),
-  thinkingLevels: z.array(HarnessThinkingLevelSchema).min(1).max(7).readonly(),
+  thinkingLevels: z.array(HarnessThinkingLevelSchema).min(1).max(8).readonly(),
 })
 
 const harnessDescriptorBase = z.strictObject({

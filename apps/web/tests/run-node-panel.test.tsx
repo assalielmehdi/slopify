@@ -65,6 +65,19 @@ const trace = AgentTraceSchema.parse({
   complete: true,
 })
 
+const codexTrace = AgentTraceSchema.parse({
+  ...trace,
+  header: {
+    ...trace.header,
+    configuration: {
+      ...trace.header.configuration,
+      harnessId: 'codex',
+      harnessVersion: '0.149.1',
+      model: 'gpt-5.6-sol',
+    },
+  },
+})
+
 const legacyTrace = AgentTraceSchema.parse({
   header: {
     version: 1,
@@ -172,5 +185,22 @@ describe('RunNodePanel', () => {
     const workspaces = screen.getByRole('region', { name: 'Run workspaces' })
     expect(workspaces.textContent).toContain('legacy local Git worktrees')
     expect(workspaces.textContent).not.toContain('fresh repository clones')
+  })
+
+  it('formats the Codex harness name in captured execution details', () => {
+    render(
+      <RunNodePanel
+        execution={undefined}
+        node={node}
+        status="SUCCEEDED"
+        trace={codexTrace}
+        traceError={undefined}
+        traceLoading={false}
+      />,
+    )
+
+    const configuration = screen.getByLabelText('Configuration')
+    expect(configuration.textContent).toContain('Codex')
+    expect(configuration.textContent).not.toContain('codex')
   })
 })

@@ -206,6 +206,10 @@ describe('agent node runner', () => {
       expect(received?.renderedPrompt).toContain(
         'Slopify will not push branches or create pull requests',
       )
+      expect(received?.renderedPrompt).toContain(
+        'Finish exactly once using the configured harness completion protocol',
+      )
+      expect(received?.renderedPrompt).not.toContain('slopify_complete_node')
       expect(traces.start).toHaveBeenCalledWith({
         version: 3,
         runId: TEST_RUN_ID,

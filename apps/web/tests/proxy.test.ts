@@ -19,7 +19,7 @@ describe('same-origin API proxy', () => {
   })
 
   it('forwards SSE requests to the internal API without buffering the response', async () => {
-    process.env.API_INTERNAL_URL = 'http://127.0.0.1:3001'
+    process.env.API_INTERNAL_URL = 'http://127.0.0.1:4311'
     const encoder = new TextEncoder()
     const upstreamResponse = new Response(
       new ReadableStream({
@@ -40,7 +40,7 @@ describe('same-origin API proxy', () => {
     vi.stubGlobal('fetch', fetchImplementation)
 
     const response = await GET(
-      new Request('http://127.0.0.1:3000/api/runs/run-01/events?cursor=12', {
+      new Request('http://127.0.0.1:7310/api/runs/run-01/events?cursor=12', {
         headers: { 'last-event-id': '12' },
       }),
     )
@@ -49,19 +49,19 @@ describe('same-origin API proxy', () => {
     const forwardedRequest = fetchImplementation.mock.calls.at(0)?.at(0)
     expect(forwardedRequest).toBeInstanceOf(Request)
     if (!(forwardedRequest instanceof Request)) throw new TypeError('Expected a Request')
-    expect(forwardedRequest.url).toBe('http://127.0.0.1:3001/api/runs/run-01/events?cursor=12')
+    expect(forwardedRequest.url).toBe('http://127.0.0.1:4311/api/runs/run-01/events?cursor=12')
     expect(forwardedRequest.headers.get('last-event-id')).toBe('12')
     expect(response.headers.get('content-type')).toBe('text/event-stream')
     await expect(response.text()).resolves.toBe('id: 12\ndata: first\n\nid: 13\ndata: second\n\n')
   })
 
   it('forwards JSON mutations and preserves their request body', async () => {
-    process.env.API_INTERNAL_URL = 'http://127.0.0.1:3001'
+    process.env.API_INTERNAL_URL = 'http://127.0.0.1:4311'
     const fetchImplementation = vi.fn<typeof fetch>(async () => Response.json({ runId: 'run-01' }))
     vi.stubGlobal('fetch', fetchImplementation)
 
     await POST(
-      new Request('http://127.0.0.1:3000/api/runs', {
+      new Request('http://127.0.0.1:7310/api/runs', {
         body: JSON.stringify({
           workflowId: 'default-workflow',
           variables: { task: 'SLOPIFY-40' },
@@ -89,7 +89,7 @@ describe('same-origin API proxy', () => {
     vi.stubGlobal('fetch', fetchImplementation)
 
     await PATCH(
-      new Request('http://127.0.0.1:3000/api/settings', {
+      new Request('http://127.0.0.1:7310/api/settings', {
         body: JSON.stringify({ appearance: { theme: 'dark' } }),
         headers: { 'content-type': 'application/json', 'if-match': '"current"' },
         method: 'PATCH',
@@ -105,27 +105,26 @@ describe('same-origin API proxy', () => {
   })
 
   it('maps the public API health path to the Hono health endpoint', async () => {
-    process.env.API_INTERNAL_URL = 'http://127.0.0.1:3001'
     const fetchImplementation = vi.fn<typeof fetch>(async () => Response.json({ status: 'ok' }))
     vi.stubGlobal('fetch', fetchImplementation)
 
-    await GET(new Request('http://127.0.0.1:3000/api/healthz'))
+    await GET(new Request('http://127.0.0.1:7310/api/healthz'))
 
     const forwardedRequest = fetchImplementation.mock.calls.at(0)?.at(0)
     expect(forwardedRequest).toBeInstanceOf(Request)
     if (!(forwardedRequest instanceof Request)) throw new TypeError('Expected a Request')
-    expect(forwardedRequest.url).toBe('http://127.0.0.1:3001/healthz')
+    expect(forwardedRequest.url).toBe('http://127.0.0.1:7311/healthz')
   })
 
   it('returns the shared error envelope when the API is unavailable', async () => {
-    process.env.API_INTERNAL_URL = 'http://127.0.0.1:3001'
+    process.env.API_INTERNAL_URL = 'http://127.0.0.1:4311'
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1'))),
+      vi.fn(async () => Promise.reject(new Error('connect ECONNREFUSED 127.0.0.1:4311'))),
     )
 
     const response = await PUT(
-      new Request('http://127.0.0.1:3000/api/workflows/default-workflow', {
+      new Request('http://127.0.0.1:7310/api/workflows/default-workflow', {
         body: '{}',
         method: 'PUT',
       }),
@@ -141,11 +140,11 @@ describe('same-origin API proxy', () => {
   })
 
   it('rejects an unsafe internal API origin without attempting a request', async () => {
-    process.env.API_INTERNAL_URL = 'http://user:secret@127.0.0.1:3001/private'
+    process.env.API_INTERNAL_URL = 'http://user:secret@127.0.0.1:4311/private'
     const fetchImplementation = vi.fn()
     vi.stubGlobal('fetch', fetchImplementation)
 
-    const response = await GET(new Request('http://127.0.0.1:3000/api/workflows'))
+    const response = await GET(new Request('http://127.0.0.1:7310/api/workflows'))
 
     expect(response.status).toBe(500)
     expect(fetchImplementation).not.toHaveBeenCalled()

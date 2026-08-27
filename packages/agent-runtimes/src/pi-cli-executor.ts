@@ -15,14 +15,12 @@ import {
   type AgentNodeResult,
 } from './contract.js'
 import { createPiEventNormalizer, type PiEventNormalizer } from './event-normalizer.js'
+import { decodeJsonLines } from './json-lines.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
+import { sensitiveEnvironmentValues } from './sensitive-environment.js'
 
-const MAX_JSONL_RECORD_BYTES = 4 * 1024 * 1024
 const MAX_COMPLETION_RESULT_BYTES = 262_144
-const MAX_SENSITIVE_ENVIRONMENT_VALUES = 256
-const MAX_SENSITIVE_ENVIRONMENT_VALUE_LENGTH = 16_384
 const COMPLETION_PROTOCOL = 'slopify.node-result'
-const SECRET_LIKE_ENVIRONMENT_KEY = /(?:token|key|secret|password|credential|auth)/iu
 
 export interface PiCliSpawnInput {
   readonly executable: string
@@ -111,21 +109,6 @@ const failureMessages = {
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === 'object' && !Array.isArray(value)
 
-const sensitiveEnvironmentValues = (environment: Readonly<NodeJS.ProcessEnv>): readonly string[] =>
-  [
-    ...new Set(
-      Object.entries(environment)
-        .filter(
-          ([key, value]) =>
-            SECRET_LIKE_ENVIRONMENT_KEY.test(key) &&
-            typeof value === 'string' &&
-            value.length > 0 &&
-            value.length <= MAX_SENSITIVE_ENVIRONMENT_VALUE_LENGTH,
-        )
-        .map(([, value]) => value as string),
-    ),
-  ].slice(0, MAX_SENSITIVE_ENVIRONMENT_VALUES)
-
 const delay = async (milliseconds: number): Promise<void> => {
   await new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
 }
@@ -171,31 +154,7 @@ export const createNodePiCliProcessSpawner = (): PiCliProcessSpawner => ({
   },
 })
 
-export async function* decodePiJsonLines(
-  source: AsyncIterable<string | Uint8Array>,
-): AsyncIterable<unknown> {
-  const decoder = new TextDecoder()
-  let buffered = ''
-  for await (const chunk of source) {
-    buffered += typeof chunk === 'string' ? chunk : decoder.decode(chunk, { stream: true })
-    let delimiterIndex = buffered.indexOf('\n')
-    while (delimiterIndex >= 0) {
-      let record = buffered.slice(0, delimiterIndex)
-      buffered = buffered.slice(delimiterIndex + 1)
-      if (record.endsWith('\r')) record = record.slice(0, -1)
-      if (Buffer.byteLength(record, 'utf8') > MAX_JSONL_RECORD_BYTES) {
-        throw new Error('Pi RPC JSONL record is too large')
-      }
-      if (record.length > 0) yield JSON.parse(record) as unknown
-      delimiterIndex = buffered.indexOf('\n')
-    }
-    if (Buffer.byteLength(buffered, 'utf8') > MAX_JSONL_RECORD_BYTES) {
-      throw new Error('Pi RPC JSONL record is too large')
-    }
-  }
-  buffered += decoder.decode()
-  if (buffered.length > 0) throw new Error('Pi RPC ended with an unterminated JSONL record')
-}
+export const decodePiJsonLines = decodeJsonLines
 
 const drain = async (source: AsyncIterable<string | Uint8Array>): Promise<void> => {
   for await (const chunk of source) {

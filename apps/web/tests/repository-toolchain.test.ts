@@ -163,8 +163,8 @@ describe('repository toolchain', () => {
     expect(webManifest.scripts.build).toMatch(/^bun run clean &&/u)
     expect(webManifest.scripts.build).toContain('bun --bun next typegen')
     expect(webManifest.scripts.build).toContain('bun --bun next build')
-    expect(webManifest.scripts.dev).toBe('bun --bun next dev')
-    expect(webManifest.scripts.start).toBe('bun --bun next start')
+    expect(webManifest.scripts.dev).toBe('bun --bun next dev --port 7310')
+    expect(webManifest.scripts.start).toBe('bun --bun next start --port 7310')
 
     expect(apiManifest.dependencies?.hono).toBeDefined()
     expect(apiManifest.scripts.build).toMatch(/^bun run clean &&/u)

@@ -322,8 +322,8 @@ text color of their role.
   shows only the harness logo, name, type, short description, and availability.
 - Treat each harness card as one accessible button. Open the contained, floating right
   drawer used by Repositories for version, executable, and discovered-model details.
-- When Pi is unavailable, show the reason and one link to the official installation
-  page. Never imply that Slopify can install or configure it.
+- When a harness is unavailable, show the reason and one link to its official
+  installation page. Never imply that Slopify can install or configure it.
 - Model metadata may be summarized. Detailed agent selection belongs in the workflow
   agent drawer.
 

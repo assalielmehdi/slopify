@@ -69,7 +69,7 @@ describe('harness and repository catalogs', () => {
             {
               id: 'openai-codex/gpt-5.4',
               name: 'openai-codex/gpt-5.4',
-              thinkingLevels: ['off', 'low', 'medium', 'high'],
+              thinkingLevels: ['off', 'low', 'medium', 'high', 'ultra'],
             },
           ],
         },

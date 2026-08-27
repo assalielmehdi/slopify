@@ -2,7 +2,7 @@
 
 Slopify is a native, local workbench for orchestrating workflows of already-configured
 AI agent harnesses. A workflow is a directed graph of agents with shared GitHub or
-GitLab repositories and declared run variables. Pi is the first supported harness.
+GitLab repositories and declared run variables. Pi and Codex are supported harnesses.
 
 Slopify owns workflow definitions, run coordination, isolated Git clones, and execution
 traces. Harness installation and setup stay external to Slopify.
@@ -30,11 +30,12 @@ traces. Harness installation and setup stay external to Slopify.
 - macOS or a Linux VPS
 - Bun 1.4.0
 - Git
-- [Pi](https://pi.dev/) installed on `PATH` and configured for the agents you want to run
-- Any developer tools expected by that Pi installation
+- [Pi](https://pi.dev/) and/or [Codex](https://developers.openai.com/codex/cli/)
+  installed on `PATH` and configured for the agents you want to run
+- Any developer tools expected by the selected harness
 
-The Harnesses screen reports whether Pi is available and shows the models Pi exposes on
-the current host.
+The Harnesses screen reports whether Pi and Codex are available and shows the models each
+harness exposes on the current host.
 
 Connect GitHub or GitLab from Settings with a personal access token before adding
 Repositories. Tokens are stored in the operating system credential store, not JSON files.
@@ -47,7 +48,7 @@ bun run dev
 ```
 
 Turborepo starts the Hono API and Next.js application together and builds their internal
-dependencies in graph order. Open <http://127.0.0.1:3000>.
+dependencies in graph order. Open <http://127.0.0.1:7310>.
 
 To run the production builds locally:
 
@@ -92,15 +93,16 @@ its cloned workspaces by default and records the cleanup durably.
 
 ## Host access
 
-Pi runs directly as the user who started Slopify and uses that user's existing Pi and
-host configuration. Fresh run clones isolate Git state between concurrent runs. They do
-not restrict access to the rest of the host, so
-run Slopify only with harnesses and repositories you trust.
+Harnesses run directly as the user who started Slopify and use that user's existing host
+configuration. Fresh run clones isolate Git state between concurrent runs. They do not
+restrict access to the rest of the host, so run Slopify only with harnesses and
+repositories you trust.
 
-Slopify starts Pi without repository-local approval and uses a small completion bridge to
-capture each node result. Sensitive-looking environment values are redacted from events
-and structured results, but the harness can still read other user files. Execution
-traces therefore remain trusted, owner-local data.
+Slopify starts each node in a fresh harness process without repository-local approval.
+Pi uses its RPC protocol and a small completion bridge; Codex uses ephemeral JSONL
+execution and an adapter-owned structured output schema. Sensitive-looking environment
+values are redacted from events and structured results, but the harness can still read
+other user files. Execution traces therefore remain trusted, owner-local data.
 
 ## Legacy migration
 

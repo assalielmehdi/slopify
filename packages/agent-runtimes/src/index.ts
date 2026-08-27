@@ -14,6 +14,28 @@ export {
   type AgentWorkspace,
 } from './contract.js'
 export {
+  createCodexCliAgentExecutor,
+  createNodeCodexCliProcessSpawner,
+  type CodexCliProcess,
+  type CodexCliProcessExit,
+  type CodexCliProcessSpawner,
+  type CodexCliSpawnInput,
+  type CreateCodexCliAgentExecutorOptions,
+} from './codex-cli-executor.js'
+export {
+  createCodexHarnessInspector,
+  parseCodexModelCatalog,
+  type CodexHarnessInspector,
+  type CreateCodexHarnessInspectorOptions,
+} from './codex-harness-inspector.js'
+export {
+  createHostCommandRunner,
+  resolveExecutableOnPath,
+  type HostCommandInput,
+  type HostCommandResult,
+  type HostCommandRunner,
+} from './host-command.js'
+export {
   createNodePiCliProcessSpawner,
   createPiCliAgentExecutor,
   decodePiJsonLines,
@@ -24,14 +46,9 @@ export {
   type PiCliSpawnInput,
 } from './pi-cli-executor.js'
 export {
-  createHostCommandRunner,
   createPiHarnessInspector,
   parsePiModelList,
   PI_THINKING_LEVELS,
-  resolveExecutableOnPath,
   type CreatePiHarnessInspectorOptions,
-  type HostCommandInput,
-  type HostCommandResult,
-  type HostCommandRunner,
   type PiHarnessInspector,
 } from './pi-harness-inspector.js'

@@ -58,7 +58,8 @@ function DefinitionList({
   )
 }
 
-const harnessLabel = (harnessId: string): string => (harnessId === 'pi' ? 'Pi' : harnessId)
+const harnessLabel = (harnessId: string): string =>
+  harnessId === 'pi' ? 'Pi' : harnessId === 'codex' ? 'Codex' : harnessId
 
 export function RunNodePanel({
   execution,
