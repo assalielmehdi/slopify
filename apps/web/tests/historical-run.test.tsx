@@ -115,7 +115,7 @@ describe('historical run', () => {
 
     render(<LiveRun runId="run-historical" client={client} connect={subscription} />)
 
-    expect(await screen.findByText('Captured graph default-workflow')).toBeTruthy()
+    expect(await screen.findByText('Captured graph test-workflow')).toBeTruthy()
     expect(subscription).not.toHaveBeenCalled()
     const panel = await screen.findByRole('complementary', { name: 'Who are you?' })
     expect(panel.getAttribute('data-layout')).toBe('workspace')

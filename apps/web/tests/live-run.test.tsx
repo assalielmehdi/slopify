@@ -3,11 +3,16 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AgentTraceSchema, RunEventSchema, type RunEvent } from '@slopify/contracts'
+import { AgentTraceSchema } from '@slopify/contracts'
 
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse, StartRunResponse } from '../lib/api-client'
 import type { RunEventSubscription, RunEventSubscriptionHandlers } from '../lib/event-stream'
+import {
+  ApiRunEventSchema,
+  RunDetailResponseSchema,
+  type ApiRunEvent,
+} from '../lib/run-api-contract'
 import { WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT } from '../lib/workflow-run-outcome-events'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
@@ -43,47 +48,57 @@ const workflow = createAgentWorkflowFixture({
   thinkingLevel: 'high',
 })
 
-const events = RunEventSchema.array().parse([
+const events = ApiRunEventSchema.array().parse([
   {
+    schemaVersion: 1,
+    eventId: 'run-started',
     runId: 'run-01',
     sequence: 1,
     timestamp: '2026-08-20T10:00:00Z',
     type: 'RUN_STARTED',
-    data: {
-      workflowId: workflow.workflowId,
-    },
+    data: {},
   },
   {
+    schemaVersion: 1,
+    eventId: 'node-scheduled',
     runId: 'run-01',
     sequence: 2,
     timestamp: '2026-08-20T10:00:01Z',
-    type: 'RUN_STATUS_CHANGED',
-    data: { from: 'PENDING', to: 'RUNNING' },
+    type: 'NODE_SCHEDULED',
+    data: {
+      nodeExecutionId: 'node-execution-01',
+      attemptId: 'attempt-01',
+      nodeId: 'identify-agent',
+      executionIndex: 0,
+      causationId: 'run-started',
+    },
   },
   {
+    schemaVersion: 1,
+    eventId: 'node-started',
     runId: 'run-01',
     sequence: 3,
     timestamp: '2026-08-20T10:00:02Z',
     type: 'NODE_STARTED',
-    nodeId: 'identify-agent',
-    data: {},
+    data: { nodeExecutionId: 'node-execution-01', attemptId: 'attempt-01' },
   },
 ])
 
-const run = {
-  runId: 'run-01',
-  workflowId: workflow.workflowId,
-  workflowSnapshot: workflow,
-  variables: { task: 'Follow a live run' },
-  status: 'RUNNING',
-  transitionCount: 1,
-  createdAt: '2026-08-20T10:00:00Z',
-  startedAt: '2026-08-20T10:00:01Z',
-  completedAt: null,
-} as unknown as StartRunResponse
-
-const detail = {
-  run,
+const detail = RunDetailResponseSchema.parse({
+  run: {
+    schemaVersion: 1,
+    runId: 'run-01',
+    workflowId: workflow.workflowId,
+    workflowSnapshot: workflow,
+    variables: { task: 'Follow a live run' },
+    status: 'RUNNING',
+    transitionCount: 1,
+    lastEventSequence: 3,
+    createdAt: '2026-08-20T10:00:00Z',
+    startedAt: '2026-08-20T10:00:01Z',
+    completedAt: null,
+    failureCode: null,
+  },
   events,
   nodeExecutions: [
     {
@@ -103,11 +118,12 @@ const detail = {
   ],
   repositories: [],
   repositoryWorkspaces: [],
-} as unknown as RunDetailResponse
+})
+const run = detail.run
 
 const trace = AgentTraceSchema.parse({
   header: {
-    version: 2,
+    version: 4,
     runId: 'run-01',
     nodeExecutionId: 'node-execution-01',
     attemptId: 'attempt-01',
@@ -119,7 +135,9 @@ const trace = AgentTraceSchema.parse({
       model: 'test-model',
       thinkingLevel: 'high',
       renderedPrompt: "Who are you? What's your name?",
-      workspaceRoot: '/Users/developer/.slopify/orchestrator/workspaces/run-01',
+      workspaceRoot: '/Users/developer/.slopify/workflows/test-workflow/runs/run-01/workspaces',
+      artifactsPath:
+        '/Users/developer/.slopify/workflows/test-workflow/runs/run-01/artifacts/node-execution-01',
       primaryRepositoryId: 'repository-api',
       repositories: [
         {
@@ -127,7 +145,8 @@ const trace = AgentTraceSchema.parse({
           name: 'API',
           provider: 'GITHUB',
           fullName: 'operator/api',
-          workspacePath: '/Users/developer/.slopify/orchestrator/workspaces/run-01/repository-api',
+          workspacePath:
+            '/Users/developer/.slopify/workflows/test-workflow/runs/run-01/workspaces/repository-api',
           branchName: 'slopify/run-01',
           baseSha: '0123456789abcdef0123456789abcdef01234567',
           defaultBranch: 'main',
@@ -205,7 +224,7 @@ describe('LiveRun', () => {
     expect(status.textContent).toContain('Running')
     expect(status.className).toContain('absolute')
     expect(status.className).toContain('right-3')
-    expect(graph.textContent).toContain('default-workflow')
+    expect(graph.textContent).toContain('test-workflow')
     expect(subscription.subscription).toHaveBeenCalledWith(
       '/api/runs/run-01/events',
       expect.any(Object),
@@ -214,22 +233,31 @@ describe('LiveRun', () => {
 
   it('reconciles a terminal snapshot immediately when live updates disconnect', async () => {
     const subscription = createSubscription()
-    const completedEvents = RunEventSchema.array().parse([
+    const completedEvents = ApiRunEventSchema.array().parse([
       ...events,
       {
+        schemaVersion: 1,
+        eventId: 'node-succeeded',
         runId: 'run-01',
         sequence: 4,
         timestamp: '2026-08-20T10:00:09Z',
-        type: 'NODE_COMPLETED',
-        nodeId: 'identify-agent',
-        data: { outcome: 'completed', durationMs: 7_000 },
+        type: 'NODE_SUCCEEDED',
+        data: {
+          nodeExecutionId: 'node-execution-01',
+          attemptId: 'attempt-01',
+          outcome: 'completed',
+          output: { data: { response: 'Implementation is complete.' } },
+          durationMs: 7_000,
+        },
       },
       {
+        schemaVersion: 1,
+        eventId: 'run-succeeded',
         runId: 'run-01',
         sequence: 5,
         timestamp: '2026-08-20T10:00:10Z',
-        type: 'RUN_COMPLETED',
-        data: { status: 'SUCCEEDED', durationMs: 9_000 },
+        type: 'RUN_SUCCEEDED',
+        data: {},
       },
     ])
     const completedDetail = {
@@ -237,6 +265,7 @@ describe('LiveRun', () => {
       run: {
         ...run,
         status: 'SUCCEEDED',
+        lastEventSequence: 5,
         completedAt: '2026-08-20T10:00:10Z',
       },
       events: completedEvents,
@@ -401,10 +430,17 @@ describe('LiveRun', () => {
   it('reconciles streamed terminal status and cancels through the summary action', async () => {
     const subscription = createSubscription()
     const cancelled = {
-      ...run,
+      schemaVersion: 1,
+      runId: run.runId,
+      workflowId: run.workflowId,
       status: 'CANCELLED',
+      transitionCount: run.transitionCount,
+      lastEventSequence: 4,
+      createdAt: run.createdAt,
+      startedAt: run.startedAt,
       completedAt: '2026-08-20T10:00:10Z',
-    } as StartRunResponse
+      failureCode: null,
+    } satisfies StartRunResponse
     const cancelledDetail = { ...detail, run: { ...detail.run, ...cancelled } }
     const client = {
       getRun: vi
@@ -424,13 +460,15 @@ describe('LiveRun', () => {
 
     act(() => {
       subscription.handlers()?.onEvent(
-        RunEventSchema.parse({
+        ApiRunEventSchema.parse({
+          schemaVersion: 1,
+          eventId: 'run-cancelled',
           runId: 'run-01',
           sequence: 4,
           timestamp: '2026-08-20T10:00:10Z',
-          type: 'RUN_COMPLETED',
-          data: { status: 'CANCELLED', durationMs: 9_000 },
-        }) as RunEvent,
+          type: 'RUN_CANCELLED',
+          data: {},
+        }) as ApiRunEvent,
       )
     })
   })

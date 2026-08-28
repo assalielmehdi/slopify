@@ -6,7 +6,7 @@ import { NodeStatusBadge } from '@/components/runs/run-status'
 import type { NodeExecution } from '@/lib/live-run'
 import { formatDuration, formatTimestamp } from '@/lib/run-format'
 
-interface RunNodeDetailsDialogProps {
+interface RunNodeDetailsPanelProps {
   readonly repositories?: RunNodePanelProps['repositories']
   readonly repositoryWorkspaces?: RunNodePanelProps['repositoryWorkspaces']
   readonly execution: NodeExecution | undefined
@@ -17,7 +17,7 @@ interface RunNodeDetailsDialogProps {
   readonly traceLoading: boolean
 }
 
-export function RunNodeDetailsDialog({
+export function RunNodeDetailsPanel({
   execution,
   node,
   repositories,
@@ -26,7 +26,7 @@ export function RunNodeDetailsDialog({
   trace,
   traceError,
   traceLoading,
-}: RunNodeDetailsDialogProps) {
+}: RunNodeDetailsPanelProps) {
   const durationMs =
     execution?.durationMs ??
     (execution?.startedAt === null ||

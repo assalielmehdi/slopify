@@ -21,15 +21,15 @@ interface NodeExecutionSnapshot {
 export interface RunNodePanelProps {
   readonly repositories?: readonly {
     readonly baseSha: string
-    readonly defaultBranch: string | null
+    readonly defaultBranch: string
     readonly fullName: string
     readonly isPrimary: boolean
     readonly name: string
-    readonly provider: 'GITHUB' | 'GITLAB' | null
+    readonly provider: 'GITHUB' | 'GITLAB'
     readonly repositoryId: string
   }[]
   readonly repositoryWorkspaces?: readonly {
-    readonly branchName: string | null
+    readonly branchName: string
     readonly repositoryId: string
     readonly workspacePath: string
   }[]
@@ -90,25 +90,17 @@ export function RunNodePanel({
             repositoryId: repository.repositoryId,
             name: repository.name,
             workspacePath: workspace?.workspacePath ?? 'Not recorded',
-            branchLabel: `${workspace?.branchName ?? 'Not recorded'} · ${repository.defaultBranch ?? 'Default branch not recorded'} at ${repository.baseSha}`,
-            repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : repository.provider === 'GITLAB' ? 'GitLab' : 'Repository'} · ${repository.fullName}`,
+            branchLabel: `${workspace?.branchName ?? 'Not recorded'} · ${repository.defaultBranch} at ${repository.baseSha}`,
+            repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${repository.fullName}`,
           }
         })
-      : trace.header.version !== 1
-        ? trace.header.configuration.repositories.map((repository) => ({
-            repositoryId: repository.repositoryId,
-            name: repository.name,
-            workspacePath: repository.workspacePath,
-            branchLabel: `${repository.branchName} · ${repository.defaultBranch} at ${repository.baseSha}`,
-            repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${repository.fullName}`,
-          }))
-        : trace.header.configuration.repositories.map((repository) => ({
-            repositoryId: repository.repositoryId,
-            name: repository.name,
-            workspacePath: repository.worktreePath,
-            branchLabel: `${repository.sourceBranch ?? 'Detached'} · ${repository.baseSha}`,
-            repositoryLabel: 'Legacy local repository',
-          }))
+      : trace.header.configuration.repositories.map((repository) => ({
+          repositoryId: repository.repositoryId,
+          name: repository.name,
+          workspacePath: repository.workspacePath,
+          branchLabel: `${repository.branchName} · ${repository.defaultBranch} at ${repository.baseSha}`,
+          repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${repository.fullName}`,
+        }))
   const configurationItems: (readonly [string, string])[] = [
     ['Harness', displayedHarness],
     ...(harnessConfiguration === undefined
@@ -116,6 +108,9 @@ export function RunNodePanel({
       : ([['Version', harnessConfiguration.harnessVersion]] as const)),
     ['Model', displayedModel],
     ['Thinking', displayedThinking],
+    ...(harnessConfiguration === undefined
+      ? []
+      : ([['Timeout', `${harnessConfiguration.timeoutSeconds} seconds`]] as const)),
   ]
   const primaryRepositoryId =
     harnessConfiguration?.primaryRepositoryId ??
@@ -144,10 +139,7 @@ export function RunNodePanel({
               <h3 className="text-sm/5 font-semibold">Run workspaces</h3>
               <p className="mt-1 text-xs/4 text-muted-foreground">
                 The agent started in {primaryRepository?.name ?? 'the primary repository'} and
-                shared
-                {trace?.header.version === 1
-                  ? ' these legacy local Git worktrees with the run.'
-                  : ' these fresh repository clones with the run.'}
+                shared these fresh repository clones with the run.
               </p>
             </div>
             <ul className="grid min-w-0 gap-2">

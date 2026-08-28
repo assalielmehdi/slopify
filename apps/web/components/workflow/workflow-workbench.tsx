@@ -6,11 +6,11 @@ import { useEffect, useReducer, useRef } from 'react'
 import type { HarnessDescriptor, Repository } from '@slopify/contracts'
 import type { AgentNode, Workflow } from '@slopify/workflow-model'
 
-import { StartRunDrawer } from '@/components/runs/start-run-drawer'
+import { StartRunPanel } from '@/components/runs/start-run-panel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
-import { WorkflowConfigDrawer } from '@/components/workflow/workflow-config-drawer'
+import { WorkflowConfigPanel } from '@/components/workflow/workflow-config-panel'
 import {
   WorkflowAgentConfigurationPanel,
   WorkflowOverviewPanel,
@@ -45,8 +45,8 @@ export interface WorkflowWorkbenchProps {
 interface WorkflowWorkbenchState {
   readonly workflow: Workflow | undefined
   readonly selectedNodeId: string | undefined
-  readonly runDrawerOpen: boolean
-  readonly configDrawerOpen: boolean
+  readonly runPanelOpen: boolean
+  readonly configPanelOpen: boolean
   readonly harnesses: readonly HarnessDescriptor[]
   readonly repositories: readonly Repository[]
   readonly loading: boolean
@@ -66,8 +66,8 @@ type WorkflowWorkbenchUpdate =
 const initialWorkflowWorkbenchState: WorkflowWorkbenchState = {
   workflow: undefined,
   selectedNodeId: undefined,
-  runDrawerOpen: false,
-  configDrawerOpen: false,
+  runPanelOpen: false,
+  configPanelOpen: false,
   harnesses: [],
   repositories: [],
   loading: true,
@@ -303,8 +303,8 @@ function useWorkflowWorkbench(
   const selectNode = (nodeId: string) => {
     configDirty.current = false
     update({
-      configDrawerOpen: false,
-      runDrawerOpen: false,
+      configPanelOpen: false,
+      runPanelOpen: false,
       selectedNodeId: nodeId,
       saveError: undefined,
       externalChangeConflict: undefined,
@@ -368,33 +368,33 @@ function useWorkflowWorkbench(
     saveAgentConfiguration,
     saveWorkflowConfiguration,
     deleteWorkflow,
-    closeConfigDrawer: () => {
+    closeConfigPanel: () => {
       const refreshAfterClose = stateRef.current.externalChangeConflict !== undefined
       configDirty.current = false
       update((current) => ({
-        configDrawerOpen: false,
+        configPanelOpen: false,
         externalChangeConflict: undefined,
         ...(refreshAfterClose ? { refreshVersion: current.refreshVersion + 1 } : {}),
       }))
     },
-    closeRunDrawer: () => update({ runDrawerOpen: false }),
-    openRunDrawer: () => {
+    closeRunPanel: () => update({ runPanelOpen: false }),
+    openRunPanel: () => {
       if (!runnable) return
       configDirty.current = false
       update({
         selectedNodeId: undefined,
-        configDrawerOpen: false,
-        runDrawerOpen: true,
+        configPanelOpen: false,
+        runPanelOpen: true,
         saveError: undefined,
         externalChangeConflict: undefined,
       })
     },
-    openConfigDrawer: () => {
+    openConfigPanel: () => {
       configDirty.current = false
       update({
         selectedNodeId: undefined,
-        runDrawerOpen: false,
-        configDrawerOpen: true,
+        runPanelOpen: false,
+        configPanelOpen: true,
         saveError: undefined,
         externalChangeConflict: undefined,
       })
@@ -450,12 +450,12 @@ export function WorkflowWorkbench({
   }
 
   const selectedNode = state.workflow.nodes.find(({ id }) => id === state.selectedNodeId)
-  const details = state.configDrawerOpen ? (
-    <WorkflowConfigDrawer
+  const details = state.configPanelOpen ? (
+    <WorkflowConfigPanel
       key={JSON.stringify(state.workflow)}
       conflict={state.externalChangeConflict}
       error={state.repositoryCatalogError ?? state.saveError}
-      onClose={state.closeConfigDrawer}
+      onClose={state.closeConfigPanel}
       onDelete={state.deleteWorkflow}
       onDirtyChange={state.setConfigDirty}
       onSubmit={state.saveWorkflowConfiguration}
@@ -463,10 +463,10 @@ export function WorkflowWorkbench({
       saving={state.saving}
       value={state.workflow}
     />
-  ) : state.runDrawerOpen ? (
-    <StartRunDrawer
+  ) : state.runPanelOpen ? (
+    <StartRunPanel
       client={client}
-      onClose={state.closeRunDrawer}
+      onClose={state.closeRunPanel}
       workflowId={state.workflow.workflowId}
     />
   ) : selectedNode === undefined ? (
@@ -498,9 +498,9 @@ export function WorkflowWorkbench({
           details={details}
           graph={
             <WorkflowCanvas
-              onConfigure={state.openConfigDrawer}
+              onConfigure={state.openConfigPanel}
               onNodeSelect={state.selectNode}
-              onRun={state.openRunDrawer}
+              onRun={state.openRunPanel}
               runDisabledReason={state.runDisabledReason}
               runnable={state.runnable}
               selectedNodeId={state.selectedNodeId}

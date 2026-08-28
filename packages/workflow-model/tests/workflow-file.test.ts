@@ -2,7 +2,6 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
   WorkflowFileSchema,
-  WorkflowFileReadSchema,
   workflowFileToWorkflow,
   workflowToWorkflowFile,
   validateWorkflow,
@@ -67,17 +66,16 @@ describe('workflow file contract', () => {
     expect(Object.isFrozen(parsed.graph)).toBe(true)
   })
 
-  it('reads v2 files by discarding their redundant display name', () => {
-    const parsed = WorkflowFileReadSchema.parse({
-      ...workflowFile,
-      schemaVersion: 2,
-      name: 'A stale display name',
-    })
-
-    expect(parsed).toEqual(workflowFile)
+  it('rejects documents from unsupported schema versions', () => {
+    expect(
+      WorkflowFileSchema.safeParse({
+        ...workflowFile,
+        schemaVersion: 99,
+      }).success,
+    ).toBe(false)
   })
 
-  it('requires immutable canonical workflow names', () => {
+  it('requires canonical workflow IDs', () => {
     expect(
       WorkflowFileSchema.safeParse({ ...workflowFile, workflowId: 'a'.repeat(64) }).success,
     ).toBe(true)

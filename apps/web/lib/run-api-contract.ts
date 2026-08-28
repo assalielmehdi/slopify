@@ -3,35 +3,16 @@ import {
   GitShaSchema,
   NodeExecutionStatusSchema,
   NodeIdSchema,
-  OutcomeNameSchema,
   RepositoryIdSchema,
-  RunEventSchema as LegacyRunEventSchema,
   RunIdSchema,
   RunStatusSchema,
   WorkflowIdSchema,
-  type RunStatus,
 } from '@slopify/contracts'
-import {
-  WorkflowFileSchema,
-  WorkflowReadSchema,
-  workflowFileToWorkflow,
-} from '@slopify/workflow-model'
+import { WorkflowFileSchema, WorkflowSchema, workflowFileToWorkflow } from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()
 const WorkflowRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/u)
-
-const LegacyStartRunResponseSchema = z.strictObject({
-  runId: RunIdSchema,
-  workflowId: WorkflowIdSchema,
-  workflowSnapshot: WorkflowReadSchema,
-  variables: z.record(z.string(), JsonValueSchema).readonly(),
-  status: RunStatusSchema,
-  transitionCount: z.number().int().nonnegative().safe(),
-  createdAt: z.iso.datetime({ offset: true }),
-  startedAt: z.iso.datetime({ offset: true }).nullable(),
-  completedAt: z.iso.datetime({ offset: true }).nullable(),
-})
 
 const RunProjectionSchema = z.strictObject({
   schemaVersion: z.literal(1),
@@ -46,17 +27,7 @@ const RunProjectionSchema = z.strictObject({
   failureCode: z.string().trim().min(1).max(128).nullable(),
 })
 
-export const StartRunResponseSchema = z.union([LegacyStartRunResponseSchema, RunProjectionSchema])
-
-const LegacyRunHistoryEntrySchema = z.strictObject({
-  runId: RunIdSchema,
-  workflowId: WorkflowIdSchema,
-  status: RunStatusSchema,
-  createdAt: z.iso.datetime({ offset: true }),
-  startedAt: z.iso.datetime({ offset: true }).nullable(),
-  completedAt: z.iso.datetime({ offset: true }).nullable(),
-  durationMs: z.number().int().nonnegative().safe().nullable(),
-})
+export const StartRunResponseSchema = RunProjectionSchema
 
 const RunDiagnosticSchema = z.strictObject({ code: z.string().min(1), message: z.string().min(1) })
 const RunHistoryEntrySchema = z.strictObject({
@@ -75,11 +46,6 @@ const PaginationSchema = z.strictObject({
   pageSize: z.number().int().min(1).max(100).safe(),
   totalItems: z.number().int().nonnegative().safe(),
   totalPages: z.number().int().nonnegative().safe(),
-})
-
-const LegacyRunHistoryPageSchema = z.strictObject({
-  data: z.array(LegacyRunHistoryEntrySchema).readonly(),
-  pagination: PaginationSchema,
 })
 
 const FilesystemRunIndexEntrySchema = z.discriminatedUnion('status', [
@@ -109,11 +75,11 @@ const RunRepositorySnapshotSchema = z.strictObject({
   repositoryId: RepositoryIdSchema,
   position: z.number().int().nonnegative().safe(),
   name: z.string().trim().min(1),
-  provider: GitProviderSchema.nullable(),
-  remoteId: z.string().trim().min(1).nullable(),
+  provider: GitProviderSchema,
+  remoteId: z.string().trim().min(1),
   fullName: z.string().trim().min(1),
   cloneUrl: z.string().trim().min(1),
-  defaultBranch: z.string().trim().min(1).nullable(),
+  defaultBranch: z.string().trim().min(1),
   baseSha: GitShaSchema,
   isPrimary: z.boolean(),
 })
@@ -121,9 +87,9 @@ const RunRepositorySnapshotSchema = z.strictObject({
 const RunRepositoryWorkspaceSchema = z.strictObject({
   repositoryId: RepositoryIdSchema,
   position: z.number().int().nonnegative().safe(),
-  status: z.enum(['PREPARING', 'READY', 'FAILED', 'CLEANED', 'LEGACY']),
+  status: z.enum(['PREPARING', 'READY', 'FAILED', 'CLEANED']),
   workspacePath: z.string().min(1),
-  branchName: z.string().trim().min(1).nullable(),
+  branchName: z.string().trim().min(1),
   errorMessage: z.string().trim().min(1).max(4_096).nullable(),
   preparedAt: z.iso.datetime({ offset: true }).nullable(),
   cleanedAt: z.iso.datetime({ offset: true }).nullable(),
@@ -131,9 +97,6 @@ const RunRepositoryWorkspaceSchema = z.strictObject({
 })
 
 const RunRepositoryArtifactSchema = RunRepositorySnapshotSchema.extend({
-  provider: GitProviderSchema,
-  remoteId: z.string().trim().min(1),
-  defaultBranch: z.string().trim().min(1),
   webUrl: z.url({ protocol: /^https$/u }),
 })
 
@@ -151,7 +114,7 @@ const runErrorCode = z.string().trim().min(1).max(128)
 const runMessage = z.string().trim().min(1).max(4_096)
 const runDuration = z.number().int().nonnegative().safe()
 
-const RunDomainEventSchema = z.discriminatedUnion('type', [
+export const ApiRunEventSchema = z.discriminatedUnion('type', [
   runDomainEvent('RUN_STARTED', z.strictObject({})),
   runDomainEvent('RUN_CANCEL_REQUESTED', z.strictObject({ reason: z.string().min(1).max(1_024) })),
   runDomainEvent('RUN_SUCCEEDED', z.strictObject({})),
@@ -238,7 +201,6 @@ const RunDomainEventSchema = z.discriminatedUnion('type', [
   ),
 ])
 
-export const ApiRunEventSchema = z.union([LegacyRunEventSchema, RunDomainEventSchema])
 export type ApiRunEvent = z.infer<typeof ApiRunEventSchema>
 
 const FilesystemNodeExecutionSchema = z.strictObject({
@@ -253,10 +215,16 @@ const FilesystemNodeExecutionSchema = z.strictObject({
   output: z.json().nullable(),
   outcome: z.string().trim().min(1).max(128).nullable(),
   errorCode: runErrorCode.nullable(),
-  errorMessage: z.string().trim().min(1).max(4_096).nullable(),
+  errorMessage: runMessage.nullable(),
   startedAt: z.iso.datetime({ offset: true }).nullable(),
   completedAt: z.iso.datetime({ offset: true }).nullable(),
-  durationMs: z.number().int().nonnegative().safe().nullable(),
+  durationMs: runDuration.nullable(),
+})
+
+const RunNodeExecutionSchema = FilesystemNodeExecutionSchema.omit({
+  schemaVersion: true,
+  runId: true,
+  lastEventSequence: true,
 })
 
 const FilesystemRunDetailSchema = z.discriminatedUnion('status', [
@@ -281,16 +249,10 @@ const FilesystemRunDetailSchema = z.discriminatedUnion('status', [
       schemaVersion: z.literal(1),
       runId: RunIdSchema,
       lastEventSequence: z.number().int().nonnegative().safe(),
-      workspaces: z
-        .array(
-          RunRepositoryWorkspaceSchema.omit({ status: true }).extend({
-            status: z.enum(['PREPARING', 'READY', 'FAILED', 'CLEANED']),
-          }),
-        )
-        .readonly(),
+      workspaces: z.array(RunRepositoryWorkspaceSchema).readonly(),
     }),
     executions: z.array(FilesystemNodeExecutionSchema).readonly(),
-    events: z.array(RunDomainEventSchema).readonly(),
+    events: z.array(ApiRunEventSchema).readonly(),
   }),
   z.strictObject({
     status: z.literal('CORRUPT'),
@@ -299,54 +261,21 @@ const FilesystemRunDetailSchema = z.discriminatedUnion('status', [
   }),
 ])
 
-const LegacyRunDetailResponseSchema = z.strictObject({
-  run: LegacyStartRunResponseSchema,
-  events: z.array(LegacyRunEventSchema).readonly(),
-  nodeExecutions: z
-    .array(
-      z.strictObject({
-        nodeExecutionId: z.string().trim().min(1).max(256),
-        attemptId: z.string().trim().min(1).max(256),
-        nodeId: NodeIdSchema,
-        executionIndex: z.number().int().nonnegative().safe(),
-        status: NodeExecutionStatusSchema,
-        output: z.json().nullable(),
-        outcome: OutcomeNameSchema.nullable(),
-        errorCode: z.string().trim().min(1).max(128).nullable(),
-        errorMessage: z.string().trim().min(1).max(4_096).nullable(),
-        startedAt: z.iso.datetime({ offset: true }).nullable(),
-        completedAt: z.iso.datetime({ offset: true }).nullable(),
-        durationMs: z.number().int().nonnegative().finite().nullable(),
-      }),
-    )
-    .readonly(),
-  repositories: z.array(RunRepositorySnapshotSchema).readonly(),
-  repositoryWorkspaces: z.array(RunRepositoryWorkspaceSchema).readonly(),
-})
-
-const FilesystemNormalizedRunSchema = RunProjectionSchema.extend({
-  workflowSnapshot: WorkflowReadSchema,
+const NormalizedRunSchema = RunProjectionSchema.extend({
+  workflowSnapshot: WorkflowSchema,
   variables: z.record(z.string(), JsonValueSchema).readonly(),
 })
 
 export const RunDetailResponseSchema = z.strictObject({
-  run: z.union([LegacyStartRunResponseSchema, FilesystemNormalizedRunSchema]),
+  run: NormalizedRunSchema,
   events: z.array(ApiRunEventSchema).readonly(),
-  nodeExecutions: LegacyRunDetailResponseSchema.shape.nodeExecutions,
+  nodeExecutions: z.array(RunNodeExecutionSchema).readonly(),
   repositories: z.array(RunRepositorySnapshotSchema).readonly(),
   repositoryWorkspaces: z.array(RunRepositoryWorkspaceSchema).readonly(),
 })
 
 export type JsonValue = z.infer<typeof JsonValueSchema>
-export interface StartRunResponse {
-  readonly runId: z.infer<typeof RunIdSchema>
-  readonly workflowId: z.infer<typeof WorkflowIdSchema>
-  readonly status: RunStatus
-  readonly transitionCount: number
-  readonly createdAt: string
-  readonly startedAt: string | null
-  readonly completedAt: string | null
-}
+export type StartRunResponse = z.infer<typeof StartRunResponseSchema>
 export type RunHistoryEntry = z.infer<typeof RunHistoryEntrySchema>
 export type RunHistoryPage = z.infer<typeof RunHistoryPageSchema>
 export type RunDetailResponse = z.infer<typeof RunDetailResponseSchema>
@@ -364,9 +293,6 @@ const runDurationMs = (run: z.infer<typeof RunProjectionSchema>): number | null 
     : Math.max(0, Date.parse(run.completedAt) - Date.parse(run.startedAt))
 
 export const normalizeRunHistory = (input: unknown): RunHistoryPage => {
-  const legacy = LegacyRunHistoryPageSchema.safeParse(input)
-  if (legacy.success) return RunHistoryPageSchema.parse(legacy.data)
-
   const filesystem = FilesystemRunIndexPageSchema.parse(input)
   return RunHistoryPageSchema.parse({
     data: filesystem.data.map((entry) =>
@@ -396,9 +322,6 @@ export const normalizeRunHistory = (input: unknown): RunHistoryPage => {
 }
 
 export const parseRunDetail = (input: unknown): ParsedRunDetail => {
-  const legacy = LegacyRunDetailResponseSchema.safeParse(input)
-  if (legacy.success) return { status: 'READY', value: RunDetailResponseSchema.parse(legacy.data) }
-
   const filesystem = FilesystemRunDetailSchema.parse(input)
   if (filesystem.status === 'CORRUPT') {
     return { status: 'CORRUPT', diagnostic: filesystem.diagnostic }
@@ -413,32 +336,20 @@ export const parseRunDetail = (input: unknown): ParsedRunDetail => {
         variables: filesystem.variablesSnapshot.values,
       },
       events: filesystem.events,
-      nodeExecutions: filesystem.executions.map((execution) => ({
-        nodeExecutionId: execution.nodeExecutionId,
-        attemptId: execution.attemptId,
-        nodeId: execution.nodeId,
-        executionIndex: execution.executionIndex,
-        status: execution.status,
-        output: execution.output,
-        outcome: execution.outcome,
-        errorCode: execution.errorCode,
-        errorMessage: execution.errorMessage,
-        startedAt: execution.startedAt,
-        completedAt: execution.completedAt,
-        durationMs: execution.durationMs,
-      })),
-      repositories: filesystem.repositoriesSnapshot.repositories.map((repository) => ({
-        repositoryId: repository.repositoryId,
-        position: repository.position,
-        name: repository.name,
-        provider: repository.provider,
-        remoteId: repository.remoteId,
-        fullName: repository.fullName,
-        cloneUrl: repository.cloneUrl,
-        defaultBranch: repository.defaultBranch,
-        baseSha: repository.baseSha,
-        isPrimary: repository.isPrimary,
-      })),
+      nodeExecutions: filesystem.executions.map(
+        ({ schemaVersion, runId, lastEventSequence, ...execution }) => {
+          void schemaVersion
+          void runId
+          void lastEventSequence
+          return execution
+        },
+      ),
+      repositories: filesystem.repositoriesSnapshot.repositories.map(
+        ({ webUrl, ...repository }) => {
+          void webUrl
+          return repository
+        },
+      ),
       repositoryWorkspaces: filesystem.workspaces.workspaces,
     }),
   }

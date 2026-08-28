@@ -33,7 +33,6 @@ interface ThemePreferenceValue {
   readonly toggleTheme: () => Promise<void>
 }
 
-const themeStorageKey = 'slopify-theme'
 const missingSettings: SettingsSnapshot = {
   value: {
     schemaVersion: 1,
@@ -44,23 +43,6 @@ const missingSettings: SettingsSnapshot = {
 }
 const defaultClient = createApiClient()
 const ThemePreferenceContext = createContext<ThemePreferenceValue | undefined>(undefined)
-
-function legacyThemePreference(): ThemePreference | undefined {
-  try {
-    const result = ThemePreferenceSchema.safeParse(window.localStorage.getItem(themeStorageKey))
-    return result.success ? result.data : undefined
-  } catch {
-    return undefined
-  }
-}
-
-function removeLegacyThemePreference() {
-  try {
-    window.localStorage.removeItem(themeStorageKey)
-  } catch {
-    // Theme persistence still works when browser storage is unavailable.
-  }
-}
 
 function resolveTheme(
   preference: ThemePreference,
@@ -111,7 +93,6 @@ export function ThemePreferenceProvider({
         const settings = await client.getSettings()
         if (!mountedRef.current || sequence !== refreshSequenceRef.current) return false
         acceptSettings(settings)
-        removeLegacyThemePreference()
         setError(undefined)
         return true
       } catch (cause) {
@@ -132,14 +113,10 @@ export function ThemePreferenceProvider({
     systemAppearanceRef.current = initialSystemAppearance
     setSystemAppearance(initialSystemAppearance)
 
-    const legacyPreference =
-      initialSettings.etag === '"missing"' ? legacyThemePreference() : undefined
-    const initialPreference = legacyPreference ?? initialSettings.value.appearance.theme
+    const initialPreference = initialSettings.value.appearance.theme
     preferenceRef.current = initialPreference
     setPreferenceState(initialPreference)
     applyTheme(resolveTheme(initialPreference, initialSystemAppearance))
-
-    if (initialSettings.etag !== '"missing"') removeLegacyThemePreference()
 
     const updateSystemAppearance = () => {
       const nextAppearance = colorScheme.matches ? 'dark' : 'light'
@@ -151,33 +128,6 @@ export function ThemePreferenceProvider({
 
     colorScheme.addEventListener?.('change', updateSystemAppearance)
     window.addEventListener('focus', handleFocus)
-
-    if (legacyPreference !== undefined) {
-      savingRef.current = true
-      setIsSaving(true)
-      void client
-        .updateSettings({ appearance: { theme: legacyPreference } }, initialSettings.etag)
-        .then((settings) => {
-          if (!mountedRef.current) return
-          acceptSettings(settings)
-          removeLegacyThemePreference()
-          setError(undefined)
-        })
-        .catch(async (cause: unknown) => {
-          if (!mountedRef.current) return
-          if (cause instanceof ApiClientError && cause.code === 'SETTINGS_REVISION_CONFLICT') {
-            await refreshSettings(true)
-            return
-          }
-          setError(
-            cause instanceof Error ? cause.message : 'Legacy theme preference could not be saved.',
-          )
-        })
-        .finally(() => {
-          savingRef.current = false
-          if (mountedRef.current) setIsSaving(false)
-        })
-    }
 
     return () => {
       mountedRef.current = false
@@ -206,7 +156,6 @@ export function ThemePreferenceProvider({
         )
         if (!mountedRef.current) return
         acceptSettings(settings)
-        removeLegacyThemePreference()
       } catch (cause) {
         if (!mountedRef.current) return
         if (cause instanceof ApiClientError && cause.code === 'SETTINGS_REVISION_CONFLICT') {

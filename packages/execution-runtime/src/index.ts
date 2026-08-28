@@ -1,54 +1,4 @@
 export {
-  LegacySqliteReaderError,
-  openLegacySqliteReader,
-  type LegacyCatalogSnapshot,
-  type LegacyDatabaseInspection,
-  type LegacySqliteReader,
-  type LegacyTerminalRun,
-} from './migration/legacy-sqlite-reader.js'
-export {
-  LegacyMigrationError,
-  LegacyMigrationManifestSchema,
-  createLegacyMigrationReadSnapshot,
-  createLegacyMigrationService,
-  loadLegacyMigrationPreparation,
-  verifyLegacyMigrationBackup,
-  type CreateLegacyMigrationServiceOptions,
-  type LegacyMigrationErrorCode,
-  type LegacyMigrationManifest,
-  type LegacyMigrationPreparation,
-  type LegacyMigrationReadSnapshot,
-  type LegacyMigrationService,
-} from './migration/migration-service.js'
-export {
-  createLegacyCatalogConverter,
-  type LegacyCatalogConversionResult,
-  type LegacyCatalogConverter,
-} from './migration/catalog-converter.js'
-export {
-  createLegacyRunConverter,
-  type LegacyRunConversionResult,
-  type LegacyRunConverter,
-} from './migration/run-converter.js'
-export {
-  LegacyMigrationInstallerError,
-  createLegacyMigrationInstaller,
-  readLegacyMigrationInstallationManifest,
-  type LegacyMigrationInstaller,
-  type LegacyMigrationInstallerErrorCode,
-} from './migration/migration-installer.js'
-export {
-  LegacyMigrationCountsSchema,
-  LegacyMigrationInstallationManifestSchema,
-  type LegacyMigrationCounts,
-  type LegacyMigrationInstallationManifest,
-} from './migration/migration-manifest.js'
-export {
-  createLegacyTraceConverter,
-  type LegacyTraceConversionInput,
-  type LegacyTraceConverter,
-} from './migration/trace-converter.js'
-export {
   resolveSlopifyPaths,
   type SlopifyPaths,
   type SlopifyRunPaths,
@@ -234,7 +184,6 @@ export {
 } from './harnesses/harness-catalog.js'
 export {
   AgentTraceStoreError,
-  createFilesystemAgentTraceStore,
   createRunFilesystemAgentTraceStore,
   type AgentTraceStore,
   type AgentTraceStoreErrorCode,

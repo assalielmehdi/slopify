@@ -291,7 +291,7 @@ describe('workflow definition service', () => {
     ).rejects.toMatchObject({ code: 'WORKFLOW_REVISION_CONFLICT' })
   })
 
-  it('rejects an update that attempts to change the workflow name', async () => {
+  it('rejects an update that attempts to change the workflow ID', async () => {
     const current = source(workflow())
     const service = createService({
       workflows: store([current]),

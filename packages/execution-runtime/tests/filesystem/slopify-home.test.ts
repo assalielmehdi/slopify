@@ -14,7 +14,6 @@ describe('Slopify filesystem paths', () => {
       workflowsDirectory: '/Users/operator/.slopify/workflows',
       archiveDirectory: '/Users/operator/.slopify/archive',
       runtimeDirectory: '/Users/operator/.slopify/runtime',
-      migrationsDirectory: '/Users/operator/.slopify/migrations',
     })
   })
 

@@ -18,9 +18,8 @@ const directories: string[] = []
 const timestamp = '2026-08-25T10:00:00.000Z'
 
 const workflow: WorkflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'release-review',
-  name: 'Release review',
   description: 'Review a release.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -36,6 +35,7 @@ const workflow: WorkflowFile = {
         name: 'Review',
         prompt: 'Review the release.',
         harness: { harnessId: 'pi' },
+        timeoutSeconds: 900,
       },
     ],
     edges: [],

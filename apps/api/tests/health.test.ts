@@ -12,7 +12,7 @@ describe('GET /healthz', () => {
     expect(await response.json()).toEqual({ status: 'ok' })
   })
 
-  it('reports filesystem health without requiring a database', async () => {
+  it('reports healthy filesystem ownership and writability', async () => {
     const response = await createApiApp({
       filesystemHealth: { status: async () => ({ owned: true, writable: true }) },
     }).request('/healthz')

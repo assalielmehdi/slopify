@@ -12,7 +12,7 @@ import {
 import type { WorkflowFile } from '@slopify/workflow-model'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/support/runtime-fixture.js'
 import { createApiApp } from '../src/app.js'
 import { createFilesystemRuntime, startFilesystemRuntime } from '../src/filesystem-runtime.js'
 

@@ -62,9 +62,8 @@ const createRemote = () => {
 }
 
 const workflow: WorkflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'workspace-review',
-  name: 'Workspace review',
   description: 'Exercise run-local clones.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -80,6 +79,7 @@ const workflow: WorkflowFile = {
         name: 'Review',
         prompt: 'Review the change.',
         harness: { harnessId: 'pi' },
+        timeoutSeconds: 900,
       },
     ],
     edges: [],

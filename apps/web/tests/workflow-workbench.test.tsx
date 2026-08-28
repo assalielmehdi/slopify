@@ -43,8 +43,8 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   ),
 }))
 
-vi.mock('../components/workflow/workflow-config-drawer', () => ({
-  WorkflowConfigDrawer: ({
+vi.mock('../components/workflow/workflow-config-panel', () => ({
+  WorkflowConfigPanel: ({
     conflict,
     onClose,
     onDelete,
@@ -83,8 +83,8 @@ vi.mock('../components/workflow/workflow-config-drawer', () => ({
   ),
 }))
 
-vi.mock('../components/runs/start-run-drawer', () => ({
-  StartRunDrawer: ({ onClose }: { onClose: () => void }) => (
+vi.mock('../components/runs/start-run-panel', () => ({
+  StartRunPanel: ({ onClose }: { onClose: () => void }) => (
     <aside aria-label="Run" data-layout="workspace">
       <p>Variables</p>
       <button onClick={onClose}>Cancel run</button>
@@ -282,7 +282,7 @@ describe('WorkflowWorkbench', () => {
     render(<WorkflowWorkbench client={client} />)
 
     expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
-    expect(client.getWorkflow).toHaveBeenCalledWith('default-workflow')
+    expect(client.getWorkflow).toHaveBeenCalledWith('test-workflow')
     expect(screen.getByRole('region', { name: 'Workflow graph pane' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Workflow details pane' })).toBeTruthy()
     const overview = screen.getByRole('complementary', { name: 'Workflow overview' })

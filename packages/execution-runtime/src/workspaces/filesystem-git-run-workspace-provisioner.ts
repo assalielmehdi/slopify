@@ -83,7 +83,7 @@ export const createFilesystemGitRunWorkspaceProvisioner = (
       if (current !== undefined) {
         if (
           current.workspacePath !== input.workspacePath ||
-          (current.branchName !== null && current.branchName !== input.branchName)
+          current.branchName !== input.branchName
         ) {
           throw new Error('Persisted run repository workspace is not deterministic')
         }

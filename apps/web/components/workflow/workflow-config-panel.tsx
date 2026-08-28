@@ -29,7 +29,7 @@ interface VariableRow {
   readonly name: string
 }
 
-export interface WorkflowConfigDrawerProps {
+export interface WorkflowConfigPanelProps {
   readonly value: Workflow
   readonly repositories: readonly Repository[]
   readonly conflict?: string | undefined
@@ -207,7 +207,7 @@ function WorkflowVariableFields({
   )
 }
 
-export function WorkflowConfigDrawer({
+export function WorkflowConfigPanel({
   value,
   repositories,
   conflict,
@@ -217,7 +217,7 @@ export function WorkflowConfigDrawer({
   onDelete,
   onDirtyChange,
   onSubmit,
-}: WorkflowConfigDrawerProps) {
+}: WorkflowConfigPanelProps) {
   const { configuration } = value
   const workflowFile = workflowToWorkflowFile(value)
   const initialGraphSource = formatWorkflowGraphSource(workflowFile.graph)
@@ -225,7 +225,7 @@ export function WorkflowConfigDrawer({
   const deleteActionRef = useRef<HTMLButtonElement>(null)
   const nextVariableId = useRef(configuration.variables.length)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
-  const [confirmationName, setConfirmationName] = useState('')
+  const [confirmationWorkflowId, setConfirmationWorkflowId] = useState('')
   const [deleting, setDeleting] = useState(false)
   const [description, setDescription] = useState(value.description)
   const [graphSource, setGraphSource] = useState(initialGraphSource)
@@ -241,7 +241,7 @@ export function WorkflowConfigDrawer({
 
   const dismissDeleteConfirmation = useCallback(() => {
     setConfirmingDelete(false)
-    setConfirmationName('')
+    setConfirmationWorkflowId('')
   }, [])
 
   useDeleteConfirmationDismissal({
@@ -324,7 +324,7 @@ export function WorkflowConfigDrawer({
       setConfirmingDelete(true)
       return
     }
-    if (confirmationName !== value.workflowId) return
+    if (confirmationWorkflowId !== value.workflowId) return
     setDeleting(true)
     const deleted = await onDelete()
     setDeleting(false)
@@ -430,21 +430,25 @@ export function WorkflowConfigDrawer({
             >
               <Input
                 ref={confirmationInputRef}
-                aria-label="Workflow name confirmation"
-                aria-invalid={confirmationName.length > 0 && confirmationName !== value.workflowId}
+                aria-label="Workflow ID confirmation"
+                aria-invalid={
+                  confirmationWorkflowId.length > 0 && confirmationWorkflowId !== value.workflowId
+                }
                 autoComplete="off"
                 disabled={!confirmingDelete || deleting}
-                onChange={(event) => setConfirmationName(event.currentTarget.value)}
-                placeholder="Enter workflow name"
+                onChange={(event) => setConfirmationWorkflowId(event.currentTarget.value)}
+                placeholder="Enter workflow ID"
                 tabIndex={confirmingDelete ? 0 : -1}
-                value={confirmationName}
+                value={confirmationWorkflowId}
               />
             </div>
             <div className="flex items-center justify-end gap-2">
               <Button
                 ref={deleteActionRef}
                 className="min-w-32"
-                disabled={deleting || (confirmingDelete && confirmationName !== value.workflowId)}
+                disabled={
+                  deleting || (confirmingDelete && confirmationWorkflowId !== value.workflowId)
+                }
                 onClick={() => void deleteWorkflow()}
                 type="button"
                 variant="destructive"

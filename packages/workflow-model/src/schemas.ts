@@ -16,11 +16,11 @@ const promptTemplate = z
     message: 'Prompt template must not be blank',
   })
 
-export const DEFAULT_AGENT_TIMEOUT_SECONDS = 15 * 60
+const DEFAULT_AGENT_TIMEOUT_SECONDS = 15 * 60
 export const MIN_AGENT_TIMEOUT_SECONDS = 60
 export const MAX_AGENT_TIMEOUT_SECONDS = 8 * 60 * 60
 
-export const AgentTimeoutSecondsSchema = z
+const AgentTimeoutSecondsSchema = z
   .number()
   .int()
   .min(MIN_AGENT_TIMEOUT_SECONDS)
@@ -185,59 +185,3 @@ export const WorkflowFileSchema = z
     updatedAt: z.iso.datetime({ offset: true }),
   })
   .readonly()
-
-const WorkflowV2Schema = z
-  .strictObject({
-    schemaVersion: z.literal(2),
-    workflowId: WorkflowIdSchema,
-    name: nonBlankString,
-    description: nonBlankString,
-    configuration: WorkflowConfigurationSchema,
-    startNodeId: NodeIdSchema.nullable(),
-    nodes: z.array(AgentNodeSchema).readonly(),
-    edges: z.array(WorkflowEdgeSchema).readonly(),
-    maxTransitions: z.number().int().safe().nonnegative(),
-    createdAt: z.iso.datetime({ offset: true }),
-    updatedAt: z.iso.datetime({ offset: true }),
-  })
-  .readonly()
-
-const WorkflowFileV2Schema = z
-  .strictObject({
-    schemaVersion: z.literal(2),
-    workflowId: WorkflowSlugSchema,
-    name: nonBlankString,
-    description: nonBlankString,
-    repositories: WorkflowRepositoriesSchema,
-    variables: workflowVariablesSchema.superRefine((variables, context) => {
-      if (new Set(variables).size !== variables.length) {
-        context.addIssue({
-          code: 'custom',
-          message: 'Variables must be unique',
-        })
-      }
-    }),
-    graph: WorkflowGraphSchema,
-    createdAt: z.iso.datetime({ offset: true }),
-    updatedAt: z.iso.datetime({ offset: true }),
-  })
-  .readonly()
-
-const normalizeWorkflowV2 = (input: unknown): unknown => {
-  const parsed = WorkflowV2Schema.safeParse(input)
-  if (!parsed.success) return input
-  const workflow = { ...parsed.data }
-  Reflect.deleteProperty(workflow, 'name')
-  return { ...workflow, schemaVersion: 3 }
-}
-
-const normalizeWorkflowFileV2 = (input: unknown): unknown => {
-  const parsed = WorkflowFileV2Schema.safeParse(input)
-  if (!parsed.success) return input
-  const workflow = { ...parsed.data }
-  Reflect.deleteProperty(workflow, 'name')
-  return { ...workflow, schemaVersion: 3 }
-}
-
-export const WorkflowReadSchema = z.preprocess(normalizeWorkflowV2, WorkflowSchema)
-export const WorkflowFileReadSchema = z.preprocess(normalizeWorkflowFileV2, WorkflowFileSchema)

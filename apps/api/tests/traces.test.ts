@@ -11,7 +11,7 @@ import { createApiApp } from '../src/app.js'
 
 const trace = AgentTraceSchema.parse({
   header: {
-    version: 1,
+    version: 4,
     runId: 'run-01',
     nodeExecutionId: 'node-execution-01',
     attemptId: 'attempt-01',
@@ -23,15 +23,21 @@ const trace = AgentTraceSchema.parse({
       model: 'openai/gpt-5.4',
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the repository.',
-      workspaceRoot: '/Users/developer/.slopify/orchestrator/workspaces/run-01',
+      workspaceRoot: '/Users/developer/.slopify/workflows/workflow-01/runs/run-01/workspaces',
+      artifactsPath:
+        '/Users/developer/.slopify/workflows/workflow-01/runs/run-01/artifacts/node-execution-01',
       primaryRepositoryId: 'repository-api',
       repositories: [
         {
           repositoryId: 'repository-api',
           name: 'API',
-          worktreePath: '/Users/developer/.slopify/orchestrator/worktrees/run-01/repository-api',
+          provider: 'GITHUB',
+          fullName: 'operator/api',
+          workspacePath:
+            '/Users/developer/.slopify/workflows/workflow-01/runs/run-01/workspaces/repository-api',
+          branchName: 'slopify/run-01',
           baseSha: '1111111111111111111111111111111111111111',
-          sourceBranch: 'main',
+          defaultBranch: 'main',
         },
       ],
       timeoutSeconds: 600,

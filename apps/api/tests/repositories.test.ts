@@ -12,7 +12,7 @@ import {
 } from '@slopify/execution-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createTestAgentWorkflow } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import { createTestAgentWorkflow } from '../../../packages/execution-runtime/tests/support/runtime-fixture.js'
 import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []
@@ -130,33 +130,6 @@ describe('repositories API', () => {
         message: 'Repository could not be found',
       },
     })
-  })
-
-  it('serves the same Repository resources through the deprecated projects alias', async () => {
-    const fixture = createFixture()
-    const created = await fixture.app.request('/api/projects', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ provider: 'GITHUB', remoteId: '123' }),
-    })
-    const canonical = await fixture.app.request('/api/repositories')
-    const legacy = await fixture.app.request('/api/projects')
-    const deleted = await fixture.app.request('/api/projects/repository-01', {
-      method: 'DELETE',
-    })
-
-    expect(created.status).toBe(201)
-    expect(await created.json()).toMatchObject({
-      repositoryId: 'repository-01',
-      provider: 'GITHUB',
-      remoteId: '123',
-    })
-    expect(legacy.status).toBe(200)
-    expect(await legacy.json()).toEqual(await canonical.json())
-    expect(deleted.status).toBe(204)
-    await expect(
-      fixture.app.request('/api/repositories').then((response) => response.json()),
-    ).resolves.toEqual({ repositories: [] })
   })
 
   it('deletes a repository immediately without exposing an undo endpoint', async () => {

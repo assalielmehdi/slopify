@@ -9,14 +9,14 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { WorkspacePanelHeader } from '@/components/workspace-panel-header'
 
-export interface StartRunDrawerProps {
+export interface StartRunPanelProps {
   readonly client: StartRunClient
   readonly onClose: () => void
   readonly onStarted?: ((runId: string) => void) | undefined
   readonly workflowId: string
 }
 
-export function StartRunDrawer({ client, onClose, onStarted, workflowId }: StartRunDrawerProps) {
+export function StartRunPanel({ client, onClose, onStarted, workflowId }: StartRunPanelProps) {
   const router = useRouter()
   const state = useStartRun(client, { initialWorkflowId: workflowId, requireInitialWorkflow: true })
 

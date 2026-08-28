@@ -10,7 +10,7 @@ import { HarnessSettings } from '../components/settings/harness-settings'
 afterEach(cleanup)
 
 describe('HarnessSettings', () => {
-  it('shows discovered harnesses as repository-style cards with details in a drawer', async () => {
+  it('shows discovered harnesses as repository-style cards with details in a dialog', async () => {
     const descriptor = HarnessDescriptorSchema.parse({
       harnessId: 'pi',
       name: 'Pi',
@@ -67,12 +67,12 @@ describe('HarnessSettings', () => {
     render(<HarnessSettings client={{ listHarnesses: vi.fn(async () => [descriptor]) }} />)
 
     const codexCard = await screen.findByRole('button', { name: 'Codex, Available' })
-    const codexLogo = within(codexCard).getByRole('img', { name: 'ChatGPT' })
-    expect(codexLogo.getAttribute('src')).toContain('/chatgpt-logo.svg')
+    const codexLogo = within(codexCard).getByRole('img', { name: 'Codex' })
+    expect(codexLogo.getAttribute('src')).toContain('/codex-logo.svg')
 
     fireEvent.click(codexCard)
     const panel = await screen.findByRole('dialog', { name: 'Codex' })
-    expect(within(panel).getByRole('img', { name: 'ChatGPT' })).toBeTruthy()
+    expect(within(panel).getByRole('img', { name: 'Codex' })).toBeTruthy()
     expect(within(panel).getByText('Version 0.149.1')).toBeTruthy()
   })
 

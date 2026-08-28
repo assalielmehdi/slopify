@@ -116,7 +116,6 @@ describe('API server configuration', () => {
       timeout: vi.fn(),
     } as unknown as Pick<Bun.Server<unknown>, 'timeout'>)
     expect(response?.status).toBe(200)
-    expect(await Bun.file(join(home, 'legacy.db')).exists()).toBe(false)
     expect(
       readdirSync(home, { recursive: true }).some((path) => String(path).endsWith('.db')),
     ).toBe(false)

@@ -12,9 +12,9 @@ import {
   createAgentNodeRunner,
   type RunWorkspaceProvisioner,
 } from '../../src/index.js'
-import { TEST_RUN_ID, createRun, createPersistenceFixture } from '../persistence/test-fixture.js'
+import { TEST_RUN_ID, createRun, createRuntimeFixture } from '../support/runtime-fixture.js'
 
-const workspaceRoot = '/Users/operator/.slopify/orchestrator/workspaces/run-01'
+const workspaceRoot = '/Users/operator/.slopify/workflows/test-workflow/runs/run-01/workspaces'
 const artifactsPath = '/Users/operator/.slopify/workflows/test-workflow/runs/run-01/artifacts'
 
 const createAgentWorkflow = (prompt: string) =>
@@ -120,7 +120,7 @@ const createSuccessfulAgent = (
             outcome: 'completed',
             summary: 'Plan complete',
             data,
-            evidence: [{ kind: 'note', value: 'Inspected both worktrees' }],
+            evidence: [{ kind: 'note', value: 'Inspected both clones' }],
           },
           usage: {
             inputTokens: 10,
@@ -138,7 +138,7 @@ const createSuccessfulAgent = (
 
 describe('agent node runner', () => {
   it('runs the configured harness from the primary run clone and traces immutable context', async () => {
-    const fixture = createPersistenceFixture()
+    const fixture = createRuntimeFixture()
     try {
       const workflow = createAgentWorkflow('Plan {{ task }} and leave {{ typo }} literal')
       fixture.workflows.save(workflow)
@@ -264,7 +264,7 @@ describe('agent node runner', () => {
   })
 
   it('fails before starting the harness when a run workspace cannot be prepared', async () => {
-    const fixture = createPersistenceFixture()
+    const fixture = createRuntimeFixture()
     try {
       const workflow = createAgentWorkflow('Inspect the repositories')
       fixture.workflows.save(workflow)
@@ -309,7 +309,7 @@ describe('agent node runner', () => {
   })
 
   it('fails deterministically when no executor implements the selected harness', async () => {
-    const fixture = createPersistenceFixture()
+    const fixture = createRuntimeFixture()
     try {
       const workflow = createAgentWorkflow('Inspect the repositories')
       fixture.workflows.save(workflow)

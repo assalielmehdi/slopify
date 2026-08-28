@@ -125,31 +125,27 @@ describe('filesystem workflow store', () => {
     ).toBe(true)
   })
 
-  it('reads a v2 definition through its canonical directory identity without rewriting it', async () => {
+  it('reports unsupported workflow schema versions without rewriting their source', async () => {
     const fixture = createFixture()
-    const legacy = {
+    const unsupported = {
       ...workflow({ workflowId: 'test' }),
-      schemaVersion: 2,
-      name: 'test wer',
+      schemaVersion: 99,
     }
-    const definitionFile = writeExternalWorkflow(fixture.paths, 'test', legacy)
+    const definitionFile = writeExternalWorkflow(fixture.paths, 'test', unsupported)
 
     const stored = await fixture.workflows.get('test')
 
     expect(stored).toMatchObject({
-      status: 'VALID',
+      status: 'INVALID',
       workflowId: 'test',
-      value: { schemaVersion: 3, workflowId: 'test' },
     })
-    if (stored?.status !== 'VALID') throw new Error('Expected a valid legacy workflow fixture')
-    expect(stored.value).not.toHaveProperty('name')
-    expect(JSON.parse(readFileSync(definitionFile, 'utf8'))).toEqual(legacy)
+    expect(JSON.parse(readFileSync(definitionFile, 'utf8'))).toEqual(unsupported)
   })
 
   it('reports invalid entries independently without rewriting their source', async () => {
     const fixture = createFixture()
     writeExternalWorkflow(fixture.paths, 'release-review', workflow())
-    const invalidSource = '{ "schemaVersion": 2, invalid json'
+    const invalidSource = '{ "schemaVersion": 99, invalid json'
     const invalidPath = writeExternalWorkflow(fixture.paths, 'broken-workflow', workflow())
     writeFileSync(invalidPath, invalidSource)
     writeExternalWorkflow(

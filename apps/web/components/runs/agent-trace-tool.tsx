@@ -132,11 +132,7 @@ const skillName = (path: string): string | undefined => {
 }
 
 const editLines = (input: Record<string, unknown>): readonly string[] => {
-  const legacyEdit =
-    text(input.oldText) === undefined || text(input.newText) === undefined
-      ? []
-      : [{ oldText: input.oldText, newText: input.newText }]
-  const edits = Array.isArray(input.edits) ? input.edits : legacyEdit
+  const edits = Array.isArray(input.edits) ? input.edits : []
   const lines: string[] = []
   for (const value of edits) {
     const edit = record(value)

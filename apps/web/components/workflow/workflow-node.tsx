@@ -22,7 +22,7 @@ const statusLabels: Readonly<Record<NodeExecutionStatus, string>> = {
 }
 
 const harnessLogos = {
-  codex: { alt: 'Codex harness', src: '/chatgpt-logo.svg' },
+  codex: { alt: 'Codex harness', src: '/codex-logo.svg' },
   pi: { alt: 'Pi harness', src: '/pi-badge.svg' },
 } as const
 

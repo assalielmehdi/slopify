@@ -249,7 +249,7 @@ describe('RepositorySettings', () => {
     )
   })
 
-  it('keeps the drawer open while selecting from a portaled provider menu', async () => {
+  it('keeps the dialog open while selecting from a portaled provider menu', async () => {
     const gitLabConnection = {
       provider: 'GITLAB' as const,
       accountUsername: 'operator',

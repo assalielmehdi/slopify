@@ -94,7 +94,7 @@ export interface FilesystemRuntimeLifecycle {
   stop(): Promise<void>
 }
 
-const legacyRunRecord = (
+const capturedRunRecord = (
   detail: Extract<Awaited<ReturnType<FilesystemRunReader['get']>>, { readonly status: 'READY' }>,
 ): AgentNodeRunRecord => ({
   runId: detail.run.runId,
@@ -122,7 +122,7 @@ const createFilesystemNodeRunner = (options: {
     )
     if (execution === undefined) return undefined
     const locator = { workflowId: detail.run.workflowId, runId: detail.run.runId }
-    const record = legacyRunRecord(detail)
+    const record = capturedRunRecord(detail)
     const workspaces: RunWorkspaceProvisioner = {
       async ensure() {
         return (await options.workspaces.ensure(locator)).map((repository) => ({

@@ -13,9 +13,8 @@ import {
 const timestamp = '2026-08-25T10:00:00.000Z'
 
 const workflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'review-change',
-  name: 'Review change',
   description: 'Review an implementation',
   repositories: {
     repositoryIds: ['repository-01'],
@@ -31,6 +30,7 @@ const workflow = {
         name: 'Reviewer',
         prompt: 'Review {{ ticket }}',
         harness: { harnessId: 'pi' },
+        timeoutSeconds: 900,
       },
     ],
     edges: [],
@@ -146,7 +146,7 @@ describe('run artifact contracts', () => {
   })
 
   it.each([
-    [RunWorkflowSnapshotSchema, { schemaVersion: 2, capturedAt: timestamp }],
+    [RunWorkflowSnapshotSchema, { schemaVersion: 99, capturedAt: timestamp }],
     [RunVariablesSnapshotSchema, { schemaVersion: 1, values: {}, extra: true }],
     [RunProjectionSchema, { schemaVersion: 1, runId: '../escape' }],
   ])('rejects invalid or extended artifacts', (schema, value) => {

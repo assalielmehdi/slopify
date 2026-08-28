@@ -8,7 +8,6 @@ const opaqueId = z.string().min(1).max(128).regex(OPAQUE_ID_PATTERN)
 const kebabCaseId = z.string().min(1).max(128).regex(KEBAB_CASE_PATTERN)
 const errorCode = z.string().min(1).max(128).regex(ERROR_CODE_PATTERN)
 const message = z.string().trim().min(1).max(4_096)
-const durationMs = z.number().int().nonnegative().finite()
 
 export const WorkflowIdSchema = opaqueId.brand<'WorkflowId'>()
 export const RunIdSchema = opaqueId.brand<'RunId'>()
@@ -19,7 +18,7 @@ export const OutcomeNameSchema = kebabCaseId.brand<'OutcomeName'>()
 
 export const RunStatusSchema = z.enum(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'])
 
-export const WorkflowRunOutcomeSchema = z.strictObject({
+const WorkflowRunOutcomeSchema = z.strictObject({
   workflowId: WorkflowIdSchema,
   runId: RunIdSchema,
   status: z.enum(['SUCCEEDED', 'FAILED']),
@@ -100,7 +99,7 @@ export const ConfigureGitConnectionRequestSchema = z.strictObject({
   token: z.string().trim().min(1).max(16_384),
 })
 
-export const GitRepositoryVisibilitySchema = z.enum(['PUBLIC', 'INTERNAL', 'PRIVATE'])
+const GitRepositoryVisibilitySchema = z.enum(['PUBLIC', 'INTERNAL', 'PRIVATE'])
 
 export const GitRepositorySchema = z.strictObject({
   provider: GitProviderSchema,
@@ -128,7 +127,7 @@ export const HarnessThinkingLevelSchema = z.enum([
   'ultra',
 ])
 
-export const HarnessModelOptionSchema = z.strictObject({
+const HarnessModelOptionSchema = z.strictObject({
   id: z.string().trim().min(1).max(256),
   name: z.string().trim().min(1).max(128),
   thinkingLevels: z.array(HarnessThinkingLevelSchema).min(1).max(8).readonly(),
@@ -159,7 +158,7 @@ export const HarnessCatalogResponseSchema = z.strictObject({
   harnesses: z.array(HarnessDescriptorSchema).readonly(),
 })
 
-export const RepositoryAvailabilitySchema = z.enum([
+const RepositoryAvailabilitySchema = z.enum([
   'AVAILABLE',
   'CONNECTION_MISSING',
   'REPOSITORY_UNAVAILABLE',
@@ -188,9 +187,9 @@ export const RepositoryCatalogResponseSchema = z.strictObject({
   repositories: z.array(RepositorySchema).readonly(),
 })
 
-export const ResourceChangeTypeSchema = z.enum(['CREATED', 'CHANGED', 'DELETED'])
+const ResourceChangeTypeSchema = z.enum(['CREATED', 'CHANGED', 'DELETED'])
 
-export const EditableResourceSchema = z.discriminatedUnion('type', [
+const EditableResourceSchema = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('SETTINGS') }),
   z.strictObject({ type: z.literal('REPOSITORIES') }),
   z.strictObject({ type: z.literal('WORKFLOW'), workflowId: WorkflowIdSchema }),
@@ -272,72 +271,7 @@ export const RunPaginationQuerySchema = z
     }
   })
 
-const runEventBase = z.strictObject({
-  runId: RunIdSchema,
-  sequence: z.number().int().positive().safe(),
-  timestamp: z.iso.datetime({ offset: true }),
-})
-
-const nodeEventBase = runEventBase.extend({ nodeId: NodeIdSchema })
-
-const RunStartedEventSchema = runEventBase.extend({
-  type: z.literal('RUN_STARTED'),
-  data: z.strictObject({ workflowId: WorkflowIdSchema }),
-})
-
-const RunStatusChangedEventSchema = runEventBase.extend({
-  type: z.literal('RUN_STATUS_CHANGED'),
-  data: z.strictObject({ from: RunStatusSchema, to: RunStatusSchema }),
-})
-
-const NodeStartedEventSchema = nodeEventBase.extend({
-  type: z.literal('NODE_STARTED'),
-  data: z.strictObject({}),
-})
-
-const NodeCompletedEventSchema = nodeEventBase.extend({
-  type: z.literal('NODE_COMPLETED'),
-  data: z.strictObject({
-    outcome: OutcomeNameSchema,
-    durationMs,
-  }),
-})
-
-const NodeFailedEventSchema = nodeEventBase.extend({
-  type: z.literal('NODE_FAILED'),
-  data: z.strictObject({ code: errorCode, message, durationMs }),
-})
-
-const NodeCancelledEventSchema = nodeEventBase.extend({
-  type: z.literal('NODE_CANCELLED'),
-  data: z.strictObject({ reason: message, durationMs }),
-})
-
-const RunCancelRequestedEventSchema = runEventBase.extend({
-  type: z.literal('RUN_CANCEL_REQUESTED'),
-  data: z.strictObject({ reason: z.string().trim().min(1).max(1_024) }),
-})
-
-const RunCompletedEventSchema = runEventBase.extend({
-  type: z.literal('RUN_COMPLETED'),
-  data: z.strictObject({
-    status: z.enum(['SUCCEEDED', 'FAILED', 'CANCELLED']),
-    durationMs,
-  }),
-})
-
-export const RunEventSchema = z.discriminatedUnion('type', [
-  RunStartedEventSchema,
-  RunStatusChangedEventSchema,
-  NodeStartedEventSchema,
-  NodeCompletedEventSchema,
-  NodeFailedEventSchema,
-  NodeCancelledEventSchema,
-  RunCancelRequestedEventSchema,
-  RunCompletedEventSchema,
-])
-
-export const AgentTraceEventTypeSchema = z.enum([
+const AgentTraceEventTypeSchema = z.enum([
   'AGENT_STARTED',
   'AGENT_SESSION_IDENTIFIED',
   'AGENT_MESSAGE',
@@ -371,29 +305,8 @@ const agentTraceConfigurationFields = {
   timeoutSeconds: z.number().int().positive().safe(),
 } as const
 
-const LegacyAgentTraceHeaderSchema = z.strictObject({
-  version: z.literal(1),
-  ...agentTraceHeaderFields,
-  configuration: z.strictObject({
-    ...agentTraceConfigurationFields,
-    repositories: z
-      .array(
-        z.strictObject({
-          repositoryId: RepositoryIdSchema,
-          name: z.string().trim().min(1).max(256),
-          worktreePath: z.string().trim().min(1).max(4_096),
-          baseSha: GitShaSchema,
-          sourceBranch: z.string().trim().min(1).max(512).nullable(),
-        }),
-      )
-      .min(1)
-      .max(32)
-      .readonly(),
-  }),
-})
-
-const ClonedWorkspaceAgentTraceHeaderSchema = z.strictObject({
-  version: z.literal(2),
+export const AgentTraceHeaderSchema = z.strictObject({
+  version: z.literal(4),
   ...agentTraceHeaderFields,
   configuration: z.strictObject({
     ...agentTraceConfigurationFields,
@@ -413,54 +326,9 @@ const ClonedWorkspaceAgentTraceHeaderSchema = z.strictObject({
       .min(1)
       .max(32)
       .readonly(),
-  }),
-})
-
-const RepositoryWorkspaceAgentTraceHeaderSchema = ClonedWorkspaceAgentTraceHeaderSchema.extend({
-  version: z.literal(3),
-})
-
-const ArtifactWorkspaceAgentTraceHeaderSchema = z.strictObject({
-  version: z.literal(4),
-  ...agentTraceHeaderFields,
-  configuration: ClonedWorkspaceAgentTraceHeaderSchema.shape.configuration.extend({
     artifactsPath: z.string().trim().min(1).max(4_096),
   }),
 })
-
-const normalizeLegacyAgentTraceHeader = (input: unknown): unknown => {
-  if (typeof input !== 'object' || input === null || Array.isArray(input)) return input
-  const header = input as Record<string, unknown>
-  const configuration = header.configuration
-  if (typeof configuration !== 'object' || configuration === null || Array.isArray(configuration)) {
-    return input
-  }
-  const legacy = configuration as Record<string, unknown>
-  if (!Array.isArray(legacy.projects)) return input
-  const { primaryProjectId, projects, ...currentConfiguration } = legacy
-  return {
-    ...header,
-    configuration: {
-      ...currentConfiguration,
-      primaryRepositoryId: primaryProjectId,
-      repositories: projects.map((entry) => {
-        if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return entry
-        const { projectId, ...repository } = entry as Record<string, unknown>
-        return { ...repository, repositoryId: projectId }
-      }),
-    },
-  }
-}
-
-export const AgentTraceHeaderSchema = z.preprocess(
-  normalizeLegacyAgentTraceHeader,
-  z.discriminatedUnion('version', [
-    LegacyAgentTraceHeaderSchema,
-    ClonedWorkspaceAgentTraceHeaderSchema,
-    RepositoryWorkspaceAgentTraceHeaderSchema,
-    ArtifactWorkspaceAgentTraceHeaderSchema,
-  ]),
-)
 
 export const AgentTraceEventSchema = z.strictObject({
   sequence: z.number().int().positive().safe(),
@@ -480,7 +348,6 @@ export type RunId = z.infer<typeof RunIdSchema>
 export type HarnessId = z.infer<typeof HarnessIdSchema>
 export type NodeId = z.infer<typeof NodeIdSchema>
 export type RepositoryId = z.infer<typeof RepositoryIdSchema>
-export type OutcomeName = z.infer<typeof OutcomeNameSchema>
 export type RunStatus = z.infer<typeof RunStatusSchema>
 export type WorkflowRunOutcome = z.infer<typeof WorkflowRunOutcomeSchema>
 export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusSchema>
@@ -492,22 +359,13 @@ export type GitConnection = z.infer<typeof GitConnectionSchema>
 export type ThemePreference = z.infer<typeof ThemePreferenceSchema>
 export type Settings = z.infer<typeof SettingsSchema>
 export type UpdateSettingsRequest = z.infer<typeof UpdateSettingsRequestSchema>
-export type GitRepositoryVisibility = z.infer<typeof GitRepositoryVisibilitySchema>
 export type GitRepository = z.infer<typeof GitRepositorySchema>
 export type HarnessThinkingLevel = z.infer<typeof HarnessThinkingLevelSchema>
 export type HarnessModelOption = z.infer<typeof HarnessModelOptionSchema>
 export type HarnessDescriptor = z.infer<typeof HarnessDescriptorSchema>
-export type HarnessCatalogResponse = z.infer<typeof HarnessCatalogResponseSchema>
-export type RepositoryAvailability = z.infer<typeof RepositoryAvailabilitySchema>
 export type Repository = z.infer<typeof RepositorySchema>
-export type ResourceChangeType = z.infer<typeof ResourceChangeTypeSchema>
-export type EditableResource = z.infer<typeof EditableResourceSchema>
 export type ResourceChangeEvent = z.infer<typeof ResourceChangeEventSchema>
 export type CreateRunRequest = z.infer<typeof CreateRunRequestSchema>
-export type CancelRunRequest = z.infer<typeof CancelRunRequestSchema>
-export type RunPaginationQuery = z.infer<typeof RunPaginationQuerySchema>
-export type RunEvent = z.infer<typeof RunEventSchema>
-export type AgentTraceEventType = z.infer<typeof AgentTraceEventTypeSchema>
 export type AgentTraceHeader = z.infer<typeof AgentTraceHeaderSchema>
 export type AgentTraceEvent = z.infer<typeof AgentTraceEventSchema>
 export type AgentTrace = z.infer<typeof AgentTraceSchema>

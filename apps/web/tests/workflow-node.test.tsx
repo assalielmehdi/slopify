@@ -59,7 +59,7 @@ describe('WorkflowNode', () => {
     )
 
     const metadata = container.querySelector('[data-node-runtime]')
-    expect(metadata?.querySelector('img')?.getAttribute('src')).toContain('/chatgpt-logo.svg')
+    expect(metadata?.querySelector('img')?.getAttribute('src')).toContain('/codex-logo.svg')
     expect(screen.getByText('Default model')).toBeTruthy()
     expect(screen.getByText('Default effort')).toBeTruthy()
   })

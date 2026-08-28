@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { RepositorySchema } from '@slopify/contracts'
 import { createWorkflowDraft, type Workflow } from '@slopify/workflow-model'
 
-import { WorkflowConfigDrawer } from '../components/workflow/workflow-config-drawer'
+import { WorkflowConfigPanel } from '../components/workflow/workflow-config-panel'
 
 const repositories = RepositorySchema.array().parse([
   {
@@ -42,7 +42,7 @@ if (apiRepository === undefined || webRepository === undefined) {
   throw new Error('Expected two repository fixtures')
 }
 
-const drawerWorkflow = (overrides: Partial<Workflow> = {}): Workflow => ({
+const panelWorkflow = (overrides: Partial<Workflow> = {}): Workflow => ({
   ...createWorkflowDraft({
     workflowId: 'delivery-workflow',
     description: 'Coordinate delivery.',
@@ -54,11 +54,11 @@ const drawerWorkflow = (overrides: Partial<Workflow> = {}): Workflow => ({
 
 afterEach(cleanup)
 
-describe('WorkflowConfigDrawer', () => {
+describe('WorkflowConfigPanel', () => {
   it('shows the description field without a redundant details introduction', async () => {
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -78,8 +78,8 @@ describe('WorkflowConfigDrawer', () => {
   it('reveals and focuses the repository-style workflow deletion confirmation', async () => {
     const onDelete = vi.fn(async () => true)
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={onDelete}
@@ -97,8 +97,8 @@ describe('WorkflowConfigDrawer', () => {
     fireEvent.click(deleteAction)
 
     expect(screen.queryByRole('textbox', { name: 'Name' })).toBeNull()
-    const confirmation = screen.getByLabelText('Workflow name confirmation')
-    expect(confirmation.getAttribute('placeholder')).toBe('Enter workflow name')
+    const confirmation = screen.getByLabelText('Workflow ID confirmation')
+    expect(confirmation.getAttribute('placeholder')).toBe('Enter workflow ID')
     const confirm = screen.getByRole('button', { name: 'Confirm' }) as HTMLButtonElement
     expect(document.activeElement).toBe(confirmation)
     expect(confirmation.parentElement?.className).toContain('w-full')
@@ -114,8 +114,8 @@ describe('WorkflowConfigDrawer', () => {
 
   it('dismisses workflow deletion confirmation with Escape and clears its value', async () => {
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -124,7 +124,7 @@ describe('WorkflowConfigDrawer', () => {
     )
 
     fireEvent.click(await screen.findByRole('button', { name: /^Delete$/ }))
-    const confirmation = screen.getByLabelText('Workflow name confirmation') as HTMLInputElement
+    const confirmation = screen.getByLabelText('Workflow ID confirmation') as HTMLInputElement
     fireEvent.change(confirmation, { target: { value: 'delivery' } })
     fireEvent.keyDown(confirmation, { key: 'Escape' })
 
@@ -136,8 +136,8 @@ describe('WorkflowConfigDrawer', () => {
 
   it('dismisses workflow deletion confirmation on an outside pointer down', async () => {
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -146,7 +146,7 @@ describe('WorkflowConfigDrawer', () => {
     )
 
     fireEvent.click(await screen.findByRole('button', { name: /^Delete$/ }))
-    const confirmation = screen.getByLabelText('Workflow name confirmation') as HTMLInputElement
+    const confirmation = screen.getByLabelText('Workflow ID confirmation') as HTMLInputElement
     fireEvent.change(confirmation, { target: { value: 'delivery' } })
     fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Description' }))
 
@@ -160,8 +160,8 @@ describe('WorkflowConfigDrawer', () => {
     const onSubmit = vi.fn(async () => true)
 
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow({
+      <WorkflowConfigPanel
+        value={panelWorkflow({
           configuration: {
             repositoryIds: repositories.slice(0, 1).map(({ repositoryId }) => repositoryId),
             primaryRepositoryId: apiRepository.repositoryId,
@@ -203,8 +203,8 @@ describe('WorkflowConfigDrawer', () => {
 
   it('does not allow duplicate or blank variable names to be saved', async () => {
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow({
+      <WorkflowConfigPanel
+        value={panelWorkflow({
           configuration: { repositoryIds: [], primaryRepositoryId: null, variables: ['topic'] },
         })}
         repositories={repositories}
@@ -225,8 +225,8 @@ describe('WorkflowConfigDrawer', () => {
 
   it('does not treat repository catalog order as a configuration change', async () => {
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow({
+      <WorkflowConfigPanel
+        value={panelWorkflow({
           configuration: {
             repositoryIds: [webRepository.repositoryId, apiRepository.repositoryId],
             primaryRepositoryId: webRepository.repositoryId,
@@ -248,8 +248,8 @@ describe('WorkflowConfigDrawer', () => {
   it('defaults the first selected repository as primary and keeps the primary selection valid', async () => {
     const onSubmit = vi.fn(async () => true)
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -284,8 +284,8 @@ describe('WorkflowConfigDrawer', () => {
   it('blocks invalid graph JSON and saves a valid edited graph', async () => {
     const onSubmit = vi.fn(async () => true)
     render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -327,8 +327,8 @@ describe('WorkflowConfigDrawer', () => {
   it('preserves dirty graph source and blocks saving after an external conflict', async () => {
     const onDirtyChange = vi.fn()
     const { rerender } = render(
-      <WorkflowConfigDrawer
-        value={drawerWorkflow()}
+      <WorkflowConfigPanel
+        value={panelWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}
@@ -341,9 +341,9 @@ describe('WorkflowConfigDrawer', () => {
     await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true))
 
     rerender(
-      <WorkflowConfigDrawer
+      <WorkflowConfigPanel
         conflict="This workflow changed outside Slopify. Close and reopen to load the latest file."
-        value={drawerWorkflow({ description: 'Externally changed workflow details.' })}
+        value={panelWorkflow({ description: 'Externally changed workflow details.' })}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}

@@ -205,11 +205,9 @@ export function useLiveRunStream({
             eventsRef.current = reconciliation.events
             dispatch({ type: 'snapshot', detail: undefined, events: reconciliation.events })
             if (
-              event.type === 'RUN_COMPLETED' ||
               event.type === 'RUN_SUCCEEDED' ||
               event.type === 'RUN_FAILED' ||
-              event.type === 'RUN_CANCELLED' ||
-              (event.type === 'RUN_STATUS_CHANGED' && terminalRunStatuses.has(event.data.to))
+              event.type === 'RUN_CANCELLED'
             ) {
               close()
             }

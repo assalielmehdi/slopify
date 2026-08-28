@@ -14,7 +14,6 @@ import {
   OutcomeNameSchema,
   RepositoryCatalogResponseSchema,
   ResourceChangeEventSchema,
-  RunEventSchema,
   RunIdSchema,
   RunPaginationQuerySchema,
   SettingsSchema,
@@ -26,12 +25,6 @@ import {
   type RunId,
   type WorkflowId,
 } from '../src/index.js'
-
-const eventBase = {
-  runId: 'run-01',
-  sequence: 1,
-  timestamp: '2026-08-18T20:00:00Z',
-}
 
 describe('branded identifiers', () => {
   it('keeps workflow, run, and harness identifiers distinct', () => {
@@ -68,8 +61,8 @@ describe('harness and repository catalogs', () => {
           installLabel: 'Install Pi',
           models: [
             {
-              id: 'openai-codex/gpt-5.4',
-              name: 'openai-codex/gpt-5.4',
+              id: 'test/model',
+              name: 'Test model',
               thinkingLevels: ['off', 'low', 'medium', 'high', 'ultra'],
             },
           ],
@@ -298,10 +291,6 @@ describe('public API records', () => {
       }),
     ).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
     expect(HealthResponseSchema.parse({ status: 'ok' })).toEqual({ status: 'ok' })
-    expect(
-      HealthResponseSchema.safeParse({ status: 'ok', databasePath: '/private/state.sqlite' })
-        .success,
-    ).toBe(false)
   })
 
   it('accepts workflow variables and rejects unrelated admission input', () => {
@@ -353,49 +342,6 @@ describe('public API records', () => {
   })
 })
 
-describe('run events', () => {
-  const validEvents = [
-    { ...eventBase, type: 'RUN_STARTED', data: { workflowId: 'workflow-01' } },
-    { ...eventBase, type: 'RUN_STATUS_CHANGED', data: { from: 'PENDING', to: 'RUNNING' } },
-    { ...eventBase, type: 'NODE_STARTED', nodeId: 'agent-01', data: {} },
-    {
-      ...eventBase,
-      type: 'NODE_COMPLETED',
-      nodeId: 'agent-01',
-      data: { outcome: 'completed', durationMs: 25 },
-    },
-    {
-      ...eventBase,
-      type: 'NODE_CANCELLED',
-      nodeId: 'agent-01',
-      data: { reason: 'Cancelled by the user', durationMs: 25 },
-    },
-    {
-      ...eventBase,
-      type: 'NODE_FAILED',
-      nodeId: 'agent-01',
-      data: { code: 'PROCESS_FAILED', message: 'Agent failed', durationMs: 25 },
-    },
-    { ...eventBase, type: 'RUN_CANCEL_REQUESTED', data: { reason: 'operator request' } },
-    { ...eventBase, type: 'RUN_COMPLETED', data: { status: 'SUCCEEDED', durationMs: 100 } },
-  ]
-
-  it.each(validEvents)('parses the $type event contract', (event) => {
-    expect(RunEventSchema.parse(event)).toEqual(event)
-  })
-
-  it('keeps node event data strict', () => {
-    expect(
-      RunEventSchema.safeParse({
-        ...eventBase,
-        type: 'NODE_COMPLETED',
-        nodeId: 'agent-01',
-        data: { outcome: 'completed', durationMs: 25, unexpected: true },
-      }).success,
-    ).toBe(false)
-  })
-})
-
 describe('agent traces', () => {
   const header = {
     version: 4,
@@ -407,11 +353,11 @@ describe('agent traces', () => {
     configuration: {
       harnessId: 'pi',
       harnessVersion: '0.84.2',
-      model: 'openai-codex/gpt-5.4',
+      model: 'test/model',
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the primary workspace.',
       artifactsPath: '/Users/operator/.slopify/workflows/release-review/runs/run-01/artifacts',
-      workspaceRoot: '/Users/operator/.slopify/orchestrator/workspaces/run-01',
+      workspaceRoot: '/Users/operator/.slopify/workflows/release-review/runs/run-01/workspaces',
       primaryRepositoryId: 'slopify',
       repositories: [
         {
@@ -419,7 +365,8 @@ describe('agent traces', () => {
           name: 'Slopify',
           provider: 'GITHUB',
           fullName: 'operator/slopify',
-          workspacePath: '/Users/operator/.slopify/orchestrator/workspaces/run-01/slopify',
+          workspacePath:
+            '/Users/operator/.slopify/workflows/release-review/runs/run-01/workspaces/slopify',
           branchName: 'slopify/run-01',
           baseSha: '0123456789abcdef0123456789abcdef01234567',
           defaultBranch: 'main',
@@ -433,59 +380,13 @@ describe('agent traces', () => {
     expect(AgentTraceHeaderSchema.parse(header)).toEqual(header)
   })
 
-  it('continues to parse immutable version 3 repository workspace traces', () => {
+  it('rejects unsupported trace versions', () => {
     const { artifactsPath: _artifactsPath, ...configuration } = header.configuration
     void _artifactsPath
 
-    expect(AgentTraceHeaderSchema.parse({ ...header, version: 3, configuration }).version).toBe(3)
-  })
-
-  it('continues to parse immutable version 1 worktree traces', () => {
-    const { artifactsPath: _artifactsPath, ...configuration } = header.configuration
-    void _artifactsPath
     expect(
-      AgentTraceHeaderSchema.parse({
-        ...header,
-        version: 1,
-        configuration: {
-          ...configuration,
-          repositories: [
-            {
-              repositoryId: 'repository-api',
-              name: 'API',
-              worktreePath: '/worktrees/run-01/repository-api',
-              baseSha: 'a'.repeat(40),
-              sourceBranch: 'main',
-            },
-          ],
-        },
-      }).version,
-    ).toBe(1)
-  })
-
-  it('normalizes persisted version 2 project keys to repository vocabulary', () => {
-    const { artifactsPath: _artifactsPath, ...configuration } = header.configuration
-    void _artifactsPath
-    const parsed = AgentTraceHeaderSchema.parse({
-      ...header,
-      version: 2,
-      configuration: {
-        ...configuration,
-        primaryRepositoryId: undefined,
-        repositories: undefined,
-        primaryProjectId: 'slopify',
-        projects: [
-          {
-            ...header.configuration.repositories[0],
-            repositoryId: undefined,
-            projectId: 'slopify',
-          },
-        ],
-      },
-    })
-
-    expect(parsed.configuration.primaryRepositoryId).toBe('slopify')
-    expect(parsed.configuration.repositories[0]?.repositoryId).toBe('slopify')
+      AgentTraceHeaderSchema.safeParse({ ...header, version: 99, configuration }).success,
+    ).toBe(false)
   })
 
   it('keeps trace headers and event types strict', () => {

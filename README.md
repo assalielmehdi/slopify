@@ -73,11 +73,9 @@ Slopify stores all owner-local configuration and data under `~/.slopify/` by def
 - `~/.slopify/schemas/` contains the published JSON Schemas for settings, Repositories,
   and workflow definitions.
 - `~/.slopify/runtime/` contains ephemeral single-instance ownership state.
-- `~/.slopify/migrations/` contains verified legacy SQLite backups, manifests, and
-  resumable conversion artifacts when an existing installation is migrated.
 
-`SLOPIFY_HOME` overrides this one state root. Slopify does not support separate database,
-trace, or workspace roots. Files may be inspected or edited directly: Slopify validates
+`SLOPIFY_HOME` is the only runtime state-root override. Files may be inspected or edited
+directly: Slopify validates
 complete resources before accepting them, watches editable resources for external
 changes, and surfaces invalid or conflicting edits without silently rewriting them.
 
@@ -103,12 +101,3 @@ Pi uses its RPC protocol and a small completion bridge; Codex uses ephemeral JSO
 execution and an adapter-owned structured output schema. Sensitive-looking environment
 values are redacted from events and structured results, but the harness can still read
 other user files. Execution traces therefore remain trusted, owner-local data.
-
-## Legacy migration
-
-On startup, Slopify detects the previous SQLite layout, refuses migration while legacy
-runs are active or filesystem targets conflict, creates and verifies a byte-identical
-backup, converts the catalog and terminal run history, and installs the filesystem
-resources atomically. Installation is resumable and supports rollback while its recovery
-artifacts remain intact. SQLite is never initialized for a clean installation and is
-loaded only by this read-only compatibility importer.

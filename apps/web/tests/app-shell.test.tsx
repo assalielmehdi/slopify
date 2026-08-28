@@ -32,7 +32,7 @@ vi.mock('next/link', () => ({
 
 const workflows = [
   createWorkflowDraft({
-    workflowId: 'default-workflow',
+    workflowId: 'test-workflow',
     description: 'Default workflow description.',
     configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: '2026-08-25T00:00:00.000Z',
@@ -44,8 +44,8 @@ const workflows = [
     createdAt: '2026-08-25T00:00:00.000Z',
   }),
 ]
-const defaultWorkflow = workflows[0]
-if (defaultWorkflow === undefined) throw new Error('Expected a default workflow fixture')
+const testWorkflow = workflows[0]
+if (testWorkflow === undefined) throw new Error('Expected a workflow fixture')
 const runOutcomes = (outcomes: readonly unknown[]) =>
   WorkflowRunOutcomeCatalogResponseSchema.parse({ outcomes }).outcomes
 const noRunWorkflow = createWorkflowDraft({
@@ -56,7 +56,7 @@ const noRunWorkflow = createWorkflowDraft({
 })
 
 const workflowClient = {
-  createWorkflow: vi.fn(async () => defaultWorkflow),
+  createWorkflow: vi.fn(async () => testWorkflow),
   listWorkflowRunOutcomes: vi.fn(async () => runOutcomes([])),
   listWorkflows: vi.fn(async () => workflows),
 }
@@ -87,7 +87,7 @@ beforeEach(() => {
   navigation.pathname = '/'
   navigation.search = ''
   navigation.push.mockReset()
-  workflowClient.createWorkflow.mockReset().mockResolvedValue(defaultWorkflow)
+  workflowClient.createWorkflow.mockReset().mockResolvedValue(testWorkflow)
   workflowClient.listWorkflowRunOutcomes.mockReset().mockResolvedValue(runOutcomes([]))
   workflowClient.listWorkflows.mockReset().mockResolvedValue(workflows)
   themeClient.getSettings.mockReset().mockResolvedValue(initialSystemSettings)
@@ -156,7 +156,7 @@ describe('AppShell', () => {
       within(primaryNavigation)
         .getAllByRole('link')
         .map((link) => link.getAttribute('aria-label')),
-    ).toEqual(['default-workflow', 'release-workflow', 'Runs', 'Harnesses', 'Repositories'])
+    ).toEqual(['test-workflow', 'release-workflow', 'Runs', 'Harnesses', 'Repositories'])
     expect(
       within(primaryNavigation)
         .getAllByRole('link')
@@ -166,10 +166,8 @@ describe('AppShell', () => {
       'false',
     )
     expect(
-      within(primaryNavigation)
-        .getByRole('link', { name: 'default-workflow' })
-        .getAttribute('href'),
-    ).toBe('/?workflowId=default-workflow')
+      within(primaryNavigation).getByRole('link', { name: 'test-workflow' }).getAttribute('href'),
+    ).toBe('/?workflowId=test-workflow')
     expect(
       within(primaryNavigation)
         .getByRole('link', { name: 'release-workflow' })
@@ -180,7 +178,7 @@ describe('AppShell', () => {
 
     expect(workflowsButton.getAttribute('aria-expanded')).toBe('false')
     expect(primaryNavigation.querySelector('[data-slot="collapsible-content"]')).not.toBeNull()
-    expect(within(primaryNavigation).queryByRole('link', { name: 'default-workflow' })).toBeNull()
+    expect(within(primaryNavigation).queryByRole('link', { name: 'test-workflow' })).toBeNull()
     expect(within(primaryNavigation).queryByText('Workflow')).toBeNull()
     expect(within(primaryNavigation).queryByText('Configuration')).toBeNull()
     expect(
@@ -217,7 +215,7 @@ describe('AppShell', () => {
     workflowClient.listWorkflowRunOutcomes.mockResolvedValue(
       runOutcomes([
         {
-          workflowId: 'default-workflow',
+          workflowId: 'test-workflow',
           runId: 'run-success',
           status: 'SUCCEEDED',
           completedAt: '2026-08-25T12:00:00.000Z',
@@ -280,16 +278,14 @@ describe('AppShell', () => {
     )
 
     const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
-    await within(primaryNavigation).findByRole('link', { name: 'default-workflow' })
+    await within(primaryNavigation).findByRole('link', { name: 'test-workflow' })
     const addWorkflow = screen.getByRole('button', { name: 'Add workflow' })
     fireEvent.click(addWorkflow)
 
-    const input = screen.getByRole('textbox', { name: 'New workflow name' })
+    const input = screen.getByRole('textbox', { name: 'New workflow ID' })
     await waitFor(() => expect(document.activeElement).toBe(input))
     expect(input.closest('[data-slot="popover-content"]')).not.toBeNull()
-    expect(
-      within(primaryNavigation).queryByRole('textbox', { name: 'New workflow name' }),
-    ).toBeNull()
+    expect(within(primaryNavigation).queryByRole('textbox', { name: 'New workflow ID' })).toBeNull()
 
     fireEvent.change(input, { target: { value: 'Review Workflow' } })
     expect(screen.getByRole('alert').textContent).toContain(
@@ -298,14 +294,14 @@ describe('AppShell', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(workflowClient.createWorkflow).not.toHaveBeenCalled()
 
-    fireEvent.change(input, { target: { value: 'default-workflow' } })
-    expect(screen.getByRole('alert').textContent).toBe('A workflow with this name already exists.')
+    fireEvent.change(input, { target: { value: 'test-workflow' } })
+    expect(screen.getByRole('alert').textContent).toBe('A workflow with this ID already exists.')
 
     fireEvent.keyDown(input, { key: 'Escape' })
-    expect(screen.queryByRole('textbox', { name: 'New workflow name' })).toBeNull()
+    expect(screen.queryByRole('textbox', { name: 'New workflow ID' })).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Add workflow' }))
-    const retryInput = screen.getByRole('textbox', { name: 'New workflow name' })
+    const retryInput = screen.getByRole('textbox', { name: 'New workflow ID' })
     fireEvent.change(retryInput, { target: { value: 'review-workflow' } })
     fireEvent.keyDown(retryInput, { key: 'Enter' })
 
@@ -324,7 +320,7 @@ describe('AppShell', () => {
   it('places the collapse control in the title row and toggles with B outside inputs', () => {
     render(
       <AppShell>
-        <input aria-label="Workflow name" />
+        <input aria-label="Workflow ID" />
       </AppShell>,
     )
 
@@ -341,7 +337,7 @@ describe('AppShell', () => {
     expect(expandButton.closest('aside')).toBeNull()
     expect(expandButton.getAttribute('aria-keyshortcuts')).toBe('B')
 
-    const input = screen.getByRole('textbox', { name: 'Workflow name' })
+    const input = screen.getByRole('textbox', { name: 'Workflow ID' })
     input.focus()
     fireEvent.keyDown(input, { key: 'b' })
     expect(navigation.getAttribute('data-state')).toBe('collapsed')
@@ -360,7 +356,7 @@ describe('AppShell', () => {
 
     const primaryNavigation = screen.getByRole('navigation', { name: 'Primary navigation' })
     expect(
-      await within(primaryNavigation).findByRole('link', { name: 'default-workflow' }),
+      await within(primaryNavigation).findByRole('link', { name: 'test-workflow' }),
     ).toBeTruthy()
     expect(within(primaryNavigation).queryByRole('link', { name: 'release-workflow' })).toBeNull()
 
@@ -378,7 +374,7 @@ describe('AppShell', () => {
       .mockResolvedValueOnce(
         runOutcomes([
           {
-            workflowId: 'default-workflow',
+            workflowId: 'test-workflow',
             runId: 'run-success',
             status: 'SUCCEEDED',
             completedAt: '2026-08-25T12:00:00.000Z',
@@ -422,39 +418,6 @@ describe('AppShell', () => {
       ),
     )
     expect(document.documentElement.classList.contains('dark')).toBe(false)
-    expect(window.localStorage.getItem('slopify-theme')).toBeNull()
-  })
-
-  it('migrates a legacy preference only while settings are missing', async () => {
-    window.localStorage.setItem('slopify-theme', 'dark')
-
-    const { unmount } = render(
-      <AppShell initialSettings={initialSystemSettings} themeClient={themeClient}>
-        <p>Workbench</p>
-      </AppShell>,
-    )
-
-    await waitFor(() =>
-      expect(themeClient.updateSettings).toHaveBeenCalledWith(
-        { appearance: { theme: 'dark' } },
-        '"missing"',
-      ),
-    )
-    expect(window.localStorage.getItem('slopify-theme')).toBeNull()
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
-    unmount()
-
-    window.localStorage.setItem('slopify-theme', 'system')
-    themeClient.updateSettings.mockClear()
-    render(
-      <AppShell initialSettings={initialDarkSettings} themeClient={themeClient}>
-        <p>Workbench</p>
-      </AppShell>,
-    )
-
-    await waitFor(() => expect(window.localStorage.getItem('slopify-theme')).toBeNull())
-    expect(themeClient.updateSettings).not.toHaveBeenCalled()
-    expect(document.documentElement.classList.contains('dark')).toBe(true)
   })
 
   it('follows system appearance changes while the file preference is system', () => {
@@ -499,7 +462,6 @@ describe('AppShell', () => {
 
   it.each([
     ['/runs', 'Runs', ['Runs']],
-    ['/runs/new', 'Runs', ['Runs', 'New run']],
     ['/runs/run-123', 'Runs', ['Runs', '123']],
     ['/harnesses', 'Harnesses', ['Harnesses']],
     ['/repositories', 'Repositories', ['Repositories']],

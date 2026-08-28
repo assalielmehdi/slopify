@@ -9,13 +9,12 @@ import {
   writeFileSync,
 } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 
 import { AgentTraceHeaderSchema } from '@slopify/contracts'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {
-  createFilesystemAgentTraceStore,
   createRunFilesystemAgentTraceStore,
   resolveNodeExecutionPaths,
   resolveSlopifyPaths,
@@ -28,13 +27,33 @@ afterEach(() => {
 })
 
 const createStore = () => {
-  const root = mkdtempSync(join(tmpdir(), 'slopify-agent-traces-'))
-  directories.push(root)
-  return { root, store: createFilesystemAgentTraceStore({ root }) }
+  const home = mkdtempSync(join(tmpdir(), 'slopify-agent-traces-'))
+  directories.push(home)
+  const paths = resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } })
+  const current = createRunFilesystemAgentTraceStore({ paths })
+  const workflowId = 'workflow-01'
+  const executionIndex = 2
+  const tracePath = resolveNodeExecutionPaths(
+    paths.run(workflowId, 'run-01'),
+    executionIndex,
+    'node-execution-01',
+  ).traceFile
+  return {
+    root: home,
+    tracePath,
+    store: {
+      start: (capturedHeader: typeof header) =>
+        current.start({ workflowId, executionIndex, header: capturedHeader }),
+      append: (capturedHeader: typeof header, event: Parameters<typeof current.append>[1]) =>
+        current.append({ workflowId, executionIndex, header: capturedHeader }, event),
+      read: (input: { runId: string; nodeExecutionId: string; attemptId: string }) =>
+        current.read({ workflowId, executionIndex, ...input }),
+    },
+  }
 }
 
 const header = AgentTraceHeaderSchema.parse({
-  version: 1,
+  version: 4,
   runId: 'run-01',
   nodeExecutionId: 'node-execution-01',
   attemptId: 'attempt-01',
@@ -47,14 +66,18 @@ const header = AgentTraceHeaderSchema.parse({
     thinkingLevel: 'medium',
     renderedPrompt: 'Inspect the repository.',
     workspaceRoot: '/workspace/run-01',
+    artifactsPath: '/workspace/run-01/artifacts',
     primaryRepositoryId: 'repository-api',
     repositories: [
       {
         repositoryId: 'repository-api',
         name: 'API',
-        worktreePath: '/workspace/run-01/repository-api',
+        provider: 'GITHUB',
+        fullName: 'operator/api',
+        workspacePath: '/workspace/run-01/repository-api',
+        branchName: 'slopify/run-01',
         baseSha: 'a'.repeat(40),
-        sourceBranch: 'main',
+        defaultBranch: 'main',
       },
     ],
     timeoutSeconds: 600,
@@ -63,7 +86,7 @@ const header = AgentTraceHeaderSchema.parse({
 
 describe('filesystem agent trace store', () => {
   it('writes an ordered JSONL trace with private filesystem permissions', async () => {
-    const { root, store } = createStore()
+    const { store, tracePath } = createStore()
 
     await store.start(header)
     await store.append(header, {
@@ -96,21 +119,13 @@ describe('filesystem agent trace store', () => {
       ],
       complete: false,
     })
-    const tracePath = join(
-      root,
-      'runs',
-      'run-01',
-      'executions',
-      'node-execution-01',
-      'attempt-01.jsonl',
-    )
     expect(statSync(tracePath).mode & 0o777).toBe(0o600)
-    expect(statSync(join(root, 'runs', 'run-01')).mode & 0o777).toBe(0o700)
+    expect(statSync(dirname(tracePath)).mode & 0o777).toBe(0o700)
     expect(readFileSync(tracePath, 'utf8').trim().split('\n')).toHaveLength(3)
   })
 
   it('marks terminal traces complete and ignores a malformed trailing line', async () => {
-    const { root, store } = createStore()
+    const { store, tracePath } = createStore()
     await store.start(header)
     await store.append(header, {
       executionId: 'node-execution-01',
@@ -120,14 +135,6 @@ describe('filesystem agent trace store', () => {
       type: 'AGENT_FAILED',
       data: { code: 'AGENT_TIMEOUT', message: 'Timed out', durationMs: 2_000 },
     })
-    const tracePath = join(
-      root,
-      'runs',
-      'run-01',
-      'executions',
-      'node-execution-01',
-      'attempt-01.jsonl',
-    )
     const { appendFileSync } = await import('node:fs')
     appendFileSync(tracePath, '{"kind":"event"')
 
@@ -141,7 +148,7 @@ describe('filesystem agent trace store', () => {
   })
 
   it('writes the complete redacted harness event payload to JSONL', async () => {
-    const { root, store } = createStore()
+    const { store, tracePath } = createStore()
     await store.start(header)
     const harnessEvent = {
       type: 'tool_execution_start',
@@ -158,14 +165,6 @@ describe('filesystem agent trace store', () => {
       data: { harnessId: 'pi', event: harnessEvent },
     })
 
-    const tracePath = join(
-      root,
-      'runs',
-      'run-01',
-      'executions',
-      'node-execution-01',
-      'attempt-01.jsonl',
-    )
     const records = readFileSync(tracePath, 'utf8')
       .trim()
       .split('\n')
@@ -191,16 +190,8 @@ describe('filesystem agent trace store', () => {
   })
 
   it('surfaces unavailable linked traces without following them', async () => {
-    const { root, store } = createStore()
+    const { root, store, tracePath } = createStore()
     await store.start(header)
-    const tracePath = join(
-      root,
-      'runs',
-      'run-01',
-      'executions',
-      'node-execution-01',
-      'attempt-01.jsonl',
-    )
     const outside = join(root, 'outside.jsonl')
     writeFileSync(outside, 'owner-local data\n')
     rmSync(tracePath)

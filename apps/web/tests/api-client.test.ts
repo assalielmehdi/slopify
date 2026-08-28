@@ -73,7 +73,7 @@ describe('API client', () => {
   it('loads a typed agent trace for one captured node execution', async () => {
     const trace = AgentTraceSchema.parse({
       header: {
-        version: 2,
+        version: 4,
         runId: 'run-01',
         nodeExecutionId: 'node-execution-01',
         attemptId: 'attempt-01',
@@ -85,7 +85,8 @@ describe('API client', () => {
           model: 'test/model',
           thinkingLevel: 'medium',
           renderedPrompt: 'Inspect the repository.',
-          workspaceRoot: '/workspaces/run-01',
+          workspaceRoot: '/workflows/test-workflow/runs/run-01/workspaces',
+          artifactsPath: '/workflows/test-workflow/runs/run-01/artifacts/node-execution-01',
           primaryRepositoryId: 'repository-api',
           repositories: [
             {
@@ -93,7 +94,7 @@ describe('API client', () => {
               name: 'API',
               provider: 'GITHUB',
               fullName: 'operator/api',
-              workspacePath: '/workspaces/run-01/repository-api',
+              workspacePath: '/workflows/test-workflow/runs/run-01/workspaces/repository-api',
               branchName: 'slopify/run-01',
               baseSha: 'a'.repeat(40),
               defaultBranch: 'main',
@@ -176,7 +177,7 @@ describe('API client', () => {
         Response.json(
           {
             error: {
-              code: 'DATABASE_UNAVAILABLE',
+              code: 'PERSISTENCE_UNAVAILABLE',
               message: 'Local persistence is unavailable',
             },
           },
@@ -186,7 +187,7 @@ describe('API client', () => {
 
     await expect(client.getHealth()).rejects.toEqual(
       new ApiClientError({
-        code: 'DATABASE_UNAVAILABLE',
+        code: 'PERSISTENCE_UNAVAILABLE',
         message: 'Local persistence is unavailable',
         status: 503,
       }),
@@ -299,11 +300,11 @@ describe('API client', () => {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/default-workflow', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/test-workflow', {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
-    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/workflows/default-workflow', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/workflows/test-workflow', {
       headers: { accept: 'application/json' },
       method: 'DELETE',
     })
@@ -356,7 +357,7 @@ describe('API client', () => {
 
     await client.listWorkflows()
     await expect(client.updateWorkflow(workflow.workflowId, workflow)).resolves.toEqual(canonical)
-    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/default-workflow', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(2, '/api/workflows/test-workflow', {
       body: JSON.stringify(workflowToWorkflowFile(workflow)),
       headers: {
         accept: 'application/json',
@@ -395,7 +396,7 @@ describe('API client', () => {
     await client.getWorkflow(workflow.workflowId, { preserveRevision: true })
     await client.updateWorkflow(workflow.workflowId, workflow)
 
-    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/workflows/default-workflow', {
+    expect(fetchImplementation).toHaveBeenNthCalledWith(3, '/api/workflows/test-workflow', {
       body: JSON.stringify(workflowToWorkflowFile(workflow)),
       headers: {
         accept: 'application/json',
@@ -414,10 +415,10 @@ describe('API client', () => {
     await expect(client.listWorkflows()).rejects.toMatchObject({ name: 'ZodError' })
   })
 
-  it('starts a run with generic variables', async () => {
+  it('rejects unsupported run-admission responses', async () => {
     const run = {
       runId: 'run-01',
-      workflowId: 'default-workflow',
+      workflowId: 'test-workflow',
       workflowSnapshot: createAgentWorkflowFixture({
         createdAt: '2026-08-18T12:00:00Z',
         modelId: 'test-model',
@@ -436,26 +437,15 @@ describe('API client', () => {
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(
-      client.startRun({
-        workflowId: 'default-workflow',
-        variables: { task: 'Coordinate API and web changes.', attempts: 2 },
-      }),
-    ).resolves.toEqual(run)
-    expect(fetchImplementation).toHaveBeenCalledWith('/api/runs', {
-      body: JSON.stringify({
-        workflowId: 'default-workflow',
-        variables: { task: 'Coordinate API and web changes.', attempts: 2 },
-      }),
-      headers: { accept: 'application/json', 'content-type': 'application/json' },
-      method: 'POST',
-    })
+      client.startRun({ workflowId: 'test-workflow', variables: {} }),
+    ).rejects.toMatchObject({ name: 'ZodError' })
   })
 
   it('accepts filesystem run admission and normalizes filesystem history', async () => {
     const projection = {
       schemaVersion: 1,
       runId: 'run-filesystem-01',
-      workflowId: 'default-workflow',
+      workflowId: 'test-workflow',
       status: 'PENDING',
       transitionCount: 0,
       lastEventSequence: 0,
@@ -472,12 +462,12 @@ describe('API client', () => {
           data: [
             {
               status: 'READY',
-              locator: { workflowId: 'default-workflow', runId: 'run-filesystem-01' },
+              locator: { workflowId: 'test-workflow', runId: 'run-filesystem-01' },
               run: projection,
             },
             {
               status: 'CORRUPT',
-              locator: { workflowId: 'default-workflow', runId: 'run-corrupt-01' },
+              locator: { workflowId: 'test-workflow', runId: 'run-corrupt-01' },
               diagnostic: { code: 'RESOURCE_VALIDATION_FAILED', message: 'run.json is invalid' },
             },
           ],
@@ -486,14 +476,14 @@ describe('API client', () => {
       )
     const client = createApiClient({ fetch: fetchImplementation })
 
-    await expect(
-      client.startRun({ workflowId: 'default-workflow', variables: {} }),
-    ).resolves.toEqual(projection)
+    await expect(client.startRun({ workflowId: 'test-workflow', variables: {} })).resolves.toEqual(
+      projection,
+    )
     await expect(client.listRuns({ page: 1, pageSize: 20 })).resolves.toEqual({
       data: [
         {
           runId: 'run-filesystem-01',
-          workflowId: 'default-workflow',
+          workflowId: 'test-workflow',
           status: 'PENDING',
           createdAt: '2026-08-25T10:00:00Z',
           startedAt: null,
@@ -502,7 +492,7 @@ describe('API client', () => {
         },
         {
           runId: 'run-corrupt-01',
-          workflowId: 'default-workflow',
+          workflowId: 'test-workflow',
           status: 'CORRUPT',
           createdAt: null,
           startedAt: null,
@@ -519,7 +509,7 @@ describe('API client', () => {
     const response = {
       outcomes: [
         {
-          workflowId: 'default-workflow',
+          workflowId: 'test-workflow',
           runId: 'run-filesystem-01',
           status: 'SUCCEEDED',
           completedAt: '2026-08-25T10:05:00.000Z',
@@ -536,7 +526,7 @@ describe('API client', () => {
     })
   })
 
-  it('loads immutable repository and cloned workspace evidence with run details', async () => {
+  it('rejects unsupported run detail responses', async () => {
     const workflow = createAgentWorkflowFixture({
       createdAt: '2026-08-18T12:00:00Z',
       modelId: 'test-model',
@@ -545,7 +535,7 @@ describe('API client', () => {
     const detail = {
       run: {
         runId: 'run-01',
-        workflowId: 'default-workflow',
+        workflowId: 'test-workflow',
         workflowSnapshot: workflow,
         variables: {},
         status: 'PENDING',
@@ -587,7 +577,7 @@ describe('API client', () => {
     const fetchImplementation = vi.fn(async () => Response.json(detail))
     const client = createApiClient({ fetch: fetchImplementation })
 
-    await expect(client.getRun('run-01')).resolves.toEqual(detail)
+    await expect(client.getRun('run-01')).rejects.toThrow()
     expect(fetchImplementation).toHaveBeenCalledWith('/api/runs/run-01', {
       headers: { accept: 'application/json' },
       method: 'GET',
@@ -697,7 +687,7 @@ describe('API client', () => {
       fetch: async () =>
         Response.json({
           status: 'CORRUPT',
-          locator: { workflowId: 'default-workflow', runId: 'run-corrupt-01' },
+          locator: { workflowId: 'test-workflow', runId: 'run-corrupt-01' },
           diagnostic: {
             code: 'RESOURCE_VALIDATION_FAILED',
             message: 'run.json is invalid',

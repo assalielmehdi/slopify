@@ -32,7 +32,6 @@ export interface SlopifyPaths {
   readonly workflowsDirectory: string
   readonly archiveDirectory: string
   readonly runtimeDirectory: string
-  readonly migrationsDirectory: string
   workflow(workflowId: string): SlopifyWorkflowPaths
   run(workflowId: string, runId: string): SlopifyRunPaths
 }
@@ -77,7 +76,6 @@ export const resolveSlopifyPaths = (
     workflowsDirectory,
     archiveDirectory,
     runtimeDirectory: join(home, 'runtime'),
-    migrationsDirectory: join(home, 'migrations'),
     workflow,
     run(workflowId, runId) {
       const workflowPaths = workflow(workflowId)

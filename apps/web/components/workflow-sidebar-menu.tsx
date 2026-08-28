@@ -163,7 +163,7 @@ export function WorkflowSidebarMenu({
   const [outcomes, setOutcomes] = useState<readonly WorkflowRunOutcome[]>([])
   const [outcomeStatus, setOutcomeStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [creating, setCreating] = useState(false)
-  const [creatingName, setCreatingName] = useState('')
+  const [creatingWorkflowId, setCreatingWorkflowId] = useState('')
   const [creatingError, setCreatingError] = useState<string | undefined>(undefined)
   const [saving, setSaving] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -219,11 +219,11 @@ export function WorkflowSidebarMenu({
     if (editorActive) onSelectedWorkflowChange?.(selectedWorkflow)
   }, [editorActive, onSelectedWorkflowChange, selectedWorkflow])
 
-  const validateName = (name: string): string | undefined => {
-    const parsed = WorkflowSlugSchema.safeParse(name)
+  const validateWorkflowId = (workflowId: string): string | undefined => {
+    const parsed = WorkflowSlugSchema.safeParse(workflowId)
     if (!parsed.success) return parsed.error.issues[0]?.message
-    if (workflows.some((workflow) => workflow.workflowId === name)) {
-      return 'A workflow with this name already exists.'
+    if (workflows.some((workflow) => workflow.workflowId === workflowId)) {
+      return 'A workflow with this ID already exists.'
     }
     return undefined
   }
@@ -231,26 +231,26 @@ export function WorkflowSidebarMenu({
   const startCreating = () => {
     setOpen(true)
     setCreating(true)
-    setCreatingName('')
+    setCreatingWorkflowId('')
     setCreatingError(undefined)
   }
 
   const cancelCreating = () => {
     setCreating(false)
-    setCreatingName('')
+    setCreatingWorkflowId('')
     setCreatingError(undefined)
   }
 
   const submitCreating = async () => {
-    const error = validateName(creatingName)
+    const error = validateWorkflowId(creatingWorkflowId)
     setCreatingError(error)
     if (error !== undefined || saving) return
 
     setSaving(true)
     try {
       const created = await client.createWorkflow({
-        workflowId: creatingName,
-        description: `${creatingName} workflow.`,
+        workflowId: creatingWorkflowId,
+        description: `${creatingWorkflowId} workflow.`,
       })
       setWorkflows((current) => [created, ...current])
       cancelCreating()
@@ -258,7 +258,7 @@ export function WorkflowSidebarMenu({
     } catch (cause) {
       setCreatingError(
         cause instanceof ApiClientError && cause.code === 'WORKFLOW_ID_CONFLICT'
-          ? 'A workflow with this name already exists.'
+          ? 'A workflow with this ID already exists.'
           : cause instanceof Error
             ? cause.message
             : 'Workflow could not be created.',
@@ -335,20 +335,20 @@ export function WorkflowSidebarMenu({
                 void submitCreating()
               }}
             >
-              <Label htmlFor="new-workflow-name">Name</Label>
+              <Label htmlFor="new-workflow-id">Workflow ID</Label>
               <Input
                 ref={inputRef}
-                aria-describedby={creatingError === undefined ? undefined : 'workflow-name-error'}
+                aria-describedby={creatingError === undefined ? undefined : 'workflow-id-error'}
                 aria-invalid={creatingError !== undefined}
-                aria-label="New workflow name"
+                aria-label="New workflow ID"
                 className="h-8 px-2 font-mono text-[13px]/4"
                 disabled={saving}
-                id="new-workflow-name"
+                id="new-workflow-id"
                 maxLength={64}
                 onChange={(event) => {
                   const value = event.currentTarget.value
-                  setCreatingName(value)
-                  setCreatingError(validateName(value))
+                  setCreatingWorkflowId(value)
+                  setCreatingError(validateWorkflowId(value))
                 }}
                 onKeyDown={(event) => {
                   if (event.key === 'Escape') {
@@ -359,10 +359,10 @@ export function WorkflowSidebarMenu({
                     void submitCreating()
                   }
                 }}
-                placeholder="workflow-name"
-                value={creatingName}
+                placeholder="workflow-id"
+                value={creatingWorkflowId}
               />
-              <FieldError id="workflow-name-error">{creatingError}</FieldError>
+              <FieldError id="workflow-id-error">{creatingError}</FieldError>
             </form>
           </PopoverContent>
         </Popover>

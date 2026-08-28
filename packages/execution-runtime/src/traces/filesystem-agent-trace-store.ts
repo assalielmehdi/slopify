@@ -1,6 +1,6 @@
 import { constants } from 'node:fs'
 import { lstat, mkdir, open, readFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 
 import {
   AgentExecutionEventSchema,
@@ -18,11 +18,6 @@ import { resolveNodeExecutionPaths } from '../runs/run-layout.js'
 
 const MAX_TRACE_BYTES = 67_108_864
 const MAX_RECORD_BYTES = 2_097_152
-const identifier = z
-  .string()
-  .min(1)
-  .max(128)
-  .regex(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/u)
 const terminalTypes = new Set(['AGENT_RESULT', 'AGENT_FAILED', 'AGENT_CANCELLED'])
 
 const headerRecordSchema = z.strictObject({
@@ -82,13 +77,6 @@ export interface RunAgentTraceStore {
   start(context: RunAgentTraceContext): Promise<void>
   append(context: RunAgentTraceContext, event: AgentExecutionEvent): Promise<void>
   read(input: RunAgentTraceReadInput): Promise<AgentTrace>
-}
-
-const validId = (value: string): string => {
-  const result = identifier.safeParse(value)
-  if (!result.success)
-    throw new AgentTraceStoreError('TRACE_REQUEST_INVALID', 'Trace identifier is invalid')
-  return result.data
 }
 
 const nodeErrorCode = (cause: unknown): string | undefined =>
@@ -263,40 +251,25 @@ const append = (
     }
   })
 
-export const createFilesystemAgentTraceStore = (options: {
-  readonly root: string
-}): AgentTraceStore => {
-  const tracePath = (input: TraceIdentity) =>
-    join(
-      options.root,
-      'runs',
-      validId(input.runId),
-      'executions',
-      validId(input.nodeExecutionId),
-      `${validId(input.attemptId)}.jsonl`,
-    )
-  return {
-    start(header) {
-      return start(tracePath(header), header)
-    },
-    append(header, event) {
-      return append(tracePath(header), header, event)
-    },
-    async read(input) {
-      return (await parse(tracePath(input), input)).trace
-    },
-  }
-}
-
 export const createRunFilesystemAgentTraceStore = (options: {
   readonly paths: Pick<SlopifyPaths, 'run'>
 }): RunAgentTraceStore => {
-  const tracePath = (input: RunAgentTraceReadInput) =>
-    resolveNodeExecutionPaths(
-      options.paths.run(input.workflowId, input.runId),
-      input.executionIndex,
-      input.nodeExecutionId,
-    ).traceFile
+  const tracePath = (input: RunAgentTraceReadInput) => {
+    try {
+      return resolveNodeExecutionPaths(
+        options.paths.run(input.workflowId, input.runId),
+        input.executionIndex,
+        input.nodeExecutionId,
+      ).traceFile
+    } catch (cause) {
+      if (cause instanceof TypeError) {
+        throw new AgentTraceStoreError('TRACE_REQUEST_INVALID', 'Trace identifier is invalid', {
+          cause,
+        })
+      }
+      throw cause
+    }
+  }
   return {
     start(context) {
       return start(tracePath({ ...context, ...context.header }), context.header)

@@ -34,8 +34,7 @@ async function loadInitialSettings(): Promise<SettingsSnapshot> {
 
 function createThemeScript(settings: SettingsSnapshot): string {
   const filePreference = JSON.stringify(settings.value.appearance.theme)
-  const allowLegacyPreference = settings.etag === '"missing"'
-  return `(function(){try{var preference=${filePreference};if(${String(allowLegacyPreference)}){var saved=localStorage.getItem('slopify-theme');if(saved==='light'||saved==='dark'||saved==='system')preference=saved;}var theme=preference==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):preference;document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.style.colorScheme=theme;}catch(_){}})();`
+  return `(function(){try{var preference=${filePreference};var theme=preference==='system'?(matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light'):preference;document.documentElement.classList.toggle('dark',theme==='dark');document.documentElement.style.colorScheme=theme;}catch(_){}})();`
 }
 
 export const metadata: Metadata = {

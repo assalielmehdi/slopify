@@ -108,7 +108,6 @@ describe('SettingsScreen', () => {
     )
     expect(dark.getAttribute('aria-checked')).toBe('true')
     expect(document.documentElement.classList.contains('dark')).toBe(true)
-    expect(window.localStorage.getItem('slopify-theme')).toBeNull()
   })
 
   it('validates and stores a PAT without ever rendering it back', async () => {

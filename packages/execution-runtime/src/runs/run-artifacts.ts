@@ -8,7 +8,7 @@ import {
   RunStatusSchema,
   WorkflowIdSchema,
 } from '@slopify/contracts'
-import { WorkflowFileReadSchema, WorkflowVariableNameSchema } from '@slopify/workflow-model'
+import { WorkflowFileSchema, WorkflowVariableNameSchema } from '@slopify/workflow-model'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 
@@ -32,7 +32,7 @@ export const RunWorkflowSnapshotSchema = z.strictObject({
   schemaVersion: z.literal(1),
   capturedAt: timestamp,
   workflowRevision: z.string().regex(/^[0-9a-f]{64}$/u),
-  workflow: WorkflowFileReadSchema,
+  workflow: WorkflowFileSchema,
 })
 
 export const RunVariablesSnapshotSchema = z.strictObject({
@@ -111,7 +111,7 @@ const RunWorkspaceProjectionSchema = z.strictObject({
   position: z.number().int().nonnegative().safe(),
   status: RunWorkspaceStatusSchema,
   workspacePath: absolutePath,
-  branchName: z.string().trim().min(1).max(512).nullable(),
+  branchName: z.string().trim().min(1).max(512),
   errorMessage: z.string().trim().min(1).max(4_096).nullable(),
   preparedAt: timestamp.nullable(),
   cleanedAt: timestamp.nullable(),

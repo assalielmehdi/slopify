@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 
-import { RunNodeDetailsDialog } from '@/components/runs/run-node-details-dialog'
+import { RunNodeDetailsPanel } from '@/components/runs/run-node-details-panel'
 import { RunStatusBadge } from '@/components/runs/run-status'
 import {
   type LiveRunClient,
@@ -54,7 +54,7 @@ export function LiveRun({
   const stream = useLiveRunStream({ client, connect, runId })
   const defaultNodeId = (() => {
     if (stream.detail === undefined) return undefined
-    const defaultStatuses = nodeStatusesFrom(stream.detail, stream.events)
+    const defaultStatuses = nodeStatusesFrom(stream.detail)
     const nodes = stream.detail.run.workflowSnapshot.nodes
     return (
       nodes.find(({ id }) => defaultStatuses[id] === 'RUNNING')?.id ??
@@ -77,7 +77,7 @@ export function LiveRun({
 
   const detail = stream.detail
   const status = runStatusFrom(detail.run.status, stream.events)
-  const statuses = nodeStatusesFrom(detail, stream.events)
+  const statuses = nodeStatusesFrom(detail)
   const cancellationRequested = stream.events.some(({ type }) => type === 'RUN_CANCEL_REQUESTED')
   const activeAgentIds: string[] = []
   for (const node of detail.run.workflowSnapshot.nodes) {
@@ -145,7 +145,7 @@ export function LiveRun({
         </p>
       </aside>
     ) : (
-      <RunNodeDetailsDialog
+      <RunNodeDetailsPanel
         execution={selectedExecution}
         node={selectedNode}
         repositories={detail.repositories}

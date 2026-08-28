@@ -100,19 +100,18 @@ describe('the application design foundation', () => {
     )
   })
 
-  it.each([
-    'components/settings/repository-settings.tsx',
-    'components/ui/sheet.tsx',
-    'components/ui/toast.tsx',
-  ])('%s uses the shared overlay elevation instead of an arbitrary heavy shadow', (path) => {
-    const component = source(path)
+  it.each(['components/settings/repository-settings.tsx', 'components/ui/toast.tsx'])(
+    '%s uses the shared overlay elevation instead of an arbitrary heavy shadow',
+    (path) => {
+      const component = source(path)
 
-    expect(component).not.toContain('shadow-2xl')
-    expect(component).toContain('shadow-[var(--shadow-overlay)]')
-  })
+      expect(component).not.toContain('shadow-2xl')
+      expect(component).toContain('shadow-[var(--shadow-overlay)]')
+    },
+  )
 
   it('keeps run agent details on the workspace surface instead of an overlay', () => {
-    const component = source('components/runs/run-node-details-dialog.tsx')
+    const component = source('components/runs/run-node-details-panel.tsx')
 
     expect(component).toContain('data-layout="workspace"')
     expect(component).not.toContain('shadow-[var(--shadow-overlay)]')
@@ -141,13 +140,12 @@ describe('the application design foundation', () => {
   it('sets the saved color scheme before the application hydrates', () => {
     const layout = source('app/layout.tsx')
 
-    expect(layout).toContain('slopify-theme')
+    expect(layout).toContain('settings.value.appearance.theme')
     expect(layout).toContain('suppressHydrationWarning')
   })
 
   it.each([
     'components/ui/button.tsx',
-    'components/ui/card.tsx',
     'components/ui/input.tsx',
     'components/ui/textarea.tsx',
     'components/ui/native-select.tsx',

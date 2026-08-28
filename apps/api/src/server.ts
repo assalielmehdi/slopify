@@ -1,5 +1,4 @@
 import { readdir } from 'node:fs/promises'
-import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 
 import {
@@ -42,7 +41,6 @@ import {
   registerShutdownSignals,
   type ShutdownCoordinator,
 } from './shutdown.js'
-import { prepareFilesystemStartup } from './startup-state.js'
 
 export type ServerConfigurationErrorCode =
   'API_HOST_INVALID' | 'API_PORT_INVALID' | 'API_SHUTDOWN_GRACE_INVALID'
@@ -245,13 +243,6 @@ export const startConfiguredApiServer = async (
 ): Promise<ApiServer> => {
   const configuration = resolveApiServerConfiguration(environment)
   const paths = resolveSlopifyPaths({ environment })
-  const legacyRoot =
-    environment.SLOPIFY_HOME === undefined ? join(paths.home, 'orchestrator') : paths.home
-  await prepareFilesystemStartup({
-    paths,
-    databasePath: join(legacyRoot, 'slopify.db'),
-    legacyTracesRoot: join(legacyRoot, 'traces'),
-  })
   const resourceEvents = createResourceEventFeed()
   const resourceWatcher = createEditableResourceWatcher({
     paths,

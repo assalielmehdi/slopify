@@ -360,7 +360,7 @@ text color of their role.
 
 - The workflow editor presents one selected current workflow graph at a time. Selection lives
   in the URL so refresh and browser history preserve it. The application breadcrumb reads
-  `Workflows > workflow-name`; do not add another selector or creation toolbar above the canvas.
+  `Workflows > workflow-id`; do not add another selector or creation toolbar above the canvas.
   Do not expose revision selectors, revision IDs, version ancestry, or publication controls.
 - Create workflows from the Workflows sidebar disclosure popover. Select a new workflow only
   after persistence succeeds. Edit the selected workflow's description, Repositories, primary
@@ -379,8 +379,8 @@ text color of their role.
   Slopify's live Repository catalog and apply to every agent in the workflow. Variables are
   an ordered list of unique, non-empty names requested whenever a run starts.
 - Delete the selected workflow from its configuration pane. Reuse the Repository deletion
-  confirmation transition: reveal and focus an adjacent name input, and enable confirmation
-  only when it exactly matches the workflow name. Preserve historical run snapshots and select
+  confirmation transition: reveal and focus an adjacent workflow ID input, and enable confirmation
+  only when it exactly matches the workflow ID. Preserve historical run snapshots and select
   the next current workflow after deletion.
 - Split the workspace below the application header into an adaptive graph pane on the left and
   a persistent details pane on the right. Size the graph pane from the widest parallel graph
@@ -395,9 +395,9 @@ text color of their role.
   field rows, and 32px between Name, Prompt, and Harness.
   Repeated section titles do not require a second visible field label; keep the label
   accessible to assistive technology without adding it to the visual rhythm.
-- Harness configuration is limited to the selected harness plus optional model and
-  thinking effort supported by that harness. Explain that the rest of harness setup is
-  external to Slopify.
+- Harness configuration contains the selected harness, optional model and thinking effort
+  supported by that harness, and the agent timeout. Explain that the rest of harness setup
+  is external to Slopify.
 
 ### Run variables
 
@@ -476,8 +476,9 @@ text color of their role.
 - A run is the immutable historical capture of its workflow, every agent configuration,
   and its configured variable values at admission. The detail UI always renders that
   capture; it must never fetch the current workflow to reconstruct historical state.
-- The top of the screen contains one wide ShadCN Card with the Run ID, Status, Started,
-  and Duration. A running run may keep a compact cancel action in this card.
+- Keep Started and Duration as a compact overlay at the graph's top-left. Keep Status and
+  the running run's compact cancel action together at the graph's top-right. Do not add a
+  separate summary card or repeat the Run ID already present in navigation.
 - The rest of the desktop screen is the read-only workflow canvas. Do not append
   additional summary sections beneath it.
 - The run graph uses the same adaptive left pane as the workflow editor. The persistent right

@@ -13,9 +13,8 @@ import {
 
 const timestamp = '2026-08-25T10:00:00.000Z'
 const workflow: Workflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'worker-review',
-  name: 'Worker review',
   description: 'Exercise the journal worker.',
   configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'review',
@@ -26,6 +25,7 @@ const workflow: Workflow = {
       name: 'Review',
       prompt: 'Review the change.',
       harness: { harnessId: 'pi' },
+      timeoutSeconds: 900,
     },
   ],
   edges: [],

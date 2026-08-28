@@ -1,5 +1,5 @@
 import {
-  WorkflowFileReadSchema,
+  WorkflowFileSchema,
   validateWorkflow,
   workflowFileToWorkflow,
   type WorkflowFile,
@@ -79,7 +79,7 @@ export const parseWorkflowSource = (input: {
       ],
     })
   }
-  const parsed = WorkflowFileReadSchema.safeParse(value)
+  const parsed = WorkflowFileSchema.safeParse(value)
   if (!parsed.success) {
     return invalidWorkflowSource({
       ...input,

@@ -67,12 +67,6 @@ function getBreadcrumbs(
       },
     ]
   }
-  if (pathname === '/runs/new') {
-    return [
-      { href: '/runs', label: 'Runs' },
-      { href: '/runs/new', label: 'New run' },
-    ]
-  }
   if (pathname.startsWith('/runs/')) {
     return [
       { href: '/runs', label: 'Runs' },
@@ -135,7 +129,7 @@ function AppShellContent({
   const breadcrumbs = getBreadcrumbs(pathname, selectedWorkflow)
   const isSettings = pathname === '/settings'
   const isEditor = pathname === '/'
-  const isRunDetail = pathname.startsWith('/runs/') && pathname !== '/runs/new'
+  const isRunDetail = pathname.startsWith('/runs/')
   const usesOwnPageSpacing =
     ['/harnesses', '/repositories', '/runs'].includes(pathname) ||
     isEditor ||

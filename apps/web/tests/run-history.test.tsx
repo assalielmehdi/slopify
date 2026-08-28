@@ -12,7 +12,7 @@ import { formatRunHistoryTimestamp, formatTimestamp } from '../lib/run-format'
 
 const runSummary = {
   runId: RunIdSchema.parse('run-newest'),
-  workflowId: WorkflowIdSchema.parse('default-workflow'),
+  workflowId: WorkflowIdSchema.parse('test-workflow'),
   status: 'SUCCEEDED',
   createdAt: '2026-08-20T11:00:00Z',
   startedAt: '2026-08-20T11:00:01Z',
@@ -22,7 +22,7 @@ const runSummary = {
 
 const workflowOptions = [
   createWorkflowDraft({
-    workflowId: 'default-workflow',
+    workflowId: 'test-workflow',
     description: 'Default workflow.',
     configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: '2026-08-20T10:00:00Z',
@@ -87,7 +87,24 @@ describe('run history API client', () => {
       data: [runSummary, { ...runSummary, runId: 'run-older' }],
       pagination: { page: 2, pageSize: 20, totalItems: 22, totalPages: 2 },
     }
-    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(Response.json(page))
+    const response = {
+      data: page.data.map(({ durationMs, ...run }) => {
+        void durationMs
+        return {
+          status: 'READY',
+          locator: { workflowId: run.workflowId, runId: run.runId },
+          run: {
+            schemaVersion: 1,
+            ...run,
+            transitionCount: 1,
+            lastEventSequence: 4,
+            failureCode: null,
+          },
+        }
+      }),
+      pagination: page.pagination,
+    }
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(Response.json(response))
     const client = createApiClient({ fetch: fetchImplementation })
 
     await expect(
@@ -95,14 +112,14 @@ describe('run history API client', () => {
         page: 2,
         pageSize: 20,
         runId: 'api-1',
-        workflowIds: ['default-workflow', 'release-workflow'],
+        workflowIds: ['test-workflow', 'release-workflow'],
         repositoryIds: ['repository-api', 'repository-web'],
         statuses: ['FAILED', 'CANCELLED'],
         durationMinMs: 1_000,
       }),
     ).resolves.toEqual(page)
     expect(fetchImplementation).toHaveBeenCalledWith(
-      '/api/runs?page=2&pageSize=20&runId=api-1&workflowId=default-workflow&workflowId=release-workflow&repositoryId=repository-api&repositoryId=repository-web&status=FAILED&status=CANCELLED&durationMinMs=1000',
+      '/api/runs?page=2&pageSize=20&runId=api-1&workflowId=test-workflow&workflowId=release-workflow&repositoryId=repository-api&repositoryId=repository-web&status=FAILED&status=CANCELLED&durationMinMs=1000',
       expect.any(Object),
     )
   })
@@ -169,7 +186,7 @@ describe('run history page', () => {
     const valid = await RunsPage({
       searchParams: Promise.resolve({
         page: '3',
-        workflowId: ['default-workflow', 'release-workflow', 'invalid workflow'],
+        workflowId: ['test-workflow', 'release-workflow', 'invalid workflow'],
         repositoryId: ['repository-api', 'repository-web', '../invalid'],
         status: ['FAILED', 'invalid'],
         startedFrom: '2026-08-20',
@@ -179,11 +196,11 @@ describe('run history page', () => {
     const invalid = await RunsPage({ searchParams: Promise.resolve({ page: ['3', '4'] }) })
 
     expect(valid).toMatchObject({
-      key: 'page=3&workflowId=default-workflow&workflowId=release-workflow&repositoryId=repository-api&repositoryId=repository-web&status=FAILED&startedFrom=2026-08-20&durationMinSeconds=1.5',
+      key: 'page=3&workflowId=test-workflow&workflowId=release-workflow&repositoryId=repository-api&repositoryId=repository-web&status=FAILED&startedFrom=2026-08-20&durationMinSeconds=1.5',
       props: {
         page: 3,
         initialFilters: {
-          workflowIds: ['default-workflow', 'release-workflow'],
+          workflowIds: ['test-workflow', 'release-workflow'],
           repositoryIds: ['repository-api', 'repository-web'],
           statuses: ['FAILED'],
           startedFrom: '2026-08-20',
@@ -384,7 +401,7 @@ describe('run history page', () => {
         client={runHistoryClient(listRuns)}
         initialFilters={{
           runId: 'newest',
-          workflowIds: [WorkflowIdSchema.parse('default-workflow')],
+          workflowIds: [WorkflowIdSchema.parse('test-workflow')],
           repositoryIds: [],
           statuses: ['SUCCEEDED'],
           startedFrom: '',
@@ -432,14 +449,14 @@ describe('run history page', () => {
     await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
     fireEvent.click(await screen.findByRole('button', { name: 'Workflow' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'default-workflow' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'test-workflow' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'release-workflow' }))
 
     await waitFor(() =>
       expect(listRuns).toHaveBeenLastCalledWith({
         page: 1,
         pageSize: 20,
-        workflowIds: ['default-workflow', 'release-workflow'],
+        workflowIds: ['test-workflow', 'release-workflow'],
       }),
     )
     expect(
@@ -448,7 +465,7 @@ describe('run history page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to filter attributes' }))
     expect(screen.getByRole('button', { name: 'Workflow, 2 selected' })).toBeTruthy()
-    expect(screen.getByText('Workflow: default-workflow, release-workflow')).toBeTruthy()
+    expect(screen.getByText('Workflow: test-workflow, release-workflow')).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Repositories' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'API, operator/api' }))
     fireEvent.click(screen.getByRole('checkbox', { name: 'Web, operator/web' }))
@@ -457,7 +474,7 @@ describe('run history page', () => {
       expect(listRuns).toHaveBeenLastCalledWith({
         page: 1,
         pageSize: 20,
-        workflowIds: ['default-workflow', 'release-workflow'],
+        workflowIds: ['test-workflow', 'release-workflow'],
         repositoryIds: ['repository-api', 'repository-web'],
       }),
     )

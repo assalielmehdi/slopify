@@ -16,16 +16,16 @@ export const WORKFLOW_VALIDATION_CODES = [
   'NODE_UNREACHABLE',
 ] as const
 
-export type WorkflowValidationCode = (typeof WORKFLOW_VALIDATION_CODES)[number]
-export type WorkflowValidationPath = readonly (string | number)[]
+type WorkflowValidationCode = (typeof WORKFLOW_VALIDATION_CODES)[number]
+type WorkflowValidationPath = readonly (string | number)[]
 
-export interface WorkflowValidationFinding {
+interface WorkflowValidationFinding {
   readonly code: WorkflowValidationCode
   readonly path: WorkflowValidationPath
   readonly message: string
 }
 
-export type WorkflowValidationResult =
+type WorkflowValidationResult =
   | Readonly<{
       valid: true
       workflow: Workflow

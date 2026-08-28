@@ -18,7 +18,7 @@ import {
   createProcessRunner,
   type ProcessRunner,
 } from '../../src/index.js'
-import { createPersistenceFixture, createTestAgentWorkflow } from '../persistence/test-fixture.js'
+import { createRuntimeFixture, createTestAgentWorkflow } from '../support/runtime-fixture.js'
 
 const timestamp = '2026-08-24T00:00:00Z'
 const directories: string[] = []
@@ -53,7 +53,7 @@ const createRemote = () => {
 }
 
 const createRun = (
-  fixture: ReturnType<typeof createPersistenceFixture>,
+  fixture: ReturnType<typeof createRuntimeFixture>,
   runId: string,
   baseSha: string,
 ) =>
@@ -100,7 +100,7 @@ describe('native Git run workspace provisioner', () => {
       repositoryIds: ['repository-api'],
       primaryRepositoryId: 'repository-api',
     })
-    const fixture = createPersistenceFixture(workflow)
+    const fixture = createRuntimeFixture(workflow)
 
     try {
       createRun(fixture, 'run-clone', remote.baseSha)
@@ -152,7 +152,7 @@ describe('native Git run workspace provisioner', () => {
       repositoryIds: ['repository-api'],
       primaryRepositoryId: 'repository-api',
     })
-    const fixture = createPersistenceFixture(workflow)
+    const fixture = createRuntimeFixture(workflow)
 
     try {
       createRun(fixture, 'run-one', remote.baseSha)
@@ -184,7 +184,7 @@ describe('native Git run workspace provisioner', () => {
       repositoryIds: ['repository-api'],
       primaryRepositoryId: 'repository-api',
     })
-    const fixture = createPersistenceFixture(workflow)
+    const fixture = createRuntimeFixture(workflow)
 
     try {
       createRun(fixture, 'run-cleanup', remote.baseSha)
@@ -217,7 +217,7 @@ describe('native Git run workspace provisioner', () => {
       repositoryIds: ['repository-api'],
       primaryRepositoryId: 'repository-api',
     })
-    const fixture = createPersistenceFixture(workflow)
+    const fixture = createRuntimeFixture(workflow)
     mkdirSync(root, { recursive: true })
     symlinkSync(relocated, join(root, 'run-linked'), 'dir')
 
@@ -250,7 +250,7 @@ describe('native Git run workspace provisioner', () => {
       repositoryIds: ['repository-api'],
       primaryRepositoryId: 'repository-api',
     })
-    const fixture = createPersistenceFixture(workflow)
+    const fixture = createRuntimeFixture(workflow)
 
     try {
       createRun(fixture, 'run-linked-root', remote.baseSha)

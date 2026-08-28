@@ -5,7 +5,6 @@ import { describe, expect, it } from 'vitest'
 const pageShellSources = [
   'components/runs/live-run.tsx',
   'components/runs/run-history.tsx',
-  'components/runs/start-run-form.tsx',
   'components/settings/harness-settings.tsx',
 ] as const
 

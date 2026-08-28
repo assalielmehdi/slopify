@@ -1,22 +1,14 @@
-import { rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
 import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
 import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
 
 import {
   type HarnessCatalog,
   type AgentNodeRunRecord,
-  type RepositoryRecord,
   type RunRepositoryResolution,
   type RunRepositorySnapshotArtifact,
   type RunWorkspaceProjection,
   type JsonValue,
 } from '../../src/index.js'
-import {
-  createLegacyTestDatabase,
-  type LegacyTestDatabase,
-} from '../migration/legacy-database-fixture.js'
 
 export const TEST_TIMESTAMP = '2026-08-23T12:00:00.000Z'
 export const TEST_WORKFLOW_ID = WorkflowIdSchema.parse('test-workflow')
@@ -114,37 +106,6 @@ export const createTestRunRepositories = (workflow: Workflow): readonly RunRepos
         : `https://github.com/operator/${repositoryId}.git`,
   }))
 
-export const insertLegacyRepository = (
-  database: LegacyTestDatabase,
-  repository: RepositoryRecord,
-): void => {
-  database
-    .prepare(
-      `INSERT INTO repositories (
-         repository_id, name, provider, remote_id, repository_full_name,
-         clone_url, web_url, default_branch, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-    .run(
-      repository.repositoryId,
-      repository.name,
-      repository.provider,
-      repository.remoteId,
-      repository.fullName,
-      repository.cloneUrl,
-      repository.webUrl,
-      repository.defaultBranch,
-      repository.createdAt,
-      repository.updatedAt,
-    )
-}
-
-export const insertLegacyWorkflow = (database: LegacyTestDatabase, workflow: Workflow): void => {
-  database
-    .prepare('INSERT INTO workflows (workflow_id, definition_json) VALUES (?, json(?))')
-    .run(workflow.workflowId, JSON.stringify(workflow))
-}
-
 interface TestWorkflowCatalog {
   get(workflowId: string): Workflow | undefined
   save(workflow: Workflow): void
@@ -190,12 +151,17 @@ const createTestRunStore = () => {
       ?.find(({ repositoryId }) => repositoryId === input.repositoryId)
     if (repository === undefined) throw new Error('Test repository was not found')
     const current = entries.find(({ repositoryId }) => repositoryId === input.repositoryId)
+    const workspacePath = input.workspacePath ?? current?.workspacePath
+    const branchName = input.branchName ?? current?.branchName
+    if (workspacePath === undefined || branchName === undefined) {
+      throw new Error('Test workspace was not prepared')
+    }
     const next: RunWorkspaceProjection = {
       repositoryId: repository.repositoryId,
       position: repository.position,
       status,
-      workspacePath: input.workspacePath ?? current?.workspacePath ?? '',
-      branchName: input.branchName ?? current?.branchName ?? null,
+      workspacePath,
+      branchName,
       errorMessage: input.errorMessage ?? null,
       preparedAt: status === 'READY' ? input.timestamp : (current?.preparedAt ?? null),
       cleanedAt: status === 'CLEANED' ? input.timestamp : null,
@@ -257,25 +223,14 @@ const createTestRunStore = () => {
   }
 }
 
-export const createPersistenceFixture = (workflow = createTestAgentWorkflow()) => {
-  const directory = join(tmpdir(), `slopify-persistence-${crypto.randomUUID()}`)
-  const path = join(directory, 'state', 'slopify.db')
-  const database = createLegacyTestDatabase(path)
+export const createRuntimeFixture = (workflow = createTestAgentWorkflow()) => {
   const workflows = createTestWorkflowCatalog(workflow)
   const runs = createTestRunStore()
-
-  insertLegacyWorkflow(database, workflow)
-
-  const cleanup = (): void => {
-    if (database.open) database.close()
-    rmSync(directory, { force: true, recursive: true })
-  }
-
-  return { database, path, workflow, runs, workflows, cleanup }
+  return { workflow, runs, workflows, cleanup: () => undefined }
 }
 
 export const createRun = (
-  fixture: ReturnType<typeof createPersistenceFixture>,
+  fixture: ReturnType<typeof createRuntimeFixture>,
   workflowSnapshot: Workflow = fixture.workflow,
   variables: Readonly<Record<string, JsonValue>> = {},
 ) => {
@@ -287,43 +242,5 @@ export const createRun = (
     createdAt: TEST_TIMESTAMP,
     repositories: createTestRunRepositories(workflowSnapshot),
   }
-  const record = fixture.runs.create(input)
-  const connection = fixture.database
-  connection
-    .prepare(
-      `INSERT INTO runs (
-         run_id, workflow_id, variables_json, workflow_snapshot_json, status,
-         transition_count, created_at, started_at, completed_at
-       ) VALUES (?, ?, json(?), json(?), 'PENDING', 0, ?, NULL, NULL)`,
-    )
-    .run(
-      input.runId,
-      input.workflowId,
-      JSON.stringify(input.variables),
-      JSON.stringify(input.workflowSnapshot),
-      input.createdAt,
-    )
-  for (const [position, repository] of input.repositories.entries()) {
-    connection
-      .prepare(
-        `INSERT INTO run_repositories (
-           run_id, repository_id, repository_position, name, provider, remote_id,
-           repository_full_name, clone_url, default_branch, base_sha, is_primary
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        input.runId,
-        repository.repositoryId,
-        position,
-        repository.name,
-        repository.provider,
-        repository.remoteId,
-        repository.fullName,
-        repository.cloneUrl,
-        repository.defaultBranch,
-        repository.baseSha,
-        repository.repositoryId === workflowSnapshot.configuration.primaryRepositoryId ? 1 : 0,
-      )
-  }
-  return record
+  return fixture.runs.create(input)
 }

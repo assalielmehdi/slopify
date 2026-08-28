@@ -23,9 +23,8 @@ afterEach(() => {
 })
 
 const workflow: WorkflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'feed-review',
-  name: 'Feed review',
   description: 'Exercise journal cursors.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -41,6 +40,7 @@ const workflow: WorkflowFile = {
         name: 'Review',
         prompt: 'Review.',
         harness: { harnessId: 'pi' },
+        timeoutSeconds: 900,
       },
     ],
     edges: [],

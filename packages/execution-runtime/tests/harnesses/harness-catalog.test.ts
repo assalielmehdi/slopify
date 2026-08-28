@@ -13,8 +13,8 @@ const availablePi = {
   installLabel: 'Install Pi',
   models: [
     {
-      id: 'openai-codex/gpt-5.4',
-      name: 'openai-codex/gpt-5.4',
+      id: 'test/model',
+      name: 'Test model',
       thinkingLevels: ['off', 'low', 'medium', 'high'] as const,
     },
   ],
@@ -57,12 +57,10 @@ describe('harness catalog', () => {
       inspectors: [{ harnessId: 'pi', inspect: async () => availablePi }],
     })
 
-    await expect(catalog.requireAvailable('pi', 'openai-codex/gpt-5.4', 'high')).resolves.toEqual(
-      availablePi,
-    )
-    await expect(
-      catalog.requireAvailable('pi', 'openai-codex/gpt-5.4', 'max'),
-    ).rejects.toMatchObject({ code: 'HARNESS_THINKING_UNAVAILABLE' })
+    await expect(catalog.requireAvailable('pi', 'test/model', 'high')).resolves.toEqual(availablePi)
+    await expect(catalog.requireAvailable('pi', 'test/model', 'max')).rejects.toMatchObject({
+      code: 'HARNESS_THINKING_UNAVAILABLE',
+    })
     await expect(catalog.requireAvailable('pi', 'missing/model')).rejects.toMatchObject({
       code: 'HARNESS_MODEL_UNAVAILABLE',
     } satisfies Partial<HarnessCatalogError>)

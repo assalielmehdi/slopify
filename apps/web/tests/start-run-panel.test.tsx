@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/contracts'
 import { WorkflowSchema } from '@slopify/workflow-model'
 
-import { StartRunDrawer } from '../components/runs/start-run-drawer'
+import { StartRunPanel } from '../components/runs/start-run-panel'
 import type { ApiClient, StartRunResponse } from '../lib/api-client'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
@@ -68,7 +68,7 @@ afterEach(() => {
   push.mockReset()
 })
 
-describe('StartRunDrawer', () => {
+describe('StartRunPanel', () => {
   it('starts the current workflow from a variables-only workspace panel', async () => {
     const startRun = vi.fn(async () => startedRun)
     const client = {
@@ -80,7 +80,7 @@ describe('StartRunDrawer', () => {
     const onStarted = vi.fn()
 
     render(
-      <StartRunDrawer
+      <StartRunPanel
         client={client}
         onClose={vi.fn()}
         onStarted={onStarted}
@@ -126,7 +126,7 @@ describe('StartRunDrawer', () => {
     } as Pick<ApiClient, 'listHarnesses' | 'listRepositories' | 'listWorkflows' | 'startRun'>
     const onClose = vi.fn()
 
-    render(<StartRunDrawer client={client} onClose={onClose} workflowId={workflow.workflowId} />)
+    render(<StartRunPanel client={client} onClose={onClose} workflowId={workflow.workflowId} />)
 
     const panel = await screen.findByRole('complementary', { name: 'Run' })
     expect(panel.getAttribute('data-layout')).toBe('workspace')

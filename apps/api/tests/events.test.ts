@@ -27,9 +27,8 @@ const eventIds = (body: string): number[] =>
   [...body.matchAll(/^id: (\d+)$/gm)].map((match) => Number(match[1]))
 
 const filesystemWorkflow: WorkflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'event-review',
-  name: 'Event review',
   description: 'Exercise the filesystem event API.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -45,6 +44,7 @@ const filesystemWorkflow: WorkflowFile = {
         name: 'Review',
         prompt: 'Review.',
         harness: { harnessId: 'pi' },
+        timeoutSeconds: 900,
       },
     ],
     edges: [],

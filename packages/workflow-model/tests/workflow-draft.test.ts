@@ -1,14 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  DEFAULT_WORKFLOW_ID,
-  DEFAULT_WORKFLOW_TRANSITION_LIMIT,
-  createDefaultWorkflow,
-  createWorkflowDraft,
-  validateWorkflow,
-} from '../src/index.js'
+import { WORKFLOW_DRAFT_TRANSITION_LIMIT, createWorkflowDraft } from '../src/index.js'
 
-describe('default workflow', () => {
+describe('workflow draft', () => {
   it('creates a canonical empty draft with caller-provided identity and configuration', () => {
     const workflow = createWorkflowDraft({
       workflowId: 'release-workflow',
@@ -33,24 +27,9 @@ describe('default workflow', () => {
       startNodeId: null,
       nodes: [],
       edges: [],
-      maxTransitions: DEFAULT_WORKFLOW_TRANSITION_LIMIT,
+      maxTransitions: WORKFLOW_DRAFT_TRANSITION_LIMIT,
       createdAt: '2026-08-24T13:00:00.000Z',
       updatedAt: '2026-08-24T13:00:00.000Z',
     })
-  })
-
-  it('creates one neutral empty draft', () => {
-    const workflow = createDefaultWorkflow({ createdAt: '2026-08-23T00:00:00.000Z' })
-
-    expect(workflow).toMatchObject({
-      workflowId: DEFAULT_WORKFLOW_ID,
-      description: 'Add agents and connect them to build a workflow.',
-      configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
-      startNodeId: null,
-      nodes: [],
-      edges: [],
-      maxTransitions: DEFAULT_WORKFLOW_TRANSITION_LIMIT,
-    })
-    expect(validateWorkflow(workflow)).toMatchObject({ valid: true, findings: [] })
   })
 })

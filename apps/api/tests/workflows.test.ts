@@ -12,7 +12,7 @@ import {
 import { WorkflowFileSchema, type WorkflowFile } from '@slopify/workflow-model'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/persistence/test-fixture.js'
+import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/support/runtime-fixture.js'
 import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []
@@ -83,7 +83,7 @@ describe('workflow API', () => {
     ).toEqual(value)
   })
 
-  it('rejects a second display name beside the canonical workflow name', async () => {
+  it('rejects unknown workflow creation fields', async () => {
     const { app } = createFixture()
 
     const response = await app.request('/api/workflows', {
@@ -91,7 +91,7 @@ describe('workflow API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflowId: 'test',
-        name: 'test wer',
+        unexpected: true,
         description: 'Test workflow.',
       }),
     })

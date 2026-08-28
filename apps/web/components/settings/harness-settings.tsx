@@ -30,7 +30,7 @@ function HarnessIcon({ harness }: Readonly<{ harness: HarnessDescriptor }>) {
   return (
     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
       {harness.harnessId === 'codex' ? (
-        <Image alt="ChatGPT" height={20} src="/chatgpt-logo.svg" width={20} />
+        <Image alt="Codex" height={20} src="/codex-logo.svg" width={20} />
       ) : (
         <Image alt="Pi" height={20} src="/pi-badge.svg" width={20} />
       )}

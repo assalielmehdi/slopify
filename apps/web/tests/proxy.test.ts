@@ -63,7 +63,7 @@ describe('same-origin API proxy', () => {
     await POST(
       new Request('http://127.0.0.1:7310/api/runs', {
         body: JSON.stringify({
-          workflowId: 'default-workflow',
+          workflowId: 'test-workflow',
           variables: { task: 'SLOPIFY-40' },
         }),
         headers: { 'content-type': 'application/json' },
@@ -77,7 +77,7 @@ describe('same-origin API proxy', () => {
     expect(forwardedRequest.method).toBe('POST')
     expect(forwardedRequest.headers.get('content-type')).toBe('application/json')
     await expect(forwardedRequest.json()).resolves.toEqual({
-      workflowId: 'default-workflow',
+      workflowId: 'test-workflow',
       variables: { task: 'SLOPIFY-40' },
     })
   })
@@ -124,7 +124,7 @@ describe('same-origin API proxy', () => {
     )
 
     const response = await PUT(
-      new Request('http://127.0.0.1:7310/api/workflows/default-workflow', {
+      new Request('http://127.0.0.1:7310/api/workflows/test-workflow', {
         body: '{}',
         method: 'PUT',
       }),

@@ -6,10 +6,10 @@ const agent = (id: string) => ({
   type: 'agent' as const,
   id,
   name: id,
-  prompt: 'Review the selected worktrees and complete the node.',
+  prompt: 'Review the selected repository clones and complete the node.',
   harness: {
     harnessId: 'pi' as const,
-    modelId: 'openai-codex/gpt-5.4',
+    modelId: 'test/model',
     thinkingLevel: 'high' as const,
   },
 })

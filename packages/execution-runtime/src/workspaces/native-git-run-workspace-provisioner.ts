@@ -164,19 +164,11 @@ export const createNativeGitRunWorkspaceProvisioner = (
     state: RunWorkspaceProjection | undefined,
     runDirectory: string,
   ): Promise<ProvisionedRunRepository> => {
-    if (
-      repository.provider === null ||
-      repository.remoteId === null ||
-      repository.defaultBranch === null
-    ) {
-      throw new GitWorkspaceError('Legacy local repositories cannot provision cloned workspaces')
-    }
     const workspacePath = join(runDirectory, repository.repositoryId)
     const branchName = `slopify/${runId}`
     if (
       state !== undefined &&
-      (resolve(state.workspacePath) !== workspacePath ||
-        (state.branchName !== null && state.branchName !== branchName))
+      (resolve(state.workspacePath) !== workspacePath || state.branchName !== branchName)
     ) {
       throw new GitWorkspaceError('Persisted run repository workspace is not deterministic')
     }

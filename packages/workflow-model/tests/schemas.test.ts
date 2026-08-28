@@ -17,7 +17,7 @@ const agentNode = {
   prompt: 'Create an execution plan for {{ objective }}.',
   harness: {
     harnessId: 'pi',
-    modelId: 'openai-codex/gpt-5.4',
+    modelId: 'test/model',
     thinkingLevel: 'high',
   },
   timeoutSeconds: 900,
@@ -90,9 +90,7 @@ describe('workflow document contract', () => {
 
     expect(CreateWorkflowInputSchema.parse(input)).toEqual(input)
     expectTypeOf(CreateWorkflowInputSchema.parse(input)).toEqualTypeOf<CreateWorkflowInput>()
-    expect(
-      CreateWorkflowInputSchema.safeParse({ ...input, name: 'Release workflow' }).success,
-    ).toBe(false)
+    expect(CreateWorkflowInputSchema.safeParse({ ...input, unexpected: true }).success).toBe(false)
     expect(
       CreateWorkflowInputSchema.safeParse({ ...input, workflowId: 'release workflow' }).success,
     ).toBe(false)
@@ -101,10 +99,10 @@ describe('workflow document contract', () => {
     )
   })
 
-  it('accepts only canonical workflow names', () => {
+  it('accepts only canonical workflow IDs', () => {
     expect(WorkflowSlugSchema.parse('release-2026')).toBe('release-2026')
 
-    for (const name of [
+    for (const workflowId of [
       'Release-workflow',
       'release workflow',
       '-release',
@@ -113,7 +111,7 @@ describe('workflow document contract', () => {
       'release_workflow',
       'a'.repeat(65),
     ]) {
-      expect(WorkflowSlugSchema.safeParse(name).success).toBe(false)
+      expect(WorkflowSlugSchema.safeParse(workflowId).success).toBe(false)
     }
   })
 
@@ -126,8 +124,8 @@ describe('workflow document contract', () => {
     expect(WorkflowSchema.safeParse({ ...workflow, configuration: undefined }).success).toBe(false)
   })
 
-  it('does not allow a second workflow name beside its canonical identity', () => {
-    expect(WorkflowSchema.safeParse({ ...workflow, name: 'A display name' }).success).toBe(false)
+  it('rejects unknown workflow fields', () => {
+    expect(WorkflowSchema.safeParse({ ...workflow, unexpected: true }).success).toBe(false)
   })
 
   it('rejects unknown agent configuration instead of transforming it', () => {

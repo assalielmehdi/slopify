@@ -34,7 +34,7 @@ const expectedRevision = (header: string | undefined): ResourceRevision | null =
   return ResourceRevisionSchema.parse(match[1])
 }
 
-const versionedJson = (
+const jsonWithEtag = (
   context: Context,
   body: WorkflowDefinitionCatalogEntry | WorkflowSource,
   status: 200 | 201,
@@ -52,7 +52,7 @@ export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowDefinitionS
 
   app.post('/api/workflows', async (context) => {
     const created = await workflows.create(await parseJsonBody(context))
-    return versionedJson(context, created, 201)
+    return jsonWithEtag(context, created, 201)
   })
 
   app.delete('/api/workflows/:workflowId', async (context) => {
@@ -61,11 +61,11 @@ export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowDefinitionS
   })
 
   app.get('/api/workflows/:workflowId/source', async (context) =>
-    versionedJson(context, await workflows.getSource(context.req.param('workflowId')), 200),
+    jsonWithEtag(context, await workflows.getSource(context.req.param('workflowId')), 200),
   )
 
   app.get('/api/workflows/:workflowId', async (context) =>
-    versionedJson(context, await workflows.get(context.req.param('workflowId')), 200),
+    jsonWithEtag(context, await workflows.get(context.req.param('workflowId')), 200),
   )
 
   app.put('/api/workflows/:workflowId', async (context) => {
@@ -73,6 +73,6 @@ export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowDefinitionS
       value: await parseJsonBody(context),
       expectedRevision: expectedRevision(context.req.header('if-match')),
     })
-    return versionedJson(context, updated, 200)
+    return jsonWithEtag(context, updated, 200)
   })
 }
