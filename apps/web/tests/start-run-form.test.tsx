@@ -35,7 +35,6 @@ const workflow = WorkflowSchema.parse({
 const releaseWorkflow = WorkflowSchema.parse({
   ...workflow,
   workflowId: 'release-workflow',
-  name: 'Release workflow',
   configuration: { ...workflow.configuration, variables: ['release'] },
 })
 
@@ -128,7 +127,9 @@ describe('StartRunForm', () => {
     expect(((await screen.findByLabelText('Workflow')) as HTMLSelectElement).value).toBe(
       'default-workflow',
     )
-    expect(replace).toHaveBeenCalledWith('/runs/new?workflowId=default-workflow')
+    await waitFor(() =>
+      expect(replace).toHaveBeenCalledWith('/runs/new?workflowId=default-workflow'),
+    )
   })
 
   it('prelists only workflow-configured variables', async () => {

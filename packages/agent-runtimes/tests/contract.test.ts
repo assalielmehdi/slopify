@@ -11,6 +11,7 @@ const executionInput = {
   executionId: 'execution-01',
   runId: 'run-01',
   nodeId: 'plan',
+  artifactsPath: '/runs/run-01/artifacts',
   workspace: {
     rootPath: '/workspaces/run-01',
     primaryRepositoryId: 'backend',
@@ -79,6 +80,7 @@ describe('agent execution input contract', () => {
     ['execution ID', { ...executionInput, executionId: undefined }],
     ['run ID', { ...executionInput, runId: undefined }],
     ['node ID', { ...executionInput, nodeId: undefined }],
+    ['artifacts path', { ...executionInput, artifactsPath: 'artifacts' }],
     ['thinking level', { ...executionInput, thinkingLevel: 'extreme' }],
     ['rendered prompt', { ...executionInput, renderedPrompt: '  ' }],
     ['declared outcomes', { ...executionInput, declaredOutcomes: [] }],

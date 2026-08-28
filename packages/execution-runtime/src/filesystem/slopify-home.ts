@@ -19,6 +19,7 @@ export interface SlopifyRunPaths {
   readonly repositoriesSnapshotFile: string
   readonly workspacesFile: string
   readonly eventsFile: string
+  readonly artifactsDirectory: string
   readonly nodesDirectory: string
   readonly workspacesDirectory: string
 }
@@ -29,6 +30,7 @@ export interface SlopifyPaths {
   readonly repositoriesFile: string
   readonly schemasDirectory: string
   readonly workflowsDirectory: string
+  readonly archiveDirectory: string
   readonly runtimeDirectory: string
   readonly migrationsDirectory: string
   workflow(workflowId: string): SlopifyWorkflowPaths
@@ -55,6 +57,7 @@ export const resolveSlopifyPaths = (
     throw new TypeError('SLOPIFY_HOME must not be blank')
   const home = resolve(configuredHome ?? join(options.homeDirectory ?? homedir(), '.slopify'))
   const workflowsDirectory = join(home, 'workflows')
+  const archiveDirectory = join(home, 'archive')
 
   const workflow = (workflowId: string): SlopifyWorkflowPaths => {
     const safeWorkflowId = identifier('Workflow ID', WorkflowSlugSchema, workflowId)
@@ -72,6 +75,7 @@ export const resolveSlopifyPaths = (
     repositoriesFile: join(home, 'repositories.json'),
     schemasDirectory: join(home, 'schemas'),
     workflowsDirectory,
+    archiveDirectory,
     runtimeDirectory: join(home, 'runtime'),
     migrationsDirectory: join(home, 'migrations'),
     workflow,
@@ -87,6 +91,7 @@ export const resolveSlopifyPaths = (
         repositoriesSnapshotFile: join(directory, 'repositories.snapshot.json'),
         workspacesFile: join(directory, 'workspaces.json'),
         eventsFile: join(directory, 'events.jsonl'),
+        artifactsDirectory: join(directory, 'artifacts'),
         nodesDirectory: join(directory, 'nodes'),
         workspacesDirectory: join(directory, 'workspaces'),
       }

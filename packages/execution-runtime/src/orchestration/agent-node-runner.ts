@@ -28,7 +28,9 @@ export interface AgentNodeRunRecord {
   readonly variables: Readonly<Record<string, JsonValue>>
 }
 
-const AGENT_EXECUTION_TIMEOUT_SECONDS = 300
+export interface RunArtifactDirectory {
+  ensure(runId: RunId): Promise<string>
+}
 
 const failed = (code: string, message: string) => ({
   status: 'failed' as const,
@@ -77,6 +79,7 @@ export const createAgentNodeRunner = (
   options: Readonly<{
     harnesses: Pick<HarnessCatalog, 'requireAvailable'>
     resolveHarness(harnessId: string): AgentExecutor | undefined
+    artifacts: RunArtifactDirectory
     workspaces: RunWorkspaceProvisioner
     runs: Readonly<{ get(runId: string): AgentNodeRunRecord | undefined }>
     traces?: AgentTraceStore
@@ -103,6 +106,7 @@ export const createAgentNodeRunner = (
         node.harness.harnessId,
         node.harness.modelId,
         node.harness.thinkingLevel,
+        { fresh: true },
       )
     } catch (cause) {
       return harnessFailure(cause)
@@ -132,6 +136,13 @@ export const createAgentNodeRunner = (
       return failed('RUN_WORKSPACE_INVALID', 'Run repository workspaces do not match the workflow')
     }
 
+    let artifactsPath: string
+    try {
+      artifactsPath = await options.artifacts.ensure(run.runId)
+    } catch {
+      return failed('RUN_ARTIFACTS_INVALID', 'Run artifacts directory is invalid')
+    }
+
     const routableOutcomes = getDeclaredOutcomes(workflow.data, node.id)
     const declaredOutcomes =
       routableOutcomes.length === 0 ? (['completed'] as const) : routableOutcomes
@@ -141,7 +152,7 @@ export const createAgentNodeRunner = (
         node.prompt,
         workflow.data.configuration.variables,
         run.variables,
-      )}${configuredRepositoriesPrompt(repositories)}\n\nExecution contract:\nFinish exactly once using the configured harness completion protocol.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
+      )}${configuredRepositoriesPrompt(repositories)}\n\nShared artifacts: ${artifactsPath}\nUse this directory for run-scoped handoff files. It is outside the repositories and is not committed with repository changes.\n\nExecution contract:\nFinish exactly once using the configured harness completion protocol.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
       z.string().min(1).max(1_000_000).parse(renderedPrompt)
     } catch {
       return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')
@@ -151,6 +162,7 @@ export const createAgentNodeRunner = (
       executionId: input.nodeExecutionId,
       runId: run.runId,
       nodeId: node.id,
+      artifactsPath,
       workspace: {
         rootPath: context.rootPath,
         primaryRepositoryId: context.primary.repositoryId,
@@ -165,10 +177,10 @@ export const createAgentNodeRunner = (
         : { thinkingLevel: node.harness.thinkingLevel }),
       renderedPrompt,
       declaredOutcomes,
-      timeoutSeconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
+      timeoutSeconds: node.timeoutSeconds,
     })
     const traceHeader = AgentTraceHeaderSchema.parse({
-      version: 3,
+      version: 4,
       runId: run.runId,
       nodeExecutionId: input.nodeExecutionId,
       attemptId: input.attemptId,
@@ -182,6 +194,7 @@ export const createAgentNodeRunner = (
           ? {}
           : { thinkingLevel: node.harness.thinkingLevel }),
         renderedPrompt,
+        artifactsPath,
         workspaceRoot: context.rootPath,
         primaryRepositoryId: context.primary.repositoryId,
         repositories: repositories.map((repository) => ({
@@ -194,7 +207,7 @@ export const createAgentNodeRunner = (
           baseSha: repository.baseSha,
           defaultBranch: repository.defaultBranch,
         })),
-        timeoutSeconds: AGENT_EXECUTION_TIMEOUT_SECONDS,
+        timeoutSeconds: node.timeoutSeconds,
       },
     })
     try {

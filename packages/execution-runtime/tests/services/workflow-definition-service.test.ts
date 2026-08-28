@@ -16,9 +16,8 @@ import {
 
 const workflow = (overrides: Partial<WorkflowFile> = {}): WorkflowFile =>
   WorkflowFileSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 3,
     workflowId: 'release-review',
-    name: 'Release review',
     description: 'Prepare and review a release.',
     repositories: { repositoryIds: [], primaryRepositoryId: null },
     variables: ['release'],
@@ -55,6 +54,7 @@ const store = (entries: readonly WorkflowSource[] = []): WorkflowStore => ({
     value,
     revision: calculateResourceRevision(`${JSON.stringify(value, null, 2)}\n`),
   })),
+  delete: vi.fn(async (workflowId) => entries.some((entry) => entry.workflowId === workflowId)),
   save: vi.fn(async ({ value }) => ({
     value,
     revision: calculateResourceRevision(`${JSON.stringify(value, null, 2)}\n`),
@@ -84,10 +84,22 @@ const harnesses = (availability: 'AVAILABLE' | 'UNAVAILABLE' = 'AVAILABLE'): Har
   }),
 })
 
+type DefinitionServiceOptions = Parameters<typeof createWorkflowDefinitionService>[0]
+
+const createService = (
+  options: Omit<DefinitionServiceOptions, 'runActivity'> & {
+    readonly runActivity?: DefinitionServiceOptions['runActivity']
+  },
+) =>
+  createWorkflowDefinitionService({
+    runActivity: { hasActive: vi.fn(async () => false) },
+    ...options,
+  })
+
 describe('workflow definition service', () => {
-  it('creates an empty draft with the user-selected immutable slug', async () => {
+  it('creates an empty draft with the user-selected immutable name', async () => {
     const workflows = store()
-    const service = createWorkflowDefinitionService({
+    const service = createService({
       workflows,
       harnesses: harnesses(),
       now: () => '2026-08-25T12:00:00.000Z',
@@ -95,7 +107,6 @@ describe('workflow definition service', () => {
 
     const created = await service.create({
       workflowId: 'release-review',
-      name: 'Release review',
       description: 'Prepare and review a release.',
     })
 
@@ -117,20 +128,51 @@ describe('workflow definition service', () => {
     )
   })
 
-  it('maps an existing user slug to a stable conflict', async () => {
+  it('maps an existing user name to a stable conflict', async () => {
     const workflows = store()
     vi.mocked(workflows.create).mockRejectedValueOnce(
       new WorkflowStoreError('WORKFLOW_CONFLICT', 'Workflow already exists'),
     )
-    const service = createWorkflowDefinitionService({ workflows, harnesses: harnesses() })
+    const service = createService({ workflows, harnesses: harnesses() })
 
     await expect(
       service.create({
         workflowId: 'release-review',
-        name: 'Release review',
         description: 'Prepare and review a release.',
       }),
     ).rejects.toMatchObject({ code: 'WORKFLOW_ID_CONFLICT' })
+  })
+
+  it('deletes an existing workflow and reports a missing workflow consistently', async () => {
+    const current = source(workflow())
+    const workflows = store([current])
+    const service = createService({ workflows, harnesses: harnesses() })
+
+    await expect(service.delete('release-review')).resolves.toBeUndefined()
+    expect(workflows.delete).toHaveBeenCalledWith('release-review')
+
+    vi.mocked(workflows.delete).mockResolvedValueOnce(false)
+    await expect(service.delete('unknown')).rejects.toMatchObject({
+      code: 'WORKFLOW_NOT_FOUND',
+      message: 'Workflow was not found',
+    })
+  })
+
+  it('refuses to archive a workflow while one of its runs is active', async () => {
+    const workflows = store([source(workflow())])
+    const hasActive = vi.fn(async () => true)
+    const service = createService({
+      workflows,
+      harnesses: harnesses(),
+      runActivity: { hasActive },
+    })
+
+    await expect(service.delete('release-review')).rejects.toMatchObject({
+      code: 'WORKFLOW_RUN_ACTIVE',
+      message: 'Workflow cannot be archived while a run is pending or running',
+    })
+    expect(hasActive).toHaveBeenCalledWith('release-review')
+    expect(workflows.delete).not.toHaveBeenCalled()
   })
 
   it('maps filesystem catalog failures without leaking adapter errors', async () => {
@@ -138,7 +180,7 @@ describe('workflow definition service', () => {
     vi.mocked(workflows.list).mockRejectedValueOnce(
       new WorkflowStoreError('WORKFLOW_UNAVAILABLE', 'Filesystem details'),
     )
-    const service = createWorkflowDefinitionService({ workflows, harnesses: harnesses() })
+    const service = createService({ workflows, harnesses: harnesses() })
 
     await expect(service.list()).rejects.toMatchObject({
       code: 'WORKFLOW_UNAVAILABLE',
@@ -153,7 +195,7 @@ describe('workflow definition service', () => {
       source: contents,
       revision: calculateResourceRevision(contents),
     })
-    const service = createWorkflowDefinitionService({
+    const service = createService({
       workflows: store([invalid]),
       harnesses: harnesses(),
     })
@@ -172,7 +214,7 @@ describe('workflow definition service', () => {
 
   it('reports host harness readiness without invalidating portable definitions', async () => {
     const portable = source(workflow())
-    const service = createWorkflowDefinitionService({
+    const service = createService({
       workflows: store([portable]),
       harnesses: harnesses('UNAVAILABLE'),
     })
@@ -192,7 +234,7 @@ describe('workflow definition service', () => {
   })
 
   it('marks a valid non-empty workflow runnable when its harness is ready', async () => {
-    const service = createWorkflowDefinitionService({
+    const service = createService({
       workflows: store([source(workflow())]),
       harnesses: harnesses(),
     })
@@ -207,7 +249,7 @@ describe('workflow definition service', () => {
   it('requires the current revision on save and preserves immutable fields', async () => {
     const current = source(workflow())
     const workflows = store([current])
-    const service = createWorkflowDefinitionService({
+    const service = createService({
       workflows,
       harnesses: harnesses(),
       now: () => '2026-08-25T13:00:00.000Z',
@@ -215,7 +257,7 @@ describe('workflow definition service', () => {
 
     const updated = await service.update('release-review', {
       value: workflow({
-        name: 'Updated review',
+        description: 'Updated review',
         createdAt: '2020-01-01T00:00:00.000Z',
         updatedAt: '2020-01-01T00:00:00.000Z',
       }),
@@ -226,7 +268,7 @@ describe('workflow definition service', () => {
       status: 'VALID',
       value: {
         workflowId: 'release-review',
-        name: 'Updated review',
+        description: 'Updated review',
         createdAt: '2026-08-25T10:00:00.000Z',
         updatedAt: '2026-08-25T13:00:00.000Z',
       },
@@ -249,9 +291,9 @@ describe('workflow definition service', () => {
     ).rejects.toMatchObject({ code: 'WORKFLOW_REVISION_CONFLICT' })
   })
 
-  it('rejects an update that attempts to change the workflow slug', async () => {
+  it('rejects an update that attempts to change the workflow name', async () => {
     const current = source(workflow())
-    const service = createWorkflowDefinitionService({
+    const service = createService({
       workflows: store([current]),
       harnesses: harnesses(),
     })

@@ -45,7 +45,7 @@ describe('managed JSON Schemas', () => {
     expect(first.map(({ fileName }) => fileName)).toEqual([
       'settings.v1.schema.json',
       'repositories.v1.schema.json',
-      'workflow.v2.schema.json',
+      'workflow.v3.schema.json',
     ])
 
     const ajv = new Ajv2020({ strict: true })
@@ -73,13 +73,13 @@ describe('managed JSON Schemas', () => {
       expect((await stat(path)).mode & 0o777).toBe(0o600)
     }
 
-    const modifiedPath = join(paths.schemasDirectory, 'workflow.v2.schema.json')
+    const modifiedPath = join(paths.schemasDirectory, 'workflow.v3.schema.json')
     await writeFile(modifiedPath, '{}\n', 'utf8')
     await chmod(modifiedPath, 0o644)
 
     await publishManagedJsonSchemas({ paths })
 
-    const workflowSchema = managed.find(({ fileName }) => fileName === 'workflow.v2.schema.json')
+    const workflowSchema = managed.find(({ fileName }) => fileName === 'workflow.v3.schema.json')
     expect(JSON.parse(await readFile(modifiedPath, 'utf8'))).toEqual(workflowSchema?.schema)
     expect((await stat(modifiedPath)).mode & 0o777).toBe(0o600)
   })

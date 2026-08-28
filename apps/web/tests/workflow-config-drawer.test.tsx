@@ -45,7 +45,6 @@ if (apiRepository === undefined || webRepository === undefined) {
 const drawerWorkflow = (overrides: Partial<Workflow> = {}): Workflow => ({
   ...createWorkflowDraft({
     workflowId: 'delivery-workflow',
-    name: 'Delivery workflow',
     description: 'Coordinate delivery.',
     configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: '2026-08-25T10:00:00.000Z',
@@ -56,11 +55,31 @@ const drawerWorkflow = (overrides: Partial<Workflow> = {}): Workflow => ({
 afterEach(cleanup)
 
 describe('WorkflowConfigDrawer', () => {
+  it('shows the description field without a redundant details introduction', async () => {
+    render(
+      <WorkflowConfigDrawer
+        value={drawerWorkflow()}
+        repositories={repositories}
+        onClose={vi.fn()}
+        onDelete={vi.fn(async () => true)}
+        onSubmit={vi.fn(async () => true)}
+      />,
+    )
+
+    expect(await screen.findByRole('textbox', { name: 'Description' })).toBeTruthy()
+    const panel = screen.getByRole('complementary', { name: 'Workflow configuration' })
+    expect(panel.getAttribute('data-layout')).toBe('workspace')
+    expect(panel.querySelector('header')?.getAttribute('data-slot')).toBe('workspace-panel-header')
+    expect(screen.queryByRole('heading', { name: 'Details' })).toBeNull()
+    expect(screen.queryByText('Describe this workflow in the editor catalog.')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close workflow configuration' })).toBeNull()
+  })
+
   it('reveals and focuses the repository-style workflow deletion confirmation', async () => {
     const onDelete = vi.fn(async () => true)
     render(
       <WorkflowConfigDrawer
-        value={drawerWorkflow({ name: 'delivery-workflow' })}
+        value={drawerWorkflow()}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={onDelete}
@@ -68,9 +87,18 @@ describe('WorkflowConfigDrawer', () => {
       />,
     )
 
-    fireEvent.click(await screen.findByRole('button', { name: 'Delete workflow' }))
+    const deleteAction = await screen.findByRole('button', { name: /^Delete$/ })
+    const saveAction = screen.getByRole('button', { name: 'Save changes' })
+    const actionGroup = deleteAction.parentElement
+    expect(actionGroup).toBe(saveAction.parentElement)
+    expect(actionGroup?.className).toContain('flex')
+    expect(Array.from(actionGroup?.children ?? [])).toEqual([deleteAction, saveAction])
 
+    fireEvent.click(deleteAction)
+
+    expect(screen.queryByRole('textbox', { name: 'Name' })).toBeNull()
     const confirmation = screen.getByLabelText('Workflow name confirmation')
+    expect(confirmation.getAttribute('placeholder')).toBe('Enter workflow name')
     const confirm = screen.getByRole('button', { name: 'Confirm' }) as HTMLButtonElement
     expect(document.activeElement).toBe(confirmation)
     expect(confirmation.parentElement?.className).toContain('w-full')
@@ -82,6 +110,50 @@ describe('WorkflowConfigDrawer', () => {
     fireEvent.click(confirm)
 
     await waitFor(() => expect(onDelete).toHaveBeenCalledTimes(1))
+  })
+
+  it('dismisses workflow deletion confirmation with Escape and clears its value', async () => {
+    render(
+      <WorkflowConfigDrawer
+        value={drawerWorkflow()}
+        repositories={repositories}
+        onClose={vi.fn()}
+        onDelete={vi.fn(async () => true)}
+        onSubmit={vi.fn(async () => true)}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Delete$/ }))
+    const confirmation = screen.getByLabelText('Workflow name confirmation') as HTMLInputElement
+    fireEvent.change(confirmation, { target: { value: 'delivery' } })
+    fireEvent.keyDown(confirmation, { key: 'Escape' })
+
+    expect(screen.getByRole('button', { name: /^Delete$/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(confirmation.disabled).toBe(true)
+    expect(confirmation.value).toBe('')
+  })
+
+  it('dismisses workflow deletion confirmation on an outside pointer down', async () => {
+    render(
+      <WorkflowConfigDrawer
+        value={drawerWorkflow()}
+        repositories={repositories}
+        onClose={vi.fn()}
+        onDelete={vi.fn(async () => true)}
+        onSubmit={vi.fn(async () => true)}
+      />,
+    )
+
+    fireEvent.click(await screen.findByRole('button', { name: /^Delete$/ }))
+    const confirmation = screen.getByLabelText('Workflow name confirmation') as HTMLInputElement
+    fireEvent.change(confirmation, { target: { value: 'delivery' } })
+    fireEvent.pointerDown(screen.getByRole('textbox', { name: 'Description' }))
+
+    expect(screen.getByRole('button', { name: /^Delete$/ })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(confirmation.disabled).toBe(true)
+    expect(confirmation.value).toBe('')
   })
 
   it('saves the workflow repositories and declared variable names', async () => {
@@ -271,7 +343,7 @@ describe('WorkflowConfigDrawer', () => {
     rerender(
       <WorkflowConfigDrawer
         conflict="This workflow changed outside Slopify. Close and reopen to load the latest file."
-        value={drawerWorkflow({ name: 'Externally changed workflow' })}
+        value={drawerWorkflow({ description: 'Externally changed workflow details.' })}
         repositories={repositories}
         onClose={vi.fn()}
         onDelete={vi.fn(async () => true)}

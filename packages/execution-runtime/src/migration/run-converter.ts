@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 
 import { GitProviderSchema } from '@slopify/contracts'
 import {
-  WorkflowSchema,
+  WorkflowReadSchema,
   convertWorkflowV1,
   validateWorkflow,
   workflowToWorkflowFile,
@@ -56,7 +56,7 @@ const repositoryWebUrl = (provider: 'GITHUB' | 'GITLAB', fullName: string): stri
 const normalizeWorkflow = (input: unknown) => {
   const envelope = input as { readonly schemaVersion?: unknown }
   const workflow =
-    envelope?.schemaVersion === 1 ? convertWorkflowV1(input) : WorkflowSchema.parse(input)
+    envelope?.schemaVersion === 1 ? convertWorkflowV1(input) : WorkflowReadSchema.parse(input)
   const validation = validateWorkflow(workflow)
   if (!validation.valid)
     throw new LegacyMigrationError('INVALID_DATABASE', 'A captured workflow graph is invalid.')

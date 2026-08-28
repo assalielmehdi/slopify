@@ -77,6 +77,14 @@ describe('the application design foundation', () => {
     expect(control).not.toContain('aria-invalid:ring')
   })
 
+  it('positions shared select popups below their trigger without overlap', () => {
+    const select = source('components/ui/select.tsx')
+
+    expect(select).toContain("side = 'bottom'")
+    expect(select).toContain('sideOffset = 4')
+    expect(select).toContain('alignItemWithTrigger = false')
+  })
+
   it('defines restrained raised and overlay shadows for semantic depth', () => {
     const stylesheet = source('app/globals.css')
 
@@ -94,7 +102,6 @@ describe('the application design foundation', () => {
 
   it.each([
     'components/settings/repository-settings.tsx',
-    'components/runs/run-node-details-dialog.tsx',
     'components/ui/sheet.tsx',
     'components/ui/toast.tsx',
   ])('%s uses the shared overlay elevation instead of an arbitrary heavy shadow', (path) => {
@@ -102,6 +109,25 @@ describe('the application design foundation', () => {
 
     expect(component).not.toContain('shadow-2xl')
     expect(component).toContain('shadow-[var(--shadow-overlay)]')
+  })
+
+  it('keeps run agent details on the workspace surface instead of an overlay', () => {
+    const component = source('components/runs/run-node-details-dialog.tsx')
+
+    expect(component).toContain('data-layout="workspace"')
+    expect(component).not.toContain('shadow-[var(--shadow-overlay)]')
+    expect(component).not.toContain('<dialog')
+    expect(component).not.toContain('floating-panel-shell')
+  })
+
+  it('stacks workflow panes on narrow screens and sizes the graph pane on desktop', () => {
+    const stylesheet = source('app/globals.css')
+
+    expect(stylesheet).toContain('.workflow-workspace')
+    expect(stylesheet).toContain('grid-template-rows: minmax(16rem, 42%) minmax(0, 1fr);')
+    expect(stylesheet).toMatch(
+      /@media \(min-width: 64rem\)[\s\S]*?var\(--workflow-graph-pane-width\)[\s\S]*?calc\(100% - 28rem\)/,
+    )
   })
 
   it('uses Geist for interface text and monospace evidence', () => {

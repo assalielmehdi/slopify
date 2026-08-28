@@ -15,6 +15,19 @@ const promptTemplate = z
   .refine((value) => value.trim().length > 0, {
     message: 'Prompt template must not be blank',
   })
+
+export const DEFAULT_AGENT_TIMEOUT_SECONDS = 15 * 60
+export const MIN_AGENT_TIMEOUT_SECONDS = 60
+export const MAX_AGENT_TIMEOUT_SECONDS = 8 * 60 * 60
+
+export const AgentTimeoutSecondsSchema = z
+  .number()
+  .int()
+  .min(MIN_AGENT_TIMEOUT_SECONDS)
+  .max(MAX_AGENT_TIMEOUT_SECONDS)
+  .multipleOf(60)
+  .default(DEFAULT_AGENT_TIMEOUT_SECONDS)
+
 export const AgentHarnessConfigurationSchema = z
   .strictObject({
     harnessId: HarnessIdSchema,
@@ -30,6 +43,7 @@ export const AgentNodeSchema = z
     name: nonBlankString,
     prompt: promptTemplate,
     harness: AgentHarnessConfigurationSchema,
+    timeoutSeconds: AgentTimeoutSecondsSchema,
   })
   .readonly()
 
@@ -43,18 +57,13 @@ export const WorkflowEdgeSchema = z
   .readonly()
 
 export const WorkflowVariableNameSchema = z.string().trim().min(1).max(128)
-export const WorkflowNameSchema = z
-  .string()
-  .max(100)
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
-    message: 'Use 1–100 lowercase letters, numbers, and single hyphens',
-  })
 export const WorkflowSlugSchema = z
   .string()
   .max(64)
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, {
     message: 'Use 1–64 lowercase letters, numbers, and single hyphens',
   })
+export const CanonicalWorkflowIdSchema = WorkflowSlugSchema.pipe(WorkflowIdSchema)
 
 const repositoryIdsSchema = z.array(RepositoryIdSchema).max(32).readonly()
 const workflowVariablesSchema = z.array(WorkflowVariableNameSchema).max(128).readonly()
@@ -136,13 +145,48 @@ export const WorkflowGraphSchema = z
 
 export const CreateWorkflowInputSchema = z
   .strictObject({
-    name: WorkflowNameSchema,
+    workflowId: WorkflowSlugSchema,
     description: nonBlankString,
     configuration: WorkflowConfigurationSchema,
   })
   .readonly()
 
 export const WorkflowSchema = z
+  .strictObject({
+    schemaVersion: z.literal(3),
+    workflowId: CanonicalWorkflowIdSchema,
+    description: nonBlankString,
+    configuration: WorkflowConfigurationSchema,
+    startNodeId: NodeIdSchema.nullable(),
+    nodes: z.array(AgentNodeSchema).readonly(),
+    edges: z.array(WorkflowEdgeSchema).readonly(),
+    maxTransitions: z.number().int().safe().nonnegative(),
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .readonly()
+
+export const WorkflowFileSchema = z
+  .strictObject({
+    schemaVersion: z.literal(3),
+    workflowId: CanonicalWorkflowIdSchema,
+    description: nonBlankString,
+    repositories: WorkflowRepositoriesSchema,
+    variables: workflowVariablesSchema.superRefine((variables, context) => {
+      if (new Set(variables).size !== variables.length) {
+        context.addIssue({
+          code: 'custom',
+          message: 'Variables must be unique',
+        })
+      }
+    }),
+    graph: WorkflowGraphSchema,
+    createdAt: z.iso.datetime({ offset: true }),
+    updatedAt: z.iso.datetime({ offset: true }),
+  })
+  .readonly()
+
+const WorkflowV2Schema = z
   .strictObject({
     schemaVersion: z.literal(2),
     workflowId: WorkflowIdSchema,
@@ -158,7 +202,7 @@ export const WorkflowSchema = z
   })
   .readonly()
 
-export const WorkflowFileSchema = z
+const WorkflowFileV2Schema = z
   .strictObject({
     schemaVersion: z.literal(2),
     workflowId: WorkflowSlugSchema,
@@ -178,3 +222,22 @@ export const WorkflowFileSchema = z
     updatedAt: z.iso.datetime({ offset: true }),
   })
   .readonly()
+
+const normalizeWorkflowV2 = (input: unknown): unknown => {
+  const parsed = WorkflowV2Schema.safeParse(input)
+  if (!parsed.success) return input
+  const workflow = { ...parsed.data }
+  Reflect.deleteProperty(workflow, 'name')
+  return { ...workflow, schemaVersion: 3 }
+}
+
+const normalizeWorkflowFileV2 = (input: unknown): unknown => {
+  const parsed = WorkflowFileV2Schema.safeParse(input)
+  if (!parsed.success) return input
+  const workflow = { ...parsed.data }
+  Reflect.deleteProperty(workflow, 'name')
+  return { ...workflow, schemaVersion: 3 }
+}
+
+export const WorkflowReadSchema = z.preprocess(normalizeWorkflowV2, WorkflowSchema)
+export const WorkflowFileReadSchema = z.preprocess(normalizeWorkflowFileV2, WorkflowFileSchema)

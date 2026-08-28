@@ -1,7 +1,7 @@
-import { WorkflowSchema } from './schemas.js'
+import { CanonicalWorkflowIdSchema, WorkflowSchema } from './schemas.js'
 import type { CreateWorkflowInput, Workflow } from './types.js'
 
-export const DEFAULT_WORKFLOW_ID = 'default-workflow'
+export const DEFAULT_WORKFLOW_ID = CanonicalWorkflowIdSchema.parse('default-workflow')
 export const DEFAULT_WORKFLOW_TRANSITION_LIMIT = 100
 
 export interface CreateDefaultWorkflowInput {
@@ -9,15 +9,13 @@ export interface CreateDefaultWorkflowInput {
 }
 
 export interface CreateWorkflowDraftInput extends CreateWorkflowInput {
-  readonly workflowId: string
   readonly createdAt: string
 }
 
 export function createWorkflowDraft(input: CreateWorkflowDraftInput): Workflow {
   return WorkflowSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 3,
     workflowId: input.workflowId,
-    name: input.name,
     description: input.description,
     configuration: input.configuration,
     startNodeId: null,
@@ -32,7 +30,6 @@ export function createWorkflowDraft(input: CreateWorkflowDraftInput): Workflow {
 export function createDefaultWorkflow(input: CreateDefaultWorkflowInput): Workflow {
   return createWorkflowDraft({
     workflowId: DEFAULT_WORKFLOW_ID,
-    name: 'Untitled workflow',
     description: 'Add agents and connect them to build a workflow.',
     configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: input.createdAt,

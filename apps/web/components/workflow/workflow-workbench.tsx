@@ -4,13 +4,18 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useReducer, useRef } from 'react'
 
 import type { HarnessDescriptor, Repository } from '@slopify/contracts'
-import type { Workflow } from '@slopify/workflow-model'
+import type { AgentNode, Workflow } from '@slopify/workflow-model'
 
 import { StartRunDrawer } from '@/components/runs/start-run-drawer'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
 import { WorkflowConfigDrawer } from '@/components/workflow/workflow-config-drawer'
+import {
+  WorkflowAgentConfigurationPanel,
+  WorkflowOverviewPanel,
+} from '@/components/workflow/workflow-detail-panels'
+import { WorkflowWorkspace } from '@/components/workflow/workflow-workspace'
 import { createApiClient, type ApiClient } from '@/lib/api-client'
 import {
   connectResourceEventStream,
@@ -28,7 +33,8 @@ type WorkflowEditorClient = Pick<
   | 'listWorkflows'
   | 'startRun'
   | 'updateWorkflow'
->
+> &
+  Partial<Pick<ApiClient, 'getWorkflowScreen'>>
 
 export interface WorkflowWorkbenchProps {
   readonly client?: WorkflowEditorClient
@@ -109,6 +115,38 @@ function useWorkflowWorkbench(
 
     const load = async () => {
       try {
+        if (client.getWorkflowScreen !== undefined) {
+          const screen = await client.getWorkflowScreen(requestedWorkflowId)
+          if (!active || sequence !== loadSequence.current) return
+          const current = screen.selectedWorkflow
+          if (current === undefined) {
+            activeWorkflowId.current = undefined
+            loadedWorkflowId.current = undefined
+            update({
+              workflow: undefined,
+              harnesses: screen.harnesses,
+              repositories: screen.repositories,
+              error: undefined,
+              externalChangeConflict: undefined,
+            })
+            return
+          }
+          activeWorkflowId.current = current.workflowId
+          loadedWorkflowId.current = current.workflowId
+          loadedWorkflowSnapshot.current = JSON.stringify(current)
+          if (requestedWorkflowId !== current.workflowId) {
+            router.replace(`/?workflowId=${encodeURIComponent(current.workflowId)}`)
+          }
+          update({
+            workflow: current,
+            harnesses: screen.harnesses,
+            repositories: screen.repositories,
+            error: undefined,
+            externalChangeConflict: undefined,
+          })
+          return
+        }
+
         const refreshingLoadedWorkflow = loadedWorkflowId.current !== undefined
         const [workflows, harnesses, repositories] = await Promise.all([
           client.listWorkflows(),
@@ -253,7 +291,6 @@ function useWorkflowWorkbench(
         configDirty.current = false
         update({ workflow: saved, externalChangeConflict: undefined })
       }
-      if (saved.name !== workflow.name) announceWorkflowCatalogChanged()
       return saved
     } catch (cause) {
       update({ saveError: errorMessage(cause) })
@@ -264,16 +301,29 @@ function useWorkflowWorkbench(
   }
 
   const selectNode = (nodeId: string) => {
+    configDirty.current = false
     update({
       configDrawerOpen: false,
       runDrawerOpen: false,
       selectedNodeId: nodeId,
+      saveError: undefined,
+      externalChangeConflict: undefined,
     })
   }
 
   const saveWorkflowConfiguration = async (value: Workflow) => {
     if (stateRef.current.externalChangeConflict !== undefined) return false
     return (await persist(value)) !== undefined
+  }
+
+  const saveAgentConfiguration = async (node: AgentNode) => {
+    if (stateRef.current.externalChangeConflict !== undefined) return false
+    return (
+      (await persist({
+        ...workflow,
+        nodes: workflow.nodes.map((candidate) => (candidate.id === node.id ? node : candidate)),
+      })) !== undefined
+    )
   }
 
   const deleteWorkflow = async () => {
@@ -306,6 +356,16 @@ function useWorkflowWorkbench(
     runDisabledReason,
     runnable,
     selectNode,
+    closeAgentConfiguration: () => {
+      const refreshAfterClose = stateRef.current.externalChangeConflict !== undefined
+      configDirty.current = false
+      update((current) => ({
+        selectedNodeId: undefined,
+        externalChangeConflict: undefined,
+        ...(refreshAfterClose ? { refreshVersion: current.refreshVersion + 1 } : {}),
+      }))
+    },
+    saveAgentConfiguration,
     saveWorkflowConfiguration,
     deleteWorkflow,
     closeConfigDrawer: () => {
@@ -320,10 +380,13 @@ function useWorkflowWorkbench(
     closeRunDrawer: () => update({ runDrawerOpen: false }),
     openRunDrawer: () => {
       if (!runnable) return
+      configDirty.current = false
       update({
         selectedNodeId: undefined,
         configDrawerOpen: false,
         runDrawerOpen: true,
+        saveError: undefined,
+        externalChangeConflict: undefined,
       })
     },
     openConfigDrawer: () => {
@@ -386,6 +449,42 @@ export function WorkflowWorkbench({
     )
   }
 
+  const selectedNode = state.workflow.nodes.find(({ id }) => id === state.selectedNodeId)
+  const details = state.configDrawerOpen ? (
+    <WorkflowConfigDrawer
+      key={JSON.stringify(state.workflow)}
+      conflict={state.externalChangeConflict}
+      error={state.repositoryCatalogError ?? state.saveError}
+      onClose={state.closeConfigDrawer}
+      onDelete={state.deleteWorkflow}
+      onDirtyChange={state.setConfigDirty}
+      onSubmit={state.saveWorkflowConfiguration}
+      repositories={state.repositories}
+      saving={state.saving}
+      value={state.workflow}
+    />
+  ) : state.runDrawerOpen ? (
+    <StartRunDrawer
+      client={client}
+      onClose={state.closeRunDrawer}
+      workflowId={state.workflow.workflowId}
+    />
+  ) : selectedNode === undefined ? (
+    <WorkflowOverviewPanel repositories={state.repositories} workflow={state.workflow} />
+  ) : (
+    <WorkflowAgentConfigurationPanel
+      conflict={state.externalChangeConflict}
+      error={state.harnessError ?? state.saveError}
+      harnesses={state.harnesses}
+      key={selectedNode.id}
+      node={selectedNode}
+      onClose={state.closeAgentConfiguration}
+      onDirtyChange={state.setConfigDirty}
+      onSubmit={state.saveAgentConfiguration}
+      saving={state.saving}
+    />
+  )
+
   return (
     <section aria-label="Editor" className="relative flex h-full min-h-0 min-w-0 flex-col">
       {state.error === undefined ? null : (
@@ -395,39 +494,22 @@ export function WorkflowWorkbench({
         </Alert>
       )}
       <div className="relative min-h-0 flex-1">
-        <WorkflowCanvas
-          onConfigure={state.openConfigDrawer}
-          onNodeSelect={state.selectNode}
-          onRun={state.openRunDrawer}
-          runDisabledReason={state.runDisabledReason}
-          runnable={state.runnable}
-          selectedNodeId={state.selectedNodeId}
+        <WorkflowWorkspace
+          details={details}
+          graph={
+            <WorkflowCanvas
+              onConfigure={state.openConfigDrawer}
+              onNodeSelect={state.selectNode}
+              onRun={state.openRunDrawer}
+              runDisabledReason={state.runDisabledReason}
+              runnable={state.runnable}
+              selectedNodeId={state.selectedNodeId}
+              workflow={state.workflow}
+            />
+          }
           workflow={state.workflow}
         />
       </div>
-
-      {state.configDrawerOpen ? (
-        <WorkflowConfigDrawer
-          key={JSON.stringify(state.workflow)}
-          conflict={state.externalChangeConflict}
-          error={state.repositoryCatalogError ?? state.saveError}
-          onClose={state.closeConfigDrawer}
-          onDelete={state.deleteWorkflow}
-          onDirtyChange={state.setConfigDirty}
-          onSubmit={state.saveWorkflowConfiguration}
-          repositories={state.repositories}
-          saving={state.saving}
-          value={state.workflow}
-        />
-      ) : null}
-
-      {state.runDrawerOpen ? (
-        <StartRunDrawer
-          client={client}
-          onClose={state.closeRunDrawer}
-          workflowId={state.workflow.workflowId}
-        />
-      ) : null}
     </section>
   )
 }

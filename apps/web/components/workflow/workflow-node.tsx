@@ -1,6 +1,7 @@
 import type { NodeExecutionStatus } from '@slopify/contracts'
 import type { AgentNode } from '@slopify/workflow-model'
 import { BotIcon } from 'lucide-react'
+import Image from 'next/image'
 
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -20,21 +21,46 @@ const statusLabels: Readonly<Record<NodeExecutionStatus, string>> = {
   CANCELLED: 'Cancelled',
 }
 
+const harnessLogos = {
+  codex: { alt: 'Codex harness', src: '/chatgpt-logo.svg' },
+  pi: { alt: 'Pi harness', src: '/pi-badge.svg' },
+} as const
+
+function HarnessLogo({ harnessId }: Readonly<{ harnessId: string }>) {
+  const logo = harnessLogos[harnessId as keyof typeof harnessLogos]
+
+  return (
+    <span
+      className="flex size-4 shrink-0 items-center justify-center"
+      data-runtime-field="harness"
+      title={`Harness: ${harnessId}`}
+    >
+      {logo === undefined ? (
+        <BotIcon aria-label={`${harnessId} harness`} className="size-4" role="img" />
+      ) : (
+        <Image alt={logo.alt} className="size-4 rounded-sm" height={16} src={logo.src} width={16} />
+      )}
+    </span>
+  )
+}
+
 export function WorkflowNodeContent({
   data,
   selected,
 }: Readonly<{ data: WorkflowNodeData; selected: boolean }>) {
   const { domainNode } = data
   const status = data.recentRunStatus
+  const modelLabel = domainNode.harness.modelId ?? 'Default model'
+  const thinkingLabel = domainNode.harness.thinkingLevel ?? 'Default effort'
 
   return (
     <div
       className={cn(
-        'relative isolate flex h-30 w-54 flex-col gap-3 overflow-hidden rounded-lg border bg-card p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
+        'relative isolate flex h-36 w-54 flex-col gap-2 overflow-hidden rounded-lg border bg-muted/55 p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
         status === 'RUNNING' && 'workflow-node-running-fill border-status-info/35',
-        status === 'SUCCEEDED' && 'border-status-success/35 bg-status-success/10',
-        status === 'FAILED' && 'border-destructive/35 bg-destructive/10',
-        status === 'CANCELLED' && 'border-status-warning/35 bg-status-warning/10',
+        status === 'SUCCEEDED' && 'border-status-success/35',
+        status === 'FAILED' && 'border-destructive/35',
+        status === 'CANCELLED' && 'border-status-warning/35',
         selected && 'border-foreground/30 ring-2 ring-foreground/10',
       )}
       data-selected={selected || undefined}
@@ -53,6 +79,27 @@ export function WorkflowNodeContent({
       <div className="min-w-0">
         <h3 className="truncate text-sm/5 font-semibold tracking-[-0.01em]">{domainNode.name}</h3>
         <p className="truncate font-mono text-xs/4 text-muted-foreground">{domainNode.id}</p>
+      </div>
+      <div className="mt-auto flex min-w-0 items-center justify-end gap-1" data-node-runtime="">
+        <HarnessLogo harnessId={domainNode.harness.harnessId} />
+        <Badge
+          aria-label={`Model: ${modelLabel}`}
+          className="min-w-0 max-w-24 shrink px-1.5 font-mono font-normal"
+          data-runtime-field="model"
+          title={`Model: ${modelLabel}`}
+          variant="secondary"
+        >
+          <span className="truncate">{modelLabel}</span>
+        </Badge>
+        <Badge
+          aria-label={`Thinking effort: ${thinkingLabel}`}
+          className="min-w-0 max-w-20 shrink px-1.5 font-mono font-normal"
+          data-runtime-field="thinking"
+          title={`Thinking effort: ${thinkingLabel}`}
+          variant="secondary"
+        >
+          <span className="truncate">{thinkingLabel}</span>
+        </Badge>
       </div>
     </div>
   )

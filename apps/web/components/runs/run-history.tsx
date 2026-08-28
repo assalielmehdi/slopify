@@ -39,7 +39,13 @@ import {
 const PAGE_SIZE = 20
 const defaultClient = createApiClient()
 
-type RunHistoryClient = Pick<ApiClient, 'listRuns'>
+type RunHistoryClient = Pick<ApiClient, 'listRepositories' | 'listRuns' | 'listWorkflows'>
+type RunFilterOptions = Readonly<{
+  workflows: Awaited<ReturnType<ApiClient['listWorkflows']>>
+  repositories: Awaited<ReturnType<ApiClient['listRepositories']>>
+  workflowOptionsFailed: boolean
+  repositoryOptionsFailed: boolean
+}>
 type SortKey = 'runId' | 'startedAt' | 'durationMs' | 'status'
 type SortDirection = 'ascending' | 'descending'
 
@@ -99,6 +105,8 @@ const toListRunsInput = (filters: RunFilters, page: number): ListRunsInput => {
     page,
     pageSize: PAGE_SIZE,
     ...(filters.runId.trim() === '' ? {} : { runId: filters.runId.trim() }),
+    ...(filters.workflowIds.length === 0 ? {} : { workflowIds: filters.workflowIds }),
+    ...(filters.repositoryIds.length === 0 ? {} : { repositoryIds: filters.repositoryIds }),
     ...(filters.statuses.length === 0 ? {} : { statuses: filters.statuses }),
     ...(filters.startedFrom === '' ? {} : { startedFrom: `${filters.startedFrom}T00:00:00.000Z` }),
     ...(filters.startedTo === '' ? {} : { startedTo: `${filters.startedTo}T23:59:59.999Z` }),
@@ -197,6 +205,7 @@ export function RunHistory({
   const [history, setHistory] = useState<RunHistoryPage | null>(null)
   const [failed, setFailed] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [filterOptions, setFilterOptions] = useState<RunFilterOptions | null>(null)
   const [view, setView] = useState({ filters: initialFilters, page })
   const [sortKey, setSortKey] = useState<SortKey>('startedAt')
   const [sortDirection, setSortDirection] = useState<SortDirection>('descending')
@@ -225,6 +234,24 @@ export function RunHistory({
       active = false
     }
   }, [client, view])
+
+  useEffect(() => {
+    let active = true
+    void Promise.allSettled([client.listWorkflows(), client.listRepositories()]).then(
+      ([workflows, repositories]) => {
+        if (!active) return
+        setFilterOptions({
+          workflows: workflows.status === 'fulfilled' ? workflows.value : [],
+          repositories: repositories.status === 'fulfilled' ? repositories.value : [],
+          workflowOptionsFailed: workflows.status === 'rejected',
+          repositoryOptionsFailed: repositories.status === 'rejected',
+        })
+      },
+    )
+    return () => {
+      active = false
+    }
+  }, [client])
 
   const visibleRuns = useMemo(() => {
     const direction = sortDirection === 'ascending' ? 1 : -1
@@ -276,7 +303,12 @@ export function RunHistory({
             <RunFilterControls
               filters={view.filters}
               onChange={updateFilters}
+              optionsLoading={filterOptions === null}
+              repositories={filterOptions?.repositories ?? []}
+              repositoryOptionsFailed={filterOptions?.repositoryOptionsFailed ?? false}
               updating={refreshing}
+              workflowOptionsFailed={filterOptions?.workflowOptionsFailed ?? false}
+              workflows={filterOptions?.workflows ?? []}
             />
           </div>
           {history.data.length === 0 ? (

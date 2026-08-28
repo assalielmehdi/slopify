@@ -13,7 +13,6 @@ interface AgentWorkflowFixtureInput {
   readonly nodeName?: string
   readonly prompt?: string
   readonly thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
-  readonly workflowName?: string
 }
 
 export const createAgentWorkflowFixture = (input: AgentWorkflowFixtureInput): Workflow => {
@@ -32,7 +31,6 @@ export const createAgentWorkflowFixture = (input: AgentWorkflowFixtureInput): Wo
 
   return WorkflowSchema.parse({
     ...workflow,
-    name: input.workflowName ?? 'Who are you?',
     description: 'Run one agent and ask it to identify itself.',
     ...(input.configuration === undefined ? {} : { configuration: input.configuration }),
     startNodeId: node.id,

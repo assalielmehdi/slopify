@@ -1,4 +1,5 @@
-import { lstat, mkdir, readdir, rmdir } from 'node:fs/promises'
+import { lstat, mkdir, readdir, rename, rmdir } from 'node:fs/promises'
+import { join } from 'node:path'
 
 import {
   WorkflowFileSchema,
@@ -85,7 +86,7 @@ const validateForStorage = (input: unknown): WorkflowFile => {
 
 export const createFilesystemWorkflowStore = (
   options: Readonly<{
-    paths: Pick<SlopifyPaths, 'workflowsDirectory' | 'workflow'>
+    paths: Pick<SlopifyPaths, 'archiveDirectory' | 'workflowsDirectory' | 'workflow'>
     resources?: AtomicJsonResourceIO
   }>,
 ): WorkflowStore => {
@@ -112,6 +113,41 @@ export const createFilesystemWorkflowStore = (
     }
   }
 
+  const nextArchiveDirectory = async (workflowId: string): Promise<string> => {
+    try {
+      await mkdir(options.paths.archiveDirectory, { recursive: true, mode: 0o700 })
+      const metadata = await lstat(options.paths.archiveDirectory)
+      if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+        throw new WorkflowStoreError(
+          'WORKFLOW_UNAVAILABLE',
+          'Workflow archive must be a regular directory',
+        )
+      }
+    } catch (cause) {
+      if (cause instanceof WorkflowStoreError) throw cause
+      throw new WorkflowStoreError(
+        'WORKFLOW_UNAVAILABLE',
+        'Workflow archive could not be prepared',
+        cause,
+      )
+    }
+
+    for (let sequence = 1; ; sequence += 1) {
+      const name = sequence === 1 ? workflowId : `${workflowId}-${sequence}`
+      const candidate = join(options.paths.archiveDirectory, name)
+      try {
+        await lstat(candidate)
+      } catch (cause) {
+        if (errorCode(cause) === 'ENOENT') return candidate
+        throw new WorkflowStoreError(
+          'WORKFLOW_UNAVAILABLE',
+          'Workflow archive could not be inspected',
+          cause,
+        )
+      }
+    }
+  }
+
   const readEntry = async (workflowId: string): Promise<WorkflowStoreEntry | undefined> => {
     const parsedId = WorkflowSlugSchema.safeParse(workflowId)
     if (!parsedId.success) {
@@ -122,7 +158,7 @@ export const createFilesystemWorkflowStore = (
         diagnostics: [
           workflowDiagnostic(
             'WORKFLOW_DIRECTORY_INVALID',
-            'Workflow directory must use a 1–64 character kebab-case slug',
+            'Workflow directory name must use 1–64 lowercase letters, numbers, and single hyphens',
           ),
         ],
       })
@@ -226,6 +262,40 @@ export const createFilesystemWorkflowStore = (
         await rmdir(paths.directory).catch(() => undefined)
         throw new WorkflowStoreError('WORKFLOW_UNAVAILABLE', 'Workflow could not be created', cause)
       }
+    },
+
+    async delete(workflowIdInput) {
+      const workflowId = WorkflowSlugSchema.parse(workflowIdInput)
+      const paths = options.paths.workflow(workflowId)
+      try {
+        const metadata = await lstat(paths.directory)
+        if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
+          throw new WorkflowStoreError(
+            'WORKFLOW_UNAVAILABLE',
+            'Workflow entry must be a regular directory',
+          )
+        }
+      } catch (cause) {
+        if (cause instanceof WorkflowStoreError) throw cause
+        if (errorCode(cause) === 'ENOENT') return false
+        throw new WorkflowStoreError(
+          'WORKFLOW_UNAVAILABLE',
+          'Workflow directory could not be inspected',
+          cause,
+        )
+      }
+      const archiveDirectory = await nextArchiveDirectory(workflowId)
+      try {
+        await rename(paths.directory, archiveDirectory)
+      } catch (cause) {
+        if (errorCode(cause) === 'ENOENT') return false
+        throw new WorkflowStoreError(
+          'WORKFLOW_UNAVAILABLE',
+          'Workflow directory could not be archived',
+          cause,
+        )
+      }
+      return true
     },
 
     async get(workflowIdInput) {

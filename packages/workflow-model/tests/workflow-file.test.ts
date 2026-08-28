@@ -2,6 +2,7 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 
 import {
   WorkflowFileSchema,
+  WorkflowFileReadSchema,
   workflowFileToWorkflow,
   workflowToWorkflowFile,
   validateWorkflow,
@@ -10,9 +11,8 @@ import {
 } from '../src/index.js'
 
 const currentWorkflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'release-review',
-  name: 'Release review',
   description: 'Prepare and review a release.',
   configuration: {
     repositoryIds: ['repository-api', 'repository-web'],
@@ -27,6 +27,7 @@ const currentWorkflow = {
       name: 'Prepare',
       prompt: 'Prepare {{ release }} with {{ risk context }}.',
       harness: { harnessId: 'pi' },
+      timeoutSeconds: 900,
     },
   ],
   edges: [],
@@ -36,9 +37,8 @@ const currentWorkflow = {
 } as const satisfies Workflow
 
 const workflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'release-review',
-  name: 'Release review',
   description: 'Prepare and review a release.',
   repositories: {
     repositoryIds: ['repository-api', 'repository-web'],
@@ -56,7 +56,7 @@ const workflowFile = {
 } as const
 
 describe('workflow file contract', () => {
-  it('parses a strict, nested v2 workflow document', () => {
+  it('parses a strict, nested v3 workflow document with one canonical identity', () => {
     const parsed = WorkflowFileSchema.parse(workflowFile)
 
     expect(parsed).toEqual(workflowFile)
@@ -67,7 +67,17 @@ describe('workflow file contract', () => {
     expect(Object.isFrozen(parsed.graph)).toBe(true)
   })
 
-  it('requires immutable identity-shaped workflow slugs', () => {
+  it('reads v2 files by discarding their redundant display name', () => {
+    const parsed = WorkflowFileReadSchema.parse({
+      ...workflowFile,
+      schemaVersion: 2,
+      name: 'A stale display name',
+    })
+
+    expect(parsed).toEqual(workflowFile)
+  })
+
+  it('requires immutable canonical workflow names', () => {
     expect(
       WorkflowFileSchema.safeParse({ ...workflowFile, workflowId: 'a'.repeat(64) }).success,
     ).toBe(true)
@@ -87,6 +97,9 @@ describe('workflow file contract', () => {
   })
 
   it('rejects unknown fields and invalid repository or variable selections', () => {
+    expect(WorkflowFileSchema.safeParse({ ...workflowFile, name: 'Release review' }).success).toBe(
+      false,
+    )
     expect(WorkflowFileSchema.safeParse({ ...workflowFile, unexpected: true }).success).toBe(false)
     expect(
       WorkflowFileSchema.safeParse({

@@ -16,9 +16,8 @@ import {
 
 const timestamp = '2026-08-25T10:00:00.000Z'
 const workflow: Workflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'recovery-review',
-  name: 'Recovery review',
   description: 'Exercise conservative startup recovery.',
   configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'review',

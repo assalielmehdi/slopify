@@ -21,6 +21,29 @@ const workflowEntry = (workflow: Workflow, revision = 'a'.repeat(64)) => ({
 })
 
 describe('API client', () => {
+  it('loads the workflow screen through one typed BFF request', async () => {
+    const workflow = createAgentWorkflowFixture({ createdAt: '2026-08-28T12:00:00Z' })
+    const response = {
+      selectedWorkflowId: workflow.workflowId,
+      workflows: [workflowEntry(workflow)],
+      harnesses: [],
+      repositories: [],
+    }
+    const fetchImplementation = vi.fn(async () => Response.json(response))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.getWorkflowScreen(workflow.workflowId)).resolves.toEqual({
+      selectedWorkflow: workflow,
+      workflows: [workflow],
+      harnesses: [],
+      repositories: [],
+    })
+    expect(fetchImplementation).toHaveBeenCalledWith(
+      `/api/screens/workflow?workflowId=${workflow.workflowId}`,
+      { headers: { accept: 'application/json' }, method: 'GET' },
+    )
+  })
+
   it('loads the host-discovered harness catalog', async () => {
     const response = HarnessCatalogResponseSchema.parse({
       harnesses: [
@@ -294,7 +317,6 @@ describe('API client', () => {
     })
     const input = {
       workflowId: 'release-workflow',
-      name: 'release-workflow',
       description: 'Prepare and review a release.',
     } as const
     const fetchImplementation = vi
@@ -308,7 +330,6 @@ describe('API client', () => {
     expect(fetchImplementation).toHaveBeenCalledWith('/api/workflows', {
       body: JSON.stringify({
         workflowId: 'release-workflow',
-        name: 'release-workflow',
         description: 'Prepare and review a release.',
       }),
       headers: { accept: 'application/json', 'content-type': 'application/json' },
@@ -491,6 +512,27 @@ describe('API client', () => {
         },
       ],
       pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
+    })
+  })
+
+  it('loads the latest successful or failed run for each workflow', async () => {
+    const response = {
+      outcomes: [
+        {
+          workflowId: 'default-workflow',
+          runId: 'run-filesystem-01',
+          status: 'SUCCEEDED',
+          completedAt: '2026-08-25T10:05:00.000Z',
+        },
+      ],
+    }
+    const fetchImplementation = vi.fn(async () => Response.json(response))
+    const client = createApiClient({ fetch: fetchImplementation })
+
+    await expect(client.listWorkflowRunOutcomes()).resolves.toEqual(response.outcomes)
+    expect(fetchImplementation).toHaveBeenCalledWith('/api/workflow-run-outcomes', {
+      headers: { accept: 'application/json' },
+      method: 'GET',
     })
   })
 

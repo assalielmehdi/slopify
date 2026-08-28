@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
+import { RepositorySchema, RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
+import { createWorkflowDraft } from '@slopify/workflow-model'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RunsPage from '../app/runs/page'
@@ -18,6 +19,62 @@ const runSummary = {
   completedAt: '2026-08-20T11:02:01Z',
   durationMs: 120_000,
 } as const
+
+const workflowOptions = [
+  createWorkflowDraft({
+    workflowId: 'default-workflow',
+    description: 'Default workflow.',
+    configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+    createdAt: '2026-08-20T10:00:00Z',
+  }),
+  createWorkflowDraft({
+    workflowId: 'release-workflow',
+    description: 'Release workflow.',
+    configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+    createdAt: '2026-08-20T10:00:00Z',
+  }),
+]
+
+const repositoryOptions = RepositorySchema.array().parse([
+  {
+    repositoryId: 'repository-api',
+    name: 'API',
+    provider: 'GITHUB',
+    remoteId: '101',
+    fullName: 'operator/api',
+    cloneUrl: 'https://github.com/operator/api.git',
+    webUrl: 'https://github.com/operator/api',
+    defaultBranch: 'main',
+    availability: 'AVAILABLE',
+    createdAt: '2026-08-20T10:00:00Z',
+    updatedAt: '2026-08-20T10:00:00Z',
+  },
+  {
+    repositoryId: 'repository-web',
+    name: 'Web',
+    provider: 'GITLAB',
+    remoteId: '202',
+    fullName: 'operator/web',
+    cloneUrl: 'https://gitlab.com/operator/web.git',
+    webUrl: 'https://gitlab.com/operator/web',
+    defaultBranch: 'main',
+    availability: 'AVAILABLE',
+    createdAt: '2026-08-20T10:00:00Z',
+    updatedAt: '2026-08-20T10:00:00Z',
+  },
+])
+
+const runHistoryClient = (
+  listRuns: ApiClient['listRuns'],
+  options: Readonly<{
+    workflows?: Awaited<ReturnType<ApiClient['listWorkflows']>>
+    repositories?: Awaited<ReturnType<ApiClient['listRepositories']>>
+  }> = {},
+) => ({
+  listRuns,
+  listWorkflows: vi.fn(async () => options.workflows ?? []),
+  listRepositories: vi.fn(async () => options.repositories ?? []),
+})
 
 afterEach(() => {
   cleanup()
@@ -38,12 +95,14 @@ describe('run history API client', () => {
         page: 2,
         pageSize: 20,
         runId: 'api-1',
+        workflowIds: ['default-workflow', 'release-workflow'],
+        repositoryIds: ['repository-api', 'repository-web'],
         statuses: ['FAILED', 'CANCELLED'],
         durationMinMs: 1_000,
       }),
     ).resolves.toEqual(page)
     expect(fetchImplementation).toHaveBeenCalledWith(
-      '/api/runs?page=2&pageSize=20&runId=api-1&status=FAILED&status=CANCELLED&durationMinMs=1000',
+      '/api/runs?page=2&pageSize=20&runId=api-1&workflowId=default-workflow&workflowId=release-workflow&repositoryId=repository-api&repositoryId=repository-web&status=FAILED&status=CANCELLED&durationMinMs=1000',
       expect.any(Object),
     )
   })
@@ -70,7 +129,7 @@ describe('run history page', () => {
       pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
     }))
 
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     const relativeTime = await screen.findByText('2 hours ago')
     expect(relativeTime.tagName).toBe('TIME')
@@ -89,7 +148,7 @@ describe('run history page', () => {
           resolve = next
         }),
     )
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     const loading = screen.getByRole('status', { name: 'Loading run history' })
     expect(within(loading).getByRole('table', { name: 'Loading workflow runs' })).toBeTruthy()
@@ -110,6 +169,8 @@ describe('run history page', () => {
     const valid = await RunsPage({
       searchParams: Promise.resolve({
         page: '3',
+        workflowId: ['default-workflow', 'release-workflow', 'invalid workflow'],
+        repositoryId: ['repository-api', 'repository-web', '../invalid'],
         status: ['FAILED', 'invalid'],
         startedFrom: '2026-08-20',
         durationMinSeconds: '1.5',
@@ -118,10 +179,12 @@ describe('run history page', () => {
     const invalid = await RunsPage({ searchParams: Promise.resolve({ page: ['3', '4'] }) })
 
     expect(valid).toMatchObject({
-      key: 'page=3&status=FAILED&startedFrom=2026-08-20&durationMinSeconds=1.5',
+      key: 'page=3&workflowId=default-workflow&workflowId=release-workflow&repositoryId=repository-api&repositoryId=repository-web&status=FAILED&startedFrom=2026-08-20&durationMinSeconds=1.5',
       props: {
         page: 3,
         initialFilters: {
+          workflowIds: ['default-workflow', 'release-workflow'],
+          repositoryIds: ['repository-api', 'repository-web'],
           statuses: ['FAILED'],
           startedFrom: '2026-08-20',
           durationMinSeconds: '1.5',
@@ -149,7 +212,7 @@ describe('run history page', () => {
         }) as unknown as RunHistoryPage,
     )
 
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     const table = await screen.findByRole('table', { name: 'Workflow runs' })
     const surface = screen.getByTestId('run-history-surface')
@@ -193,7 +256,7 @@ describe('run history page', () => {
           pagination: { page: 1, pageSize: 20, totalItems: 2, totalPages: 1 },
         }) as unknown as RunHistoryPage,
     )
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Sort by Run ID ascending' }))
@@ -214,7 +277,7 @@ describe('run history page', () => {
           pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
         }) as unknown as RunHistoryPage,
     )
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     const link = await screen.findByRole('link', { name: 'Open run newest' })
     expect(link.textContent).toBe('newest')
@@ -229,7 +292,7 @@ describe('run history page', () => {
           pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
         }) as unknown as RunHistoryPage,
     )
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
@@ -306,6 +369,102 @@ describe('run history page', () => {
     expect(screen.queryByRole('button', { name: 'Remove Status filter' })).toBeNull()
   })
 
+  it('clears every active filter from the toolbar and resets pagination', async () => {
+    const listRuns = vi.fn<ApiClient['listRuns']>(
+      async () =>
+        ({
+          data: [runSummary],
+          pagination: { page: 3, pageSize: 20, totalItems: 41, totalPages: 3 },
+        }) as unknown as RunHistoryPage,
+    )
+    const replaceState = vi.spyOn(window.history, 'replaceState')
+
+    render(
+      <RunHistory
+        client={runHistoryClient(listRuns)}
+        initialFilters={{
+          runId: 'newest',
+          workflowIds: [WorkflowIdSchema.parse('default-workflow')],
+          repositoryIds: [],
+          statuses: ['SUCCEEDED'],
+          startedFrom: '',
+          startedTo: '',
+          durationMinSeconds: '',
+          durationMaxSeconds: '',
+        }}
+        page={3}
+      />,
+    )
+
+    await screen.findByRole('link', { name: 'Open run newest' })
+    const clearAll = screen.getByRole('button', { name: 'Clear all' })
+    const filters = screen.getByRole('button', { name: 'Filters, 3 active' })
+
+    expect(
+      clearAll.compareDocumentPosition(filters) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+
+    fireEvent.click(clearAll)
+
+    await waitFor(() => expect(listRuns).toHaveBeenLastCalledWith({ page: 1, pageSize: 20 }))
+    expect(replaceState).toHaveBeenLastCalledWith(null, '', '/runs')
+    expect(screen.queryByRole('button', { name: 'Clear all' })).toBeNull()
+  })
+
+  it('filters by multiple workflows and captured run repositories', async () => {
+    const listRuns = vi.fn<ApiClient['listRuns']>(
+      async () =>
+        ({
+          data: [runSummary],
+          pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
+        }) as unknown as RunHistoryPage,
+    )
+    render(
+      <RunHistory
+        client={runHistoryClient(listRuns, {
+          workflows: workflowOptions,
+          repositories: repositoryOptions,
+        })}
+        page={1}
+      />,
+    )
+
+    await screen.findByRole('link', { name: 'Open run newest' })
+    fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Workflow' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'default-workflow' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'release-workflow' }))
+
+    await waitFor(() =>
+      expect(listRuns).toHaveBeenLastCalledWith({
+        page: 1,
+        pageSize: 20,
+        workflowIds: ['default-workflow', 'release-workflow'],
+      }),
+    )
+    expect(
+      screen.getByRole('checkbox', { name: 'release-workflow' }).getAttribute('aria-checked'),
+    ).toBe('true')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Back to filter attributes' }))
+    expect(screen.getByRole('button', { name: 'Workflow, 2 selected' })).toBeTruthy()
+    expect(screen.getByText('Workflow: default-workflow, release-workflow')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Repositories' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'API, operator/api' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Web, operator/web' }))
+
+    await waitFor(() =>
+      expect(listRuns).toHaveBeenLastCalledWith({
+        page: 1,
+        pageSize: 20,
+        workflowIds: ['default-workflow', 'release-workflow'],
+        repositoryIds: ['repository-api', 'repository-web'],
+      }),
+    )
+    expect(screen.getByRole('button', { name: 'Filters, 2 active' })).toBeTruthy()
+    expect(screen.getByText('Repositories: API, Web')).toBeTruthy()
+  })
+
   it('uses text, date-range, and numeric-range editors for their attributes', async () => {
     const listRuns = vi.fn<ApiClient['listRuns']>(
       async () =>
@@ -314,7 +473,7 @@ describe('run history page', () => {
           pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
         }) as unknown as RunHistoryPage,
     )
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
@@ -385,7 +544,7 @@ describe('run history page', () => {
             resolveRefresh = resolve
           }),
     )
-    render(<RunHistory client={{ listRuns }} page={1} />)
+    render(<RunHistory client={runHistoryClient(listRuns)} page={1} />)
 
     await screen.findByRole('link', { name: 'Open run newest' })
     fireEvent.click(screen.getByRole('button', { name: 'Filters' }))
@@ -406,14 +565,14 @@ describe('run history page', () => {
       data: [],
       pagination: { page: 1, pageSize: 20, totalItems: 0, totalPages: 0 },
     }))
-    const { rerender } = render(<RunHistory client={{ listRuns: empty }} page={1} />)
+    const { rerender } = render(<RunHistory client={runHistoryClient(empty)} page={1} />)
 
     expect(await screen.findByText('No runs yet')).toBeTruthy()
 
     const failed = vi.fn<ApiClient['listRuns']>(async () => {
       throw new Error('unavailable')
     })
-    rerender(<RunHistory client={{ listRuns: failed }} page={2} />)
+    rerender(<RunHistory client={runHistoryClient(failed)} page={2} />)
 
     expect((await screen.findByRole('alert')).textContent).toContain('Run history unavailable')
   })
@@ -426,9 +585,11 @@ describe('run history page', () => {
 
     render(
       <RunHistory
-        client={{ listRuns }}
+        client={runHistoryClient(listRuns)}
         initialFilters={{
           runId: '',
+          workflowIds: [],
+          repositoryIds: [],
           statuses: ['CANCELLED'],
           startedFrom: '',
           startedTo: '',

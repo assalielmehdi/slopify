@@ -19,6 +19,17 @@ export const OutcomeNameSchema = kebabCaseId.brand<'OutcomeName'>()
 
 export const RunStatusSchema = z.enum(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED'])
 
+export const WorkflowRunOutcomeSchema = z.strictObject({
+  workflowId: WorkflowIdSchema,
+  runId: RunIdSchema,
+  status: z.enum(['SUCCEEDED', 'FAILED']),
+  completedAt: z.iso.datetime({ offset: true }),
+})
+
+export const WorkflowRunOutcomeCatalogResponseSchema = z.strictObject({
+  outcomes: z.array(WorkflowRunOutcomeSchema).max(100_000).readonly(),
+})
+
 export const NodeExecutionStatusSchema = z.enum([
   'PENDING',
   'RUNNING',
@@ -210,6 +221,20 @@ export const RunPaginationQuerySchema = z
     page: z.coerce.number().int().min(1).default(1),
     pageSize: z.coerce.number().int().min(1).max(100).default(20),
     runId: z.string().trim().min(1).max(128).optional(),
+    workflowIds: z
+      .array(WorkflowIdSchema)
+      .max(100)
+      .refine((workflowIds) => new Set(workflowIds).size === workflowIds.length, {
+        message: 'Workflow IDs must be unique',
+      })
+      .optional(),
+    repositoryIds: z
+      .array(RepositoryIdSchema)
+      .max(100)
+      .refine((repositoryIds) => new Set(repositoryIds).size === repositoryIds.length, {
+        message: 'Repository IDs must be unique',
+      })
+      .optional(),
     statuses: z
       .array(RunStatusSchema)
       .max(RunStatusSchema.options.length)
@@ -395,6 +420,14 @@ const RepositoryWorkspaceAgentTraceHeaderSchema = ClonedWorkspaceAgentTraceHeade
   version: z.literal(3),
 })
 
+const ArtifactWorkspaceAgentTraceHeaderSchema = z.strictObject({
+  version: z.literal(4),
+  ...agentTraceHeaderFields,
+  configuration: ClonedWorkspaceAgentTraceHeaderSchema.shape.configuration.extend({
+    artifactsPath: z.string().trim().min(1).max(4_096),
+  }),
+})
+
 const normalizeLegacyAgentTraceHeader = (input: unknown): unknown => {
   if (typeof input !== 'object' || input === null || Array.isArray(input)) return input
   const header = input as Record<string, unknown>
@@ -425,6 +458,7 @@ export const AgentTraceHeaderSchema = z.preprocess(
     LegacyAgentTraceHeaderSchema,
     ClonedWorkspaceAgentTraceHeaderSchema,
     RepositoryWorkspaceAgentTraceHeaderSchema,
+    ArtifactWorkspaceAgentTraceHeaderSchema,
   ]),
 )
 
@@ -448,6 +482,7 @@ export type NodeId = z.infer<typeof NodeIdSchema>
 export type RepositoryId = z.infer<typeof RepositoryIdSchema>
 export type OutcomeName = z.infer<typeof OutcomeNameSchema>
 export type RunStatus = z.infer<typeof RunStatusSchema>
+export type WorkflowRunOutcome = z.infer<typeof WorkflowRunOutcomeSchema>
 export type NodeExecutionStatus = z.infer<typeof NodeExecutionStatusSchema>
 export type ApiError = z.infer<typeof ApiErrorSchema>
 export type HealthResponse = z.infer<typeof HealthResponseSchema>

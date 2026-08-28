@@ -218,7 +218,7 @@ const prompt = (input: AgentExecutionInput): string => {
     path,
     primary: repositoryId === input.workspace.primaryRepositoryId,
   }))
-  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun repositories: ${JSON.stringify(repositories)}\nComplete all work inside these run workspaces. Your final response must match the provided JSON Schema with exactly one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Encode the data field as a JSON string. Do not finish without returning that structured node result.\n</slopify_execution_protocol>`
+  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun repositories: ${JSON.stringify(repositories)}\nRun artifacts: ${input.artifactsPath}\nComplete all work inside these run workspaces. Your final response must match the provided JSON Schema with exactly one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Encode the data field as a JSON string. Omit evidence entries whose value would be empty. Do not finish without returning that structured node result.\n</slopify_execution_protocol>`
 }
 
 const usage = (event: Record<string, unknown>) => {
@@ -380,6 +380,8 @@ export const createCodexCliAgentExecutor = (
               ? []
               : ['--add-dir', repository.path],
           ),
+          '--add-dir',
+          input.artifactsPath,
           '--output-schema',
           schemaPath,
           ...(input.model === undefined ? [] : ['--model', input.model]),

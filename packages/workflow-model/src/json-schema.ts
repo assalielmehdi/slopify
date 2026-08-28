@@ -10,7 +10,7 @@ export function createWorkflowFileJsonSchema() {
       cycles: 'throw',
       reused: 'inline',
     }),
-    $id: 'https://schemas.slopify.local/workflow.v2.schema.json',
-    title: 'Slopify workflow v2',
+    $id: 'https://schemas.slopify.local/workflow.v3.schema.json',
+    title: 'Slopify workflow v3',
   }
 }

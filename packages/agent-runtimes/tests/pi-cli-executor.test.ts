@@ -41,6 +41,7 @@ const input = AgentExecutionInputSchema.parse({
   executionId: 'execution-01',
   runId: 'run-01',
   nodeId: 'plan',
+  artifactsPath: '/runs/run-01/artifacts',
   workspace: {
     rootPath: '/workspaces/run-01',
     primaryRepositoryId: 'backend',
@@ -235,6 +236,12 @@ describe('Pi CLI executor', () => {
     })
     expect(process.writes[1]).toMatchObject({
       message: expect.stringContaining('"repositoryId":"backend"'),
+    })
+    expect(process.writes[1]).toMatchObject({
+      message: expect.stringContaining('Run artifacts: /runs/run-01/artifacts'),
+    })
+    expect(process.writes[1]).toMatchObject({
+      message: expect.stringContaining('Omit evidence entries whose value would be empty'),
     })
     expect(process.writes[1]).toMatchObject({
       message: expect.stringContaining('planned, blocked'),

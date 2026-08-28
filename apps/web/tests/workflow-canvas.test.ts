@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { AgentNodeSchema, WorkflowEdgeSchema, type Workflow } from '@slopify/workflow-model'
 
-import { layoutWorkflowGraph } from '../lib/workflow-graph-layout'
+import { layoutWorkflowGraph, workflowGraphPaneWidth } from '../lib/workflow-graph-layout'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const workflow = createAgentWorkflowFixture({
@@ -23,6 +23,9 @@ describe('workflow graph layout', () => {
       second.nodes.map(({ position }) => position),
     )
     expect(first.nodes[0]?.data).toMatchObject({ isStart: true, isEnd: true })
+    expect(first.nodes[0]?.ariaLabel).toBe(
+      'Who are you?, agent node, start node, end node, pi harness, model test-model, thinking effort high',
+    )
     expect(first.width).toBeGreaterThan(0)
     expect(first.height).toBeGreaterThan(0)
   })
@@ -76,5 +79,62 @@ describe('workflow graph layout', () => {
       width: 0,
       height: 0,
     })
+  })
+
+  it('sizes the graph pane from the widest parallel rank', () => {
+    const firstAgent = workflow.nodes[0]
+    if (firstAgent === undefined) throw new Error('Expected an agent fixture')
+    const secondAgent = AgentNodeSchema.parse({
+      ...firstAgent,
+      id: 'review-agent',
+      name: 'Review agent',
+    })
+    const thirdAgent = AgentNodeSchema.parse({
+      ...firstAgent,
+      id: 'test-agent',
+      name: 'Test agent',
+    })
+    const linearWorkflow = {
+      ...workflow,
+      nodes: [firstAgent, secondAgent, thirdAgent],
+      edges: [
+        WorkflowEdgeSchema.parse({
+          sourceNodeId: firstAgent.id,
+          targetNodeId: secondAgent.id,
+          outcome: 'completed',
+          label: 'Review',
+        }),
+        WorkflowEdgeSchema.parse({
+          sourceNodeId: secondAgent.id,
+          targetNodeId: thirdAgent.id,
+          outcome: 'completed',
+          label: 'Test',
+        }),
+      ],
+    } as Workflow
+    const parallelWorkflow = {
+      ...linearWorkflow,
+      edges: [
+        WorkflowEdgeSchema.parse({
+          sourceNodeId: firstAgent.id,
+          targetNodeId: secondAgent.id,
+          outcome: 'review',
+          label: 'Review',
+        }),
+        WorkflowEdgeSchema.parse({
+          sourceNodeId: firstAgent.id,
+          targetNodeId: thirdAgent.id,
+          outcome: 'test',
+          label: 'Test',
+        }),
+      ],
+    } as Workflow
+
+    expect(workflowGraphPaneWidth(parallelWorkflow)).toBeGreaterThan(
+      workflowGraphPaneWidth(linearWorkflow),
+    )
+    expect(workflowGraphPaneWidth(linearWorkflow)).toBe(
+      layoutWorkflowGraph(linearWorkflow).width + 64,
+    )
   })
 })

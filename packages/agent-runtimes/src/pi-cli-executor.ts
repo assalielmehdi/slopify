@@ -369,7 +369,7 @@ const prompt = (input: AgentExecutionInput): string => {
     path,
     primary: repositoryId === input.workspace.primaryRepositoryId,
   }))
-  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun repositories: ${JSON.stringify(repositories)}\nComplete all work inside these run workspaces. Call slopify_complete_node exactly once with one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Do not finish without calling it.\n</slopify_execution_protocol>`
+  return `${input.renderedPrompt}\n\n<slopify_execution_protocol>\nRun repositories: ${JSON.stringify(repositories)}\nRun artifacts: ${input.artifactsPath}\nComplete all work inside these run workspaces. Call slopify_complete_node exactly once with one of these declared outcomes: ${input.declaredOutcomes.join(', ')}. Omit evidence entries whose value would be empty. Do not finish without calling it.\n</slopify_execution_protocol>`
 }
 
 export const createPiCliAgentExecutor = (

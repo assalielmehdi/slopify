@@ -11,7 +11,7 @@ export const createRemoteRunRepositoryResolver = (
   }>,
 ): ((repositoryId: string) => Promise<FilesystemRunRepositoryResolution>) =>
   async function resolveRunRepository(repositoryId) {
-    const repository = await options.repositories.requireAvailable(repositoryId)
+    const repository = await options.repositories.requireAvailable(repositoryId, { fresh: true })
     const token = await options.connections.requireToken(repository.provider)
     const baseSha = await options.remote.getDefaultBranchSha(
       {

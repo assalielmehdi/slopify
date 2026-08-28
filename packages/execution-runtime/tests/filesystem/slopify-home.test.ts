@@ -12,6 +12,7 @@ describe('Slopify filesystem paths', () => {
       repositoriesFile: '/Users/operator/.slopify/repositories.json',
       schemasDirectory: '/Users/operator/.slopify/schemas',
       workflowsDirectory: '/Users/operator/.slopify/workflows',
+      archiveDirectory: '/Users/operator/.slopify/archive',
       runtimeDirectory: '/Users/operator/.slopify/runtime',
       migrationsDirectory: '/Users/operator/.slopify/migrations',
     })
@@ -38,6 +39,7 @@ describe('Slopify filesystem paths', () => {
         '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/repositories.snapshot.json',
       workspacesFile: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/workspaces.json',
       eventsFile: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/events.jsonl',
+      artifactsDirectory: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/artifacts',
       nodesDirectory: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/nodes',
       workspacesDirectory: '/private/tmp/slopify-test/workflows/workflow-01/runs/run-01/workspaces',
     })

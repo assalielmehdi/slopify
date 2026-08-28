@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LiveRun } from '../components/runs/live-run'
@@ -14,10 +14,10 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
     workflow,
   }: {
     onNodeSelect: (nodeId: string) => void
-    workflow: { name: string }
+    workflow: { workflowId: string }
   }) => (
     <div aria-label="Workflow graph" role="region">
-      <p>Captured graph {workflow.name}</p>
+      <p>Captured graph {workflow.workflowId}</p>
       <button type="button" onClick={() => onNodeSelect('identify-agent')}>
         Inspect captured agent
       </button>
@@ -115,11 +115,10 @@ describe('historical run', () => {
 
     render(<LiveRun runId="run-historical" client={client} connect={subscription} />)
 
-    expect(await screen.findByText('Captured graph Who are you?')).toBeTruthy()
+    expect(await screen.findByText('Captured graph default-workflow')).toBeTruthy()
     expect(subscription).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByRole('button', { name: 'Inspect captured agent' }))
-
-    const panel = screen.getByRole('dialog', { name: 'Who are you?' })
+    const panel = await screen.findByRole('complementary', { name: 'Who are you?' })
+    expect(panel.getAttribute('data-layout')).toBe('workspace')
     expect(await screen.findByText('Pi')).toBeTruthy()
     expect(panel.textContent).toContain('historical-model')
     expect(panel.textContent).toContain('xhigh')

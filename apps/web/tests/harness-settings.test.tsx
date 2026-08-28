@@ -28,7 +28,7 @@ describe('HarnessSettings', () => {
     expect(screen.getByTestId('harness-grid').className).toContain(
       'sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]',
     )
-    expect(screen.getByRole('img', { name: 'Pi' }).getAttribute('src')).toContain('/pi-logo.svg')
+    expect(screen.getByRole('img', { name: 'Pi' }).getAttribute('src')).toContain('/pi-badge.svg')
     expect(screen.getByText('Available')).toBeTruthy()
     expect(screen.queryByText('Version 0.84.2')).toBeNull()
     expect(screen.queryByText('/opt/homebrew/bin/pi')).toBeNull()
@@ -67,11 +67,12 @@ describe('HarnessSettings', () => {
     render(<HarnessSettings client={{ listHarnesses: vi.fn(async () => [descriptor]) }} />)
 
     const codexCard = await screen.findByRole('button', { name: 'Codex, Available' })
-    expect(within(codexCard).getByTestId('harness-icon-codex')).toBeTruthy()
+    const codexLogo = within(codexCard).getByRole('img', { name: 'ChatGPT' })
+    expect(codexLogo.getAttribute('src')).toContain('/chatgpt-logo.svg')
 
     fireEvent.click(codexCard)
     const panel = await screen.findByRole('dialog', { name: 'Codex' })
-    expect(within(panel).getByTestId('harness-icon-codex')).toBeTruthy()
+    expect(within(panel).getByRole('img', { name: 'ChatGPT' })).toBeTruthy()
     expect(within(panel).getByText('Version 0.149.1')).toBeTruthy()
   })
 

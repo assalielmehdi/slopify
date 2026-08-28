@@ -3,9 +3,9 @@ import { describe, expect, expectTypeOf, it } from 'vitest'
 import {
   AgentNodeSchema,
   CreateWorkflowInputSchema,
-  WorkflowNameSchema,
   WorkflowEdgeSchema,
   WorkflowSchema,
+  WorkflowSlugSchema,
   type CreateWorkflowInput,
   type Workflow,
 } from '../src/index.js'
@@ -20,12 +20,12 @@ const agentNode = {
     modelId: 'openai-codex/gpt-5.4',
     thinkingLevel: 'high',
   },
+  timeoutSeconds: 900,
 } as const
 
 const workflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'workflow-01',
-  name: 'Implementation workflow',
   description: 'Coordinate local agents.',
   configuration: {
     repositoryIds: ['repository-api', 'repository-web'],
@@ -41,7 +41,7 @@ const workflow = {
 } as const
 
 describe('workflow node contracts', () => {
-  it('parses the complete editable agent shape without hidden runtime fields', () => {
+  it('defaults each editable agent timeout to fifteen minutes', () => {
     expect(
       AgentNodeSchema.parse({
         type: 'agent',
@@ -56,6 +56,7 @@ describe('workflow node contracts', () => {
       name: 'New agent',
       prompt: 'Use {{ task }}.',
       harness: { harnessId: 'pi' },
+      timeoutSeconds: 900,
     })
   })
 
@@ -69,12 +70,16 @@ describe('workflow node contracts', () => {
       expect(AgentNodeSchema.safeParse(removedNode).success).toBe(false)
     }
   })
+
+  it.each([59, 61, 28_860, 900.5])('rejects invalid agent timeout %j', (timeoutSeconds) => {
+    expect(AgentNodeSchema.safeParse({ ...agentNode, timeoutSeconds }).success).toBe(false)
+  })
 })
 
 describe('workflow document contract', () => {
   it('accepts only editable fields when creating a workflow', () => {
     const input = {
-      name: 'release-workflow',
+      workflowId: 'release-workflow',
       description: 'Prepare and review a release.',
       configuration: {
         repositoryIds: ['repository-api'],
@@ -86,16 +91,18 @@ describe('workflow document contract', () => {
     expect(CreateWorkflowInputSchema.parse(input)).toEqual(input)
     expectTypeOf(CreateWorkflowInputSchema.parse(input)).toEqualTypeOf<CreateWorkflowInput>()
     expect(
-      CreateWorkflowInputSchema.safeParse({ ...input, workflowId: 'client-owned' }).success,
+      CreateWorkflowInputSchema.safeParse({ ...input, name: 'Release workflow' }).success,
     ).toBe(false)
-    expect(CreateWorkflowInputSchema.safeParse({ ...input, name: ' ' }).success).toBe(false)
+    expect(
+      CreateWorkflowInputSchema.safeParse({ ...input, workflowId: 'release workflow' }).success,
+    ).toBe(false)
     expect(CreateWorkflowInputSchema.safeParse({ ...input, description: undefined }).success).toBe(
       false,
     )
   })
 
-  it('accepts only canonical workflow name slugs for new workflows', () => {
-    expect(WorkflowNameSchema.parse('release-2026')).toBe('release-2026')
+  it('accepts only canonical workflow names', () => {
+    expect(WorkflowSlugSchema.parse('release-2026')).toBe('release-2026')
 
     for (const name of [
       'Release-workflow',
@@ -104,9 +111,9 @@ describe('workflow document contract', () => {
       'release-',
       'release--workflow',
       'release_workflow',
-      'a'.repeat(101),
+      'a'.repeat(65),
     ]) {
-      expect(WorkflowNameSchema.safeParse(name).success).toBe(false)
+      expect(WorkflowSlugSchema.safeParse(name).success).toBe(false)
     }
   })
 
@@ -117,6 +124,10 @@ describe('workflow document contract', () => {
   it('requires the version and workflow configuration', () => {
     expect(WorkflowSchema.safeParse({ ...workflow, schemaVersion: undefined }).success).toBe(false)
     expect(WorkflowSchema.safeParse({ ...workflow, configuration: undefined }).success).toBe(false)
+  })
+
+  it('does not allow a second workflow name beside its canonical identity', () => {
+    expect(WorkflowSchema.safeParse({ ...workflow, name: 'A display name' }).success).toBe(false)
   })
 
   it('rejects unknown agent configuration instead of transforming it', () => {

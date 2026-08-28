@@ -61,9 +61,8 @@ export const createTestAgentWorkflow = (input: CreateTestAgentWorkflowInput = {}
   const createdAt = input.createdAt ?? TEST_TIMESTAMP
   const repositoryIds = input.repositoryIds ?? []
   return WorkflowSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 3,
     workflowId: input.workflowId ?? TEST_WORKFLOW_ID,
-    name: 'Test workflow',
     description: 'A current Pi-backed agent workflow for tests.',
     configuration: {
       repositoryIds,

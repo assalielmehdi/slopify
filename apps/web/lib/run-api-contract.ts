@@ -11,7 +11,11 @@ import {
   WorkflowIdSchema,
   type RunStatus,
 } from '@slopify/contracts'
-import { WorkflowFileSchema, WorkflowSchema, workflowFileToWorkflow } from '@slopify/workflow-model'
+import {
+  WorkflowFileSchema,
+  WorkflowReadSchema,
+  workflowFileToWorkflow,
+} from '@slopify/workflow-model'
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()
@@ -20,7 +24,7 @@ const WorkflowRevisionSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 const LegacyStartRunResponseSchema = z.strictObject({
   runId: RunIdSchema,
   workflowId: WorkflowIdSchema,
-  workflowSnapshot: WorkflowSchema,
+  workflowSnapshot: WorkflowReadSchema,
   variables: z.record(z.string(), JsonValueSchema).readonly(),
   status: RunStatusSchema,
   transitionCount: z.number().int().nonnegative().safe(),
@@ -321,7 +325,7 @@ const LegacyRunDetailResponseSchema = z.strictObject({
 })
 
 const FilesystemNormalizedRunSchema = RunProjectionSchema.extend({
-  workflowSnapshot: WorkflowSchema,
+  workflowSnapshot: WorkflowReadSchema,
   variables: z.record(z.string(), JsonValueSchema).readonly(),
 })
 

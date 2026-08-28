@@ -63,7 +63,7 @@ function getBreadcrumbs(
           selectedWorkflow === undefined
             ? '/'
             : `/?workflowId=${encodeURIComponent(selectedWorkflow.workflowId)}`,
-        label: selectedWorkflow?.name ?? 'Workflow',
+        label: selectedWorkflow?.workflowId ?? 'Workflow',
       },
     ]
   }
@@ -183,6 +183,7 @@ function AppShellContent({
         >
           <Link
             href="/"
+            prefetch={false}
             aria-label="Slopify"
             className={cn(
               'flex min-w-0 items-center gap-2.5 rounded-md outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring/30',
@@ -232,6 +233,7 @@ function AppShellContent({
                 <li key={href}>
                   <Link
                     href={href}
+                    prefetch={false}
                     aria-current={isActive ? 'page' : undefined}
                     aria-label={label}
                     title={isCollapsed ? label : undefined}
@@ -260,6 +262,7 @@ function AppShellContent({
         >
           <Link
             href="/settings"
+            prefetch={false}
             aria-label="Settings"
             aria-current={isSettings ? 'page' : undefined}
             title={isCollapsed ? 'Settings' : undefined}

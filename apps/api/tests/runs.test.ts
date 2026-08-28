@@ -23,9 +23,8 @@ afterEach(() => {
 })
 
 const filesystemWorkflow: WorkflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'filesystem-review',
-  name: 'Filesystem review',
   description: 'Review a filesystem-backed run.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -78,8 +77,10 @@ const createFilesystemFixture = async () => {
   })
   const index = createFilesystemRunIndex({ paths })
   const reader = createFilesystemRunReader({ index, paths })
+  const onRunAdmitted = vi.fn()
   return {
-    app: createApiApp({ filesystemRuns: { admissions, index, reader } }),
+    app: createApiApp({ filesystemRuns: { admissions, index, reader, onRunAdmitted } }),
+    onRunAdmitted,
     paths,
   }
 }
@@ -93,10 +94,33 @@ describe('filesystem run JSON API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ workflowId: 'filesystem-review', variables: { release: 'v1.0.0' } }),
     })
+    writeFileSync(
+      fixture.paths.run('filesystem-review', 'run-filesystem-1').runFile,
+      `${JSON.stringify({
+        schemaVersion: 1,
+        runId: 'run-filesystem-1',
+        workflowId: 'filesystem-review',
+        status: 'SUCCEEDED',
+        transitionCount: 0,
+        lastEventSequence: 1,
+        createdAt: '2026-08-25T10:30:00.000Z',
+        startedAt: '2026-08-25T10:30:00.000Z',
+        completedAt: '2026-08-25T10:35:00.000Z',
+        failureCode: null,
+      })}\n`,
+    )
     const list = await fixture.app.request('/api/runs?page=1&pageSize=20')
+    const matchingList = await fixture.app.request(
+      '/api/runs?workflowId=filesystem-review&repositoryId=repository-api',
+    )
+    const mismatchedList = await fixture.app.request(
+      '/api/runs?workflowId=another-workflow&repositoryId=repository-web',
+    )
+    const outcomes = await fixture.app.request('/api/workflow-run-outcomes')
     const detail = await fixture.app.request('/api/runs/run-filesystem-1')
 
     expect(created.status).toBe(202)
+    expect(fixture.onRunAdmitted).toHaveBeenCalledOnce()
     expect(await created.json()).toMatchObject({
       runId: 'run-filesystem-1',
       workflowId: 'filesystem-review',
@@ -105,6 +129,19 @@ describe('filesystem run JSON API', () => {
     expect(await list.json()).toMatchObject({
       data: [{ status: 'READY', run: { runId: 'run-filesystem-1' } }],
       pagination: { totalItems: 1 },
+    })
+    expect(await matchingList.json()).toMatchObject({ pagination: { totalItems: 1 } })
+    expect(await mismatchedList.json()).toMatchObject({ pagination: { totalItems: 0 } })
+    expect(outcomes.status).toBe(200)
+    expect(await outcomes.json()).toEqual({
+      outcomes: [
+        {
+          workflowId: 'filesystem-review',
+          runId: 'run-filesystem-1',
+          status: 'SUCCEEDED',
+          completedAt: '2026-08-25T10:35:00.000Z',
+        },
+      ],
     })
     expect(await detail.json()).toMatchObject({
       status: 'READY',

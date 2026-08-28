@@ -95,7 +95,7 @@ afterEach(() => {
 })
 
 describe('legacy catalog converter', () => {
-  it('exports validated settings, repositories, and v2 workflow files without PAT bytes', async () => {
+  it('exports validated settings, repositories, and v3 workflow files without PAT bytes', async () => {
     const { preparation } = await createFixture()
 
     const result = await createLegacyCatalogConverter({ preparation }).convert()
@@ -130,7 +130,7 @@ describe('legacy catalog converter', () => {
       expect.objectContaining({
         status: 'VALID',
         value: expect.objectContaining({
-          schemaVersion: 2,
+          schemaVersion: 3,
           workflowId: 'release-review',
           repositories: {
             repositoryIds: ['repository-api'],

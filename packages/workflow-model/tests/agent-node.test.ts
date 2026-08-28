@@ -28,9 +28,8 @@ describe('agent node architecture', () => {
 
   it('persists one flat harness-backed agent shape', () => {
     const workflow = WorkflowSchema.parse({
-      schemaVersion: 2,
+      schemaVersion: 3,
       workflowId: 'workflow-01',
-      name: 'Workflow',
       description: 'A workflow.',
       configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       startNodeId: 'agent-01',

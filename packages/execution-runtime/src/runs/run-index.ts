@@ -1,7 +1,14 @@
 import { lstat, readdir } from 'node:fs/promises'
 import { join } from 'node:path'
 
-import { RunIdSchema, RunStatusSchema, type RunStatus } from '@slopify/contracts'
+import {
+  RepositoryIdSchema,
+  RunIdSchema,
+  RunStatusSchema,
+  type RepositoryId,
+  type RunStatus,
+  type WorkflowRunOutcome,
+} from '@slopify/contracts'
 import { WorkflowSlugSchema } from '@slopify/workflow-model'
 
 import {
@@ -33,6 +40,8 @@ export interface ListRunsInput {
   readonly page: number
   readonly pageSize: number
   readonly runId?: string | undefined
+  readonly workflowIds?: readonly string[] | undefined
+  readonly repositoryIds?: readonly string[] | undefined
   readonly statuses?: readonly RunStatus[] | undefined
   readonly startedFrom?: string | undefined
   readonly startedTo?: string | undefined
@@ -71,6 +80,7 @@ export interface FilesystemRunIndex {
   refresh(): Promise<void>
   get(runId: string): Promise<FilesystemRunIndexEntry | undefined>
   list(input: ListRunsInput): Promise<FilesystemRunIndexPage>
+  listLatestFinished(): Promise<readonly WorkflowRunOutcome[]>
 }
 
 export type FilesystemRunDetail =
@@ -93,6 +103,7 @@ export interface FilesystemRunReader {
 interface CachedEntry {
   readonly signature: string
   readonly entry: FilesystemRunIndexEntry
+  readonly repositoryIds: readonly RepositoryId[] | null
 }
 
 const errorCode = (error: unknown): string | undefined =>
@@ -164,8 +175,12 @@ export const createFilesystemRunIndex = (
         if (!parsedRunId.success) continue
         const runId = parsedRunId.data
         const locator = { workflowId, runId }
-        const runFile = options.paths.run(workflowId, runId).runFile
-        const signature = await fileSignature(runFile)
+        const runPaths = options.paths.run(workflowId, runId)
+        const [runSignature, repositoriesSignature] = await Promise.all([
+          fileSignature(runPaths.runFile),
+          fileSignature(runPaths.repositoriesSnapshotFile),
+        ])
+        const signature = `${runSignature}:${repositoriesSignature}`
         const key = `${workflowId}/${runId}`
         const existing = cache.get(key)
         if (existing?.signature === signature) {
@@ -173,23 +188,34 @@ export const createFilesystemRunIndex = (
           continue
         }
         let entry: FilesystemRunIndexEntry
+        let repositoryIds: readonly RepositoryId[] | null = null
         try {
-          const run = await resources.read({ path: runFile, schema: RunProjectionSchema })
+          const run = await resources.read({ path: runPaths.runFile, schema: RunProjectionSchema })
           if (run.runId !== runId || run.workflowId !== workflowId) {
             throw new TypeError('Run projection does not match its filesystem location')
           }
           entry = { status: 'READY', locator, run }
+          try {
+            const repositories = await resources.read({
+              path: runPaths.repositoriesSnapshotFile,
+              schema: RunRepositoriesSnapshotSchema,
+            })
+            repositoryIds = repositories.repositories.map(({ repositoryId }) => repositoryId)
+          } catch {
+            repositoryIds = null
+          }
         } catch (cause) {
           entry = { status: 'CORRUPT', locator, diagnostic: diagnostic(cause) }
         }
-        next.set(key, { signature, entry })
+        next.set(key, { signature, entry, repositoryIds })
       }
     }
     cache = next
   }
 
+  const cachedEntries = (): readonly CachedEntry[] => [...cache.values()]
   const entries = (): readonly FilesystemRunIndexEntry[] =>
-    [...cache.values()].map(({ entry }) => entry)
+    cachedEntries().map(({ entry }) => entry)
 
   return {
     refresh,
@@ -203,9 +229,31 @@ export const createFilesystemRunIndex = (
       const statuses: readonly RunStatus[] | undefined = input.statuses?.map((status) =>
         RunStatusSchema.parse(status),
       )
+      const workflowIds = input.workflowIds?.map((workflowId) =>
+        WorkflowSlugSchema.parse(workflowId),
+      )
+      const repositoryIds = input.repositoryIds?.map((repositoryId) =>
+        RepositoryIdSchema.parse(repositoryId),
+      )
       await refresh()
-      const filtered = entries()
-        .filter((entry) => input.runId === undefined || entry.locator.runId.includes(input.runId))
+      const filtered = cachedEntries()
+        .filter(
+          ({ entry }) => input.runId === undefined || entry.locator.runId.includes(input.runId),
+        )
+        .filter(
+          ({ entry }) =>
+            workflowIds === undefined ||
+            workflowIds.length === 0 ||
+            workflowIds.includes(entry.locator.workflowId),
+        )
+        .filter(
+          (cached) =>
+            repositoryIds === undefined ||
+            repositoryIds.length === 0 ||
+            cached.repositoryIds?.some((repositoryId) => repositoryIds.includes(repositoryId)) ===
+              true,
+        )
+        .map(({ entry }) => entry)
         .filter(
           (entry) =>
             statuses === undefined ||
@@ -265,6 +313,40 @@ export const createFilesystemRunIndex = (
           totalPages: Math.ceil(filtered.length / input.pageSize),
         },
       }
+    },
+    async listLatestFinished() {
+      await refresh()
+      const outcomes = entries()
+        .flatMap((entry): WorkflowRunOutcome[] => {
+          if (
+            entry.status !== 'READY' ||
+            (entry.run.status !== 'SUCCEEDED' && entry.run.status !== 'FAILED') ||
+            entry.run.completedAt === null
+          ) {
+            return []
+          }
+          return [
+            {
+              workflowId: entry.run.workflowId,
+              runId: entry.run.runId,
+              status: entry.run.status,
+              completedAt: entry.run.completedAt,
+            },
+          ]
+        })
+        .sort(
+          (left, right) =>
+            right.completedAt.localeCompare(left.completedAt) ||
+            right.runId.localeCompare(left.runId),
+        )
+
+      const latestByWorkflow = new Map<string, WorkflowRunOutcome>()
+      for (const outcome of outcomes) {
+        if (!latestByWorkflow.has(outcome.workflowId)) {
+          latestByWorkflow.set(outcome.workflowId, outcome)
+        }
+      }
+      return [...latestByWorkflow.values()]
     },
   }
 }

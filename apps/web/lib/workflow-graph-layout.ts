@@ -6,9 +6,12 @@ import type { Workflow } from '@slopify/workflow-model'
 import type { WorkflowNodeData } from '@/components/workflow/workflow-node'
 
 export const WORKFLOW_NODE_WIDTH = 224
-export const WORKFLOW_NODE_HEIGHT = 128
+export const WORKFLOW_NODE_HEIGHT = 152
 
 const GRAPH_PADDING = 48
+const WORKFLOW_CANVAS_HORIZONTAL_PADDING = 64
+
+export const WORKFLOW_GRAPH_PANE_MIN_WIDTH = 320
 
 export interface WorkflowGraphNode {
   readonly id: string
@@ -70,6 +73,14 @@ export function layoutWorkflowGraph(
     const isStart = domainNode.id === workflow.startNodeId
     const isEnd = !nodesWithOutgoingEdges.has(domainNode.id)
     const recentRunStatus = options.recentRunStatuses?.[domainNode.id]
+    const modelLabel =
+      domainNode.harness.modelId === undefined
+        ? 'default model'
+        : `model ${domainNode.harness.modelId}`
+    const thinkingLabel =
+      domainNode.harness.thinkingLevel === undefined
+        ? 'default thinking effort'
+        : `thinking effort ${domainNode.harness.thinkingLevel}`
 
     return {
       id: domainNode.id,
@@ -83,7 +94,7 @@ export function layoutWorkflowGraph(
         x: position.x - WORKFLOW_NODE_WIDTH / 2 + GRAPH_PADDING,
         y: position.y - WORKFLOW_NODE_HEIGHT / 2 + GRAPH_PADDING,
       },
-      ariaLabel: `${domainNode.name}, agent node${isStart ? ', start node' : ''}${isEnd ? ', end node' : ''}`,
+      ariaLabel: `${domainNode.name}, agent node${isStart ? ', start node' : ''}${isEnd ? ', end node' : ''}, ${domainNode.harness.harnessId} harness, ${modelLabel}, ${thinkingLabel}`,
     }
   })
 
@@ -111,4 +122,9 @@ export function layoutWorkflowGraph(
     width: (dimensions.width ?? WORKFLOW_NODE_WIDTH) + GRAPH_PADDING * 2,
     height: (dimensions.height ?? WORKFLOW_NODE_HEIGHT) + GRAPH_PADDING * 2,
   }
+}
+
+export function workflowGraphPaneWidth(workflow: Workflow): number {
+  const graphWidth = layoutWorkflowGraph(workflow).width + WORKFLOW_CANVAS_HORIZONTAL_PADDING
+  return Math.max(WORKFLOW_GRAPH_PANE_MIN_WIDTH, graphWidth)
 }

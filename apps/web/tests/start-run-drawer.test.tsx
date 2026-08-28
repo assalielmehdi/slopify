@@ -21,7 +21,6 @@ const baseWorkflow = createAgentWorkflowFixture({
 })
 const workflow = WorkflowSchema.parse({
   ...baseWorkflow,
-  name: 'Invisible workflow name',
   configuration: {
     repositoryIds: ['repository-api'],
     primaryRepositoryId: 'repository-api',
@@ -32,7 +31,6 @@ const workflow = WorkflowSchema.parse({
 const firstWorkflow = WorkflowSchema.parse({
   ...workflow,
   workflowId: 'first-workflow',
-  name: 'First workflow',
   configuration: { ...workflow.configuration, variables: ['wrong'] },
 })
 const harnesses = HarnessDescriptorSchema.array().parse([
@@ -71,7 +69,7 @@ afterEach(() => {
 })
 
 describe('StartRunDrawer', () => {
-  it('starts the current workflow from a variables-only floating panel', async () => {
+  it('starts the current workflow from a variables-only workspace panel', async () => {
     const startRun = vi.fn(async () => startedRun)
     const client = {
       listWorkflows: vi.fn(async () => [firstWorkflow, workflow]),
@@ -90,9 +88,12 @@ describe('StartRunDrawer', () => {
       />,
     )
 
-    expect(await screen.findByRole('complementary', { name: 'Run' })).toBeTruthy()
+    const panel = await screen.findByRole('complementary', { name: 'Run' })
+    expect(panel.getAttribute('data-layout')).toBe('workspace')
+    expect(panel.querySelector('header')?.getAttribute('data-slot')).toBe('workspace-panel-header')
+    expect(screen.getByRole('heading', { name: 'Run workflow' })).toBeTruthy()
     expect(screen.queryByLabelText('Workflow')).toBeNull()
-    expect(screen.queryByText('Invisible workflow name')).toBeNull()
+    expect(screen.queryByText(workflow.workflowId)).toBeNull()
     const startRunButton = await screen.findByRole('button', { name: 'Start run' })
     const actions = screen.getByTestId('run-variable-actions')
     expect(screen.queryByRole('button', { name: 'Cancel' })).toBeNull()
@@ -116,7 +117,7 @@ describe('StartRunDrawer', () => {
     expect(push).toHaveBeenCalledWith('/runs/run-01')
   })
 
-  it('stays open during canvas interaction and closes only from its close button', async () => {
+  it('stays visible during graph interaction and closes only from its close button', async () => {
     const client = {
       listWorkflows: vi.fn(async () => [workflow]),
       listHarnesses: vi.fn(async () => harnesses),
@@ -128,21 +129,16 @@ describe('StartRunDrawer', () => {
     render(<StartRunDrawer client={client} onClose={onClose} workflowId={workflow.workflowId} />)
 
     const panel = await screen.findByRole('complementary', { name: 'Run' })
-    const shell = panel.parentElement
-    if (shell === null) throw new Error('Expected the drawer shell')
-    await waitFor(() => expect(shell.getAttribute('data-open')).toBe('true'))
+    expect(panel.getAttribute('data-layout')).toBe('workspace')
 
     fireEvent.pointerDown(document.body)
     fireEvent.pointerMove(document.body)
     fireEvent.pointerUp(document.body)
     fireEvent.keyDown(document, { key: 'Escape' })
 
-    expect(shell.getAttribute('data-open')).toBe('true')
     expect(onClose).not.toHaveBeenCalled()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Close run drawer' }))
-    expect(shell.getAttribute('data-open')).toBe('false')
-    fireEvent.transitionEnd(shell, { propertyName: 'translate' })
+    fireEvent.click(screen.getByRole('button', { name: 'Close run configuration' }))
     expect(onClose).toHaveBeenCalledOnce()
   })
 })

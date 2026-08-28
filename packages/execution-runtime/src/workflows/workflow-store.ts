@@ -32,6 +32,7 @@ export class WorkflowStoreError extends Error {
 
 export interface WorkflowStore {
   create(workflow: WorkflowFile): Promise<VersionedWorkflowFile>
+  delete(workflowId: string): Promise<boolean>
   save(input: {
     readonly workflowId: string
     readonly value: WorkflowFile

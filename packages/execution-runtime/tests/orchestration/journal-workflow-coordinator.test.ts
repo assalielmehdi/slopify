@@ -23,9 +23,8 @@ const agent = (id: string) => ({
 })
 
 const workflow: Workflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'parallel-review',
-  name: 'Parallel review',
   description: 'Exercise fan-out and joins.',
   configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'start',
@@ -125,7 +124,6 @@ describe('journal workflow coordinator', () => {
   it('journals start, leaf scheduling, and terminal completion idempotently', async () => {
     const fixture = createFixture({
       ...workflow,
-      name: 'Leaf review',
       startNodeId: 'leaf',
       nodes: [agent('leaf')],
       edges: [],
@@ -210,7 +208,6 @@ describe('journal workflow coordinator', () => {
   it('completes an in-memory harness run once from journal facts', async () => {
     const fixture = createFixture({
       ...workflow,
-      name: 'Leaf review',
       startNodeId: 'leaf',
       nodes: [agent('leaf')],
       edges: [],
@@ -246,7 +243,6 @@ describe('journal workflow coordinator', () => {
   it('records cancellation once and never schedules after the request', async () => {
     const fixture = createFixture({
       ...workflow,
-      name: 'Leaf review',
       startNodeId: 'leaf',
       nodes: [agent('leaf')],
       edges: [],
@@ -287,7 +283,6 @@ describe('journal workflow coordinator', () => {
         primaryRepositoryId: 'repository-api',
         variables: [],
       },
-      name: 'Workspace review',
       startNodeId: 'leaf',
       nodes: [agent('leaf')],
       edges: [],
@@ -336,7 +331,6 @@ describe('journal workflow coordinator', () => {
         primaryRepositoryId: 'repository-api',
         variables: [],
       },
-      name: 'Incomplete workspace review',
       startNodeId: 'leaf',
       nodes: [agent('leaf')],
       edges: [],

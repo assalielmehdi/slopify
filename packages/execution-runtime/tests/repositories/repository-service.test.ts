@@ -209,6 +209,82 @@ describe('repository service', () => {
     })
   })
 
+  it('caches repository discovery and shares concurrent remote inspections', async () => {
+    const repositories = createRepository()
+    await repositories.add(storedRepository())
+    const remote = createRemote()
+    const getRepository = vi.fn(remote.getRepository)
+    const service = createRepositoryService({
+      repositories,
+      connections: createConnections(),
+      remote: { ...remote, getRepository },
+    })
+
+    await expect(Promise.all([service.list(), service.list()])).resolves.toHaveLength(2)
+    await service.list()
+    expect(getRepository).toHaveBeenCalledTimes(1)
+  })
+
+  it('bypasses cached metadata when run admission requests a fresh repository', async () => {
+    const repositories = createRepository()
+    await repositories.add(storedRepository())
+    let current = remoteRepository
+    const remote = createRemote()
+    const getRepository = vi.fn(async () => current)
+    const service = createRepositoryService({
+      repositories,
+      connections: createConnections(),
+      remote: { ...remote, getRepository },
+    })
+
+    await service.list()
+    current = { ...remoteRepository, defaultBranch: 'trunk' }
+
+    await expect(service.requireAvailable('repository-01', { fresh: true })).resolves.toMatchObject(
+      {
+        defaultBranch: 'trunk',
+      },
+    )
+    expect(getRepository).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps the newest inspection single-flight when its stored record changes', async () => {
+    const repositories = createRepository()
+    await repositories.add(storedRepository())
+    const listRecords = vi.spyOn(repositories, 'list')
+    let resolveFirst: (repository: GitRepository | undefined) => void = () => undefined
+    let resolveSecond: (repository: GitRepository | undefined) => void = () => undefined
+    const getRepository = vi
+      .fn<RemoteGitHost['getRepository']>()
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveFirst = resolve)))
+      .mockImplementationOnce(() => new Promise((resolve) => (resolveSecond = resolve)))
+    const service = createRepositoryService({
+      repositories,
+      connections: createConnections(),
+      remote: { ...createRemote(), getRepository },
+    })
+
+    const first = service.list()
+    await vi.waitFor(() => expect(getRepository).toHaveBeenCalledTimes(1))
+    repositories.records[0] = {
+      ...storedRepository(),
+      updatedAt: '2026-08-21T10:01:00Z',
+    }
+    const second = service.list()
+    await vi.waitFor(() => expect(getRepository).toHaveBeenCalledTimes(2))
+
+    resolveFirst(remoteRepository)
+    await first
+    const third = service.list()
+    await vi.waitFor(() => expect(listRecords).toHaveBeenCalledTimes(3))
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(getRepository).toHaveBeenCalledTimes(2)
+    resolveSecond(remoteRepository)
+    await expect(Promise.all([second, third])).resolves.toHaveLength(2)
+  })
+
   it('immediately deletes a repository', async () => {
     const repositories = createRepository()
     await repositories.add(storedRepository())

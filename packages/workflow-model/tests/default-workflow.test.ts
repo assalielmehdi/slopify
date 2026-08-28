@@ -12,7 +12,6 @@ describe('default workflow', () => {
   it('creates a canonical empty draft with caller-provided identity and configuration', () => {
     const workflow = createWorkflowDraft({
       workflowId: 'release-workflow',
-      name: 'Release workflow',
       description: 'Prepare and review a release.',
       configuration: {
         repositoryIds: ['repository-api'],
@@ -23,9 +22,8 @@ describe('default workflow', () => {
     })
 
     expect(workflow).toEqual({
-      schemaVersion: 2,
+      schemaVersion: 3,
       workflowId: 'release-workflow',
-      name: 'Release workflow',
       description: 'Prepare and review a release.',
       configuration: {
         repositoryIds: ['repository-api'],
@@ -46,7 +44,6 @@ describe('default workflow', () => {
 
     expect(workflow).toMatchObject({
       workflowId: DEFAULT_WORKFLOW_ID,
-      name: 'Untitled workflow',
       description: 'Add agents and connect them to build a workflow.',
       configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       startNodeId: null,

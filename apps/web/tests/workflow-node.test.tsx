@@ -3,6 +3,8 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
+import { AgentNodeSchema } from '@slopify/workflow-model'
+
 import { WorkflowNodeContent } from '../components/workflow/workflow-node'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
@@ -15,6 +17,83 @@ const workflow = createAgentWorkflowFixture({
 afterEach(cleanup)
 
 describe('WorkflowNode', () => {
+  it('shows harness, model, and thinking metadata in that order at the bottom right', () => {
+    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (node === undefined) throw new Error('Expected agent node')
+
+    const { container } = render(
+      <WorkflowNodeContent
+        data={{ domainNode: node, isStart: true, isEnd: false }}
+        selected={false}
+      />,
+    )
+
+    const metadata = container.querySelector('[data-node-runtime]')
+    expect(metadata?.className).toContain('mt-auto')
+    expect(metadata?.className).toContain('justify-end')
+
+    const [harness, model, thinking] = Array.from(metadata?.children ?? [])
+    expect(harness?.getAttribute('data-runtime-field')).toBe('harness')
+    expect(harness?.querySelector('img')?.getAttribute('src')).toContain('/pi-badge.svg')
+    expect(model?.getAttribute('data-runtime-field')).toBe('model')
+    expect(model?.getAttribute('aria-label')).toBe('Model: test-model')
+    expect(model?.textContent).toBe('test-model')
+    expect(thinking?.getAttribute('data-runtime-field')).toBe('thinking')
+    expect(thinking?.getAttribute('aria-label')).toBe('Thinking effort: high')
+    expect(thinking?.textContent).toBe('high')
+  })
+
+  it('uses the Codex logo and labels inherited runtime defaults explicitly', () => {
+    const originalNode = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (originalNode === undefined) throw new Error('Expected agent node')
+    const node = AgentNodeSchema.parse({
+      ...originalNode,
+      harness: { harnessId: 'codex' },
+    })
+
+    const { container } = render(
+      <WorkflowNodeContent
+        data={{ domainNode: node, isStart: true, isEnd: false }}
+        selected={false}
+      />,
+    )
+
+    const metadata = container.querySelector('[data-node-runtime]')
+    expect(metadata?.querySelector('img')?.getAttribute('src')).toContain('/chatgpt-logo.svg')
+    expect(screen.getByText('Default model')).toBeTruthy()
+    expect(screen.getByText('Default effort')).toBeTruthy()
+  })
+
+  it('uses the configured repository-card surface in workflow and run graphs', () => {
+    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (node === undefined) throw new Error('Expected agent node')
+
+    const view = render(
+      <WorkflowNodeContent
+        data={{ domainNode: node, isStart: true, isEnd: false }}
+        selected={false}
+      />,
+    )
+
+    const card = view.container.firstElementChild
+    expect(card?.className).toContain('bg-muted/55')
+    expect(card?.className).not.toContain('bg-card')
+
+    view.rerender(
+      <WorkflowNodeContent
+        data={{
+          domainNode: node,
+          isStart: true,
+          isEnd: false,
+          recentRunStatus: 'RUNNING',
+        }}
+        selected={false}
+      />,
+    )
+
+    expect(view.container.firstElementChild?.className).toContain('bg-muted/55')
+  })
+
   it('uses text and icons to identify kind, start, selection, and recent status', () => {
     const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
     if (node === undefined) throw new Error('Expected agent node')
@@ -42,10 +121,10 @@ describe('WorkflowNode', () => {
   it.each([
     ['SUCCEEDED', 'border-status-success', 'bg-status-success'],
     ['FAILED', 'border-destructive', 'bg-destructive'],
-    ['RUNNING', 'border-status-info', 'workflow-node-running-fill'],
+    ['CANCELLED', 'border-status-warning', 'bg-status-warning'],
   ] as const)(
-    'uses a semantic whole-card treatment for %s nodes',
-    (status, borderClass, backgroundClass) => {
+    'keeps the shared card surface and uses a semantic border for %s nodes',
+    (status, borderClass, replacedBackgroundClass) => {
       const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
       if (node === undefined) throw new Error('Expected agent node')
 
@@ -64,7 +143,8 @@ describe('WorkflowNode', () => {
       const card = container.querySelector('[data-status]')
       expect(card?.getAttribute('data-status')).toBe(status)
       expect(card?.className).toContain(borderClass)
-      expect(card?.className).toContain(backgroundClass)
+      expect(card?.className).toContain('bg-muted/55')
+      expect(card?.className).not.toContain(replacedBackgroundClass)
     },
   )
 

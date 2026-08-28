@@ -18,10 +18,12 @@ const LegacyWorkflowEnvelopeSchema = z
 export const convertWorkflowV1 = (input: unknown): Workflow => {
   const legacy = LegacyWorkflowEnvelopeSchema.parse(input)
   const { projectIds, primaryProjectId, ...configuration } = legacy.configuration
+  const workflow = { ...legacy }
+  Reflect.deleteProperty(workflow, 'name')
 
   const converted = WorkflowSchema.parse({
-    ...legacy,
-    schemaVersion: 2,
+    ...workflow,
+    schemaVersion: 3,
     configuration: {
       ...configuration,
       repositoryIds: projectIds,

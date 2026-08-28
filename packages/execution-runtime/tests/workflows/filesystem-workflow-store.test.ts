@@ -22,9 +22,8 @@ import {
 const directories: string[] = []
 
 const workflow = (overrides: Partial<WorkflowFile> = {}): WorkflowFile => ({
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'release-review',
-  name: 'Release review',
   description: 'Prepare and review a release.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -40,6 +39,7 @@ const workflow = (overrides: Partial<WorkflowFile> = {}): WorkflowFile => ({
         name: 'Prepare',
         prompt: 'Prepare {{ release }}.',
         harness: { harnessId: 'pi' },
+        timeoutSeconds: 900,
       },
     ],
     edges: [],
@@ -87,6 +87,63 @@ describe('filesystem workflow store', () => {
     await expect(fixture.workflows.create(workflow())).rejects.toMatchObject({
       code: 'WORKFLOW_CONFLICT',
     })
+  })
+
+  it('archives the complete workflow directory with its historical runs', async () => {
+    const fixture = createFixture()
+    await fixture.workflows.create(workflow())
+    const historicalRunDirectory = join(
+      fixture.paths.workflow('release-review').runsDirectory,
+      'historical-run',
+    )
+    const historicalRun = join(historicalRunDirectory, 'run.json')
+    mkdirSync(historicalRunDirectory, { recursive: true })
+    writeFileSync(historicalRun, '{}\n')
+
+    await expect(fixture.workflows.delete('release-review')).resolves.toBe(true)
+
+    const archivedWorkflow = join(fixture.paths.archiveDirectory, 'release-review')
+    expect(existsSync(fixture.paths.workflow('release-review').directory)).toBe(false)
+    expect(existsSync(join(archivedWorkflow, 'workflow.json'))).toBe(true)
+    expect(existsSync(join(archivedWorkflow, 'runs', 'historical-run', 'run.json'))).toBe(true)
+    await expect(fixture.workflows.delete('release-review')).resolves.toBe(false)
+  })
+
+  it('keeps every archive when a workflow ID is reused', async () => {
+    const fixture = createFixture()
+    await fixture.workflows.create(workflow())
+    await fixture.workflows.delete('release-review')
+    await fixture.workflows.create(workflow())
+
+    await expect(fixture.workflows.delete('release-review')).resolves.toBe(true)
+
+    expect(
+      existsSync(join(fixture.paths.archiveDirectory, 'release-review', 'workflow.json')),
+    ).toBe(true)
+    expect(
+      existsSync(join(fixture.paths.archiveDirectory, 'release-review-2', 'workflow.json')),
+    ).toBe(true)
+  })
+
+  it('reads a v2 definition through its canonical directory identity without rewriting it', async () => {
+    const fixture = createFixture()
+    const legacy = {
+      ...workflow({ workflowId: 'test' }),
+      schemaVersion: 2,
+      name: 'test wer',
+    }
+    const definitionFile = writeExternalWorkflow(fixture.paths, 'test', legacy)
+
+    const stored = await fixture.workflows.get('test')
+
+    expect(stored).toMatchObject({
+      status: 'VALID',
+      workflowId: 'test',
+      value: { schemaVersion: 3, workflowId: 'test' },
+    })
+    if (stored?.status !== 'VALID') throw new Error('Expected a valid legacy workflow fixture')
+    expect(stored.value).not.toHaveProperty('name')
+    expect(JSON.parse(readFileSync(definitionFile, 'utf8'))).toEqual(legacy)
   })
 
   it('reports invalid entries independently without rewriting their source', async () => {
@@ -164,7 +221,13 @@ describe('filesystem workflow store', () => {
       expect.objectContaining({
         status: 'INVALID',
         workflowId: 'invalid_graph',
-        diagnostics: [expect.objectContaining({ code: 'WORKFLOW_DIRECTORY_INVALID' })],
+        diagnostics: [
+          expect.objectContaining({
+            code: 'WORKFLOW_DIRECTORY_INVALID',
+            message:
+              'Workflow directory name must use 1–64 lowercase letters, numbers, and single hyphens',
+          }),
+        ],
       }),
     )
     expect(readFileSync(invalidPath, 'utf8')).toBe(invalidSource)
@@ -180,7 +243,7 @@ describe('filesystem workflow store', () => {
     await expect(
       fixture.workflows.save({
         workflowId: 'release-review',
-        value: workflow({ name: 'Stale update' }),
+        value: workflow({ description: 'Stale update' }),
         expectedRevision: current.revision,
       }),
     ).rejects.toMatchObject({ code: 'WORKFLOW_REVISION_CONFLICT' })
@@ -199,13 +262,13 @@ describe('filesystem workflow store', () => {
 
     const repaired = await fixture.workflows.save({
       workflowId: 'release-review',
-      value: workflow({ name: 'Repaired review' }),
+      value: workflow({ description: 'Repaired review' }),
       expectedRevision: invalid.revision,
     })
-    expect(repaired.value.name).toBe('Repaired review')
+    expect(repaired.value.description).toBe('Repaired review')
     await expect(fixture.workflows.get('release-review')).resolves.toMatchObject({
       status: 'VALID',
-      value: { name: 'Repaired review' },
+      value: { description: 'Repaired review' },
     })
   })
 
@@ -224,16 +287,16 @@ describe('filesystem workflow store', () => {
     writeFileSync(definitionFile, `${JSON.stringify(workflow(), null, 2)}\n`)
     await expect(fixture.workflows.get('release-review')).resolves.toMatchObject({
       status: 'VALID',
-      value: { name: 'Release review' },
+      value: { workflowId: 'release-review' },
     })
 
     writeFileSync(
       definitionFile,
-      `${JSON.stringify(workflow({ name: 'Updated review' }), null, 2)}\n`,
+      `${JSON.stringify(workflow({ description: 'Updated review' }), null, 2)}\n`,
     )
     await expect(fixture.workflows.get('release-review')).resolves.toMatchObject({
       status: 'VALID',
-      value: { name: 'Updated review' },
+      value: { description: 'Updated review' },
     })
 
     rmSync(fixture.paths.workflow('release-review').directory, { recursive: true })

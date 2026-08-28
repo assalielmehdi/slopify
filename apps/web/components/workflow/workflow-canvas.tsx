@@ -17,18 +17,8 @@ import {
 
 import { WorkflowNodeContent } from './workflow-node'
 
-const runActionClassName =
-  't-resize t-resize-intrinsic group/run w-8 justify-start gap-2 overflow-hidden px-2 hover:w-max focus:w-max'
-
-function RunActionContent() {
-  return (
-    <>
-      <PlayIcon aria-hidden="true" className="shrink-0" />
-      <span className="shrink-0 opacity-0 transition-opacity duration-[var(--resize-dur)] ease-[var(--resize-ease)] group-hover/run:opacity-100 group-focus/run:opacity-100">
-        Run
-      </span>
-    </>
-  )
+function RunActionIcon() {
+  return <PlayIcon aria-hidden="true" />
 }
 
 function isEditableShortcutTarget(target: EventTarget | null) {
@@ -40,10 +30,6 @@ function isEditableShortcutTarget(target: EventTarget | null) {
 
 function edgePath(edge: WorkflowGraphEdge) {
   return edge.points.map(({ x, y }, index) => `${index === 0 ? 'M' : 'L'} ${x} ${y}`).join(' ')
-}
-
-function edgeMidpoint(edge: WorkflowGraphEdge) {
-  return edge.points[Math.floor(edge.points.length / 2)]
 }
 
 export interface WorkflowCanvasProps {
@@ -138,11 +124,10 @@ export function WorkflowCanvas({
                     size="icon-sm"
                     aria-label="Run"
                     aria-keyshortcuts="R"
-                    className={runActionClassName}
                   />
                 }
               >
-                <RunActionContent />
+                <RunActionIcon />
               </TooltipTrigger>
               <TooltipContent side="bottom" align="end" sideOffset={6}>
                 Run <Kbd>R</Kbd>
@@ -152,25 +137,14 @@ export function WorkflowCanvas({
             <Button
               size="icon-sm"
               aria-label="Run"
-              aria-describedby={runDisabledReason ? 'workflow-action-status' : undefined}
-              className={runActionClassName}
+              aria-description={runDisabledReason}
               disabled
               title={runDisabledReason ?? 'Define at least one agent before starting a run.'}
             >
-              <RunActionContent />
+              <RunActionIcon />
             </Button>
           )}
         </div>
-        {runDisabledReason === undefined ? null : (
-          <p
-            id="workflow-action-status"
-            role="status"
-            aria-label="Workflow actions unavailable"
-            className="max-w-80 rounded-md border border-border bg-card px-3 py-2 text-xs/4 text-muted-foreground shadow-[var(--shadow-raised)]"
-          >
-            {runDisabledReason}
-          </p>
-        )}
       </div>
     )
 
@@ -219,30 +193,16 @@ export function WorkflowCanvas({
                 <path d="M 0 0 L 7 3.5 L 0 7 z" fill="currentColor" />
               </marker>
             </defs>
-            {graph.edges.map((edge) => {
-              const midpoint = edgeMidpoint(edge)
-              return (
-                <g key={edge.id}>
-                  <path
-                    d={edgePath(edge)}
-                    fill="none"
-                    markerEnd={`url(#${markerId})`}
-                    stroke="currentColor"
-                    strokeWidth="1.5"
-                  />
-                  {midpoint === undefined ? null : (
-                    <text
-                      className="fill-muted-foreground text-[11px]"
-                      textAnchor="middle"
-                      x={midpoint.x + 8}
-                      y={midpoint.y - 8}
-                    >
-                      {edge.label}
-                    </text>
-                  )}
-                </g>
-              )
-            })}
+            {graph.edges.map((edge) => (
+              <path
+                key={edge.id}
+                d={edgePath(edge)}
+                fill="none"
+                markerEnd={`url(#${markerId})`}
+                stroke="currentColor"
+                strokeWidth="1.5"
+              />
+            ))}
           </svg>
 
           {graph.nodes.map((node) => (

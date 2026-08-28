@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -7,6 +7,7 @@ import {
   createFilesystemWorkflowStore,
   createWorkflowDefinitionService,
   resolveSlopifyPaths,
+  type RepositoryService,
 } from '@slopify/execution-runtime'
 import { WorkflowFileSchema, type WorkflowFile } from '@slopify/workflow-model'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -16,7 +17,7 @@ import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []
 
-const createFixture = () => {
+const createFixture = (options: { readonly hasActiveRun?: boolean } = {}) => {
   const home = mkdtempSync(join(tmpdir(), 'slopify-workflows-api-'))
   directories.push(home)
   const paths = resolveSlopifyPaths({ environment: { SLOPIFY_HOME: home } })
@@ -24,9 +25,10 @@ const createFixture = () => {
   const workflows = createWorkflowDefinitionService({
     workflows: store,
     harnesses: createTestHarnessCatalog(),
+    runActivity: { hasActive: async () => options.hasActiveRun ?? false },
     now: () => '2026-08-25T14:00:00.000Z',
   })
-  return { app: createApiApp({ workflows }), paths }
+  return { app: createApiApp({ workflows }), paths, workflows }
 }
 
 const createWorkflow = async (app: ReturnType<typeof createApiApp>) => {
@@ -35,7 +37,6 @@ const createWorkflow = async (app: ReturnType<typeof createApiApp>) => {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
       workflowId: 'release-review',
-      name: 'Release review',
       description: 'Prepare and review a release.',
     }),
   })
@@ -58,7 +59,7 @@ afterEach(() => {
 })
 
 describe('workflow API', () => {
-  it('creates a valid empty draft with an explicit slug and revision', async () => {
+  it('creates a valid empty draft with an explicit name and revision', async () => {
     const { app, paths } = createFixture()
 
     const { response, value } = await createWorkflow(app)
@@ -67,7 +68,6 @@ describe('workflow API', () => {
     expect(response.headers.get('etag')).toMatch(/^"[a-f0-9]{64}"$/u)
     expect(value).toMatchObject({
       workflowId: 'release-review',
-      name: 'Release review',
       repositories: { repositoryIds: [], primaryRepositoryId: null },
       variables: [],
       graph: { startNodeId: null, nodes: [], edges: [] },
@@ -83,7 +83,27 @@ describe('workflow API', () => {
     ).toEqual(value)
   })
 
-  it('returns a stable conflict for an existing slug', async () => {
+  it('rejects a second display name beside the canonical workflow name', async () => {
+    const { app } = createFixture()
+
+    const response = await app.request('/api/workflows', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        workflowId: 'test',
+        name: 'test wer',
+        description: 'Test workflow.',
+      }),
+    })
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: 'VALIDATION_ERROR' } })
+    await expect(app.request('/api/workflows').then((result) => result.json())).resolves.toEqual({
+      workflows: [],
+    })
+  })
+
+  it('returns a stable conflict for an existing name', async () => {
     const { app } = createFixture()
     await createWorkflow(app)
 
@@ -92,8 +112,7 @@ describe('workflow API', () => {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         workflowId: 'release-review',
-        name: 'A different display name',
-        description: 'This still uses the same immutable slug.',
+        description: 'This still uses the same immutable name.',
       }),
     })
 
@@ -133,6 +152,37 @@ describe('workflow API', () => {
     expect(invalid).not.toHaveProperty('value')
   })
 
+  it('returns the complete workflow screen through one additive BFF endpoint', async () => {
+    const { workflows } = createFixture()
+    const repositories = {
+      add: async () => {
+        throw new Error('Not used')
+      },
+      delete: async () => undefined,
+      list: async () => [],
+      requireAvailable: async () => {
+        throw new Error('Not used')
+      },
+    } satisfies RepositoryService
+    const app = createApiApp({
+      workflows,
+      harnesses: createTestHarnessCatalog(),
+      repositories,
+    })
+    await createWorkflow(app)
+
+    const response = await app.request('/api/screens/workflow?workflowId=release-review')
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toBe('no-store')
+    expect(await response.json()).toMatchObject({
+      selectedWorkflowId: 'release-review',
+      workflows: [{ status: 'VALID', workflowId: 'release-review' }],
+      harnesses: [],
+      repositories: [],
+    })
+  })
+
   it('returns exact invalid source and diagnostics with its revision ETag', async () => {
     const { app, paths } = createFixture()
     const source = '{ "schemaVersion": 2, invalid json'
@@ -168,10 +218,58 @@ describe('workflow API', () => {
     })
   })
 
+  it('archives the complete workflow directory through its resource route', async () => {
+    const { app, paths } = createFixture()
+    await createWorkflow(app)
+    const historicalRunDirectory = join(paths.workflow('release-review').runsDirectory, 'run-01')
+    mkdirSync(historicalRunDirectory, { recursive: true })
+    writeFileSync(join(historicalRunDirectory, 'run.json'), '{}\n')
+
+    const response = await app.request('/api/workflows/release-review', { method: 'DELETE' })
+
+    expect(response.status).toBe(204)
+    expect(existsSync(paths.workflow('release-review').directory)).toBe(false)
+    expect(existsSync(join(paths.archiveDirectory, 'release-review', 'workflow.json'))).toBe(true)
+    expect(
+      existsSync(join(paths.archiveDirectory, 'release-review', 'runs', 'run-01', 'run.json')),
+    ).toBe(true)
+    await expect(app.request('/api/workflows').then((result) => result.json())).resolves.toEqual({
+      workflows: [],
+    })
+  })
+
+  it('refuses to archive a workflow while one of its runs is active', async () => {
+    const { app, paths } = createFixture({ hasActiveRun: true })
+    await createWorkflow(app)
+
+    const response = await app.request('/api/workflows/release-review', { method: 'DELETE' })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: {
+        code: 'WORKFLOW_RUN_ACTIVE',
+        message: 'Workflow cannot be archived while a run is pending or running',
+      },
+    })
+    expect(existsSync(paths.workflow('release-review').definitionFile)).toBe(true)
+    expect(existsSync(join(paths.archiveDirectory, 'release-review'))).toBe(false)
+  })
+
+  it('returns the workflow not-found envelope when deleting an unknown workflow', async () => {
+    const { app } = createFixture()
+
+    const response = await app.request('/api/workflows/unknown', { method: 'DELETE' })
+
+    expect(response.status).toBe(404)
+    expect(await response.json()).toEqual({
+      error: { code: 'WORKFLOW_NOT_FOUND', message: 'Workflow was not found' },
+    })
+  })
+
   it('requires one current If-Match value and rejects stale external edits', async () => {
     const { app, paths } = createFixture()
     const created = await createWorkflow(app)
-    const updatedValue = { ...created.value, name: 'Updated review' }
+    const updatedValue = { ...created.value, description: 'Updated review' }
 
     const missing = await putWorkflow(app, updatedValue)
     expect(missing.status).toBe(428)
@@ -183,7 +281,7 @@ describe('workflow API', () => {
     expect(malformed.status).toBe(400)
     expect(await malformed.json()).toMatchObject({ error: { code: 'WORKFLOW_ETAG_INVALID' } })
 
-    const external = `${JSON.stringify({ ...created.value, name: 'External review' }, null, 2)}\n`
+    const external = `${JSON.stringify({ ...created.value, description: 'External review' }, null, 2)}\n`
     writeFileSync(paths.workflow('release-review').definitionFile, external)
     const stale = await putWorkflow(app, updatedValue, created.response.headers.get('etag') ?? '')
 
@@ -201,7 +299,7 @@ describe('workflow API', () => {
 
     const response = await putWorkflow(
       app,
-      { ...created.value, name: 'Updated review' },
+      { ...created.value, description: 'Updated review' },
       initialEtag ?? '',
     )
 
@@ -212,7 +310,7 @@ describe('workflow API', () => {
       status: 'VALID',
       value: {
         workflowId: 'release-review',
-        name: 'Updated review',
+        description: 'Updated review',
         createdAt: created.value.createdAt,
       },
     })

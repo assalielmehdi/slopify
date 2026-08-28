@@ -105,7 +105,7 @@ describe('RepositorySettings', () => {
     )
   })
 
-  it('requires a Git connection before a repository can be added', async () => {
+  it('hides the add card before a Git connection is configured', async () => {
     render(
       <RepositorySettings
         client={createClient({
@@ -119,13 +119,56 @@ describe('RepositorySettings', () => {
     expect(
       screen.getByText('Connect GitHub or GitLab in Settings before adding a repository.'),
     ).toBeTruthy()
-    expect(
-      (screen.getByRole('button', { name: 'Add repository' }) as HTMLButtonElement).disabled,
-    ).toBe(true)
+    expect(screen.queryByTestId('repository-grid')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add repository' })).toBeNull()
     expect(screen.getByRole('link', { name: 'Open Settings' }).getAttribute('href')).toBe(
       '/settings',
     )
   })
+
+  it('shows existing repositories without an add card when no Git connection is configured', async () => {
+    render(
+      <RepositorySettings client={createClient({ listGitConnections: vi.fn(async () => []) })} />,
+    )
+
+    const grid = await screen.findByTestId('repository-grid')
+    expect(within(grid).getByRole('button', { name: 'slopify, Available' })).toBeTruthy()
+    expect(within(grid).queryByRole('button', { name: 'Add repository' })).toBeNull()
+  })
+
+  it.each(['GITHUB', 'GITLAB'] as const)(
+    'uses the empty-state add action when %s is configured',
+    async (provider) => {
+      render(
+        <RepositorySettings
+          client={createClient({
+            listRepositories: vi.fn(async () => []),
+            listGitConnections: vi.fn(async () => [
+              {
+                provider,
+                accountUsername: 'operator',
+                connectedAt: '2026-08-24T00:00:00Z',
+                updatedAt: '2026-08-24T00:00:00Z',
+              },
+            ]),
+          })}
+        />,
+      )
+
+      expect(await screen.findByText('No repositories yet')).toBeTruthy()
+      expect(
+        screen.getByText('Add a repository from one of your connected Git providers.'),
+      ).toBeTruthy()
+      expect(screen.queryByRole('link', { name: 'Open Settings' })).toBeNull()
+
+      const addRepository = screen.getByRole('button', { name: 'Add repository' })
+      expect(addRepository.textContent).toBe('Add repository')
+      expect(screen.getAllByRole('button', { name: 'Add repository' })).toHaveLength(1)
+
+      fireEvent.click(addRepository)
+      expect(await screen.findByRole('dialog', { name: 'Add repository' })).toBeTruthy()
+    },
+  )
 
   it('shows remote identity and retains repositories whose connection is missing', async () => {
     render(<RepositorySettings client={createClient()} />)
@@ -290,6 +333,42 @@ describe('RepositorySettings', () => {
     })
     expect(deletionToast?.actionProps).toBeUndefined()
     expect(screen.queryByRole('button', { name: 'slopify, Available' })).toBeNull()
+  })
+
+  it('dismisses repository deletion confirmation with Escape and clears its value', async () => {
+    render(<RepositorySettings client={createClient()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'slopify, Available' }))
+    const panel = await screen.findByRole('dialog', { name: 'slopify' })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Delete repository' }))
+    const confirmation = within(panel).getByLabelText(
+      'Repository name confirmation',
+    ) as HTMLInputElement
+    fireEvent.change(confirmation, { target: { value: 'operator' } })
+    fireEvent.keyDown(confirmation, { key: 'Escape' })
+
+    expect(within(panel).getByRole('button', { name: 'Delete repository' })).toBeTruthy()
+    expect(within(panel).queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(confirmation.disabled).toBe(true)
+    expect(confirmation.value).toBe('')
+  })
+
+  it('dismisses repository deletion confirmation on an outside pointer down', async () => {
+    render(<RepositorySettings client={createClient()} />)
+
+    fireEvent.click(await screen.findByRole('button', { name: 'slopify, Available' }))
+    const panel = await screen.findByRole('dialog', { name: 'slopify' })
+    fireEvent.click(within(panel).getByRole('button', { name: 'Delete repository' }))
+    const confirmation = within(panel).getByLabelText(
+      'Repository name confirmation',
+    ) as HTMLInputElement
+    fireEvent.change(confirmation, { target: { value: 'operator' } })
+    fireEvent.pointerDown(within(panel).getByRole('link', { name: 'operator/slopify' }))
+
+    expect(within(panel).getByRole('button', { name: 'Delete repository' })).toBeTruthy()
+    expect(within(panel).queryByRole('button', { name: 'Confirm' })).toBeNull()
+    expect(confirmation.disabled).toBe(true)
+    expect(confirmation.value).toBe('')
   })
 
   it('keeps the floating panel mounted until its close transition exits', async () => {

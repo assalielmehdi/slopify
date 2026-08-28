@@ -3,8 +3,16 @@
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { ChevronRightIcon, PlusIcon, WorkflowIcon } from 'lucide-react'
+import {
+  ChevronRightIcon,
+  CloudIcon,
+  CloudLightningIcon,
+  PlusIcon,
+  SunIcon,
+  WorkflowIcon,
+} from 'lucide-react'
 
+import type { WorkflowRunOutcome } from '@slopify/contracts'
 import { WorkflowSlugSchema } from '@slopify/workflow-model'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
@@ -21,10 +29,15 @@ import {
   type ApiClient,
   type WorkflowCatalogEntry,
 } from '@/lib/api-client'
+import { buttonVariants } from '@/lib/button-variants'
 import { cn } from '@/lib/utils'
 import { WORKFLOW_CATALOG_CHANGED_EVENT } from '@/lib/workflow-catalog-events'
+import { WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT } from '@/lib/workflow-run-outcome-events'
 
-export type WorkflowSidebarClient = Pick<ApiClient, 'createWorkflow' | 'listWorkflows'>
+export type WorkflowSidebarClient = Pick<
+  ApiClient,
+  'createWorkflow' | 'listWorkflowRunOutcomes' | 'listWorkflows'
+>
 
 const defaultClient = createApiClient()
 
@@ -45,6 +58,7 @@ function WorkflowDestination({ collapsed, editorActive }: WorkflowSidebarMenuFal
   return (
     <Link
       href="/"
+      prefetch={false}
       aria-current={editorActive ? 'page' : undefined}
       aria-label="Workflows"
       title={collapsed ? 'Workflows' : undefined}
@@ -59,6 +73,74 @@ function WorkflowDestination({ collapsed, editorActive }: WorkflowSidebarMenuFal
       <WorkflowIcon aria-hidden="true" className="size-4 shrink-0" strokeWidth={1.8} />
       <span className={cn('truncate', collapsed && 'sr-only')}>Workflows</span>
     </Link>
+  )
+}
+
+function WorkflowRunOutcomeControl({
+  loadStatus,
+  outcome,
+  workflowId,
+}: Readonly<{
+  loadStatus: 'loading' | 'ready' | 'error'
+  outcome: WorkflowRunOutcome | undefined
+  workflowId: string
+}>) {
+  if (outcome !== undefined) {
+    const succeeded = outcome.status === 'SUCCEEDED'
+    const label = succeeded ? 'Latest successful run' : 'Latest failed run'
+    const Icon = succeeded ? SunIcon : CloudLightningIcon
+    return (
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Link
+              aria-label={label}
+              className={cn(
+                buttonVariants({ size: 'icon-xs', variant: 'ghost' }),
+                succeeded
+                  ? 'text-status-warning hover:bg-status-warning/20 hover:text-status-warning dark:hover:bg-status-warning/20'
+                  : 'text-destructive hover:bg-destructive/20 hover:text-destructive dark:hover:bg-destructive/20',
+              )}
+              data-status={outcome.status}
+              href={`/runs/${encodeURIComponent(outcome.runId)}`}
+              prefetch={false}
+            />
+          }
+        >
+          <Icon aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+        </TooltipTrigger>
+        <TooltipContent side="right">{label}</TooltipContent>
+      </Tooltip>
+    )
+  }
+
+  const label =
+    loadStatus === 'loading'
+      ? `Loading run status for ${workflowId}`
+      : loadStatus === 'error'
+        ? `Run status unavailable for ${workflowId}`
+        : 'No finished run'
+
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            aria-disabled="true"
+            aria-label={label}
+            className="text-muted-foreground"
+            data-status="NONE"
+            onClick={(event) => event.preventDefault()}
+            size="icon-xs"
+            type="button"
+            variant="ghost"
+          />
+        }
+      >
+        <CloudIcon aria-hidden="true" className="size-3.5" strokeWidth={1.8} />
+      </TooltipTrigger>
+      <TooltipContent side="right">{label}</TooltipContent>
+    </Tooltip>
   )
 }
 
@@ -78,6 +160,8 @@ export function WorkflowSidebarMenu({
   const [showDisclosureIcon, setShowDisclosureIcon] = useState(false)
   const [workflows, setWorkflows] = useState<readonly WorkflowCatalogEntry[]>([])
   const [status, setStatus] = useState<'loading' | 'ready' | 'error'>('loading')
+  const [outcomes, setOutcomes] = useState<readonly WorkflowRunOutcome[]>([])
+  const [outcomeStatus, setOutcomeStatus] = useState<'loading' | 'ready' | 'error'>('loading')
   const [creating, setCreating] = useState(false)
   const [creatingName, setCreatingName] = useState('')
   const [creatingError, setCreatingError] = useState<string | undefined>(undefined)
@@ -86,7 +170,7 @@ export function WorkflowSidebarMenu({
 
   useEffect(() => {
     let active = true
-    const load = () => {
+    const loadWorkflows = () => {
       void client
         .listWorkflows()
         .then((catalog) => {
@@ -98,13 +182,35 @@ export function WorkflowSidebarMenu({
           if (active) setStatus('error')
         })
     }
-    load()
-    window.addEventListener(WORKFLOW_CATALOG_CHANGED_EVENT, load)
+    const loadOutcomes = () => {
+      void client
+        .listWorkflowRunOutcomes()
+        .then((catalog) => {
+          if (!active) return
+          setOutcomes(catalog)
+          setOutcomeStatus('ready')
+        })
+        .catch(() => {
+          if (active) setOutcomeStatus('error')
+        })
+    }
+    const loadAll = () => {
+      loadWorkflows()
+      loadOutcomes()
+    }
+    loadAll()
+    window.addEventListener(WORKFLOW_CATALOG_CHANGED_EVENT, loadAll)
+    window.addEventListener(WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT, loadOutcomes)
+    window.addEventListener('focus', loadOutcomes)
     return () => {
       active = false
-      window.removeEventListener(WORKFLOW_CATALOG_CHANGED_EVENT, load)
+      window.removeEventListener(WORKFLOW_CATALOG_CHANGED_EVENT, loadAll)
+      window.removeEventListener(WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT, loadOutcomes)
+      window.removeEventListener('focus', loadOutcomes)
     }
   }, [client])
+
+  const outcomesByWorkflow = new Map(outcomes.map((outcome) => [outcome.workflowId, outcome]))
 
   const selectedWorkflow =
     workflows.find(({ workflowId }) => workflowId === currentWorkflowId) ?? workflows[0]
@@ -117,7 +223,7 @@ export function WorkflowSidebarMenu({
     const parsed = WorkflowSlugSchema.safeParse(name)
     if (!parsed.success) return parsed.error.issues[0]?.message
     if (workflows.some((workflow) => workflow.workflowId === name)) {
-      return 'A workflow with this slug already exists.'
+      return 'A workflow with this name already exists.'
     }
     return undefined
   }
@@ -144,7 +250,6 @@ export function WorkflowSidebarMenu({
     try {
       const created = await client.createWorkflow({
         workflowId: creatingName,
-        name: creatingName,
         description: `${creatingName} workflow.`,
       })
       setWorkflows((current) => [created, ...current])
@@ -153,7 +258,7 @@ export function WorkflowSidebarMenu({
     } catch (cause) {
       setCreatingError(
         cause instanceof ApiClientError && cause.code === 'WORKFLOW_ID_CONFLICT'
-          ? 'A workflow with this slug already exists.'
+          ? 'A workflow with this name already exists.'
           : cause instanceof Error
             ? cause.message
             : 'Workflow could not be created.',
@@ -188,7 +293,7 @@ export function WorkflowSidebarMenu({
             data-state={showDisclosureIcon ? 'b' : 'a'}
           >
             <WorkflowIcon className="t-icon size-4" data-icon="a" strokeWidth={1.8} />
-            <span className="t-icon" data-icon="b">
+            <span className="t-icon grid place-items-center" data-icon="b">
               <ChevronRightIcon className="t-acc-chevron size-4" strokeWidth={1.8} />
             </span>
           </span>
@@ -230,7 +335,7 @@ export function WorkflowSidebarMenu({
                 void submitCreating()
               }}
             >
-              <Label htmlFor="new-workflow-name">Workflow name</Label>
+              <Label htmlFor="new-workflow-name">Name</Label>
               <Input
                 ref={inputRef}
                 aria-describedby={creatingError === undefined ? undefined : 'workflow-name-error'}
@@ -282,20 +387,26 @@ export function WorkflowSidebarMenu({
                     (currentWorkflowId === workflow.workflowId ||
                       (currentWorkflowId === undefined && index === 0))
                   return (
-                    <li key={workflow.workflowId}>
+                    <li className="flex min-w-0 items-center gap-0.5" key={workflow.workflowId}>
                       <Link
                         href={`/?workflowId=${encodeURIComponent(workflow.workflowId)}`}
+                        prefetch={false}
                         aria-current={selected ? 'page' : undefined}
-                        aria-label={workflow.name}
+                        aria-label={workflow.workflowId}
                         className={cn(
-                          'flex h-8 min-w-0 items-center rounded-md px-2 text-[13px]/4 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring/30',
+                          'flex h-8 min-w-0 flex-1 items-center rounded-md px-2 text-[13px]/4 outline-none transition-colors duration-150 focus-visible:ring-2 focus-visible:ring-sidebar-ring/30',
                           selected
                             ? 'bg-sidebar-accent font-medium text-sidebar-accent-foreground'
                             : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
                         )}
                       >
-                        <span className="truncate">{workflow.name}</span>
+                        <span className="truncate">{workflow.workflowId}</span>
                       </Link>
+                      <WorkflowRunOutcomeControl
+                        loadStatus={outcomeStatus}
+                        outcome={outcomesByWorkflow.get(workflow.workflowId)}
+                        workflowId={workflow.workflowId}
+                      />
                     </li>
                   )
                 })}

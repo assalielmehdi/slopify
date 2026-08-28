@@ -1,6 +1,7 @@
 'use client'
 
-import type { RunStatus } from '@slopify/contracts'
+import type { Repository, RunStatus } from '@slopify/contracts'
+import type { Workflow } from '@slopify/workflow-model'
 import {
   ActivityIcon,
   ArrowLeftIcon,
@@ -10,8 +11,10 @@ import {
   ChevronRightIcon,
   Clock3Icon,
   FingerprintIcon,
+  FolderGit2Icon,
   ListFilterIcon,
   SearchIcon,
+  WorkflowIcon,
   XIcon,
 } from 'lucide-react'
 import { type ComponentProps, useMemo, useState } from 'react'
@@ -22,10 +25,11 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { activeRunFilterCount, type RunFilters } from '@/lib/run-filters'
+import { RunFilterMultiSelect } from '@/components/runs/run-filter-multiselect'
+import { activeRunFilterCount, emptyRunFilters, type RunFilters } from '@/lib/run-filters'
 import { cn } from '@/lib/utils'
 
-type AttributeKey = 'runId' | 'started' | 'duration' | 'status'
+type AttributeKey = 'workflow' | 'repository' | 'runId' | 'started' | 'duration' | 'status'
 
 const statuses: readonly RunStatus[] = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'CANCELLED']
 
@@ -45,6 +49,8 @@ const statusFilterClassName = {
 const statusLabel = (status: RunStatus): string => status.charAt(0) + status.slice(1).toLowerCase()
 
 const valueCount = (attribute: AttributeKey, filters: RunFilters): number => {
+  if (attribute === 'workflow') return filters.workflowIds.length
+  if (attribute === 'repository') return filters.repositoryIds.length
   if (attribute === 'runId') return filters.runId.trim() === '' ? 0 : 1
   if (attribute === 'status') return filters.statuses.length
   if (attribute === 'started')
@@ -53,6 +59,8 @@ const valueCount = (attribute: AttributeKey, filters: RunFilters): number => {
 }
 
 const attributes = [
+  { key: 'workflow', label: 'Workflow', icon: WorkflowIcon },
+  { key: 'repository', label: 'Repositories', icon: FolderGit2Icon },
   { key: 'runId', label: 'Run ID', icon: FingerprintIcon },
   { key: 'started', label: 'Started', icon: CalendarClockIcon },
   { key: 'duration', label: 'Duration', icon: Clock3Icon },
@@ -60,13 +68,28 @@ const attributes = [
 ] as const
 
 const clearAttribute = (attribute: AttributeKey, filters: RunFilters): RunFilters => {
+  if (attribute === 'workflow') return { ...filters, workflowIds: [] }
+  if (attribute === 'repository') return { ...filters, repositoryIds: [] }
   if (attribute === 'runId') return { ...filters, runId: '' }
   if (attribute === 'status') return { ...filters, statuses: [] }
   if (attribute === 'started') return { ...filters, startedFrom: '', startedTo: '' }
   return { ...filters, durationMinSeconds: '', durationMaxSeconds: '' }
 }
 
-const filterSummary = (attribute: AttributeKey, filters: RunFilters): string => {
+const filterSummary = (
+  attribute: AttributeKey,
+  filters: RunFilters,
+  repositories: readonly Repository[],
+): string => {
+  if (attribute === 'workflow') return `Workflow: ${filters.workflowIds.join(', ')}`
+  if (attribute === 'repository') {
+    const names = filters.repositoryIds.map(
+      (repositoryId) =>
+        repositories.find((repository) => repository.repositoryId === repositoryId)?.name ??
+        repositoryId,
+    )
+    return `Repositories: ${names.join(', ')}`
+  }
   if (attribute === 'runId') return `Run ID: ${filters.runId.trim()}`
   if (attribute === 'status') return `Status: ${filters.statuses.map(statusLabel).join(', ')}`
   if (attribute === 'started') {
@@ -142,17 +165,45 @@ function AttributeEditor({
   filters,
   onBack,
   onChange,
+  optionsLoading,
+  repositories,
+  repositoryOptionsFailed,
+  workflowOptionsFailed,
+  workflows,
 }: Readonly<{
   attribute: AttributeKey
   filters: RunFilters
   onBack: () => void
   onChange: (filters: RunFilters) => void
+  optionsLoading: boolean
+  repositories: readonly Repository[]
+  repositoryOptionsFailed: boolean
+  workflowOptionsFailed: boolean
+  workflows: readonly Workflow[]
 }>) {
   const definition = attributes.find((candidate) => candidate.key === attribute)
   if (definition === undefined) return null
   const count = valueCount(attribute, filters)
   const startedFromDate = parseDateValue(filters.startedFrom)
   const startedToDate = parseDateValue(filters.startedTo)
+  const workflowIds = new Set(workflows.map(({ workflowId }) => workflowId))
+  const repositoryIds = new Set(repositories.map(({ repositoryId }) => repositoryId))
+  const workflowFilterOptions = [
+    ...workflows.map(({ workflowId }) => ({ id: workflowId, label: workflowId })),
+    ...filters.workflowIds
+      .filter((workflowId) => !workflowIds.has(workflowId))
+      .map((workflowId) => ({ id: workflowId, label: workflowId })),
+  ]
+  const repositoryFilterOptions = [
+    ...repositories.map(({ repositoryId, name, fullName }) => ({
+      id: repositoryId,
+      label: name,
+      description: fullName,
+    })),
+    ...filters.repositoryIds
+      .filter((repositoryId) => !repositoryIds.has(repositoryId))
+      .map((repositoryId) => ({ id: repositoryId, label: repositoryId })),
+  ]
 
   return (
     <>
@@ -177,6 +228,42 @@ function AttributeEditor({
         ) : null}
       </div>
       <div className="space-y-3 p-3">
+        {attribute === 'workflow' ? (
+          <RunFilterMultiSelect
+            ariaLabel="Workflows"
+            emptyLabel="No workflows available."
+            failed={workflowOptionsFailed}
+            loading={optionsLoading}
+            onToggle={(workflowId, selected) =>
+              onChange({
+                ...filters,
+                workflowIds: selected
+                  ? filters.workflowIds.filter((candidate) => candidate !== workflowId)
+                  : [...filters.workflowIds, workflowId],
+              })
+            }
+            options={workflowFilterOptions}
+            selectedIds={new Set(filters.workflowIds)}
+          />
+        ) : null}
+        {attribute === 'repository' ? (
+          <RunFilterMultiSelect
+            ariaLabel="Repositories"
+            emptyLabel="No repositories available."
+            failed={repositoryOptionsFailed}
+            loading={optionsLoading}
+            onToggle={(repositoryId, selected) =>
+              onChange({
+                ...filters,
+                repositoryIds: selected
+                  ? filters.repositoryIds.filter((candidate) => candidate !== repositoryId)
+                  : [...filters.repositoryIds, repositoryId],
+              })
+            }
+            options={repositoryFilterOptions}
+            selectedIds={new Set(filters.repositoryIds)}
+          />
+        ) : null}
         {attribute === 'runId' ? (
           <Input
             aria-label="Run ID contains"
@@ -302,11 +389,21 @@ function AttributeEditor({
 export function RunFilterControls({
   filters,
   onChange,
+  optionsLoading,
+  repositories,
+  repositoryOptionsFailed,
   updating = false,
+  workflowOptionsFailed,
+  workflows,
 }: Readonly<{
   filters: RunFilters
   onChange: (filters: RunFilters) => void
+  optionsLoading: boolean
+  repositories: readonly Repository[]
+  repositoryOptionsFailed: boolean
   updating?: boolean
+  workflowOptionsFailed: boolean
+  workflows: readonly Workflow[]
 }>) {
   const [open, setOpen] = useState(false)
   const [activeAttribute, setActiveAttribute] = useState<AttributeKey | null>(null)
@@ -330,9 +427,11 @@ export function RunFilterControls({
                 className="group/filter-chip flex h-7 max-w-full items-center rounded-full bg-muted px-2.5 text-xs whitespace-nowrap transition-[padding-right] duration-[var(--resize-dur)] ease-[var(--resize-ease)] hover:pr-1.5 focus-within:pr-1.5 motion-reduce:transition-none"
                 data-slot="run-filter-chip"
                 key={attribute.key}
-                title={filterSummary(attribute.key, filters)}
+                title={filterSummary(attribute.key, filters, repositories)}
               >
-                <span className="min-w-0 truncate">{filterSummary(attribute.key, filters)}</span>
+                <span className="min-w-0 truncate">
+                  {filterSummary(attribute.key, filters, repositories)}
+                </span>
                 <span
                   className="t-resize flex w-0 shrink-0 overflow-hidden group-hover/filter-chip:w-7 group-focus-within/filter-chip:w-7"
                   data-slot="run-filter-chip-remove-slot"
@@ -355,6 +454,16 @@ export function RunFilterControls({
           </span>
         ) : null}
       </div>
+      {activeCount > 0 ? (
+        <Button
+          className="shrink-0 border-0 text-muted-foreground"
+          onClick={() => onChange(emptyRunFilters)}
+          size="sm"
+          variant="ghost"
+        >
+          Clear all
+        </Button>
+      ) : null}
       <Popover
         onOpenChange={(nextOpen) => {
           setOpen(nextOpen)
@@ -446,6 +555,11 @@ export function RunFilterControls({
               filters={filters}
               onBack={() => setActiveAttribute(null)}
               onChange={onChange}
+              optionsLoading={optionsLoading}
+              repositories={repositories}
+              repositoryOptionsFailed={repositoryOptionsFailed}
+              workflowOptionsFailed={workflowOptionsFailed}
+              workflows={workflows}
             />
           )}
         </PopoverContent>

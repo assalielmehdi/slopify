@@ -13,6 +13,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
+import { WorkflowWorkspace } from '@/components/workflow/workflow-workspace'
 import { createApiClient } from '@/lib/api-client'
 import { connectRunEventStream, type RunEventSubscription } from '@/lib/event-stream'
 import { latestExecutions, nodeStatusesFrom, runStatusFrom } from '@/lib/live-run'
@@ -51,7 +52,17 @@ export function LiveRun({
   runId,
 }: LiveRunProps) {
   const stream = useLiveRunStream({ client, connect, runId })
-  const panel = useRunNodePanel({ client, detail: stream.detail, runId })
+  const defaultNodeId = (() => {
+    if (stream.detail === undefined) return undefined
+    const defaultStatuses = nodeStatusesFrom(stream.detail, stream.events)
+    const nodes = stream.detail.run.workflowSnapshot.nodes
+    return (
+      nodes.find(({ id }) => defaultStatuses[id] === 'RUNNING')?.id ??
+      nodes.find(({ id }) => defaultStatuses[id] === 'PENDING')?.id ??
+      nodes[0]?.id
+    )
+  })()
+  const panel = useRunNodePanel({ client, defaultNodeId, detail: stream.detail, runId })
 
   if (stream.loading)
     return <p className="text-xs text-muted-foreground">Loading run {displayRunId(runId)}…</p>
@@ -84,6 +95,68 @@ export function LiveRun({
       ? undefined
       : latestExecutions(detail.nodeExecutions).get(selectedNode.id)
 
+  const graph = (
+    <div className="relative h-full min-h-0 min-w-0">
+      <p
+        aria-label="Run timing"
+        className="pointer-events-none absolute top-3 left-3 z-10 text-xs/4 text-muted-foreground tabular-nums"
+      >
+        Started {formatTimestamp(detail.run.startedAt)} · Took{' '}
+        <ElapsedTime
+          completedAt={detail.run.completedAt}
+          running={status === 'RUNNING'}
+          startedAt={detail.run.startedAt}
+        />
+      </p>
+      <div aria-label="Run status" className="absolute top-3 right-3 z-10 flex items-center gap-2">
+        <RunStatusBadge status={status} />
+        {cancellable || stream.cancelling ? (
+          <Button
+            disabled={stream.cancelling}
+            onClick={() => void stream.cancel(cancellable)}
+            size="sm"
+            variant="destructive"
+          >
+            {stream.cancelling ? 'Cancelling…' : 'Cancel run'}
+          </Button>
+        ) : null}
+      </div>
+      <Badge aria-live="polite" className="sr-only">
+        {stream.streamStatus}
+      </Badge>
+      <WorkflowCanvas
+        onNodeSelect={panel.open}
+        recentRunStatuses={statuses}
+        selectedNodeId={panel.selectedNodeId ?? currentAgentId ?? agentNodes[0]?.id}
+        workflow={detail.run.workflowSnapshot}
+      />
+    </div>
+  )
+
+  const details =
+    selectedNode === undefined ? (
+      <aside
+        aria-label="Run agent details"
+        className="grid h-full place-items-center p-6 text-center"
+        data-layout="workspace"
+      >
+        <p className="max-w-sm text-sm/5 text-muted-foreground">
+          Select an agent in the workflow graph to inspect its captured execution.
+        </p>
+      </aside>
+    ) : (
+      <RunNodeDetailsDialog
+        execution={selectedExecution}
+        node={selectedNode}
+        repositories={detail.repositories}
+        repositoryWorkspaces={detail.repositoryWorkspaces}
+        status={statuses[selectedNode.id] ?? 'PENDING'}
+        trace={panel.trace}
+        traceError={panel.traceError}
+        traceLoading={panel.traceLoading}
+      />
+    )
+
   return (
     <section className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden p-6">
       {stream.streamError === undefined ? null : (
@@ -99,60 +172,9 @@ export function LiveRun({
         </Alert>
       )}
 
-      <div className="relative min-h-0 flex-1">
-        <p
-          aria-label="Run timing"
-          className="pointer-events-none absolute top-3 left-3 z-10 text-xs/4 text-muted-foreground tabular-nums"
-        >
-          Started {formatTimestamp(detail.run.startedAt)} · Took{' '}
-          <ElapsedTime
-            completedAt={detail.run.completedAt}
-            running={status === 'RUNNING'}
-            startedAt={detail.run.startedAt}
-          />
-        </p>
-        <div
-          aria-label="Run status"
-          className="absolute top-3 right-3 z-10 flex items-center gap-2"
-        >
-          <RunStatusBadge status={status} />
-          {cancellable || stream.cancelling ? (
-            <Button
-              disabled={stream.cancelling}
-              onClick={() => void stream.cancel(cancellable)}
-              size="sm"
-              variant="destructive"
-            >
-              {stream.cancelling ? 'Cancelling…' : 'Cancel run'}
-            </Button>
-          ) : null}
-        </div>
-        <Badge aria-live="polite" className="sr-only">
-          {stream.streamStatus}
-        </Badge>
-        <WorkflowCanvas
-          onNodeSelect={panel.open}
-          recentRunStatuses={statuses}
-          selectedNodeId={panel.selectedNodeId ?? currentAgentId ?? agentNodes[0]?.id}
-          workflow={detail.run.workflowSnapshot}
-        />
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <WorkflowWorkspace details={details} graph={graph} workflow={detail.run.workflowSnapshot} />
       </div>
-
-      {selectedNode === undefined ? null : (
-        <RunNodeDetailsDialog
-          execution={selectedExecution}
-          isOpen={panel.isOpen}
-          node={selectedNode}
-          onClose={() => panel.close(true)}
-          onExited={() => panel.update({ selectedNodeId: undefined })}
-          repositories={detail.repositories}
-          repositoryWorkspaces={detail.repositoryWorkspaces}
-          status={statuses[selectedNode.id] ?? 'PENDING'}
-          trace={panel.trace}
-          traceError={panel.traceError}
-          traceLoading={panel.traceLoading}
-        />
-      )}
     </section>
   )
 }

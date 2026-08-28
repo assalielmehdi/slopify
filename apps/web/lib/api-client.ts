@@ -18,6 +18,7 @@ import {
   RunIdSchema,
   RunPaginationQuerySchema,
   WorkflowIdSchema,
+  WorkflowRunOutcomeCatalogResponseSchema,
   type HealthResponse,
   type HarnessDescriptor,
   type GitConnection,
@@ -28,6 +29,7 @@ import {
   type Settings,
   type UpdateSettingsRequest,
   type RunStatus,
+  type WorkflowRunOutcome,
 } from '@slopify/contracts'
 import {
   WorkflowFileSchema,
@@ -112,9 +114,15 @@ const WorkflowCatalogResponseSchema = z.strictObject({
   workflows: z.array(WorkflowCatalogEntrySchema).readonly(),
 })
 
+const WorkflowScreenResponseSchema = z.strictObject({
+  selectedWorkflowId: WorkflowIdSchema.nullable(),
+  workflows: z.array(WorkflowCatalogEntrySchema).readonly(),
+  harnesses: HarnessCatalogResponseSchema.shape.harnesses,
+  repositories: RepositoryCatalogResponseSchema.shape.repositories,
+})
+
 const CreateWorkflowDefinitionInputSchema = z.strictObject({
   workflowId: WorkflowSlugSchema,
-  name: z.string().trim().min(1).max(100),
   description: z.string().trim().min(1).max(4096),
 })
 
@@ -129,12 +137,21 @@ export interface SettingsSnapshot {
   readonly etag: string
 }
 
+export interface WorkflowScreenData {
+  readonly selectedWorkflow: Workflow | undefined
+  readonly workflows: readonly Workflow[]
+  readonly harnesses: readonly HarnessDescriptor[]
+  readonly repositories: readonly Repository[]
+}
+
 export type CreateWorkflowDefinitionInput = z.infer<typeof CreateWorkflowDefinitionInputSchema>
 
 export interface ListRunsInput {
   readonly page: number
   readonly pageSize: number
   readonly runId?: string
+  readonly workflowIds?: readonly string[]
+  readonly repositoryIds?: readonly string[]
   readonly statuses?: readonly RunStatus[]
   readonly startedFrom?: string
   readonly startedTo?: string
@@ -161,6 +178,8 @@ export interface ApiClient {
   }): Promise<Repository>
   deleteRepository(repositoryId: string): Promise<void>
   listWorkflows(): Promise<readonly WorkflowCatalogEntry[]>
+  getWorkflowScreen(workflowId?: string): Promise<WorkflowScreenData>
+  listWorkflowRunOutcomes(): Promise<readonly WorkflowRunOutcome[]>
   createWorkflow(input: CreateWorkflowDefinitionInput): Promise<Workflow>
   deleteWorkflow(workflowId: string): Promise<void>
   getWorkflow(
@@ -385,6 +404,29 @@ export const createApiClient = (
       return workflows.flatMap((entry) => (entry.status === 'VALID' ? [validWorkflow(entry)] : []))
     },
 
+    async getWorkflowScreen(workflowId) {
+      const search = new URLSearchParams()
+      if (workflowId !== undefined) search.set('workflowId', WorkflowIdSchema.parse(workflowId))
+      const path = `/api/screens/workflow${search.size === 0 ? '' : `?${search.toString()}`}`
+      const response = await get(path, WorkflowScreenResponseSchema)
+      const workflows = response.workflows.flatMap((entry) =>
+        entry.status === 'VALID' ? [validWorkflow(entry)] : [],
+      )
+      return {
+        workflows,
+        selectedWorkflow: workflows.find(
+          ({ workflowId: candidate }) => candidate === response.selectedWorkflowId,
+        ),
+        harnesses: response.harnesses,
+        repositories: response.repositories,
+      }
+    },
+
+    async listWorkflowRunOutcomes() {
+      return (await get('/api/workflow-run-outcomes', WorkflowRunOutcomeCatalogResponseSchema))
+        .outcomes
+    },
+
     async createWorkflow(input) {
       const parsed = CreateWorkflowDefinitionInputSchema.parse(input)
       return requestWorkflow('/api/workflows', {
@@ -449,6 +491,8 @@ export const createApiClient = (
     async listRuns(input) {
       const query = RunPaginationQuerySchema.parse({
         ...input,
+        ...(input.workflowIds === undefined ? {} : { workflowIds: [...input.workflowIds] }),
+        ...(input.repositoryIds === undefined ? {} : { repositoryIds: [...input.repositoryIds] }),
         ...(input.statuses === undefined ? {} : { statuses: [...input.statuses] }),
       })
       const search = new URLSearchParams({
@@ -456,6 +500,9 @@ export const createApiClient = (
         pageSize: String(query.pageSize),
       })
       if (query.runId !== undefined) search.set('runId', query.runId)
+      for (const workflowId of query.workflowIds ?? []) search.append('workflowId', workflowId)
+      for (const repositoryId of query.repositoryIds ?? [])
+        search.append('repositoryId', repositoryId)
       for (const status of query.statuses ?? []) search.append('status', status)
       if (query.startedFrom !== undefined) search.set('startedFrom', query.startedFrom)
       if (query.startedTo !== undefined) search.set('startedTo', query.startedTo)

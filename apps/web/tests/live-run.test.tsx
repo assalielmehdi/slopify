@@ -8,6 +8,7 @@ import { AgentTraceSchema, RunEventSchema, type RunEvent } from '@slopify/contra
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse, StartRunResponse } from '../lib/api-client'
 import type { RunEventSubscription, RunEventSubscriptionHandlers } from '../lib/event-stream'
+import { WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT } from '../lib/workflow-run-outcome-events'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 const backgroundAction = vi.fn()
@@ -20,11 +21,11 @@ vi.mock('../components/workflow/workflow-canvas', () => ({
   }: {
     onNodeSelect: (nodeId: string) => void
     recentRunStatuses: Readonly<Record<string, string>>
-    workflow: { name: string }
+    workflow: { workflowId: string }
   }) => (
     <div aria-label="Workflow graph" role="region">
       <p>
-        {workflow.name}; statuses {JSON.stringify(recentRunStatuses)}
+        {workflow.workflowId}; statuses {JSON.stringify(recentRunStatuses)}
       </p>
       <button type="button" onClick={() => onNodeSelect('identify-agent')}>
         Inspect agent
@@ -204,7 +205,7 @@ describe('LiveRun', () => {
     expect(status.textContent).toContain('Running')
     expect(status.className).toContain('absolute')
     expect(status.className).toContain('right-3')
-    expect(graph.textContent).toContain('Who are you?')
+    expect(graph.textContent).toContain('default-workflow')
     expect(subscription.subscription).toHaveBeenCalledWith(
       '/api/runs/run-01/events',
       expect.any(Object),
@@ -257,6 +258,8 @@ describe('LiveRun', () => {
         .mockResolvedValue(completedDetail),
       cancelRun: vi.fn(),
     }
+    const outcomeChanged = vi.fn()
+    window.addEventListener(WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT, outcomeChanged)
 
     render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
     const graph = await screen.findByRole('region', { name: 'Workflow graph' })
@@ -268,6 +271,8 @@ describe('LiveRun', () => {
     expect(screen.getByLabelText('Run status').textContent).toContain('Succeeded')
     expect(graph.textContent).toContain('"identify-agent":"SUCCEEDED"')
     expect(subscription.close).toHaveBeenCalledOnce()
+    expect(outcomeChanged).toHaveBeenCalledOnce()
+    window.removeEventListener(WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT, outcomeChanged)
   })
 
   it('ignores an older failed refresh after a newer reconnect refresh succeeds', async () => {
@@ -358,7 +363,7 @@ describe('LiveRun', () => {
     expect(subscription.close).toHaveBeenCalledOnce()
   })
 
-  it('keeps the captured-agent panel open during canvas interaction and closes only from its close button', async () => {
+  it('keeps captured-agent details visible beside the graph during graph interaction', async () => {
     const client = {
       getRun: vi.fn(async () => detail),
       getAgentTrace: vi.fn(async () => trace),
@@ -366,15 +371,11 @@ describe('LiveRun', () => {
     }
     render(<LiveRun runId="run-01" client={client} connect={createSubscription().subscription} />)
 
-    const inspectAgent = await screen.findByRole('button', { name: 'Inspect agent' })
-    inspectAgent.focus()
-    fireEvent.click(inspectAgent)
-
-    const panel = screen.getByRole('dialog', { name: 'Who are you?' })
-    expect(panel.getAttribute('aria-modal')).toBe('false')
-    expect(panel.getAttribute('data-layout')).toBe('floating')
+    const panel = await screen.findByRole('complementary', { name: 'Who are you?' })
+    expect(panel.getAttribute('data-layout')).toBe('workspace')
     expect(panel.textContent).not.toContain('identify-agent')
-    expect(screen.getByTestId('run-node-panel-shell').hasAttribute('aria-hidden')).toBe(false)
+    expect(screen.getByRole('region', { name: 'Workflow graph pane' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Workflow details pane' })).toBeTruthy()
     const executionSummary = screen.getByLabelText('Execution summary')
     expect(executionSummary.textContent).toMatch(/^Started .+ - Took Not recorded$/)
     expect(executionSummary.textContent).not.toContain('Completed')
@@ -394,17 +395,7 @@ describe('LiveRun', () => {
     fireEvent.click(backgroundButton)
 
     expect(backgroundAction).toHaveBeenCalledOnce()
-    expect(screen.getByTestId('run-node-panel-shell').getAttribute('data-open')).toBe('true')
-    expect(screen.getByRole('dialog', { name: 'Who are you?' })).toBeTruthy()
-
-    fireEvent.click(screen.getByRole('button', { name: 'Close agent details' }))
-    expect(document.activeElement).toBe(inspectAgent)
-    const shell = screen.getByTestId('run-node-panel-shell')
-    expect(shell.getAttribute('data-open')).toBe('false')
-    fireEvent.transitionEnd(shell, {
-      propertyName: 'translate',
-    })
-    expect(screen.queryByRole('dialog', { name: 'Who are you?' })).toBeNull()
+    expect(screen.getByRole('complementary', { name: 'Who are you?' })).toBeTruthy()
   })
 
   it('reconciles streamed terminal status and cancels through the summary action', async () => {

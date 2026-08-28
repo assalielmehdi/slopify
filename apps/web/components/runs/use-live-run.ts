@@ -15,6 +15,7 @@ import {
   terminalRunStatuses,
   type NodeExecution,
 } from '@/lib/live-run'
+import { announceWorkflowRunOutcomesChanged } from '@/lib/workflow-run-outcome-events'
 
 export type LiveRunClient = Pick<ApiClient, 'cancelRun' | 'getRun'> &
   Partial<Pick<ApiClient, 'getAgentTrace'>>
@@ -88,6 +89,7 @@ export function useLiveRunStream({
   const detailRef = useRef<RunDetailResponse | undefined>(undefined)
   const eventsRef = useRef<readonly RunEvent[]>([])
   const snapshotSequence = useRef(0)
+  const announcedOutcome = useRef<string | undefined>(undefined)
   const closeSubscription = useRef<(() => void) | undefined>(undefined)
   const refreshSnapshot = useRef<() => Promise<void>>(async () => undefined)
   const [state, dispatch] = useReducer(runStreamReducer, initialRunStreamState)
@@ -96,6 +98,7 @@ export function useLiveRunStream({
     mounted.current = true
     eventsRef.current = []
     snapshotSequence.current = 0
+    announcedOutcome.current = undefined
     detailRef.current = undefined
     dispatch({ type: 'reset' })
     let active = true
@@ -124,6 +127,13 @@ export function useLiveRunStream({
       }
       dispatch({ type: 'snapshot', detail: reconciledDetail, events: reconciliation.events })
       dispatch({ type: 'streamFailed', message: undefined })
+      if (next.run.status === 'SUCCEEDED' || next.run.status === 'FAILED') {
+        const outcomeKey = `${next.run.runId}:${next.run.status}`
+        if (announcedOutcome.current !== outcomeKey) {
+          announcedOutcome.current = outcomeKey
+          announceWorkflowRunOutcomesChanged()
+        }
+      }
       if (terminalRunStatuses.has(next.run.status)) close()
     }
 
@@ -259,7 +269,6 @@ export function useLiveRunStream({
 
 interface NodePanelState {
   readonly selectedNodeId: string | undefined
-  readonly isOpen: boolean
   readonly trace: AgentTrace | undefined
   readonly traceLoading: boolean
   readonly traceError: string | undefined
@@ -267,7 +276,6 @@ interface NodePanelState {
 
 const initialNodePanelState: NodePanelState = {
   selectedNodeId: undefined,
-  isOpen: false,
   trace: undefined,
   traceLoading: false,
   traceError: undefined,
@@ -281,66 +289,33 @@ const updateNodePanel = (
   ...update,
 })
 
-const prefersReducedMotion = () =>
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
 export function useRunNodePanel({
   client,
+  defaultNodeId,
   detail,
   runId,
-}: Readonly<{ client: LiveRunClient; detail: RunDetailResponse | undefined; runId: string }>) {
-  const invokerRef = useRef<HTMLElement | null>(null)
-  const openFrameRef = useRef<number | undefined>(undefined)
+}: Readonly<{
+  client: LiveRunClient
+  defaultNodeId: string | undefined
+  detail: RunDetailResponse | undefined
+  runId: string
+}>) {
   const [state, update] = useReducer(updateNodePanel, initialNodePanelState)
 
   useEffect(() => update(initialNodePanelState), [runId])
 
-  const close = useCallback((restoreFocus = false) => {
-    if (openFrameRef.current !== undefined) {
-      window.cancelAnimationFrame(openFrameRef.current)
-      openFrameRef.current = undefined
-    }
-    update({ isOpen: false })
-    if (restoreFocus) window.requestAnimationFrame(() => invokerRef.current?.focus())
-    if (prefersReducedMotion()) update({ selectedNodeId: undefined })
-  }, [])
-
   const open = useCallback((nodeId: string) => {
-    if (openFrameRef.current !== undefined) window.cancelAnimationFrame(openFrameRef.current)
-    invokerRef.current =
-      document.activeElement instanceof HTMLElement ? document.activeElement : null
     update({ selectedNodeId: nodeId })
-
-    if (prefersReducedMotion()) {
-      update({ isOpen: true })
-      openFrameRef.current = undefined
-      return
-    }
-
-    update({ isOpen: false })
-    openFrameRef.current = window.requestAnimationFrame(() => {
-      openFrameRef.current = window.requestAnimationFrame(() => {
-        update({ isOpen: true })
-        openFrameRef.current = undefined
-      })
-    })
   }, [])
 
-  useEffect(
-    () => () => {
-      if (openFrameRef.current !== undefined) window.cancelAnimationFrame(openFrameRef.current)
-    },
-    [],
-  )
+  const selectedNodeId = state.selectedNodeId ?? defaultNodeId
 
   const execution: NodeExecution | undefined =
-    detail === undefined || state.selectedNodeId === undefined
+    detail === undefined || selectedNodeId === undefined
       ? undefined
-      : latestExecutions(detail.nodeExecutions).get(state.selectedNodeId)
+      : latestExecutions(detail.nodeExecutions).get(selectedNodeId)
 
   useEffect(() => {
-    if (!state.isOpen) return
     if (execution === undefined || client.getAgentTrace === undefined) {
       update({ trace: undefined, traceLoading: false, traceError: undefined })
       return
@@ -381,7 +356,7 @@ export function useRunNodePanel({
       active = false
       if (interval !== undefined) window.clearInterval(interval)
     }
-  }, [client, execution, runId, state.isOpen])
+  }, [client, execution, runId])
 
-  return { ...state, close, execution, open, update }
+  return { ...state, selectedNodeId, execution, open }
 }

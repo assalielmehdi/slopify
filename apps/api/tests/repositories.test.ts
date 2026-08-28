@@ -85,7 +85,7 @@ const addRepository = (app: ReturnType<typeof createApiApp>) =>
   })
 
 describe('repositories API', () => {
-  it('adds a connected remote repository and returns live availability when listing', async () => {
+  it('reuses the inspected availability after adding a connected remote repository', async () => {
     const fixture = createFixture()
     const created = await addRepository(fixture.app)
     fixture.setRepositoryAvailable(false)
@@ -104,7 +104,7 @@ describe('repositories API', () => {
       repositories: [
         expect.objectContaining({
           repositoryId: 'repository-01',
-          availability: 'REPOSITORY_UNAVAILABLE',
+          availability: 'AVAILABLE',
         }),
       ],
     })

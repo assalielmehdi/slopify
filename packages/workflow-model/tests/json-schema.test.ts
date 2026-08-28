@@ -5,9 +5,8 @@ import { describe, expect, it } from 'vitest'
 import { createWorkflowFileJsonSchema } from '../src/index.js'
 
 const workflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'release-review',
-  name: 'Release review',
   description: 'Prepare and review a release.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -40,8 +39,8 @@ describe('workflow JSON Schema', () => {
     expect(first).toEqual(second)
     expect(first).toMatchObject({
       $schema: 'https://json-schema.org/draft/2020-12/schema',
-      $id: 'https://schemas.slopify.local/workflow.v2.schema.json',
-      title: 'Slopify workflow v2',
+      $id: 'https://schemas.slopify.local/workflow.v3.schema.json',
+      title: 'Slopify workflow v3',
       type: 'object',
       additionalProperties: false,
     })
@@ -54,6 +53,25 @@ describe('workflow JSON Schema', () => {
     const validate = ajv.compile(createWorkflowFileJsonSchema())
 
     expect(validate(workflowFile)).toBe(true)
+    expect(
+      validate({
+        ...workflowFile,
+        graph: {
+          ...workflowFile.graph,
+          nodes: [{ ...workflowFile.graph.nodes[0], timeoutSeconds: 1_200 }],
+        },
+      }),
+    ).toBe(true)
+    expect(
+      validate({
+        ...workflowFile,
+        graph: {
+          ...workflowFile.graph,
+          nodes: [{ ...workflowFile.graph.nodes[0], timeoutSeconds: 61 }],
+        },
+      }),
+    ).toBe(false)
+    expect(validate({ ...workflowFile, name: 'Release review' })).toBe(false)
     expect(validate({ ...workflowFile, workflowId: 'Release_review' })).toBe(false)
     expect(validate({ ...workflowFile, unexpected: true })).toBe(false)
     expect(

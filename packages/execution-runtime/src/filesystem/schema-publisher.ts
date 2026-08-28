@@ -49,7 +49,7 @@ export function createManagedJsonSchemas(): readonly ManagedJsonSchema[] {
       ),
     }),
     Object.freeze({
-      fileName: 'workflow.v2.schema.json',
+      fileName: 'workflow.v3.schema.json',
       schema: createWorkflowFileJsonSchema(),
     }),
   ])

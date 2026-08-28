@@ -81,6 +81,11 @@ export {
   type FilesystemRunStore,
   type FilesystemRunStoreErrorCode,
 } from './runs/filesystem-run-store.js'
+export {
+  createFilesystemRunArtifactDirectory,
+  type FilesystemRunArtifactDirectory,
+  type RunArtifactLocator,
+} from './runs/filesystem-run-artifact-directory.js'
 export { RunDomainEventSchema, type RunDomainEvent } from './runs/run-events.js'
 export { createFilesystemRunJournal } from './runs/filesystem-run-journal.js'
 export {
@@ -347,6 +352,7 @@ export {
   createWorkflowDefinitionService,
   type WorkflowDefinitionCatalogEntry,
   type WorkflowDefinitionService,
+  type WorkflowRunActivity,
   type WorkflowReadinessCode,
   type WorkflowReadinessFinding,
 } from './services/workflow-definition-service.js'

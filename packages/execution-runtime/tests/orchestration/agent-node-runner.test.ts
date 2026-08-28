@@ -15,12 +15,12 @@ import {
 import { TEST_RUN_ID, createRun, createPersistenceFixture } from '../persistence/test-fixture.js'
 
 const workspaceRoot = '/Users/operator/.slopify/orchestrator/workspaces/run-01'
+const artifactsPath = '/Users/operator/.slopify/workflows/test-workflow/runs/run-01/artifacts'
 
 const createAgentWorkflow = (prompt: string) =>
   WorkflowSchema.parse({
-    schemaVersion: 2,
+    schemaVersion: 3,
     workflowId: 'test-workflow',
-    name: 'Agent workflow',
     description: 'Exercises an agent in configured repository clones.',
     configuration: {
       repositoryIds: ['repository-api', 'repository-web'],
@@ -35,6 +35,7 @@ const createAgentWorkflow = (prompt: string) =>
         name: 'Identify agent',
         prompt,
         harness: { harnessId: 'pi', modelId: 'test-model', thinkingLevel: 'medium' },
+        timeoutSeconds: 1_200,
       },
     ],
     edges: [],
@@ -147,6 +148,7 @@ describe('agent node runner', () => {
         received = input
       })
       const workspaces = createWorkspaces()
+      const artifacts = { ensure: vi.fn(async () => artifactsPath) }
       const traces = {
         start: vi.fn(async () => undefined),
         append: vi.fn(async () => undefined),
@@ -155,6 +157,7 @@ describe('agent node runner', () => {
       const runner = createAgentNodeRunner({
         harnesses: createAvailableHarnesses(),
         resolveHarness: (harnessId) => (harnessId === 'pi' ? agent : undefined),
+        artifacts,
         workspaces,
         runs: fixture.runs,
         traces,
@@ -185,6 +188,7 @@ describe('agent node runner', () => {
         executionId: 'node-execution-plan',
         runId: TEST_RUN_ID,
         nodeId: 'identify-agent',
+        artifactsPath,
         workspace: {
           rootPath: workspaceRoot,
           primaryRepositoryId: 'repository-api',
@@ -196,12 +200,14 @@ describe('agent node runner', () => {
         model: 'test-model',
         thinkingLevel: 'medium',
         declaredOutcomes: ['completed'],
-        timeoutSeconds: 300,
+        timeoutSeconds: 1_200,
       })
+      expect(artifacts.ensure).toHaveBeenCalledWith(TEST_RUN_ID)
       expect(received?.renderedPrompt).toContain('Primary repository — API (GITHUB operator/api)')
       expect(received?.renderedPrompt).toContain(`Workspace: ${workspaceRoot}/repository-api`)
       expect(received?.renderedPrompt).toContain('Web (GITLAB operator/web)')
       expect(received?.renderedPrompt).toContain(`Workspace: ${workspaceRoot}/repository-web`)
+      expect(received?.renderedPrompt).toContain(`Shared artifacts: ${artifactsPath}`)
       expect(received?.renderedPrompt).toContain('Branch: slopify/run-01')
       expect(received?.renderedPrompt).toContain(
         'Slopify will not push branches or create pull requests',
@@ -211,7 +217,7 @@ describe('agent node runner', () => {
       )
       expect(received?.renderedPrompt).not.toContain('slopify_complete_node')
       expect(traces.start).toHaveBeenCalledWith({
-        version: 3,
+        version: 4,
         runId: TEST_RUN_ID,
         nodeExecutionId: 'node-execution-plan',
         attemptId: 'attempt-plan',
@@ -223,6 +229,7 @@ describe('agent node runner', () => {
           model: 'test-model',
           thinkingLevel: 'medium',
           renderedPrompt: expect.any(String),
+          artifactsPath,
           workspaceRoot,
           primaryRepositoryId: 'repository-api',
           repositories: [
@@ -247,7 +254,7 @@ describe('agent node runner', () => {
               defaultBranch: 'trunk',
             },
           ],
-          timeoutSeconds: 300,
+          timeoutSeconds: 1_200,
         },
       })
       expect(traces.append).toHaveBeenCalledTimes(2)
@@ -275,6 +282,7 @@ describe('agent node runner', () => {
       const runner = createAgentNodeRunner({
         harnesses: createAvailableHarnesses(),
         resolveHarness: () => agent,
+        artifacts: { ensure: vi.fn(async () => artifactsPath) },
         workspaces,
         runs: fixture.runs,
       })
@@ -309,6 +317,7 @@ describe('agent node runner', () => {
       const runner = createAgentNodeRunner({
         harnesses: createAvailableHarnesses(),
         resolveHarness: () => undefined,
+        artifacts: { ensure: vi.fn(async () => artifactsPath) },
         workspaces: createWorkspaces(),
         runs: fixture.runs,
       })

@@ -17,11 +17,10 @@ import {
 const directories: string[] = []
 const timestamp = '2026-08-25T10:00:00.000Z'
 
-const workflow = (name = 'Release review'): WorkflowFile => ({
-  schemaVersion: 2,
+const workflow = (description = 'Review a release.'): WorkflowFile => ({
+  schemaVersion: 3,
   workflowId: 'release-review',
-  name,
-  description: 'Review a release.',
+  description,
   repositories: {
     repositoryIds: ['repository-api'],
     primaryRepositoryId: 'repository-api',
@@ -92,7 +91,7 @@ describe('filesystem run service admission', () => {
     expect(JSON.parse(await Bun.file(runPaths.workflowSnapshotFile).text())).toMatchObject({
       workflowRevision: created.revision,
       capturedAt: '2026-08-25T10:30:00.000Z',
-      workflow: { workflowId: 'release-review', name: 'Release review' },
+      workflow: { schemaVersion: 3, workflowId: 'release-review' },
     })
     expect(JSON.parse(await Bun.file(runPaths.variablesFile).text())).toEqual({
       schemaVersion: 1,

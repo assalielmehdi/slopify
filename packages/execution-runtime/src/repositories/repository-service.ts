@@ -38,7 +38,10 @@ export interface RepositoryService {
   add(input: unknown): Promise<Repository>
   delete(repositoryId: string): Promise<void>
   list(): Promise<readonly Repository[]>
-  requireAvailable(repositoryId: string): Promise<Repository>
+  requireAvailable(
+    repositoryId: string,
+    options?: Readonly<{ fresh?: boolean }>,
+  ): Promise<Repository>
 }
 
 export interface CreateRepositoryServiceOptions {
@@ -47,6 +50,8 @@ export interface CreateRepositoryServiceOptions {
   readonly remote: RemoteGitHost
   readonly createId?: () => string
   readonly now?: () => string
+  readonly cacheTtlMs?: number
+  readonly cacheNow?: () => number
 }
 
 const unavailableError = () =>
@@ -57,8 +62,21 @@ export const createRepositoryService = (
 ): RepositoryService => {
   const createId = options.createId ?? (() => `repository-${crypto.randomUUID()}`)
   const now = options.now ?? (() => new Date().toISOString())
+  const cacheTtlMs = options.cacheTtlMs ?? 15 * 60_000
+  if (!Number.isSafeInteger(cacheTtlMs) || cacheTtlMs < 0) {
+    throw new TypeError('Repository cache time to live is invalid')
+  }
+  const cacheNow = options.cacheNow ?? Date.now
+  const cache = new Map<
+    string,
+    Readonly<{ recordKey: string; repository: Repository; expiresAt: number }>
+  >()
+  const inspections = new Map<
+    string,
+    Readonly<{ recordKey: string; token: symbol; result: Promise<Repository> }>
+  >()
 
-  const inspectRecord = async (record: RepositoryRecord): Promise<Repository> => {
+  const inspectRecordUncached = async (record: RepositoryRecord): Promise<Repository> => {
     let token: string
     try {
       token = await options.connections.requireToken(record.provider)
@@ -86,6 +104,45 @@ export const createRepositoryService = (
     } catch {
       return RepositorySchema.parse({ ...record, availability: 'REPOSITORY_UNAVAILABLE' })
     }
+  }
+
+  const inspectRecord = async (
+    record: RepositoryRecord,
+    readOptions?: Readonly<{ fresh?: boolean }>,
+  ): Promise<Repository> => {
+    const recordKey = JSON.stringify(record)
+    const cached = cache.get(record.repositoryId)
+    if (
+      !readOptions?.fresh &&
+      cached !== undefined &&
+      cached.recordKey === recordKey &&
+      cacheNow() < cached.expiresAt
+    ) {
+      return cached.repository
+    }
+
+    const pending = inspections.get(record.repositoryId)
+    if (pending !== undefined && pending.recordKey === recordKey) return pending.result
+
+    const token = Symbol()
+    const result = inspectRecordUncached(record)
+      .then((repository) => {
+        if (inspections.get(record.repositoryId)?.token === token) {
+          cache.set(record.repositoryId, {
+            recordKey,
+            repository,
+            expiresAt: cacheNow() + cacheTtlMs,
+          })
+        }
+        return repository
+      })
+      .finally(() => {
+        if (inspections.get(record.repositoryId)?.token === token) {
+          inspections.delete(record.repositoryId)
+        }
+      })
+    inspections.set(record.repositoryId, { recordKey, token, result })
+    return result
   }
 
   return {
@@ -141,11 +198,17 @@ export const createRepositoryService = (
         }
         throw cause
       }
-      return RepositorySchema.parse({ ...record, availability: 'AVAILABLE' })
+      const addedRepository = RepositorySchema.parse({ ...record, availability: 'AVAILABLE' })
+      cache.set(record.repositoryId, {
+        recordKey: JSON.stringify(record),
+        repository: addedRepository,
+        expiresAt: cacheNow() + cacheTtlMs,
+      })
+      return addedRepository
     },
 
     async list() {
-      return Promise.all((await options.repositories.list()).map(inspectRecord))
+      return Promise.all((await options.repositories.list()).map((record) => inspectRecord(record)))
     },
 
     async delete(repositoryIdInput) {
@@ -153,15 +216,17 @@ export const createRepositoryService = (
       if (!(await options.repositories.delete(repositoryId))) {
         throw new RepositoryServiceError('REPOSITORY_NOT_FOUND', 'Repository was not found')
       }
+      cache.delete(repositoryId)
+      inspections.delete(repositoryId)
     },
 
-    async requireAvailable(repositoryIdInput) {
+    async requireAvailable(repositoryIdInput, readOptions) {
       const repositoryId = RepositoryIdSchema.parse(repositoryIdInput)
       const record = await options.repositories.get(repositoryId)
       if (record === undefined) {
         throw new RepositoryServiceError('REPOSITORY_NOT_FOUND', 'Repository was not found')
       }
-      const repository = await inspectRecord(record)
+      const repository = await inspectRecord(record, readOptions)
       if (repository.availability !== 'AVAILABLE') throw unavailableError()
       return repository
     },

@@ -21,6 +21,7 @@ import {
   ThemePreferenceSchema,
   UpdateSettingsRequestSchema,
   WorkflowIdSchema,
+  WorkflowRunOutcomeCatalogResponseSchema,
   type HarnessId,
   type RunId,
   type WorkflowId,
@@ -235,6 +236,26 @@ describe('settings', () => {
 })
 
 describe('public API records', () => {
+  it('publishes only successful and failed workflow run outcomes', () => {
+    const response = {
+      outcomes: [
+        {
+          workflowId: 'release-workflow',
+          runId: 'run-01',
+          status: 'SUCCEEDED',
+          completedAt: '2026-08-25T21:00:00.000Z',
+        },
+      ],
+    }
+
+    expect(WorkflowRunOutcomeCatalogResponseSchema.parse(response)).toEqual(response)
+    expect(
+      WorkflowRunOutcomeCatalogResponseSchema.safeParse({
+        outcomes: [{ ...response.outcomes[0], status: 'CANCELLED' }],
+      }).success,
+    ).toBe(false)
+  })
+
   it('publishes strict non-secret editable resource events', () => {
     const event = {
       sequence: 1,
@@ -303,6 +324,8 @@ describe('public API records', () => {
       RunPaginationQuerySchema.parse({
         page: '2',
         pageSize: '20',
+        workflowIds: ['workflow-01', 'workflow-02'],
+        repositoryIds: ['repository-api', 'repository-web'],
         statuses: ['FAILED', 'CANCELLED'],
         durationMinMs: '1000',
         durationMaxMs: '5000',
@@ -310,6 +333,8 @@ describe('public API records', () => {
     ).toMatchObject({
       page: 2,
       pageSize: 20,
+      workflowIds: ['workflow-01', 'workflow-02'],
+      repositoryIds: ['repository-api', 'repository-web'],
       statuses: ['FAILED', 'CANCELLED'],
       durationMinMs: 1000,
       durationMaxMs: 5000,
@@ -317,6 +342,14 @@ describe('public API records', () => {
     expect(RunPaginationQuerySchema.safeParse({ statuses: ['FAILED', 'FAILED'] }).success).toBe(
       false,
     )
+    expect(
+      RunPaginationQuerySchema.safeParse({ workflowIds: ['workflow-01', 'workflow-01'] }).success,
+    ).toBe(false)
+    expect(
+      RunPaginationQuerySchema.safeParse({
+        repositoryIds: ['repository-api', 'repository-api'],
+      }).success,
+    ).toBe(false)
   })
 })
 
@@ -365,7 +398,7 @@ describe('run events', () => {
 
 describe('agent traces', () => {
   const header = {
-    version: 3,
+    version: 4,
     runId: 'run-01',
     nodeExecutionId: 'node-execution-01',
     attemptId: 'attempt-01',
@@ -377,6 +410,7 @@ describe('agent traces', () => {
       model: 'openai-codex/gpt-5.4',
       thinkingLevel: 'medium',
       renderedPrompt: 'Inspect the primary workspace.',
+      artifactsPath: '/Users/operator/.slopify/workflows/release-review/runs/run-01/artifacts',
       workspaceRoot: '/Users/operator/.slopify/orchestrator/workspaces/run-01',
       primaryRepositoryId: 'slopify',
       repositories: [
@@ -399,13 +433,22 @@ describe('agent traces', () => {
     expect(AgentTraceHeaderSchema.parse(header)).toEqual(header)
   })
 
+  it('continues to parse immutable version 3 repository workspace traces', () => {
+    const { artifactsPath: _artifactsPath, ...configuration } = header.configuration
+    void _artifactsPath
+
+    expect(AgentTraceHeaderSchema.parse({ ...header, version: 3, configuration }).version).toBe(3)
+  })
+
   it('continues to parse immutable version 1 worktree traces', () => {
+    const { artifactsPath: _artifactsPath, ...configuration } = header.configuration
+    void _artifactsPath
     expect(
       AgentTraceHeaderSchema.parse({
         ...header,
         version: 1,
         configuration: {
-          ...header.configuration,
+          ...configuration,
           repositories: [
             {
               repositoryId: 'repository-api',
@@ -421,11 +464,13 @@ describe('agent traces', () => {
   })
 
   it('normalizes persisted version 2 project keys to repository vocabulary', () => {
+    const { artifactsPath: _artifactsPath, ...configuration } = header.configuration
+    void _artifactsPath
     const parsed = AgentTraceHeaderSchema.parse({
       ...header,
       version: 2,
       configuration: {
-        ...header.configuration,
+        ...configuration,
         primaryRepositoryId: undefined,
         repositories: undefined,
         primaryProjectId: 'slopify',

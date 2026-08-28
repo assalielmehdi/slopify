@@ -46,14 +46,17 @@ describe('workflow v1 converter', () => {
   it('preserves graph behavior while renaming project selection to repositories', () => {
     const converted = convertWorkflowV1(legacyWorkflow)
 
+    const workflow = { ...legacyWorkflow }
+    Reflect.deleteProperty(workflow, 'name')
     expect(converted).toEqual({
-      ...legacyWorkflow,
-      schemaVersion: 2,
+      ...workflow,
+      schemaVersion: 3,
       configuration: {
         repositoryIds: ['repository-api'],
         primaryRepositoryId: 'repository-api',
         variables: ['release'],
       },
+      nodes: workflow.nodes.map((node) => ({ ...node, timeoutSeconds: 900 })),
     })
     expect(validateWorkflow(converted)).toMatchObject({ valid: true, findings: [] })
   })

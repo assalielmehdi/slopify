@@ -21,12 +21,34 @@ const availablePi = {
 }
 
 describe('harness catalog', () => {
-  it('discovers registered adapters on every read instead of persisting host state', async () => {
+  it('caches registered adapter discovery and shares concurrent inspections', async () => {
     const inspect = vi.fn(async () => availablePi)
     const catalog = createHarnessCatalog({ inspectors: [{ harnessId: 'pi', inspect }] })
 
+    await expect(Promise.all([catalog.list(), catalog.list()])).resolves.toEqual([
+      [availablePi],
+      [availablePi],
+    ])
     await expect(catalog.list()).resolves.toEqual([availablePi])
-    await expect(catalog.list()).resolves.toEqual([availablePi])
+    expect(inspect).toHaveBeenCalledTimes(1)
+  })
+
+  it('refreshes cached discovery after its time to live expires', async () => {
+    let now = 1_000
+    const inspect = vi.fn(async () => availablePi)
+    const catalog = createHarnessCatalog({
+      inspectors: [{ harnessId: 'pi', inspect }],
+      cacheTtlMs: 10_000,
+      now: () => now,
+    })
+
+    await catalog.list()
+    now += 9_999
+    await catalog.list()
+    expect(inspect).toHaveBeenCalledTimes(1)
+
+    now += 1
+    await catalog.list()
     expect(inspect).toHaveBeenCalledTimes(2)
   })
 

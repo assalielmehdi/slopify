@@ -30,6 +30,7 @@ import { registerRunEventRoutes } from './routes/run-events.js'
 import { registerResourceEventRoutes } from './routes/resource-events.js'
 import { registerSettingsRoutes } from './routes/settings.js'
 import { registerWorkflowRoutes } from './routes/workflows.js'
+import { registerWorkflowScreenRoute } from './routes/workflow-screen.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
@@ -89,6 +90,17 @@ export const createApiApp = (options: CreateApiAppOptions = {}): Hono => {
   if (options.gitConnections !== undefined) registerGitConnectionRoutes(app, options.gitConnections)
   if (options.harnesses !== undefined) registerHarnessRoutes(app, options.harnesses)
   if (options.workflows !== undefined) registerWorkflowRoutes(app, options.workflows)
+  if (
+    options.workflows !== undefined &&
+    options.harnesses !== undefined &&
+    options.repositories !== undefined
+  ) {
+    registerWorkflowScreenRoute(app, {
+      workflows: options.workflows,
+      harnesses: options.harnesses,
+      repositories: options.repositories,
+    })
+  }
   if (options.filesystemRuns !== undefined) registerFilesystemRunRoutes(app, options.filesystemRuns)
   if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
   if (options.resourceEvents !== undefined) registerResourceEventRoutes(app, options.resourceEvents)

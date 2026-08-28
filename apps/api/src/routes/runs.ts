@@ -2,6 +2,7 @@ import {
   CancelRunRequestSchema,
   CreateRunRequestSchema,
   RunPaginationQuerySchema,
+  WorkflowRunOutcomeCatalogResponseSchema,
 } from '@slopify/contracts'
 import {
   AgentTraceStoreError,
@@ -35,8 +36,9 @@ const parseOptionalRunBody = async (context: Context): Promise<unknown> => {
 
 export interface FilesystemRunRouteServices {
   readonly admissions: FilesystemRunAdmissionService
-  readonly index: Pick<FilesystemRunIndex, 'get' | 'list'>
+  readonly index: Pick<FilesystemRunIndex, 'get' | 'list' | 'listLatestFinished'>
   readonly reader: Pick<FilesystemRunReader, 'get'>
+  readonly onRunAdmitted?: () => void
   readonly cancellation?: JournalCancellationService
   readonly traces?: RunAgentTraceStore
 }
@@ -47,7 +49,9 @@ export const registerFilesystemRunRoutes = (
 ): void => {
   app.post('/api/runs', async (context) => {
     const input = CreateRunRequestSchema.parse(await parseRunBody(context))
-    return context.json(await services.admissions.create(input), 202)
+    const run = await services.admissions.create(input)
+    services.onRunAdmitted?.()
+    return context.json(run, 202)
   })
 
   app.get('/api/runs', async (context) => {
@@ -55,6 +59,8 @@ export const registerFilesystemRunRoutes = (
       page: context.req.query('page'),
       pageSize: context.req.query('pageSize'),
       runId: context.req.query('runId'),
+      workflowIds: context.req.queries('workflowId'),
+      repositoryIds: context.req.queries('repositoryId'),
       statuses: context.req.queries('status'),
       startedFrom: context.req.query('startedFrom'),
       startedTo: context.req.query('startedTo'),
@@ -63,6 +69,15 @@ export const registerFilesystemRunRoutes = (
     })
     return context.json(await services.index.list(query), 200)
   })
+
+  app.get('/api/workflow-run-outcomes', async (context) =>
+    context.json(
+      WorkflowRunOutcomeCatalogResponseSchema.parse({
+        outcomes: await services.index.listLatestFinished(),
+      }),
+      200,
+    ),
+  )
 
   app.get('/api/runs/:runId', async (context) => {
     const detail = await services.reader.get(context.req.param('runId'))

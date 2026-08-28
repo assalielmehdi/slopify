@@ -63,6 +63,7 @@ describe('WorkflowCanvas rendering', () => {
       'Who are you? to Review agent: Completed (completed)',
     )
     expect(container.querySelector('svg[aria-hidden="true"] path')).toBeTruthy()
+    expect(container.querySelector('svg[aria-hidden="true"] text')).toBeNull()
     expect(container.querySelector('[data-graph-mutation-control]')).toBeNull()
 
     const runButton = screen.getByRole('button', { name: 'Run' })
@@ -77,7 +78,7 @@ describe('WorkflowCanvas rendering', () => {
     expect(onRun).toHaveBeenCalledTimes(1)
   })
 
-  it('shows disabled action reasons without relying on inaccessible title text', () => {
+  it('keeps disabled action reasons accessible without rendering an inline status', () => {
     render(
       <WorkflowCanvas
         workflow={workflow}
@@ -87,11 +88,20 @@ describe('WorkflowCanvas rendering', () => {
       />,
     )
 
-    const status = screen.getByRole('status', { name: 'Workflow actions unavailable' })
-    expect(status.textContent).toContain('Open Harnesses')
-    expect(screen.getByRole('button', { name: 'Run' }).getAttribute('aria-describedby')).toBe(
-      status.id,
+    expect(screen.queryByRole('status', { name: 'Workflow actions unavailable' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Run' }).getAttribute('aria-description')).toBe(
+      'Pi is unavailable. Open Harnesses before running.',
     )
+  })
+
+  it('keeps the Run action icon-only without resize motion', () => {
+    render(<WorkflowCanvas workflow={workflow} onNodeSelect={vi.fn()} onRun={vi.fn()} runnable />)
+
+    const runButton = screen.getByRole('button', { name: 'Run' })
+    expect(runButton.querySelector('svg')).toBeTruthy()
+    expect(runButton.textContent).toBe('')
+    expect(runButton.className).not.toContain('t-resize')
+    expect(runButton.className).not.toContain('w-max')
   })
 
   it('directs empty workflows to the JSON configuration without offering node creation', () => {

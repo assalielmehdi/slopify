@@ -48,6 +48,7 @@ const filesystemCancellationFixture = () => {
       data: [locator],
       pagination: { page: 1, pageSize: 20, totalItems: 1, totalPages: 1 },
     })),
+    listLatestFinished: vi.fn(async () => []),
     refresh: vi.fn(async () => undefined),
   } satisfies FilesystemRunIndex
   const cancellation = {

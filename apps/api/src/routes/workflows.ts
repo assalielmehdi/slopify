@@ -55,6 +55,11 @@ export const registerWorkflowRoutes = (app: Hono, workflows: WorkflowDefinitionS
     return versionedJson(context, created, 201)
   })
 
+  app.delete('/api/workflows/:workflowId', async (context) => {
+    await workflows.delete(context.req.param('workflowId'))
+    return context.body(null, 204)
+  })
+
   app.get('/api/workflows/:workflowId/source', async (context) =>
     versionedJson(context, await workflows.getSource(context.req.param('workflowId')), 200),
   )

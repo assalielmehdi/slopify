@@ -118,6 +118,7 @@ export const createFilesystemRunAdmissionService = (
               node.harness.harnessId,
               node.harness.modelId,
               node.harness.thinkingLevel,
+              { fresh: true },
             ),
           ),
         )

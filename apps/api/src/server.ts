@@ -307,7 +307,7 @@ export const startConfiguredApiServer = async (
   })
   const lifecycle = await startFilesystemRuntime({
     runtime,
-    pollIntervalMs: infrastructure.pollIntervalMs ?? 100,
+    pollIntervalMs: infrastructure.pollIntervalMs ?? 5_000,
     onError: (error) => console.error('Filesystem execution recovery failed', error),
   })
   let transport: ApiServer
@@ -315,6 +315,18 @@ export const startConfiguredApiServer = async (
     transport = startWithResourceWatcher(
       createApiApp({
         ...runtime.api,
+        ...(runtime.api.filesystemRuns === undefined
+          ? {}
+          : {
+              filesystemRuns: {
+                ...runtime.api.filesystemRuns,
+                onRunAdmitted: () => {
+                  void lifecycle.pump
+                    .wake()
+                    .catch((error) => console.error('Filesystem execution wake failed', error))
+                },
+              },
+            }),
         filesystemHealth: lifecycle.health,
         gitConnections,
         harnesses,

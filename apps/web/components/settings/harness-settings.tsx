@@ -1,7 +1,7 @@
 'use client'
 
 import type { HarnessDescriptor } from '@slopify/contracts'
-import { ExternalLinkIcon, SquareTerminalIcon, XIcon } from 'lucide-react'
+import { ExternalLinkIcon, XIcon } from 'lucide-react'
 import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'
 
@@ -30,13 +30,9 @@ function HarnessIcon({ harness }: Readonly<{ harness: HarnessDescriptor }>) {
   return (
     <span className="flex size-10 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-muted">
       {harness.harnessId === 'codex' ? (
-        <SquareTerminalIcon
-          aria-hidden="true"
-          className="size-5 text-foreground"
-          data-testid="harness-icon-codex"
-        />
+        <Image alt="ChatGPT" height={20} src="/chatgpt-logo.svg" width={20} />
       ) : (
-        <Image alt="Pi" height={20} src="/pi-logo.svg" width={20} />
+        <Image alt="Pi" height={20} src="/pi-badge.svg" width={20} />
       )}
     </span>
   )

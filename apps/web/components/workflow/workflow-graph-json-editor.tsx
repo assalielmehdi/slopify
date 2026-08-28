@@ -109,13 +109,6 @@ export function WorkflowGraphJsonEditor({
 
   return (
     <section className="grid gap-3">
-      <div>
-        <h3 className="text-sm/5 font-semibold">Graph definition</h3>
-        <p className="mt-1 text-xs/4 text-muted-foreground">
-          Define agent nodes, prompts, harnesses, and directed edges as JSON.
-        </p>
-      </div>
-
       <Field>
         <div className="flex items-end justify-between gap-3">
           <div>

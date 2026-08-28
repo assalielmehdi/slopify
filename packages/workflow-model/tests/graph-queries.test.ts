@@ -18,9 +18,8 @@ const agent = (id: string) => ({
 })
 
 const workflow = WorkflowSchema.parse({
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'workflow-01',
-  name: 'Workflow',
   description: 'Coordinate agents.',
   configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'start',

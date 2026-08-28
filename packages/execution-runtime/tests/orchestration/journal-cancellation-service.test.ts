@@ -16,9 +16,8 @@ import {
 const timestamp = '2026-08-25T10:00:00.000Z'
 const locator = { workflowId: 'cancel-review', runId: 'run-01' }
 const workflow: Workflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'cancel-review',
-  name: 'Cancel review',
   description: 'Exercise journal cancellation.',
   configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'review',

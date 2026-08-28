@@ -63,9 +63,8 @@ const localCloneRunner = (remote: string): ProcessRunner => {
 }
 
 const workflow: WorkflowFile = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'runtime-review',
-  name: 'Runtime review',
   description: 'Exercise the complete filesystem runtime.',
   repositories: {
     repositoryIds: ['repository-api'],
@@ -92,6 +91,7 @@ const workflow: WorkflowFile = {
 
 const executor: AgentExecutor = {
   async *execute(input: AgentExecutionInput) {
+    receivedExecutionInput = input
     yield {
       executionId: input.executionId,
       runId: input.runId,
@@ -115,8 +115,11 @@ const executor: AgentExecutor = {
   },
 }
 
+let receivedExecutionInput: AgentExecutionInput | undefined
+
 describe('filesystem runtime composition', () => {
   it('constructs and executes a complete runtime inside one temporary Slopify home', async () => {
+    receivedExecutionInput = undefined
     const home = temporaryDirectory('slopify-api-runtime-home')
     const remote = createRemote()
     const repository: FilesystemRunRepositoryResolution = {
@@ -141,15 +144,27 @@ describe('filesystem runtime composition', () => {
       createRunId: () => 'run-runtime-1',
     })
     await runtime.workflowStore.create(workflow)
-    const app = createApiApp(runtime.api)
+    const lifecycle = await startFilesystemRuntime({ runtime, pollIntervalMs: 60_000 })
+    if (runtime.api.filesystemRuns === undefined)
+      throw new Error('Expected filesystem run services')
+    let admittedWake = Promise.resolve()
+    const app = createApiApp({
+      ...runtime.api,
+      filesystemRuns: {
+        ...runtime.api.filesystemRuns,
+        onRunAdmitted: () => {
+          admittedWake = lifecycle.pump.wake()
+        },
+      },
+    })
 
     const admitted = await app.request('/api/runs', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ workflowId: 'runtime-review', variables: { release: 'v1.0.0' } }),
     })
+    await admittedWake
     const locator = { workflowId: 'runtime-review', runId: 'run-runtime-1' }
-    const lifecycle = await startFilesystemRuntime({ runtime, pollIntervalMs: 1_000 })
     const detail = await runtime.reader.get(locator.runId)
     const health = await createApiApp({
       ...runtime.api,
@@ -174,8 +189,11 @@ describe('filesystem runtime composition', () => {
       }),
     ).resolves.toMatchObject({ complete: true, events: [{ type: 'AGENT_RESULT' }] })
     expect(health.status).toBe(200)
-    expect(existsSync(join(runtime.paths.schemasDirectory, 'workflow.v2.schema.json'))).toBe(true)
+    expect(existsSync(join(runtime.paths.schemasDirectory, 'workflow.v3.schema.json'))).toBe(true)
     expect(existsSync(join(runtime.paths.runtimeDirectory, 'instance.lock'))).toBe(true)
+    expect(receivedExecutionInput?.artifactsPath).toBe(
+      runtime.paths.run(locator.workflowId, locator.runId).artifactsDirectory,
+    )
     await expect(startFilesystemRuntime({ runtime, pollIntervalMs: 1_000 })).rejects.toMatchObject({
       code: 'INSTANCE_ALREADY_RUNNING',
     })
@@ -183,6 +201,9 @@ describe('filesystem runtime composition', () => {
       existsSync(runtime.paths.run(locator.workflowId, locator.runId).workspacesDirectory),
     ).toBe(false)
     expect(existsSync(runtime.paths.run(locator.workflowId, locator.runId).runFile)).toBe(true)
+    expect(
+      existsSync(runtime.paths.run(locator.workflowId, locator.runId).artifactsDirectory),
+    ).toBe(true)
 
     await lifecycle.stop()
     expect(existsSync(join(runtime.paths.runtimeDirectory, 'instance.lock'))).toBe(false)

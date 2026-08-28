@@ -11,9 +11,8 @@ const agent = (id: string) => ({
 })
 
 const validWorkflow = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   workflowId: 'workflow-01',
-  name: 'Agent workflow',
   description: 'Coordinate agents.',
   configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
   startNodeId: 'start',

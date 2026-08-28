@@ -20,7 +20,6 @@ import { WorkflowServiceError } from './workflow-error.js'
 const CreateWorkflowDefinitionInputSchema = z
   .strictObject({
     workflowId: WorkflowSlugSchema,
-    name: z.string().trim().min(1).max(100),
     description: z.string().trim().min(1).max(4096),
   })
   .readonly()
@@ -61,7 +60,12 @@ export interface WorkflowDefinitionService {
   get(workflowId: string): Promise<WorkflowDefinitionCatalogEntry>
   getSource(workflowId: string): Promise<WorkflowSource>
   create(input: unknown): Promise<WorkflowDefinitionCatalogEntry>
+  delete(workflowId: string): Promise<void>
   update(workflowId: string, input: unknown): Promise<WorkflowDefinitionCatalogEntry>
+}
+
+export interface WorkflowRunActivity {
+  hasActive(workflowId: string): Promise<boolean>
 }
 
 const readinessFinding = (
@@ -121,6 +125,7 @@ const useWorkflowStore = async <Result>(operation: () => Promise<Result>): Promi
 export const createWorkflowDefinitionService = (options: {
   readonly workflows: WorkflowStore
   readonly harnesses: Pick<HarnessCatalog, 'requireAvailable'>
+  readonly runActivity: WorkflowRunActivity
   readonly now?: () => string
 }): WorkflowDefinitionService => {
   const now = options.now ?? (() => new Date().toISOString())
@@ -210,7 +215,6 @@ export const createWorkflowDefinitionService = (options: {
       const workflow = workflowToWorkflowFile(
         createWorkflowDraft({
           workflowId: parsed.workflowId,
-          name: parsed.name,
           description: parsed.description,
           configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
           createdAt: timestamp,
@@ -218,6 +222,20 @@ export const createWorkflowDefinitionService = (options: {
       )
       const created = await useWorkflowStore(() => options.workflows.create(workflow))
       return evaluate(workflow.workflowId, created.value, created.revision)
+    },
+
+    async delete(workflowIdInput) {
+      const workflowId = WorkflowSlugSchema.parse(workflowIdInput)
+      if (await options.runActivity.hasActive(workflowId)) {
+        throw new WorkflowServiceError(
+          'WORKFLOW_RUN_ACTIVE',
+          'Workflow cannot be archived while a run is pending or running',
+        )
+      }
+      const deleted = await useWorkflowStore(() => options.workflows.delete(workflowId))
+      if (!deleted) {
+        throw new WorkflowServiceError('WORKFLOW_NOT_FOUND', 'Workflow was not found')
+      }
     },
 
     async update(workflowIdInput, input) {

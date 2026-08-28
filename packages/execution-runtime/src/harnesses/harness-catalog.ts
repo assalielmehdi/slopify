@@ -36,18 +36,31 @@ export type AvailableHarnessDescriptor = Extract<
 
 export interface HarnessCatalog {
   list(): Promise<readonly HarnessDescriptor[]>
-  get(harnessId: string): Promise<HarnessDescriptor | undefined>
+  get(
+    harnessId: string,
+    options?: Readonly<{ fresh?: boolean }>,
+  ): Promise<HarnessDescriptor | undefined>
   requireAvailable(
     harnessId: string,
     modelId?: string,
     thinkingLevel?: HarnessThinkingLevel,
+    options?: Readonly<{ fresh?: boolean }>,
   ): Promise<AvailableHarnessDescriptor>
 }
 
 export const createHarnessCatalog = (options: {
   readonly inspectors: readonly HarnessInspector[]
+  readonly cacheTtlMs?: number
+  readonly now?: () => number
 }): HarnessCatalog => {
+  const cacheTtlMs = options.cacheTtlMs ?? 15 * 60_000
+  if (!Number.isSafeInteger(cacheTtlMs) || cacheTtlMs < 0) {
+    throw new TypeError('Harness cache time to live is invalid')
+  }
+  const now = options.now ?? Date.now
   const inspectors = new Map<HarnessId, HarnessInspector>()
+  const cache = new Map<HarnessId, Readonly<{ descriptor: HarnessDescriptor; expiresAt: number }>>()
+  const inspections = new Map<HarnessId, Promise<HarnessDescriptor>>()
   for (const inspector of options.inspectors) {
     const harnessId = HarnessIdSchema.parse(inspector.harnessId)
     if (inspectors.has(harnessId)) throw new TypeError(`Duplicate harness inspector: ${harnessId}`)
@@ -57,25 +70,40 @@ export const createHarnessCatalog = (options: {
   const inspect = async (
     harnessId: HarnessId,
     inspector: HarnessInspector,
+    fresh = false,
   ): Promise<HarnessDescriptor> => {
-    const descriptor = HarnessDescriptorSchema.parse(await inspector.inspect())
-    if (descriptor.harnessId !== harnessId)
-      throw new TypeError(`Harness inspector returned an unexpected ID: ${descriptor.harnessId}`)
-    return descriptor
+    const cached = cache.get(harnessId)
+    if (!fresh && cached !== undefined && now() < cached.expiresAt) return cached.descriptor
+
+    const pending = inspections.get(harnessId)
+    if (pending !== undefined) return pending
+
+    const inspection = (async () => {
+      const descriptor = HarnessDescriptorSchema.parse(await inspector.inspect())
+      if (descriptor.harnessId !== harnessId)
+        throw new TypeError(`Harness inspector returned an unexpected ID: ${descriptor.harnessId}`)
+      cache.set(harnessId, { descriptor, expiresAt: now() + cacheTtlMs })
+      return descriptor
+    })().finally(() => inspections.delete(harnessId))
+    inspections.set(harnessId, inspection)
+    return inspection
   }
 
-  const get = async (harnessIdInput: string): Promise<HarnessDescriptor | undefined> => {
+  const get = async (
+    harnessIdInput: string,
+    readOptions?: Readonly<{ fresh?: boolean }>,
+  ): Promise<HarnessDescriptor | undefined> => {
     const harnessId = HarnessIdSchema.parse(harnessIdInput)
     const inspector = inspectors.get(harnessId)
-    return inspector === undefined ? undefined : inspect(harnessId, inspector)
+    return inspector === undefined ? undefined : inspect(harnessId, inspector, readOptions?.fresh)
   }
 
   return {
     list: () =>
       Promise.all([...inspectors].map(([harnessId, inspector]) => inspect(harnessId, inspector))),
     get,
-    async requireAvailable(harnessIdInput, modelId, thinkingLevel) {
-      const descriptor = await get(harnessIdInput)
+    async requireAvailable(harnessIdInput, modelId, thinkingLevel, readOptions) {
+      const descriptor = await get(harnessIdInput, readOptions)
       if (descriptor === undefined)
         throw new HarnessCatalogError('HARNESS_NOT_FOUND', 'Harness was not found')
       if (descriptor.availability !== 'AVAILABLE')

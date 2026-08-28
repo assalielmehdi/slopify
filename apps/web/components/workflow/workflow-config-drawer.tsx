@@ -6,21 +6,16 @@ import {
   type Workflow,
   type WorkflowConfiguration,
 } from '@slopify/workflow-model'
-import {
-  BracesIcon,
-  FolderGit2Icon,
-  PlusIcon,
-  Settings2Icon,
-  Trash2Icon,
-  XIcon,
-} from 'lucide-react'
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { BracesIcon, FolderGit2Icon, PlusIcon, Settings2Icon, Trash2Icon } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 
+import { useDeleteConfirmationDismissal } from '@/components/use-delete-confirmation-dismissal'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Field, FieldLabel } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
+import { WorkspacePanelHeader } from '@/components/workspace-panel-header'
 import {
   WorkflowGraphJsonEditor,
   formatWorkflowGraphSource,
@@ -44,17 +39,6 @@ export interface WorkflowConfigDrawerProps {
   readonly onDelete: () => Promise<boolean>
   readonly onDirtyChange?: ((dirty: boolean) => void) | undefined
   readonly onSubmit: (value: Workflow) => Promise<boolean>
-}
-
-const prefersReducedMotion = (): boolean =>
-  typeof window.matchMedia === 'function' &&
-  window.matchMedia('(prefers-reduced-motion: reduce)').matches
-
-const durationMilliseconds = (value: string): number => {
-  const trimmed = value.trim()
-  if (trimmed.endsWith('ms')) return Number.parseFloat(trimmed)
-  if (trimmed.endsWith('s')) return Number.parseFloat(trimmed) * 1_000
-  return 350
 }
 
 const sameValues = (left: readonly string[], right: readonly string[]): boolean =>
@@ -237,17 +221,12 @@ export function WorkflowConfigDrawer({
   const { configuration } = value
   const workflowFile = workflowToWorkflowFile(value)
   const initialGraphSource = formatWorkflowGraphSource(workflowFile.graph)
-  const shellRef = useRef<HTMLDivElement>(null)
-  const openFrameRef = useRef<number | undefined>(undefined)
-  const closeTimerRef = useRef<number | undefined>(undefined)
-  const closingRef = useRef(false)
   const confirmationInputRef = useRef<HTMLInputElement>(null)
+  const deleteActionRef = useRef<HTMLButtonElement>(null)
   const nextVariableId = useRef(configuration.variables.length)
-  const [open, setOpen] = useState(false)
   const [confirmingDelete, setConfirmingDelete] = useState(false)
   const [confirmationName, setConfirmationName] = useState('')
   const [deleting, setDeleting] = useState(false)
-  const [name, setName] = useState(value.name)
   const [description, setDescription] = useState(value.description)
   const [graphSource, setGraphSource] = useState(initialGraphSource)
   const [selectedRepositoryIds, setSelectedRepositoryIds] = useState<
@@ -260,46 +239,28 @@ export function WorkflowConfigDrawer({
     configuration.variables.map((name, index) => ({ id: `variable-${index}`, name })),
   )
 
-  const completeClose = useCallback(() => {
-    if (!closingRef.current) return
-    closingRef.current = false
-    if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current)
-    closeTimerRef.current = undefined
-    onClose()
-  }, [onClose])
-
-  const requestClose = useCallback(() => {
-    if (closingRef.current || saving || deleting) return
-    closingRef.current = true
-    setOpen(false)
-    if (prefersReducedMotion()) {
-      completeClose()
-      return
-    }
-    const duration = durationMilliseconds(
-      getComputedStyle(shellRef.current ?? document.documentElement).getPropertyValue(
-        '--panel-close-dur',
-      ),
-    )
-    closeTimerRef.current = window.setTimeout(completeClose, duration + 50)
-  }, [completeClose, deleting, saving])
-
-  useEffect(() => {
-    openFrameRef.current = window.requestAnimationFrame(() => {
-      openFrameRef.current = window.requestAnimationFrame(() => setOpen(true))
-    })
-    return () => {
-      if (openFrameRef.current !== undefined) window.cancelAnimationFrame(openFrameRef.current)
-      if (closeTimerRef.current !== undefined) window.clearTimeout(closeTimerRef.current)
-    }
+  const dismissDeleteConfirmation = useCallback(() => {
+    setConfirmingDelete(false)
+    setConfirmationName('')
   }, [])
+
+  useDeleteConfirmationDismissal({
+    actionRef: deleteActionRef,
+    active: confirmingDelete,
+    confirmationRef: confirmationInputRef,
+    disabled: deleting,
+    onDismiss: dismissDeleteConfirmation,
+  })
+
+  const requestClose = () => {
+    if (!saving && !deleting) onClose()
+  }
 
   useEffect(() => {
     if (confirmingDelete) confirmationInputRef.current?.focus()
   }, [confirmingDelete])
 
   const trimmedVariables = variables.map(({ name }) => name.trim())
-  const trimmedName = name.trim()
   const trimmedDescription = description.trim()
   const variablesValid =
     trimmedVariables.every((name) => name.length > 0) &&
@@ -310,7 +271,6 @@ export function WorkflowConfigDrawer({
       selectedRepositories.push(repository.repositoryId)
   }
   const isDirty =
-    trimmedName !== value.name ||
     trimmedDescription !== value.description ||
     !sameMembers(selectedRepositories, configuration.repositoryIds) ||
     primaryRepositoryId !== configuration.primaryRepositoryId ||
@@ -328,7 +288,6 @@ export function WorkflowConfigDrawer({
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     if (
-      trimmedName.length === 0 ||
       trimmedDescription.length === 0 ||
       !variablesValid ||
       !repositoriesValid ||
@@ -340,7 +299,6 @@ export function WorkflowConfigDrawer({
     const graph = graphResult.value
     const saved = await onSubmit({
       ...value,
-      name: trimmedName,
       description: trimmedDescription,
       configuration: {
         repositoryIds: selectedRepositories,
@@ -366,185 +324,138 @@ export function WorkflowConfigDrawer({
       setConfirmingDelete(true)
       return
     }
-    if (confirmationName !== value.name) return
+    if (confirmationName !== value.workflowId) return
     setDeleting(true)
     const deleted = await onDelete()
     setDeleting(false)
     if (!deleted) return
     toast.add({
       title: 'Workflow deleted',
-      description: `${value.name} was removed from Slopify.`,
+      description: `${value.workflowId} was removed from Slopify.`,
       type: 'success',
     })
     requestClose()
   }
 
   return (
-    <div
-      ref={shellRef}
-      data-open={open}
-      className="floating-panel-shell fixed top-[4.25rem] right-3 bottom-3 left-3 z-30 isolate w-auto sm:left-auto sm:w-[min(34rem,calc(100%-1.5rem))]"
-      style={{ '--panel-translate-y': '0px' } as CSSProperties}
-      onTransitionEnd={(event) => {
-        if (event.target === event.currentTarget && event.propertyName === 'translate' && !open) {
-          completeClose()
-        }
-      }}
+    <aside
+      aria-label="Workflow configuration"
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-background text-foreground"
+      data-layout="workspace"
     >
-      <aside
-        aria-label="Workflow configuration"
-        data-open={open}
-        className="t-panel-slide flex h-full flex-col overflow-hidden rounded-xl border border-border bg-card text-card-foreground shadow-[var(--shadow-overlay)]"
-      >
-        <header className="relative shrink-0 border-b border-border p-6 pr-14">
-          <div className="flex items-center gap-3">
-            <span className="flex size-10 shrink-0 items-center justify-center rounded-md border border-border bg-muted">
-              <Settings2Icon aria-hidden="true" className="size-5" />
-            </span>
-            <div className="min-w-0">
-              <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]">Edit workflow</h2>
-              <p className="text-xs/4 text-muted-foreground">
-                Update details and configuration shared by every agent.
-              </p>
-            </div>
-          </div>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Close workflow configuration"
-            onClick={requestClose}
-            className="absolute top-3 right-3"
-          >
-            <XIcon aria-hidden="true" />
-          </Button>
-        </header>
+      <WorkspacePanelHeader
+        icon={Settings2Icon}
+        subtitle="Update details and configuration shared by every agent."
+        title="Edit workflow"
+      />
 
-        <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
-          <div className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto p-6">
-            {conflict === undefined ? null : (
-              <Alert variant="destructive">
-                <AlertTitle>External change detected</AlertTitle>
-                <AlertDescription>{conflict}</AlertDescription>
-              </Alert>
-            )}
-            {error === undefined ? null : (
-              <Alert variant="destructive">
-                <AlertTitle>Workflow action failed</AlertTitle>
-                <AlertDescription>{error}</AlertDescription>
-              </Alert>
-            )}
+      <form className="flex min-h-0 flex-1 flex-col" onSubmit={(event) => void submit(event)}>
+        <div className="grid min-h-0 flex-1 content-start gap-8 overflow-y-auto p-6">
+          {conflict === undefined ? null : (
+            <Alert variant="destructive">
+              <AlertTitle>External change detected</AlertTitle>
+              <AlertDescription>{conflict}</AlertDescription>
+            </Alert>
+          )}
+          {error === undefined ? null : (
+            <Alert variant="destructive">
+              <AlertTitle>Workflow action failed</AlertTitle>
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
 
-            <section className="grid gap-3">
-              <div>
-                <h3 className="text-sm/5 font-semibold">Details</h3>
-                <p className="mt-1 text-xs/4 text-muted-foreground">
-                  Name and describe this workflow in the editor catalog.
-                </p>
-              </div>
-              <Field>
-                <FieldLabel htmlFor="workflow-name">Name</FieldLabel>
-                <Input
-                  id="workflow-name"
-                  onChange={(event) => setName(event.currentTarget.value)}
-                  placeholder="release-workflow"
-                  value={name}
-                />
-              </Field>
-              <Field>
-                <FieldLabel htmlFor="workflow-description">Description</FieldLabel>
-                <Textarea
-                  id="workflow-description"
-                  onChange={(event) => setDescription(event.currentTarget.value)}
-                  placeholder="What should this workflow coordinate?"
-                  value={description}
-                />
-              </Field>
-            </section>
+          <section className="grid gap-3">
+            <Field>
+              <FieldLabel htmlFor="workflow-description">Description</FieldLabel>
+              <Textarea
+                id="workflow-description"
+                onChange={(event) => setDescription(event.currentTarget.value)}
+                placeholder="What should this workflow coordinate?"
+                value={description}
+              />
+            </Field>
+          </section>
 
-            <WorkflowRepositoriesFields
-              onPrimaryRepositoryChange={setPrimaryRepositoryId}
-              onRepositoryToggle={(repository, selected) => {
-                const next = new Set(selectedRepositoryIds)
-                if (selected) next.add(repository.repositoryId)
-                else next.delete(repository.repositoryId)
-                setSelectedRepositoryIds(next)
-                if (selected && primaryRepositoryId === null) {
-                  setPrimaryRepositoryId(repository.repositoryId)
-                } else if (!selected && primaryRepositoryId === repository.repositoryId) {
-                  setPrimaryRepositoryId(
-                    repositories.find(({ repositoryId }) => next.has(repositoryId))?.repositoryId ??
-                      null,
-                  )
-                }
-              }}
-              primaryRepositoryId={primaryRepositoryId}
-              repositories={repositories}
-              selectedRepositoryIds={selectedRepositoryIds}
-            />
-
-            <WorkflowVariableFields
-              onAdd={() => {
-                nextVariableId.current += 1
-                setVariables((current) => [
-                  ...current,
-                  { id: `variable-${nextVariableId.current}`, name: '' },
-                ])
-              }}
-              onChange={(id, name) =>
-                setVariables((current) =>
-                  current.map((row) => (row.id === id ? { ...row, name } : row)),
+          <WorkflowRepositoriesFields
+            onPrimaryRepositoryChange={setPrimaryRepositoryId}
+            onRepositoryToggle={(repository, selected) => {
+              const next = new Set(selectedRepositoryIds)
+              if (selected) next.add(repository.repositoryId)
+              else next.delete(repository.repositoryId)
+              setSelectedRepositoryIds(next)
+              if (selected && primaryRepositoryId === null) {
+                setPrimaryRepositoryId(repository.repositoryId)
+              } else if (!selected && primaryRepositoryId === repository.repositoryId) {
+                setPrimaryRepositoryId(
+                  repositories.find(({ repositoryId }) => next.has(repositoryId))?.repositoryId ??
+                    null,
                 )
               }
-              onRemove={(id) => setVariables((current) => current.filter((row) => row.id !== id))}
-              variables={variables}
-            />
+            }}
+            primaryRepositoryId={primaryRepositoryId}
+            repositories={repositories}
+            selectedRepositoryIds={selectedRepositoryIds}
+          />
 
-            <WorkflowGraphJsonEditor
-              onChange={setGraphSource}
-              source={graphSource}
-              workflow={workflowFile}
-            />
+          <WorkflowVariableFields
+            onAdd={() => {
+              nextVariableId.current += 1
+              setVariables((current) => [
+                ...current,
+                { id: `variable-${nextVariableId.current}`, name: '' },
+              ])
+            }}
+            onChange={(id, name) =>
+              setVariables((current) =>
+                current.map((row) => (row.id === id ? { ...row, name } : row)),
+              )
+            }
+            onRemove={(id) => setVariables((current) => current.filter((row) => row.id !== id))}
+            variables={variables}
+          />
 
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
-              <div
-                aria-hidden={!confirmingDelete}
-                className={cn(
-                  't-resize min-w-0 justify-self-end overflow-hidden',
-                  confirmingDelete ? 'w-full' : 'w-0',
-                )}
-              >
-                <Input
-                  ref={confirmationInputRef}
-                  aria-label="Workflow name confirmation"
-                  aria-invalid={confirmationName.length > 0 && confirmationName !== value.name}
-                  autoComplete="off"
-                  disabled={!confirmingDelete || deleting}
-                  onChange={(event) => setConfirmationName(event.currentTarget.value)}
-                  placeholder="Enter workflow name"
-                  tabIndex={confirmingDelete ? 0 : -1}
-                  value={confirmationName}
-                />
-              </div>
+          <WorkflowGraphJsonEditor
+            onChange={setGraphSource}
+            source={graphSource}
+            workflow={workflowFile}
+          />
+
+          <footer className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2">
+            <div
+              aria-hidden={!confirmingDelete}
+              className={cn(
+                't-resize min-w-0 justify-self-end overflow-hidden',
+                confirmingDelete ? 'w-full' : 'w-0',
+              )}
+            >
+              <Input
+                ref={confirmationInputRef}
+                aria-label="Workflow name confirmation"
+                aria-invalid={confirmationName.length > 0 && confirmationName !== value.workflowId}
+                autoComplete="off"
+                disabled={!confirmingDelete || deleting}
+                onChange={(event) => setConfirmationName(event.currentTarget.value)}
+                placeholder="Enter workflow name"
+                tabIndex={confirmingDelete ? 0 : -1}
+                value={confirmationName}
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2">
               <Button
-                className="col-start-2 ml-auto min-w-32"
-                disabled={deleting || (confirmingDelete && confirmationName !== value.name)}
+                ref={deleteActionRef}
+                className="min-w-32"
+                disabled={deleting || (confirmingDelete && confirmationName !== value.workflowId)}
                 onClick={() => void deleteWorkflow()}
                 type="button"
                 variant="destructive"
               >
-                <Trash2Icon aria-hidden="true" />
-                {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete workflow'}
+                {deleting ? 'Deleting…' : confirmingDelete ? 'Confirm' : 'Delete'}
               </Button>
-            </div>
-
-            <footer className="flex justify-end">
               <Button
                 type="submit"
                 disabled={
                   saving ||
                   deleting ||
-                  trimmedName.length === 0 ||
                   trimmedDescription.length === 0 ||
                   !variablesValid ||
                   !repositoriesValid ||
@@ -555,10 +466,10 @@ export function WorkflowConfigDrawer({
               >
                 {saving ? 'Saving changes…' : 'Save changes'}
               </Button>
-            </footer>
-          </div>
-        </form>
-      </aside>
-    </div>
+            </div>
+          </footer>
+        </div>
+      </form>
+    </aside>
   )
 }

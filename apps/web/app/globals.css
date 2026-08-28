@@ -490,3 +490,16 @@
 .workflow-graph .react-flow__controls-button svg {
   fill: currentColor;
 }
+
+.workflow-workspace {
+  grid-template-rows: minmax(16rem, 42%) minmax(0, 1fr);
+}
+
+@media (min-width: 64rem) {
+  .workflow-workspace {
+    grid-template-columns:
+      clamp(20rem, var(--workflow-graph-pane-width), min(55vw, calc(100% - 28rem)))
+      minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+  }
+}

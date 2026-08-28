@@ -42,6 +42,7 @@ const input = AgentExecutionInputSchema.parse({
   executionId: 'execution-01',
   runId: 'run-01',
   nodeId: 'plan',
+  artifactsPath: '/runs/run-01/artifacts',
   workspace: {
     rootPath: '/workspaces/run-01',
     primaryRepositoryId: 'backend',
@@ -230,6 +231,8 @@ describe('Codex CLI executor', () => {
       'workspace-write',
       '--add-dir',
       '/workspaces/run-01/web',
+      '--add-dir',
+      '/runs/run-01/artifacts',
       '--output-schema',
       expect.stringMatching(/slopify-codex-.+\/node-result\.schema\.json$/u),
       '--model',
@@ -252,6 +255,8 @@ describe('Codex CLI executor', () => {
     expect(process.writes).toHaveLength(1)
     expect(process.writes[0]).toContain('# Plan')
     expect(process.writes[0]).toContain('"repositoryId":"backend"')
+    expect(process.writes[0]).toContain('Run artifacts: /runs/run-01/artifacts')
+    expect(process.writes[0]).toContain('Omit evidence entries whose value would be empty')
     expect(process.writes[0]).toContain('final response must match the provided JSON Schema')
     expect(process.end).toHaveBeenCalledOnce()
     expect(events.every((event) => AgentExecutionEventSchema.safeParse(event).success)).toBe(true)

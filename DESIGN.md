@@ -271,8 +271,9 @@ text color of their role.
   workflow. Selecting one opens the editor with that workflow in URL state; collapsing
   the sidebar reduces the disclosure to the Workflows destination icon. Hovering or
   focusing the disclosure swaps the workflow glyph for its expand/collapse chevron. A
-  separate trailing plus action opens a compact, focused workflow-name popover. New
-  names are unique lowercase slugs; Enter creates and Escape cancels.
+  separate trailing plus action opens a compact, focused workflow-name popover. The name
+  is the workflow's sole immutable identity and must be unique and lowercase; Enter creates
+  and Escape cancels.
 - Section labels are visually quieter than navigation destinations.
 - The selected destination uses `selected` plus stronger text, not a chromatic accent.
 - Settings is a standalone footer destination pinned to the bottom of the sidebar.
@@ -325,7 +326,7 @@ text color of their role.
 - When a harness is unavailable, show the reason and one link to its official
   installation page. Never imply that Slopify can install or configure it.
 - Model metadata may be summarized. Detailed agent selection belongs in the workflow
-  agent drawer.
+  agent configuration pane.
 
 ### Repository catalog
 
@@ -363,7 +364,7 @@ text color of their role.
   Do not expose revision selectors, revision IDs, version ancestry, or publication controls.
 - Create workflows from the Workflows sidebar disclosure popover. Select a new workflow only
   after persistence succeeds. Edit the selected workflow's description, Repositories, primary
-  Repository, and variables from its contained configuration drawer.
+  Repository, and variables from its persistent configuration pane.
 - An empty workflow catalog is a valid first-use state. Keep the editor shell visible,
   explain that workflows isolate repository processes and run configuration, and keep the
   empty-state explanation instead of rendering an error. Creation remains available from the
@@ -371,22 +372,24 @@ text color of their role.
 - Every workflow node is an agent. One agent can be the entire workflow.
 - An empty workflow is a valid draft state. Give it a calm, actionable empty canvas,
   but disable running it and explain that at least one agent is required.
-- Keep a compact workflow configuration action directly beside Run. It opens the same
-  contained, non-modal floating right drawer used by agent configuration and edits the
-  selected workflow only.
+- Keep a compact workflow configuration action directly beside Run. It replaces the content
+  of the persistent right pane and edits the selected workflow only. Run configuration and
+  agent inspection use that same pane instead of covering the graph.
 - Workflow configuration contains Repositories and Variables. Repositories are selected from
   Slopify's live Repository catalog and apply to every agent in the workflow. Variables are
   an ordered list of unique, non-empty names requested whenever a run starts.
-- Delete the selected workflow from its configuration drawer. Reuse the Repository deletion
+- Delete the selected workflow from its configuration pane. Reuse the Repository deletion
   confirmation transition: reveal and focus an adjacent name input, and enable confirmation
   only when it exactly matches the workflow name. Preserve historical run snapshots and select
   the next current workflow after deletion.
-- Let the graph fill the workspace remaining below the application header. Keep the
-  page itself fixed to the viewport; graph pan and zoom belong to the canvas.
+- Split the workspace below the application header into an adaptive graph pane on the left and
+  a persistent details pane on the right. Size the graph pane from the widest parallel graph
+  rank plus canvas padding, while preserving enough width for the details pane. The graph pane
+  scrolls when a wide graph reaches that limit. Stack the two panes on narrow screens.
 - Workflow nodes use the standard neutral card treatment. In a run snapshot, a node's
   whole surface adopts the corresponding semantic success, danger, warning, or info
   treatment while retaining an icon and explicit status label.
-- Agent drawers use one proximity hierarchy on the 4px spacing grid: 4px between a
+- Agent configuration panes use one proximity hierarchy on the 4px spacing grid: 4px between a
   section heading and its description, 8px between a visible field label and its
   control, 12px between the section introduction and its fields or between related
   field rows, and 32px between Name, Prompt, and Harness.
@@ -477,18 +480,15 @@ text color of their role.
   and Duration. A running run may keep a compact cancel action in this card.
 - The rest of the desktop screen is the read-only workflow canvas. Do not append
   additional summary sections beneath it.
-- Opening an agent uses the standard contained, non-modal floating right panel. It does
-  not shift the graph, overlap the application header, add
-  a backdrop, trap focus, or block interaction with the canvas.
-- The panel shows the captured harness and version, optional model and thinking effort,
+- The run graph uses the same adaptive left pane as the workflow editor. The persistent right
+  pane shows the current or selected captured agent without covering or shifting the graph.
+- The details pane shows the captured harness and version, optional model and thinking effort,
   primary Repository and cloned run workspace paths and branches, result/timeout data,
   execution status and
   timing, errors or output, and available agent transcript messages.
-- The panel enters from and exits toward the right over 350ms using the catalog drawer
-  easing. Clicking elsewhere begins its exit while allowing that underlying
-  interaction. Long panel content scrolls inside the panel; the run page does not.
-- The floating panel uses `overlay` elevation. Configuration blocks inside it remain
-  flat on the panel surface unless a semantic status requires a signal fill.
+- Selecting another graph node replaces the details pane content in place. Long content scrolls
+  inside the pane; the run page does not. Configuration blocks remain flat on the base surface
+  unless a semantic status requires a signal fill.
 
 ### Keyboard interaction
 

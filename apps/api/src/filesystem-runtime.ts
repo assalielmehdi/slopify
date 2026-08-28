@@ -4,6 +4,7 @@ import { access, mkdir } from 'node:fs/promises'
 import type { AgentExecutor } from '@slopify/contracts'
 import {
   createAgentNodeRunner,
+  createFilesystemRunArtifactDirectory,
   createFilesystemGitRunWorkspaceProvisioner,
   createFilesystemJournalCoordinatorStore,
   createFilesystemRunAdmissionService,
@@ -23,6 +24,7 @@ import {
   resolveSlopifyPaths,
   type AgentTraceStore,
   type AgentNodeRunRecord,
+  type FilesystemRunArtifactDirectory,
   type FilesystemRunAdmissionService,
   type FilesystemRunEventFeed,
   type FilesystemRunIndex,
@@ -34,6 +36,7 @@ import {
   type JournalExecutionWorker,
   type JournalRunLocator,
   type JournalWorkflowCoordinator,
+  type JsonValue,
   type NodeRunner,
   type ProcessRunner,
   type RunAgentTraceStore,
@@ -72,6 +75,7 @@ export interface FilesystemRuntime {
   readonly reader: FilesystemRunReader
   readonly eventFeed: FilesystemRunEventFeed
   readonly traces: RunAgentTraceStore
+  readonly artifacts: FilesystemRunArtifactDirectory
   readonly workspaces: FilesystemRunWorkspaceProvisioner
   readonly coordinator: JournalWorkflowCoordinator
   readonly worker: JournalExecutionWorker
@@ -95,7 +99,7 @@ const legacyRunRecord = (
 ): AgentNodeRunRecord => ({
   runId: detail.run.runId,
   workflowSnapshot: workflowFileToWorkflow(detail.workflowSnapshot.workflow),
-  variables: detail.variablesSnapshot.values,
+  variables: detail.variablesSnapshot.values as Readonly<Record<string, JsonValue>>,
 })
 
 const createFilesystemNodeRunner = (options: {
@@ -103,6 +107,7 @@ const createFilesystemNodeRunner = (options: {
   readonly resolveHarness: (harnessId: string) => AgentExecutor | undefined
   readonly reader: FilesystemRunReader
   readonly traces: RunAgentTraceStore
+  readonly artifacts: FilesystemRunArtifactDirectory
   readonly workspaces: FilesystemRunWorkspaceProvisioner
   readonly now?: () => string
 }): NodeRunner => {
@@ -167,6 +172,7 @@ const createFilesystemNodeRunner = (options: {
     return createAgentNodeRunner({
       harnesses: options.harnesses,
       resolveHarness: options.resolveHarness,
+      artifacts: { ensure: () => options.artifacts.ensure(locator) },
       workspaces,
       runs: { get: (runId) => (runId === record.runId ? record : undefined) },
       traces,
@@ -205,9 +211,21 @@ export const createFilesystemRuntime = (
       options.environment === undefined ? {} : { environment: options.environment },
     )
   const workflowStore = createFilesystemWorkflowStore({ paths })
+  const index = createFilesystemRunIndex({ paths })
   const workflows = createWorkflowDefinitionService({
     workflows: workflowStore,
     harnesses: options.harnesses,
+    runActivity: {
+      async hasActive(workflowId) {
+        const active = await index.list({
+          page: 1,
+          pageSize: 1,
+          workflowIds: [workflowId],
+          statuses: ['PENDING', 'RUNNING'],
+        })
+        return active.pagination.totalItems > 0
+      },
+    },
   })
   const admissions = createFilesystemRunAdmissionService({
     runs: createFilesystemRunStore({ paths }),
@@ -217,10 +235,10 @@ export const createFilesystemRuntime = (
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.createRunId === undefined ? {} : { createRunId: options.createRunId }),
   })
-  const index = createFilesystemRunIndex({ paths })
   const reader = createFilesystemRunReader({ index, paths })
   const eventFeed = createFilesystemRunEventFeed({ index, paths })
   const traces = createRunFilesystemAgentTraceStore({ paths })
+  const artifacts = createFilesystemRunArtifactDirectory({ paths })
   const workspaces = createFilesystemGitRunWorkspaceProvisioner({
     paths,
     processRunner: options.processRunner,
@@ -238,6 +256,7 @@ export const createFilesystemRuntime = (
     resolveHarness: options.resolveHarness,
     reader,
     traces,
+    artifacts,
     workspaces,
     ...(options.now === undefined ? {} : { now: options.now }),
   })
@@ -276,6 +295,7 @@ export const createFilesystemRuntime = (
     reader,
     eventFeed,
     traces,
+    artifacts,
     workspaces,
     coordinator,
     worker,

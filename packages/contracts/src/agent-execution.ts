@@ -88,6 +88,7 @@ export const AgentExecutionInputSchema = z
     executionId: AgentExecutionIdSchema,
     runId: RunIdSchema,
     nodeId: NodeIdSchema,
+    artifactsPath: absolutePath,
     workspace: AgentWorkspaceSchema,
     model: z.string().trim().min(1).max(256).optional(),
     thinkingLevel: HarnessThinkingLevelSchema.optional(),

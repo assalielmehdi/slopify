@@ -14,6 +14,7 @@ import {
   type RefObject,
 } from 'react'
 
+import { useDeleteConfirmationDismissal } from '@/components/use-delete-confirmation-dismissal'
 import { CatalogCardSkeleton } from '@/components/settings/catalog-card-skeleton'
 import { CatalogCardTags } from '@/components/settings/catalog-card-tags'
 import { GitProviderLogo } from '@/components/settings/git-provider-logo'
@@ -137,15 +138,11 @@ function RepositoryTile({
   )
 }
 
-function AddRepositoryTile({
-  disabled,
-  onSelect,
-}: Readonly<{ disabled: boolean; onSelect: () => void }>) {
+function AddRepositoryTile({ onSelect }: Readonly<{ onSelect: () => void }>) {
   return (
     <Button
       aria-label="Add repository"
       className="h-auto min-h-[140px] w-full rounded-lg border-dashed border-border bg-card text-muted-foreground hover:border-input hover:bg-accent/45 hover:text-foreground focus-visible:border-input"
-      disabled={disabled}
       onClick={onSelect}
       type="button"
       variant="ghost"
@@ -164,6 +161,7 @@ interface RepositoryPanelProps {
   readonly loadingRepositories: boolean
   readonly onAdd: (event: FormEvent<HTMLFormElement>) => Promise<void>
   readonly onClose: () => void
+  readonly onDismissDelete: () => void
   readonly onConfirmationValueChange: (value: string) => void
   readonly onDelete: () => Promise<void>
   readonly onExited: () => void
@@ -181,6 +179,7 @@ interface RepositoryPanelProps {
 function RepositoryPanel(props: RepositoryPanelProps) {
   const dialogRef = useRef<HTMLDialogElement>(null)
   const confirmationInputRef = useRef<HTMLInputElement>(null)
+  const deleteActionRef = useRef<HTMLButtonElement>(null)
   const panelTitle = props.selection === 'add' ? 'Add repository' : props.selectedRepository?.name
   const selectedRepository = props.repositories.find(
     ({ remoteId }) => remoteId === props.selectedRepositoryId,
@@ -203,6 +202,14 @@ function RepositoryPanel(props: RepositoryPanelProps) {
   useEffect(() => {
     if (props.confirmingDelete) confirmationInputRef.current?.focus()
   }, [props.confirmingDelete])
+
+  useDeleteConfirmationDismissal({
+    actionRef: deleteActionRef,
+    active: props.confirmingDelete,
+    confirmationRef: confirmationInputRef,
+    disabled: props.deleting,
+    onDismiss: props.onDismissDelete,
+  })
 
   useEffect(() => {
     setRepositoryInputValue(selectedRepository?.fullName ?? '')
@@ -394,6 +401,7 @@ function RepositoryPanel(props: RepositoryPanelProps) {
                   />
                 </div>
                 <Button
+                  ref={deleteActionRef}
                   className="col-start-2 ml-auto min-w-32"
                   disabled={
                     props.deleting ||
@@ -555,6 +563,11 @@ export function RepositorySettings({
     })
   }, [])
 
+  const dismissDeleteConfirmation = useCallback(() => {
+    setConfirmingDelete(false)
+    setConfirmationValue('')
+  }, [])
+
   useEffect(() => {
     if (!isPanelOpen) return
     const handleOutsidePointerDown = (event: PointerEvent) => {
@@ -635,7 +648,7 @@ export function RepositorySettings({
 
       {loading ? (
         <CatalogCardSkeleton label="repositories" />
-      ) : (
+      ) : repositories.length > 0 ? (
         <div
           className="grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(18rem,1fr))]"
           data-testid="repository-grid"
@@ -647,12 +660,9 @@ export function RepositorySettings({
               repository={repository}
             />
           ))}
-          <AddRepositoryTile
-            disabled={connections.length === 0}
-            onSelect={() => openPanel('add')}
-          />
+          {connections.length > 0 ? <AddRepositoryTile onSelect={() => openPanel('add')} /> : null}
         </div>
-      )}
+      ) : null}
 
       {!loading && repositories.length === 0 && error === undefined ? (
         <div className="rounded-lg border border-dashed border-border bg-card px-6 py-10 text-center">
@@ -666,7 +676,16 @@ export function RepositorySettings({
             <Link className={cn(buttonVariants({ variant: 'outline' }), 'mt-4')} href="/settings">
               Open Settings
             </Link>
-          ) : null}
+          ) : (
+            <Button
+              className="mt-4"
+              onClick={() => openPanel('add')}
+              type="button"
+              variant="outline"
+            >
+              Add repository
+            </Button>
+          )}
         </div>
       ) : null}
 
@@ -680,6 +699,7 @@ export function RepositorySettings({
           loadingRepositories={loadingRepositories}
           onAdd={addRepository}
           onClose={closePanel}
+          onDismissDelete={dismissDeleteConfirmation}
           onConfirmationValueChange={setConfirmationValue}
           onDelete={deleteRepository}
           onExited={() => {

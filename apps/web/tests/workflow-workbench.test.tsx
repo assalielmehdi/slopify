@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
@@ -59,7 +59,7 @@ vi.mock('../components/workflow/workflow-config-drawer', () => ({
     onSubmit: (value: unknown) => Promise<boolean>
     value: Workflow
   }) => (
-    <aside aria-label="Workflow configuration">
+    <aside aria-label="Workflow configuration" data-layout="workspace">
       {conflict === undefined ? null : <p>{conflict}</p>}
       <button onClick={() => onDirtyChange?.(true)}>Edit graph source</button>
       <button onClick={onClose}>Close workflow configuration</button>
@@ -68,7 +68,6 @@ vi.mock('../components/workflow/workflow-config-drawer', () => ({
         onClick={() =>
           void onSubmit({
             ...value,
-            name: 'renamed-workflow',
             description: 'Updated workflow details.',
             configuration: {
               repositoryIds: ['repository-api'],
@@ -86,7 +85,7 @@ vi.mock('../components/workflow/workflow-config-drawer', () => ({
 
 vi.mock('../components/runs/start-run-drawer', () => ({
   StartRunDrawer: ({ onClose }: { onClose: () => void }) => (
-    <aside aria-label="Run">
+    <aside aria-label="Run" data-layout="workspace">
       <p>Variables</p>
       <button onClick={onClose}>Cancel run</button>
     </aside>
@@ -130,6 +129,23 @@ const harnesses = HarnessDescriptorSchema.array().parse([
       },
     ],
   },
+  {
+    harnessId: 'codex',
+    name: 'Codex',
+    description: 'Runs the locally installed Codex coding agent.',
+    availability: 'AVAILABLE',
+    executablePath: '/opt/homebrew/bin/codex',
+    version: '0.1.0',
+    installHref: 'https://developers.openai.com/codex/',
+    installLabel: 'Install Codex',
+    models: [
+      {
+        id: 'gpt-5.6-sol',
+        name: 'GPT-5.6 Sol',
+        thinkingLevels: ['high', 'xhigh'],
+      },
+    ],
+  },
 ])
 const repositories = RepositorySchema.array().parse([
   {
@@ -153,6 +169,33 @@ afterEach(() => {
 })
 
 describe('WorkflowWorkbench', () => {
+  it('loads the complete initial screen without issuing resource-by-resource requests', async () => {
+    const client = {
+      deleteWorkflow: vi.fn(),
+      getWorkflow: vi.fn(),
+      getWorkflowScreen: vi.fn(async () => ({
+        selectedWorkflow: workflow,
+        workflows: catalog,
+        harnesses,
+        repositories,
+      })),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(),
+      listRepositories: vi.fn(),
+      listWorkflows: vi.fn(),
+      startRun: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} selectedWorkflowId={workflow.workflowId} />)
+
+    expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
+    expect(client.getWorkflowScreen).toHaveBeenCalledWith(workflow.workflowId)
+    expect(client.getWorkflow).not.toHaveBeenCalled()
+    expect(client.listHarnesses).not.toHaveBeenCalled()
+    expect(client.listRepositories).not.toHaveBeenCalled()
+    expect(client.listWorkflows).not.toHaveBeenCalled()
+  })
+
   it('shows the empty state without duplicating workflow creation controls', async () => {
     const client = {
       deleteWorkflow: vi.fn(),
@@ -177,7 +220,6 @@ describe('WorkflowWorkbench', () => {
     const releaseWorkflow = WorkflowSchema.parse({
       ...workflow,
       workflowId: 'release-workflow',
-      name: 'Release workflow',
       nodes: [firstAgent, { ...firstAgent, id: 'review-agent', name: 'Review agent' }],
       updatedAt: '2026-08-24T15:00:00.000Z',
     })
@@ -207,7 +249,6 @@ describe('WorkflowWorkbench', () => {
     const releaseWorkflow = WorkflowSchema.parse({
       ...workflow,
       workflowId: 'release-workflow',
-      name: 'Release workflow',
       updatedAt: '2026-08-24T15:00:00.000Z',
     })
     const client = {
@@ -227,7 +268,7 @@ describe('WorkflowWorkbench', () => {
     expect(navigation.replace).toHaveBeenCalledWith('/?workflowId=release-workflow')
   })
 
-  it('loads a read-only graph workspace with run and configuration drawers', async () => {
+  it('keeps the graph and workflow details in persistent workspace panes', async () => {
     const client = {
       deleteWorkflow: vi.fn(),
       listWorkflows: vi.fn(async () => catalog),
@@ -242,16 +283,36 @@ describe('WorkflowWorkbench', () => {
 
     expect(await screen.findByText('Graph 1 nodes, 0 edges')).toBeTruthy()
     expect(client.getWorkflow).toHaveBeenCalledWith('default-workflow')
+    expect(screen.getByRole('region', { name: 'Workflow graph pane' })).toBeTruthy()
+    expect(screen.getByRole('region', { name: 'Workflow details pane' })).toBeTruthy()
+    const overview = screen.getByRole('complementary', { name: 'Workflow overview' })
+    const overviewHeader = overview.querySelector('header')
+    if (overviewHeader === null) throw new Error('Expected the workflow overview header')
+    expect(overviewHeader.getAttribute('data-slot')).toBe('workspace-panel-header')
+    expect(overviewHeader.className).toContain('shrink-0')
+    expect(overviewHeader.className).toContain('p-6')
+    expect(overviewHeader.querySelector('svg')).toBeTruthy()
+    expect(within(overviewHeader).getByRole('heading', { name: 'Overview' })).toBeTruthy()
+    expect(within(overviewHeader).queryByText(workflow.description)).toBeNull()
+    expect(within(overview).getByRole('heading', { name: 'Description' })).toBeTruthy()
+    expect(within(overview).getByText(workflow.description)).toBeTruthy()
+
     fireEvent.click(screen.getByRole('button', { name: 'Run' }))
-    expect(screen.getByRole('complementary', { name: 'Run' })).toBeTruthy()
+    expect(screen.getByRole('complementary', { name: 'Run' }).getAttribute('data-layout')).toBe(
+      'workspace',
+    )
     expect(screen.getByRole('region', { name: 'Workflow graph' })).toBeTruthy()
-    expect(screen.queryByRole('heading', { name: workflow.name })).toBeNull()
+    expect(screen.queryByRole('heading', { name: workflow.workflowId })).toBeNull()
     expect(screen.queryByText(workflow.description)).toBeNull()
     expect(screen.queryByText(/version/i)).toBeNull()
     expect(screen.queryByRole('button', { name: /Add agent/ })).toBeNull()
     expect(screen.queryByRole('button', { name: /Connect agents/ })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Select agent' }))
-    expect(screen.queryByRole('complementary', { name: 'Edit agent' })).toBeNull()
+    expect(
+      screen.getByRole('complementary', { name: 'Agent configuration: Who are you?' }),
+    ).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Close agent configuration' })).toBeNull()
+    expect(screen.getByText("Who are you? What's your name?")).toBeTruthy()
   })
 
   it('opens workflow configuration beside the run action and persists it on the workflow', async () => {
@@ -270,14 +331,18 @@ describe('WorkflowWorkbench', () => {
 
     await screen.findByText('Graph 1 nodes, 0 edges')
     fireEvent.click(screen.getByRole('button', { name: 'Configure workflow' }))
-    expect(screen.getByRole('complementary', { name: 'Workflow configuration' })).toBeTruthy()
+    expect(
+      screen
+        .getByRole('complementary', { name: 'Workflow configuration' })
+        .getAttribute('data-layout'),
+    ).toBe('workspace')
     fireEvent.click(screen.getByRole('button', { name: 'Save workflow configuration' }))
 
     await waitFor(() =>
       expect(updateWorkflow).toHaveBeenCalledWith(
         workflow.workflowId,
         expect.objectContaining({
-          name: 'renamed-workflow',
+          workflowId: workflow.workflowId,
           description: 'Updated workflow details.',
           configuration: {
             repositoryIds: ['repository-api'],
@@ -290,11 +355,145 @@ describe('WorkflowWorkbench', () => {
     expect(screen.queryByRole('combobox', { name: 'Workflow' })).toBeNull()
   })
 
+  it('edits and persists the selected agent configuration', async () => {
+    const updateWorkflow = vi.fn(async (_workflowId, next) => next)
+    const client = {
+      deleteWorkflow: vi.fn(),
+      listWorkflows: vi.fn(async () => catalog),
+      getWorkflow: vi.fn(async () => workflow),
+      updateWorkflow,
+      listHarnesses: vi.fn(async () => harnesses),
+      listRepositories: vi.fn(async () => repositories),
+      startRun: vi.fn(),
+    }
+
+    render(<WorkflowWorkbench client={client} />)
+
+    await screen.findByText('Graph 1 nodes, 0 edges')
+    fireEvent.click(screen.getByRole('button', { name: 'Select agent' }))
+    const panel = screen.getByRole('complementary', {
+      name: 'Agent configuration: Who are you?',
+    })
+    const header = panel.querySelector('header')
+    if (header === null) throw new Error('Expected the agent configuration header')
+    expect(header.getAttribute('data-slot')).toBe('workspace-panel-header')
+    expect(within(header).getByRole('heading', { name: 'Edit agent' })).toBeTruthy()
+    expect(
+      within(header).getByText("Update this agent's prompt and runtime configuration."),
+    ).toBeTruthy()
+    expect(within(header).queryByText('Who are you?')).toBeNull()
+    const name = within(panel).getByRole('textbox', { name: 'Name' }) as HTMLInputElement
+    const prompt = within(panel).getByLabelText('Prompt')
+    const harness = within(panel).getByRole('combobox', { name: 'Harness' })
+    const timeout = within(panel).getByLabelText('Timeout (minutes)')
+
+    expect(name.value).toBe('Who are you?')
+    expect(name.readOnly).toBe(true)
+    expect((prompt as HTMLTextAreaElement).value).toBe("Who are you? What's your name?")
+    expect(harness.getAttribute('data-slot')).toBe('select-trigger')
+    expect((timeout as HTMLInputElement).value).toBe('15')
+    expect(
+      (within(panel).getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+
+    fireEvent.change(prompt, { target: { value: 'Implement the selected task.' } })
+    fireEvent.click(harness)
+    const codexOption = screen.getByRole('option', { name: 'Codex' })
+    fireEvent.pointerDown(codexOption, { pointerType: 'mouse' })
+    fireEvent.click(codexOption)
+
+    const model = within(panel).getByRole('combobox', { name: 'Model' })
+    fireEvent.click(model)
+    const modelOption = screen.getByRole('option', { name: 'GPT-5.6 Sol' })
+    fireEvent.pointerDown(modelOption, { pointerType: 'mouse' })
+    fireEvent.click(modelOption)
+
+    const thinking = within(panel).getByRole('combobox', { name: 'Thinking' })
+    fireEvent.click(thinking)
+    const thinkingOption = screen.getByRole('option', { name: 'xhigh' })
+    fireEvent.pointerDown(thinkingOption, { pointerType: 'mouse' })
+    fireEvent.click(thinkingOption)
+    fireEvent.change(timeout, { target: { value: '20' } })
+    const form = panel.querySelector('form')
+    if (form === null) throw new Error('Expected the agent configuration form')
+    fireEvent.submit(form)
+
+    await waitFor(() =>
+      expect(updateWorkflow).toHaveBeenCalledWith(
+        workflow.workflowId,
+        expect.objectContaining({
+          nodes: [
+            expect.objectContaining({
+              id: 'identify-agent',
+              prompt: 'Implement the selected task.',
+              harness: {
+                harnessId: 'codex',
+                modelId: 'gpt-5.6-sol',
+                thinkingLevel: 'xhigh',
+              },
+              timeoutSeconds: 1_200,
+            }),
+          ],
+        }),
+      ),
+    )
+    expect(screen.getByRole('complementary', { name: 'Workflow overview' })).toBeTruthy()
+  })
+
+  it('protects a dirty agent configuration from external workflow changes', async () => {
+    let handlers: ResourceEventStreamHandlers | undefined
+    const externalWorkflow = WorkflowSchema.parse({
+      ...workflow,
+      description: 'Externally changed workflow details.',
+      updatedAt: '2026-08-25T20:00:00.000Z',
+    })
+    const client = {
+      deleteWorkflow: vi.fn(),
+      listWorkflows: vi.fn(async () => catalog),
+      getWorkflow: vi.fn().mockResolvedValueOnce(workflow).mockResolvedValue(externalWorkflow),
+      updateWorkflow: vi.fn(async (_workflowId, next) => next),
+      listHarnesses: vi.fn(async () => harnesses),
+      listRepositories: vi.fn(async () => repositories),
+      startRun: vi.fn(),
+    }
+    render(
+      <WorkflowWorkbench
+        client={client}
+        connectResourceEvents={(nextHandlers) => {
+          handlers = nextHandlers
+          return vi.fn()
+        }}
+      />,
+    )
+
+    await screen.findByText('Graph 1 nodes, 0 edges')
+    fireEvent.click(screen.getByRole('button', { name: 'Select agent' }))
+    fireEvent.change(screen.getByLabelText('Prompt'), {
+      target: { value: 'Unsaved local prompt.' },
+    })
+    await act(async () =>
+      handlers?.onEvent({
+        sequence: 1,
+        timestamp: '2026-08-25T20:00:00.000Z',
+        change: 'CHANGED',
+        resource: { type: 'WORKFLOW', workflowId: workflow.workflowId },
+        revision: 'a'.repeat(64),
+      }),
+    )
+
+    expect(screen.getByText(/changed outside Slopify/i)).toBeTruthy()
+    expect(
+      (screen.getByRole('button', { name: 'Save changes' }) as HTMLButtonElement).disabled,
+    ).toBe(true)
+    expect(client.updateWorkflow).not.toHaveBeenCalled()
+
+    expect(screen.queryByRole('button', { name: 'Close agent configuration' })).toBeNull()
+  })
+
   it('deletes the current workflow and selects the next remaining workflow', async () => {
     const remainingWorkflow = WorkflowSchema.parse({
       ...workflow,
       workflowId: 'remaining-workflow',
-      name: 'remaining-workflow',
     })
     const deleteWorkflow = vi.fn(async () => undefined)
     const client = {
@@ -394,7 +593,11 @@ describe('WorkflowWorkbench', () => {
     expect(run.getAttribute('title')).toContain('Pi is unavailable')
 
     fireEvent.click(screen.getByRole('button', { name: 'Select agent' }))
-    expect(screen.queryByRole('complementary', { name: 'Edit agent' })).toBeNull()
+    const panel = screen.getByRole('complementary', {
+      name: 'Agent configuration: Who are you?',
+    })
+    expect(within(panel).getByLabelText('Prompt')).toBeTruthy()
+    expect(within(panel).getByRole('combobox', { name: 'Harness' })).toBeTruthy()
   })
 
   it('blocks running when a configured repository is missing from the host catalog', async () => {
@@ -420,7 +623,7 @@ describe('WorkflowWorkbench', () => {
     let handlers: ResourceEventStreamHandlers | undefined
     const externalWorkflow = WorkflowSchema.parse({
       ...workflow,
-      name: 'Externally changed workflow',
+      description: 'Externally changed workflow details.',
       updatedAt: '2026-08-25T20:00:00.000Z',
     })
     const client = {

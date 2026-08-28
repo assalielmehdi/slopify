@@ -2,12 +2,15 @@
 
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { AnchorHTMLAttributes } from 'react'
 
+import { WorkflowRunOutcomeCatalogResponseSchema } from '@slopify/contracts'
 import { createWorkflowDraft } from '@slopify/workflow-model'
 
 import { AppShell } from '../components/app-shell'
 import type { SettingsSnapshot } from '../lib/api-client'
 import { announceWorkflowCatalogChanged } from '../lib/workflow-catalog-events'
+import { announceWorkflowRunOutcomesChanged } from '../lib/workflow-run-outcome-events'
 
 const navigation = vi.hoisted(() => ({ pathname: '/', search: '', push: vi.fn() }))
 const storedPreferences = new Map<string, string>()
@@ -18,17 +21,24 @@ vi.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(navigation.search),
 }))
 
+vi.mock('next/link', () => ({
+  default: ({
+    prefetch,
+    ...props
+  }: AnchorHTMLAttributes<HTMLAnchorElement> & { prefetch?: boolean }) => (
+    <a data-prefetch={String(prefetch)} {...props} />
+  ),
+}))
+
 const workflows = [
   createWorkflowDraft({
     workflowId: 'default-workflow',
-    name: 'default-workflow',
     description: 'Default workflow description.',
     configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: '2026-08-25T00:00:00.000Z',
   }),
   createWorkflowDraft({
     workflowId: 'release-workflow',
-    name: 'release-workflow',
     description: 'Release workflow description.',
     configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
     createdAt: '2026-08-25T00:00:00.000Z',
@@ -36,9 +46,18 @@ const workflows = [
 ]
 const defaultWorkflow = workflows[0]
 if (defaultWorkflow === undefined) throw new Error('Expected a default workflow fixture')
+const runOutcomes = (outcomes: readonly unknown[]) =>
+  WorkflowRunOutcomeCatalogResponseSchema.parse({ outcomes }).outcomes
+const noRunWorkflow = createWorkflowDraft({
+  workflowId: 'draft-workflow',
+  description: 'Draft workflow description.',
+  configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
+  createdAt: '2026-08-25T00:00:00.000Z',
+})
 
 const workflowClient = {
   createWorkflow: vi.fn(async () => defaultWorkflow),
+  listWorkflowRunOutcomes: vi.fn(async () => runOutcomes([])),
   listWorkflows: vi.fn(async () => workflows),
 }
 const initialSystemSettings: SettingsSnapshot = {
@@ -69,6 +88,7 @@ beforeEach(() => {
   navigation.search = ''
   navigation.push.mockReset()
   workflowClient.createWorkflow.mockReset().mockResolvedValue(defaultWorkflow)
+  workflowClient.listWorkflowRunOutcomes.mockReset().mockResolvedValue(runOutcomes([]))
   workflowClient.listWorkflows.mockReset().mockResolvedValue(workflows)
   themeClient.getSettings.mockReset().mockResolvedValue(initialSystemSettings)
   themeClient.updateSettings.mockClear()
@@ -139,6 +159,14 @@ describe('AppShell', () => {
     ).toEqual(['default-workflow', 'release-workflow', 'Runs', 'Harnesses', 'Repositories'])
     expect(
       within(primaryNavigation)
+        .getAllByRole('link')
+        .map((link) => link.getAttribute('data-prefetch')),
+    ).toEqual(['false', 'false', 'false', 'false', 'false'])
+    expect(screen.getByRole('link', { name: 'Settings' }).getAttribute('data-prefetch')).toBe(
+      'false',
+    )
+    expect(
+      within(primaryNavigation)
         .getByRole('link', { name: 'default-workflow' })
         .getAttribute('href'),
     ).toBe('/?workflowId=default-workflow')
@@ -169,10 +197,76 @@ describe('AppShell', () => {
     expect(screen.getByText('Workflow graph')).toBeTruthy()
   })
 
-  it('creates a uniquely named workflow from a popover with keyboard controls', async () => {
+  it('centers the workflows disclosure chevron within its icon slot', () => {
+    render(
+      <AppShell client={workflowClient}>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    const workflowsButton = screen.getByRole('button', { name: 'Workflows' })
+    fireEvent.mouseEnter(workflowsButton)
+    const disclosureIconSlot = workflowsButton.querySelector('[data-icon="b"]')
+
+    expect(disclosureIconSlot?.className).toContain('grid')
+    expect(disclosureIconSlot?.className).toContain('place-items-center')
+  })
+
+  it('uses weather icons for each workflow run outcome', async () => {
+    workflowClient.listWorkflows.mockResolvedValue([...workflows, noRunWorkflow])
+    workflowClient.listWorkflowRunOutcomes.mockResolvedValue(
+      runOutcomes([
+        {
+          workflowId: 'default-workflow',
+          runId: 'run-success',
+          status: 'SUCCEEDED',
+          completedAt: '2026-08-25T12:00:00.000Z',
+        },
+        {
+          workflowId: 'release-workflow',
+          runId: 'run-failure',
+          status: 'FAILED',
+          completedAt: '2026-08-25T11:00:00.000Z',
+        },
+      ]),
+    )
+
+    render(
+      <AppShell client={workflowClient}>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    const success = await screen.findByRole('link', {
+      name: 'Latest successful run',
+    })
+    const failure = screen.getByRole('link', {
+      name: 'Latest failed run',
+    })
+    const noRun = screen.getByRole('button', { name: 'No finished run' })
+
+    expect(success.getAttribute('href')).toBe('/runs/run-success')
+    expect(success.getAttribute('data-status')).toBe('SUCCEEDED')
+    expect(success.className).toContain('text-status-warning')
+    expect(success.className.split(/\s+/)).not.toContain('bg-status-warning/10')
+    expect(success.className.split(/\s+/)).toContain('hover:bg-status-warning/20')
+    expect(success.className.split(/\s+/)).toContain('dark:hover:bg-status-warning/20')
+    expect(success.querySelector('svg.lucide-sun')).not.toBeNull()
+    expect(failure.getAttribute('href')).toBe('/runs/run-failure')
+    expect(failure.getAttribute('data-status')).toBe('FAILED')
+    expect(failure.className).toContain('text-destructive')
+    expect(failure.className.split(/\s+/)).not.toContain('bg-destructive/10')
+    expect(failure.className.split(/\s+/)).toContain('hover:bg-destructive/20')
+    expect(failure.className.split(/\s+/)).toContain('dark:hover:bg-destructive/20')
+    expect(failure.querySelector('svg.lucide-cloud-lightning')).not.toBeNull()
+    expect(noRun.getAttribute('aria-disabled')).toBe('true')
+    expect(noRun.getAttribute('data-status')).toBe('NONE')
+    expect(noRun.querySelector('svg.lucide-cloud')).not.toBeNull()
+  })
+
+  it('creates a workflow from a unique canonical name with keyboard controls', async () => {
     const created = createWorkflowDraft({
       workflowId: 'review-workflow',
-      name: 'review-workflow',
       description: 'review-workflow workflow.',
       configuration: { repositoryIds: [], primaryRepositoryId: null, variables: [] },
       createdAt: '2026-08-25T00:00:00.000Z',
@@ -205,7 +299,7 @@ describe('AppShell', () => {
     expect(workflowClient.createWorkflow).not.toHaveBeenCalled()
 
     fireEvent.change(input, { target: { value: 'default-workflow' } })
-    expect(screen.getByRole('alert').textContent).toBe('A workflow with this slug already exists.')
+    expect(screen.getByRole('alert').textContent).toBe('A workflow with this name already exists.')
 
     fireEvent.keyDown(input, { key: 'Escape' })
     expect(screen.queryByRole('textbox', { name: 'New workflow name' })).toBeNull()
@@ -218,7 +312,6 @@ describe('AppShell', () => {
     await waitFor(() =>
       expect(workflowClient.createWorkflow).toHaveBeenCalledWith({
         workflowId: 'review-workflow',
-        name: 'review-workflow',
         description: 'review-workflow workflow.',
       }),
     )
@@ -277,6 +370,37 @@ describe('AppShell', () => {
       await within(primaryNavigation).findByRole('link', { name: 'release-workflow' }),
     ).toBeTruthy()
     expect(workflowClient.listWorkflows).toHaveBeenCalledTimes(2)
+  })
+
+  it('refreshes workflow status controls when a run finishes', async () => {
+    workflowClient.listWorkflowRunOutcomes
+      .mockResolvedValueOnce(runOutcomes([]))
+      .mockResolvedValueOnce(
+        runOutcomes([
+          {
+            workflowId: 'default-workflow',
+            runId: 'run-success',
+            status: 'SUCCEEDED',
+            completedAt: '2026-08-25T12:00:00.000Z',
+          },
+        ]),
+      )
+
+    render(
+      <AppShell client={workflowClient}>
+        <p>Workflow graph</p>
+      </AppShell>,
+    )
+
+    expect(await screen.findAllByRole('button', { name: 'No finished run' })).toHaveLength(2)
+    announceWorkflowRunOutcomesChanged()
+
+    expect(
+      await screen.findByRole('link', {
+        name: 'Latest successful run',
+      }),
+    ).toBeTruthy()
+    expect(workflowClient.listWorkflowRunOutcomes).toHaveBeenCalledTimes(2)
   })
 
   it('uses D for a persisted direct light and dark toggle', async () => {

@@ -42,14 +42,18 @@ const workflow = {
 
 describe('run artifact contracts', () => {
   it('validates immutable, schema-versioned admission snapshots', () => {
-    expect(
-      RunWorkflowSnapshotSchema.parse({
-        schemaVersion: 1,
-        capturedAt: timestamp,
-        workflowRevision: 'a'.repeat(64),
-        workflow,
-      }),
-    ).toMatchObject({ schemaVersion: 1, workflow })
+    const workflowSnapshot = RunWorkflowSnapshotSchema.parse({
+      schemaVersion: 1,
+      capturedAt: timestamp,
+      workflowRevision: 'a'.repeat(64),
+      workflow,
+    })
+
+    expect(workflowSnapshot).toMatchObject({
+      schemaVersion: 1,
+      workflow: { schemaVersion: 3, workflowId: 'review-change' },
+    })
+    expect(workflowSnapshot.workflow).not.toHaveProperty('name')
 
     expect(
       RunVariablesSnapshotSchema.parse({

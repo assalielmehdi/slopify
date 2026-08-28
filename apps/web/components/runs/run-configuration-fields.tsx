@@ -50,7 +50,7 @@ export function RunConfigurationFields({
           >
             {workflows.map((workflow) => (
               <NativeSelectOption key={workflow.workflowId} value={workflow.workflowId}>
-                {workflow.name}
+                {workflow.workflowId}
               </NativeSelectOption>
             ))}
           </NativeSelect>

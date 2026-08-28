@@ -73,6 +73,7 @@ const stagingPaths = (directory: string): SlopifyRunPaths => ({
   repositoriesSnapshotFile: join(directory, 'repositories.snapshot.json'),
   workspacesFile: join(directory, 'workspaces.json'),
   eventsFile: join(directory, 'events.jsonl'),
+  artifactsDirectory: join(directory, 'artifacts'),
   nodesDirectory: join(directory, 'nodes'),
   workspacesDirectory: join(directory, 'workspaces'),
 })
@@ -177,6 +178,7 @@ export const createFilesystemRunStore = (
           value: workspaces,
         })
         await createEmptyJournal(staged.eventsFile)
+        await mkdir(staged.artifactsDirectory, { mode: 0o700 })
         await mkdir(staged.nodesDirectory, { mode: 0o700 })
         await mkdir(staged.workspacesDirectory, { mode: 0o700 })
         await syncDirectory(staged.directory)

@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { RunStatusSchema } from '@slopify/contracts'
+import { RepositoryIdSchema, RunStatusSchema, WorkflowIdSchema } from '@slopify/contracts'
 
 import { RunHistory } from '@/components/runs/run-history'
 import { emptyRunFilters, runFilterSearch, type RunFilters } from '@/lib/run-filters'
@@ -31,6 +31,26 @@ export default async function RunsPage({
     return value !== '' && Number.isFinite(parsed) && parsed >= 0 ? value : ''
   }
   const rawStatuses = parameters.status
+  const many = (key: string): readonly string[] => {
+    const value = parameters[key]
+    return Array.isArray(value) ? value : typeof value === 'string' ? [value] : []
+  }
+  const workflowIds = [
+    ...new Set(
+      many('workflowId').flatMap((workflowId) => {
+        const parsed = WorkflowIdSchema.safeParse(workflowId)
+        return parsed.success ? [parsed.data] : []
+      }),
+    ),
+  ]
+  const repositoryIds = [
+    ...new Set(
+      many('repositoryId').flatMap((repositoryId) => {
+        const parsed = RepositoryIdSchema.safeParse(repositoryId)
+        return parsed.success ? [parsed.data] : []
+      }),
+    ),
+  ]
   const statusValues = Array.isArray(rawStatuses)
     ? rawStatuses
     : typeof rawStatuses === 'string'
@@ -39,6 +59,8 @@ export default async function RunsPage({
   const filters: RunFilters = {
     ...emptyRunFilters,
     runId: single('runId'),
+    workflowIds,
+    repositoryIds,
     statuses: [
       ...new Set(
         statusValues.flatMap((status) => {
