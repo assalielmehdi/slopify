@@ -8,7 +8,7 @@ import {
   resolveExecutableOnPath,
   type HostCommandInput,
   type HostCommandRunner,
-} from '../src/pi-harness-inspector.js'
+} from '../../../../src/modules/harness/adapters/pi-harness-inspector.js'
 
 const temporaryDirectories: string[] = []
 

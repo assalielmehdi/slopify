@@ -1,13 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AgentExecutionEventSchema, AgentExecutionInputSchema } from '../src/contract.js'
+import {
+  AgentExecutionEventSchema,
+  AgentExecutionInputSchema,
+} from '../../../../src/modules/harness/adapters/contract.js'
 import {
   createPiCliAgentExecutor,
   decodePiJsonLines,
   type PiCliProcess,
   type PiCliProcessSpawner,
   type PiCliSpawnInput,
-} from '../src/pi-cli-executor.js'
+} from '../../../../src/modules/harness/adapters/pi-cli-executor.js'
 
 class AsyncQueue<T> implements AsyncIterable<T> {
   readonly #values: T[] = []

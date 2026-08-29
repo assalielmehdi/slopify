@@ -71,11 +71,10 @@ node runner`. Node facts return through the run journal. Message handling is at 
 
 ## Code map
 
-- `src/api`: Hono HTTP adapters, domain modules, and the composition root (`src/server.ts`).
+- `src/api`: Hono HTTP adapters, domain modules, host-harness infrastructure adapters,
+  and the composition root (`src/server.ts`).
 - `src/web`: Next.js UI and API proxy.
 - `src/shared`: shared application contracts plus strict workflow and agent graph schemas.
-- `packages/agent-runtimes`: infrastructure adapters for host harnesses; currently Pi
-  CLI inspection/RPC execution and Codex CLI inspection/ephemeral JSONL execution.
 
 ## Frontend
 

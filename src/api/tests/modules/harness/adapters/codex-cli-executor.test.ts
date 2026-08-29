@@ -2,13 +2,16 @@ import { existsSync, readFileSync } from 'node:fs'
 
 import { describe, expect, it, vi } from 'vitest'
 
-import { AgentExecutionEventSchema, AgentExecutionInputSchema } from '../src/contract.js'
+import {
+  AgentExecutionEventSchema,
+  AgentExecutionInputSchema,
+} from '../../../../src/modules/harness/adapters/contract.js'
 import {
   createCodexCliAgentExecutor,
   type CodexCliProcess,
   type CodexCliProcessSpawner,
   type CodexCliSpawnInput,
-} from '../src/codex-cli-executor.js'
+} from '../../../../src/modules/harness/adapters/codex-cli-executor.js'
 
 class AsyncQueue<T> implements AsyncIterable<T> {
   readonly #values: T[] = []

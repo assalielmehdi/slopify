@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest'
 
-import type { AgentNodeResult } from '../src/contract.js'
-import { createEventRedactor, redactAgentNodeResult } from '../src/redaction.js'
+import type { AgentNodeResult } from '../../../../src/modules/harness/adapters/contract.js'
+import {
+  createEventRedactor,
+  redactAgentNodeResult,
+} from '../../../../src/modules/harness/adapters/redaction.js'
 
 describe('agent event redaction', () => {
   it('redacts configured values and recognizable credential forms', () => {

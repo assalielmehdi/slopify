@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { createPiEventNormalizer } from '../src/event-normalizer.js'
-import { createEventRedactor } from '../src/redaction.js'
+import { createPiEventNormalizer } from '../../../../src/modules/harness/adapters/event-normalizer.js'
+import { createEventRedactor } from '../../../../src/modules/harness/adapters/redaction.js'
 
 const secret = 'host-secret-value'
 

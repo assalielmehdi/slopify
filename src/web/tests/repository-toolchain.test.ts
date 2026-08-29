@@ -26,14 +26,11 @@ interface TurboConfiguration {
 const repositoryRoot = new URL('../../../', import.meta.url)
 const workspaceManifestPaths = [
   'src/web/package.json',
-  'packages/agent-runtimes/package.json',
   'src/api/package.json',
   'src/shared/package.json',
 ] as const
-const libraryManifestPaths = workspaceManifestPaths.filter(
-  (path) => path === 'src/shared/package.json' || path.startsWith('packages/'),
-)
-const libraryPackageNames = ['@slopify/agent-runtimes', '@slopify/shared'] as const
+const libraryManifestPaths = ['src/shared/package.json'] as const
+const libraryPackageNames = ['@slopify/shared'] as const
 const forbiddenCommand =
   /(?:^|(?:&&|\|\||;)\s*)(?:node|npm|npx|pnpm|yarn|tsx|ts-node|deno|corepack)(?:\s|$)/u
 
@@ -118,7 +115,6 @@ describe('repository toolchain', () => {
         '$TURBO_ROOT$/.bun-version',
         '$TURBO_ROOT$/package.json',
         '$TURBO_ROOT$/turbo.json',
-        '$TURBO_ROOT$/packages/*/package.json',
         '$TURBO_ROOT$/src/api/package.json',
         '$TURBO_ROOT$/src/api/src/server.ts',
         '$TURBO_ROOT$/src/shared/package.json',

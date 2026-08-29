@@ -3,8 +3,11 @@ import { describe, expect, it, vi } from 'vitest'
 import {
   createCodexHarnessInspector,
   parseCodexModelCatalog,
-} from '../src/codex-harness-inspector.js'
-import type { HostCommandInput, HostCommandRunner } from '../src/host-command.js'
+} from '../../../../src/modules/harness/adapters/codex-harness-inspector.js'
+import type {
+  HostCommandInput,
+  HostCommandRunner,
+} from '../../../../src/modules/harness/adapters/host-command.js'
 
 const runner = (implementation: (input: HostCommandInput) => unknown): HostCommandRunner => ({
   run: vi.fn(async (input) => implementation(input)) as HostCommandRunner['run'],

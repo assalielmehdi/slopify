@@ -6,7 +6,7 @@ import {
   createCodexHarnessInspector,
   createPiCliAgentExecutor,
   createPiHarnessInspector,
-} from '@slopify/agent-runtimes'
+} from './modules/harness/adapters/index.js'
 import { WorkflowIdSchema, type AgentExecutor } from '@slopify/shared'
 import {
   createBunGitSecretStore,

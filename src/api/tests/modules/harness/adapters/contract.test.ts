@@ -5,7 +5,7 @@ import {
   AgentExecutionEventSchema,
   AgentExecutionInputSchema,
   AgentNodeResultSchema,
-} from '../src/index.js'
+} from '../../../../src/modules/harness/adapters/index.js'
 
 const executionInput = {
   executionId: 'execution-01',

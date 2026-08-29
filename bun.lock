@@ -19,22 +19,14 @@
         "vitest": "4.1.11",
       },
     },
-    "packages/agent-runtimes": {
-      "name": "@slopify/agent-runtimes",
-      "version": "0.0.0",
-      "dependencies": {
-        "@slopify/shared": "workspace:*",
-        "typebox": "1.3.7",
-      },
-    },
     "src/api": {
       "name": "@slopify/api",
       "version": "0.0.0",
       "dependencies": {
-        "@slopify/agent-runtimes": "workspace:*",
         "@slopify/shared": "workspace:*",
         "execa": "10.0.1",
         "hono": "4.13.3",
+        "typebox": "1.3.7",
         "zod": "4.4.3",
       },
     },
@@ -339,8 +331,6 @@
     "@shadcn/react": ["@shadcn/react@0.3.0", "", { "peerDependencies": { "@types/react": ">=19", "react": ">=19" }, "optionalPeers": ["@types/react", "react"] }, "sha512-iKN0NuYe850VDHlxEfvppFrpa7CMV3zArTHusXlaSmeFeQhohGbIqclv6WwPTs/44I8EkXQpcuRt6sXEVKkWqQ=="],
 
     "@sindresorhus/merge-streams": ["@sindresorhus/merge-streams@4.0.0", "", {}, "sha512-tlqY9xq5ukxTUZBmoOp+m61cqwQD5pHJtFY3Mn8CA8ps6yghLH/Hw8UPdqg4OLmFW3IFlcXnQNmo/dh8HzXYIQ=="],
-
-    "@slopify/agent-runtimes": ["@slopify/agent-runtimes@workspace:packages/agent-runtimes"],
 
     "@slopify/api": ["@slopify/api@workspace:src/api"],
 
