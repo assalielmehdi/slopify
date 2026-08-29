@@ -39,12 +39,32 @@ export const latestExecutions = (
 
 export const nodeStatusesFrom = (
   detail: RunDetailResponse,
+  events: readonly RunEvent[] = detail.events,
 ): Readonly<Record<string, NodeExecutionStatus>> => {
   const statuses: Record<string, NodeExecutionStatus> = Object.fromEntries(
     detail.run.workflowSnapshot.nodes.map((node) => [node.id, 'PENDING' as const]),
   )
+  const nodeByExecution = new Map<string, string>()
   for (const execution of latestExecutions(detail.nodeExecutions).values()) {
+    nodeByExecution.set(execution.nodeExecutionId, execution.nodeId)
     statuses[execution.nodeId] = execution.status
+  }
+  for (const event of events) {
+    const data = event.data as Record<string, unknown>
+    if (event.type === 'NODE_SCHEDULED') {
+      if (typeof data.nodeExecutionId === 'string' && typeof data.nodeId === 'string') {
+        nodeByExecution.set(data.nodeExecutionId, data.nodeId)
+        statuses[data.nodeId] = 'PENDING'
+      }
+      continue
+    }
+    if (typeof data.nodeExecutionId !== 'string') continue
+    const nodeId = nodeByExecution.get(data.nodeExecutionId)
+    if (nodeId === undefined) continue
+    if (event.type === 'NODE_STARTED') statuses[nodeId] = 'RUNNING'
+    if (event.type === 'NODE_SUCCEEDED') statuses[nodeId] = 'SUCCEEDED'
+    if (event.type === 'NODE_FAILED') statuses[nodeId] = 'FAILED'
+    if (event.type === 'NODE_CANCELLED') statuses[nodeId] = 'CANCELLED'
   }
   return statuses
 }

@@ -1,6 +1,6 @@
 'use client'
 
-import type { AgentTraceEvent } from '@slopify/shared'
+import type { AgentToolKind, AgentTraceEvent } from '@slopify/shared'
 import { BookOpenIcon, BrainIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import Markdown from 'react-markdown'
@@ -32,7 +32,7 @@ type TranscriptItem =
   | {
       readonly id: string
       readonly kind: 'text'
-      readonly source: 'reasoning' | 'result'
+      readonly source: 'message' | 'reasoning' | 'result'
       content: string
     }
   | ({
@@ -60,44 +60,37 @@ const appendMarkdownDelta = (current: string, next: string): string =>
 const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly TranscriptItem[] => {
   const items: TranscriptItem[] = []
   const tools = new Map<string, Extract<TranscriptItem, { kind: 'tool' }>>()
-  let activeReasoning: Extract<TranscriptItem, { kind: 'text' }> | undefined
-  let reasoningStreamOpen = false
+  const messages = new Map<string, Extract<TranscriptItem, { kind: 'text' }>>()
 
   for (const event of events) {
     const data = record(event.data)
     if (data === undefined) continue
-    if (event.type === 'HARNESS_EVENT') {
-      const harnessEvent = record(data.event)
-      const assistantEvent = record(harnessEvent?.assistantMessageEvent)
-      if (harnessEvent?.type === 'message_update' && assistantEvent?.type === 'thinking_start') {
-        reasoningStreamOpen = true
-        activeReasoning = undefined
-      }
-      if (harnessEvent?.type === 'message_update' && assistantEvent?.type === 'thinking_end') {
-        reasoningStreamOpen = false
-        activeReasoning = undefined
-      }
-      continue
-    }
-    if (event.type === 'AGENT_REASONING') {
+    if (event.type === 'AGENT_MESSAGE' || event.type === 'AGENT_REASONING') {
       const content = text(data.content)
-      if (content === undefined) continue
-      const reasoning = activeReasoning ?? {
-        id: `event-${event.sequence}`,
+      const messageId = text(data.messageId)
+      if (content === undefined || messageId === undefined) continue
+      const existing = messages.get(messageId)
+      if (existing !== undefined) {
+        existing.content = appendMarkdownDelta(existing.content, content)
+        continue
+      }
+      const message: Extract<TranscriptItem, { kind: 'text' }> = {
+        id: `${event.type === 'AGENT_REASONING' ? 'reasoning' : 'message'}-${messageId}`,
         kind: 'text',
-        source: 'reasoning',
+        source: event.type === 'AGENT_REASONING' ? 'reasoning' : 'message',
         content,
       }
-      if (activeReasoning === undefined) items.push(reasoning)
-      else activeReasoning.content = appendMarkdownDelta(activeReasoning.content, content)
-      activeReasoning = reasoningStreamOpen ? reasoning : undefined
+      messages.set(messageId, message)
+      items.push(message)
       continue
     }
     if (event.type === 'AGENT_RESULT') {
       const result = record(data.result)
       const summary = text(result?.summary)
-      const previous = items.at(-1)
-      if (summary !== undefined && (previous?.kind !== 'text' || previous.content !== summary))
+      if (
+        summary !== undefined &&
+        !items.some((item) => item.kind === 'text' && item.content === summary)
+      )
         items.push({
           id: `event-${event.sequence}`,
           kind: 'text',
@@ -120,8 +113,11 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
     const toolCallId = text(data.toolCallId)
     if (toolCallId === undefined) continue
     if (event.type === 'AGENT_TOOL_STARTED') {
+      const toolKind = text(data.toolKind) as AgentToolKind | undefined
+      if (toolKind === undefined) continue
       const existingTool = tools.get(toolCallId)
       if (existingTool !== undefined) {
+        existingTool.toolKind = toolKind
         existingTool.toolName = text(data.toolName) ?? existingTool.toolName
         if (data.input !== undefined) existingTool.input = data.input
         continue
@@ -130,6 +126,7 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
         id: `tool-${toolCallId}`,
         kind: 'tool',
         toolCallId,
+        toolKind,
         toolName: text(data.toolName) ?? 'Tool',
         ...(data.input === undefined ? {} : { input: data.input }),
         status: 'running',
@@ -144,6 +141,8 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
       if (update !== undefined) tools.get(toolCallId)?.updates.push(update)
     }
     if (event.type === 'AGENT_TOOL_COMPLETED') {
+      const toolKind = text(data.toolKind) as AgentToolKind | undefined
+      if (toolKind === undefined) continue
       const existingTool = tools.get(toolCallId)
       const tool =
         existingTool ??
@@ -151,11 +150,13 @@ const transcriptFrom = (events: readonly AgentTraceEvent[]): readonly Transcript
           id: `tool-${toolCallId}`,
           kind: 'tool',
           toolCallId,
+          toolKind,
           toolName: text(data.toolName) ?? 'Tool',
           status: 'succeeded',
           updates: [],
         } satisfies Extract<TranscriptItem, { kind: 'tool' }>)
       tool.toolName = text(data.toolName) ?? tool.toolName
+      tool.toolKind = toolKind
       tool.status = data.status === 'failed' ? 'failed' : 'succeeded'
       tool.completedAt = event.timestamp
       const result = text(data.content)
@@ -280,9 +281,9 @@ export function AgentTranscript({ events, prompt, result, streaming }: AgentTran
   )
   const results = transcript.filter(
     (item): item is Extract<TranscriptItem, { kind: 'text' }> =>
-      item.kind === 'text' && item.source === 'result',
+      item.kind === 'text' && item.source !== 'reasoning',
   )
-  const hasResponse = transcript.some((item) => item.kind === 'text' && item.source === 'result')
+  const hasResponse = transcript.some((item) => item.kind === 'text' && item.source !== 'reasoning')
   const hasResult = events.some(({ type }) => type === 'AGENT_RESULT')
   const fallbackResponse = hasResponse || hasResult ? undefined : resultResponse(result)
   const announcement = liveAnnouncement(events)

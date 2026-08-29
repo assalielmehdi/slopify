@@ -14,7 +14,8 @@ import { Button } from '@/components/ui/button'
 import { WorkflowCanvas } from '@/components/workflow/workflow-canvas'
 import { WorkflowWorkspace } from '@/components/workflow/workflow-workspace'
 import { createApiClient } from '@/lib/api-client'
-import { connectRunEventStream, type RunEventSubscription } from '@/lib/event-stream'
+import type { RunEventSubscription } from '@/lib/event-stream'
+import { connectLiveEventSocket } from '@/lib/live-event-socket'
 import { latestExecutions, nodeStatusesFrom, runStatusFrom } from '@/lib/live-run'
 import { formatTimestamp } from '@/lib/run-format'
 import { displayRunId } from '@/lib/run-id'
@@ -24,18 +25,22 @@ const defaultClient = createApiClient()
 export interface LiveRunProps {
   readonly client?: LiveRunClient
   readonly connect?: RunEventSubscription
+  readonly connectTrace?: RunEventSubscription
   readonly runId: string
+  readonly webSocketOrigin?: string
 }
 
 export function LiveRun({
   client = defaultClient,
-  connect = connectRunEventStream,
+  connect = connectLiveEventSocket,
+  connectTrace = connect,
   runId,
+  webSocketOrigin = 'http://127.0.0.1:7311',
 }: LiveRunProps) {
-  const stream = useLiveRunStream({ client, connect, runId })
+  const stream = useLiveRunStream({ client, connect, runId, webSocketOrigin })
   const defaultNodeId = (() => {
     if (stream.detail === undefined) return undefined
-    const defaultStatuses = nodeStatusesFrom(stream.detail)
+    const defaultStatuses = nodeStatusesFrom(stream.detail, stream.events)
     const nodes = stream.detail.run.workflowSnapshot.nodes
     return (
       nodes.find(({ id }) => defaultStatuses[id] === 'RUNNING')?.id ??
@@ -43,7 +48,14 @@ export function LiveRun({
       nodes[0]?.id
     )
   })()
-  const panel = useRunNodePanel({ client, defaultNodeId, detail: stream.detail, runId })
+  const panel = useRunNodePanel({
+    client,
+    connect: connectTrace,
+    defaultNodeId,
+    detail: stream.detail,
+    runId,
+    webSocketOrigin,
+  })
 
   if (stream.loading)
     return <p className="text-xs text-muted-foreground">Loading run {displayRunId(runId)}…</p>
@@ -58,7 +70,7 @@ export function LiveRun({
 
   const detail = stream.detail
   const status = runStatusFrom(detail.run.status, stream.events)
-  const statuses = nodeStatusesFrom(detail)
+  const statuses = nodeStatusesFrom(detail, stream.events)
   const cancellationRequested = stream.events.some(({ type }) => type === 'RUN_CANCEL_REQUESTED')
   const activeAgentIds: string[] = []
   for (const node of detail.run.workflowSnapshot.nodes) {

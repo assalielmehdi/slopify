@@ -1,5 +1,7 @@
 import { RunIdSchema } from '@slopify/shared'
 
+import type { LiveEventSubscription } from '@/lib/live-event-socket'
+import { webSocketUrl } from '@/lib/live-event-socket'
 import { ApiRunEventSchema, type ApiRunEvent } from '@/lib/run-api-contract'
 
 export type RunEvent = ApiRunEvent
@@ -9,17 +11,7 @@ export interface EventReconciliation {
   readonly requiresSnapshot: boolean
 }
 
-export interface RunEventSubscriptionHandlers {
-  readonly onDisconnect: () => void
-  readonly onEvent: (event: RunEvent) => void
-  readonly onInvalidEvent: (cause: unknown) => void
-  readonly onOpen: () => void
-}
-
-export type RunEventSubscription = (
-  url: string,
-  handlers: RunEventSubscriptionHandlers,
-) => () => void
+export type RunEventSubscription = LiveEventSubscription
 
 const sameEvent = (left: RunEvent, right: RunEvent): boolean =>
   JSON.stringify(left) === JSON.stringify(right)
@@ -59,24 +51,9 @@ export function reconcileRunEvents(
   return { events: contiguous, requiresSnapshot }
 }
 
-export const parseRunEvent = (data: string): RunEvent => ApiRunEventSchema.parse(JSON.parse(data))
+export const parseRunEvent = (data: unknown): RunEvent => ApiRunEventSchema.parse(data)
 
-export const runEventStreamUrl = (runId: string): string =>
-  `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/events`
-
-export const connectRunEventStream: RunEventSubscription = (url, handlers) => {
-  const source = new EventSource(url)
-  source.addEventListener('open', handlers.onOpen)
-  source.addEventListener('error', handlers.onDisconnect)
-  source.addEventListener('run-event', (message) => {
-    try {
-      if (!(message instanceof MessageEvent) || typeof message.data !== 'string') {
-        throw new Error('Run event data is invalid')
-      }
-      handlers.onEvent(parseRunEvent(message.data))
-    } catch (cause) {
-      handlers.onInvalidEvent(cause)
-    }
+export const runLiveEventUrl = (origin: string, runId: string, afterSequence: number): string =>
+  webSocketUrl(origin, `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/live`, {
+    afterSequence,
   })
-  return () => source.close()
-}

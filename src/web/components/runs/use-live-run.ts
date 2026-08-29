@@ -2,10 +2,12 @@ import { useCallback, useEffect, useReducer, useRef } from 'react'
 
 import type { AgentTrace } from '@slopify/shared'
 
+import { agentTraceLiveEventUrl, parseAgentTraceEvent } from '@/lib/agent-trace-stream'
 import type { ApiClient, RunDetailResponse } from '@/lib/api-client'
 import {
   reconcileRunEvents,
-  runEventStreamUrl,
+  parseRunEvent,
+  runLiveEventUrl,
   type RunEventSubscription,
   type RunEvent,
 } from '@/lib/event-stream'
@@ -84,7 +86,13 @@ export function useLiveRunStream({
   client,
   connect,
   runId,
-}: Readonly<{ client: LiveRunClient; connect: RunEventSubscription; runId: string }>) {
+  webSocketOrigin,
+}: Readonly<{
+  client: LiveRunClient
+  connect: RunEventSubscription
+  runId: string
+  webSocketOrigin: string
+}>) {
   const mounted = useRef(false)
   const detailRef = useRef<RunDetailResponse | undefined>(undefined)
   const eventsRef = useRef<readonly RunEvent[]>([])
@@ -161,59 +169,73 @@ export function useLiveRunStream({
         return
       }
       try {
-        closeSubscription.current = connect(runEventStreamUrl(runId), {
-          onDisconnect: () => {
-            if (!active) return
-            disconnected = true
-            dispatch({ type: 'streamStatusChanged', status: 'Reconnecting' })
-            void loadSnapshot()
-          },
-          onOpen: () => {
-            if (!active) return
-            const shouldReconcile = disconnected
-            disconnected = false
-            dispatch({ type: 'streamStatusChanged', status: 'Live' })
-            if (shouldReconcile) void loadSnapshot()
-          },
-          onInvalidEvent: (cause) => {
-            if (!active) return
-            dispatch({
-              type: 'streamFailed',
-              message: cause instanceof Error ? cause.message : 'Run event is invalid.',
-            })
-            dispatch({ type: 'streamStatusChanged', status: 'Reconnecting' })
-            void loadSnapshot()
-          },
-          onEvent: (event) => {
-            if (!active) return
-            if (event.runId !== runId) {
-              dispatch({
-                type: 'streamFailed',
-                message: 'Run event identity does not match the route.',
-              })
-              void loadSnapshot()
-              return
-            }
-            const previousSequence = lastRunEventSequence(eventsRef.current)
-            const reconciliation = reconcileRunEvents(eventsRef.current, [event])
-            if (reconciliation.requiresSnapshot) {
+        closeSubscription.current = connect(
+          () => runLiveEventUrl(webSocketOrigin, runId, lastRunEventSequence(eventsRef.current)),
+          {
+            onDisconnect: () => {
+              if (!active) return
+              disconnected = true
               dispatch({ type: 'streamStatusChanged', status: 'Reconnecting' })
               void loadSnapshot()
-              return
-            }
-            if (event.sequence <= previousSequence) return
-            eventsRef.current = reconciliation.events
-            dispatch({ type: 'snapshot', detail: undefined, events: reconciliation.events })
-            if (
-              event.type === 'RUN_SUCCEEDED' ||
-              event.type === 'RUN_FAILED' ||
-              event.type === 'RUN_CANCELLED'
-            ) {
-              close()
-            }
-            void loadSnapshot()
+            },
+            onOpen: () => {
+              if (!active) return
+              const shouldReconcile = disconnected
+              disconnected = false
+              dispatch({ type: 'streamStatusChanged', status: 'Live' })
+              if (shouldReconcile) void loadSnapshot()
+            },
+            onInvalidEvent: (cause) => {
+              if (!active) return
+              dispatch({
+                type: 'streamFailed',
+                message: cause instanceof Error ? cause.message : 'Run event is invalid.',
+              })
+              dispatch({ type: 'streamStatusChanged', status: 'Reconnecting' })
+              void loadSnapshot()
+            },
+            onEvent: (value) => {
+              if (!active) return
+              let event: RunEvent
+              try {
+                event = parseRunEvent(value)
+              } catch (cause) {
+                dispatch({
+                  type: 'streamFailed',
+                  message: cause instanceof Error ? cause.message : 'Run event is invalid.',
+                })
+                void loadSnapshot()
+                return
+              }
+              if (event.runId !== runId) {
+                dispatch({
+                  type: 'streamFailed',
+                  message: 'Run event identity does not match the route.',
+                })
+                void loadSnapshot()
+                return
+              }
+              const previousSequence = lastRunEventSequence(eventsRef.current)
+              const reconciliation = reconcileRunEvents(eventsRef.current, [event])
+              if (reconciliation.requiresSnapshot) {
+                dispatch({ type: 'streamStatusChanged', status: 'Reconnecting' })
+                void loadSnapshot()
+                return
+              }
+              if (event.sequence <= previousSequence) return
+              eventsRef.current = reconciliation.events
+              dispatch({ type: 'snapshot', detail: undefined, events: reconciliation.events })
+              if (
+                event.type === 'RUN_SUCCEEDED' ||
+                event.type === 'RUN_FAILED' ||
+                event.type === 'RUN_CANCELLED'
+              ) {
+                close()
+              }
+              void loadSnapshot()
+            },
           },
-        })
+        )
       } catch (cause) {
         dispatch({
           type: 'streamFailed',
@@ -230,7 +252,7 @@ export function useLiveRunStream({
       closeSubscription.current?.()
       closeSubscription.current = undefined
     }
-  }, [client, connect, runId])
+  }, [client, connect, runId, webSocketOrigin])
 
   const cancel = async (cancellable: boolean) => {
     if (!cancellable || state.cancelling) return
@@ -289,14 +311,18 @@ const updateNodePanel = (
 
 export function useRunNodePanel({
   client,
+  connect,
   defaultNodeId,
   detail,
   runId,
+  webSocketOrigin,
 }: Readonly<{
   client: LiveRunClient
+  connect: RunEventSubscription
   defaultNodeId: string | undefined
   detail: RunDetailResponse | undefined
   runId: string
+  webSocketOrigin: string
 }>) {
   const [state, update] = useReducer(updateNodePanel, initialNodePanelState)
 
@@ -312,29 +338,31 @@ export function useRunNodePanel({
     detail === undefined || selectedNodeId === undefined
       ? undefined
       : latestExecutions(detail.nodeExecutions).get(selectedNodeId)
+  const nodeExecutionId = execution?.nodeExecutionId
+  const attemptId = execution?.attemptId
 
   useEffect(() => {
-    if (execution === undefined || client.getAgentTrace === undefined) {
+    if (
+      nodeExecutionId === undefined ||
+      attemptId === undefined ||
+      client.getAgentTrace === undefined
+    ) {
       update({ trace: undefined, traceLoading: false, traceError: undefined })
       return
     }
     let active = true
-    let interval: number | undefined
+    let closeSubscription: (() => void) | undefined
+    let currentTrace: AgentTrace | undefined
+    let cursor = 0
     update({ trace: undefined, traceLoading: true, traceError: undefined })
 
-    const loadTrace = async () => {
+    const loadTrace = async (): Promise<void> => {
       try {
-        const next = await client.getAgentTrace?.(
-          runId,
-          execution.nodeExecutionId,
-          execution.attemptId,
-        )
+        const next = await client.getAgentTrace?.(runId, nodeExecutionId, attemptId)
         if (!active || next === undefined) return
+        currentTrace = next
+        cursor = next.events.at(-1)?.sequence ?? 0
         update({ trace: next, traceError: undefined })
-        if (next.complete && interval !== undefined) {
-          window.clearInterval(interval)
-          interval = undefined
-        }
       } catch (cause) {
         if (active) {
           update({
@@ -346,15 +374,67 @@ export function useRunNodePanel({
       }
     }
 
-    void loadTrace()
-    if (execution.status === 'RUNNING') {
-      interval = window.setInterval(() => void loadTrace(), 1_000)
+    const start = async (): Promise<void> => {
+      await loadTrace()
+      if (!active || currentTrace?.complete === true) return
+      closeSubscription = connect(
+        () => agentTraceLiveEventUrl(webSocketOrigin, runId, nodeExecutionId, attemptId, cursor),
+        {
+          onOpen: () => {
+            if (active && currentTrace !== undefined) update({ traceError: undefined })
+          },
+          onDisconnect: () => {
+            if (!active) return
+            update({ traceError: 'Agent trace live updates are reconnecting.' })
+            void loadTrace()
+          },
+          onInvalidEvent: (cause) => {
+            if (!active) return
+            update({
+              traceError: cause instanceof Error ? cause.message : 'Agent trace event is invalid.',
+            })
+            void loadTrace()
+          },
+          onEvent: (value) => {
+            if (!active) return
+            let event
+            try {
+              event = parseAgentTraceEvent(value)
+            } catch (cause) {
+              update({
+                traceError:
+                  cause instanceof Error ? cause.message : 'Agent trace event is invalid.',
+              })
+              void loadTrace()
+              return
+            }
+            if (event.sequence <= cursor) return
+            if (event.sequence !== cursor + 1 || currentTrace === undefined) {
+              void loadTrace()
+              return
+            }
+            cursor = event.sequence
+            const complete =
+              event.type === 'AGENT_RESULT' ||
+              event.type === 'AGENT_FAILED' ||
+              event.type === 'AGENT_CANCELLED'
+            currentTrace = {
+              ...currentTrace,
+              events: [...currentTrace.events, event],
+              complete: currentTrace.complete || complete,
+            }
+            update({ trace: currentTrace, traceError: undefined })
+            if (complete) closeSubscription?.()
+          },
+        },
+      )
     }
+    void start()
     return () => {
       active = false
-      if (interval !== undefined) window.clearInterval(interval)
+      closeSubscription?.()
     }
-  }, [client, execution, runId])
+  }, [attemptId, client, connect, nodeExecutionId, runId, webSocketOrigin])
 
   return { ...state, selectedNodeId, execution, open }
 }

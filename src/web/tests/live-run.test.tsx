@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { AgentTraceSchema } from '@slopify/shared'
+import { AgentTraceEventSchema, AgentTraceSchema } from '@slopify/shared'
 
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse, StartRunResponse } from '../lib/api-client'
-import type { RunEventSubscription, RunEventSubscriptionHandlers } from '../lib/event-stream'
+import type { RunEventSubscription } from '../lib/event-stream'
+import type { LiveEventSocketHandlers } from '../lib/live-event-socket'
 import {
   ApiRunEventSchema,
   RunDetailResponseSchema,
@@ -160,7 +161,12 @@ const trace = AgentTraceSchema.parse({
       sequence: 1,
       timestamp: '2026-08-20T10:00:03Z',
       type: 'AGENT_TOOL_STARTED',
-      data: { toolCallId: 'tool-01', toolName: 'read_file', input: { path: 'README.md' } },
+      data: {
+        toolCallId: 'tool-01',
+        toolKind: 'READ',
+        toolName: 'read',
+        input: { path: 'README.md' },
+      },
     },
     {
       sequence: 2,
@@ -168,7 +174,8 @@ const trace = AgentTraceSchema.parse({
       type: 'AGENT_TOOL_COMPLETED',
       data: {
         toolCallId: 'tool-01',
-        toolName: 'read_file',
+        toolKind: 'READ',
+        toolName: 'read',
         status: 'succeeded',
         content: 'Read 42 lines',
       },
@@ -178,13 +185,15 @@ const trace = AgentTraceSchema.parse({
 })
 
 const createSubscription = () => {
-  let handlers: RunEventSubscriptionHandlers | undefined
+  let handlers: LiveEventSocketHandlers | undefined
+  let url: (() => string) | undefined
   const close = vi.fn()
-  const subscription: RunEventSubscription = vi.fn((_url, nextHandlers) => {
+  const subscription: RunEventSubscription = vi.fn((nextUrl, nextHandlers) => {
+    url = nextUrl
     handlers = nextHandlers
     return close
   })
-  return { close, subscription, handlers: () => handlers }
+  return { close, subscription, handlers: () => handlers, url: () => url?.() }
 }
 
 beforeEach(() => {
@@ -235,10 +244,8 @@ describe('LiveRun', () => {
     expect(runSurfaceClasses).toContain('pb-6')
     expect(runSurfaceClasses).not.toContain('p-6')
     expect(graph.textContent).toContain('test-workflow')
-    expect(subscription.subscription).toHaveBeenCalledWith(
-      '/api/runs/run-01/events',
-      expect.any(Object),
-    )
+    expect(subscription.subscription).toHaveBeenCalledWith(expect.any(Function), expect.any(Object))
+    expect(subscription.url()).toBe('ws://127.0.0.1:7311/api/runs/run-01/live?afterSequence=3')
   })
 
   it('reconciles a terminal snapshot immediately when live updates disconnect', async () => {
@@ -312,6 +319,44 @@ describe('LiveRun', () => {
     expect(subscription.close).toHaveBeenCalledOnce()
     expect(outcomeChanged).toHaveBeenCalledOnce()
     window.removeEventListener(WORKFLOW_RUN_OUTCOMES_CHANGED_EVENT, outcomeChanged)
+  })
+
+  it('projects streamed agent status before the REST reconciliation completes', async () => {
+    const subscription = createSubscription()
+    const pendingRefresh = new Promise<RunDetailResponse>(() => undefined)
+    const client = {
+      getRun: vi
+        .fn<() => Promise<RunDetailResponse>>()
+        .mockResolvedValueOnce(detail)
+        .mockReturnValue(pendingRefresh),
+      cancelRun: vi.fn(),
+    }
+
+    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
+    const graph = await screen.findByRole('region', { name: 'Workflow graph' })
+    await waitFor(() => expect(subscription.subscription).toHaveBeenCalledOnce())
+
+    act(() =>
+      subscription.handlers()?.onEvent(
+        ApiRunEventSchema.parse({
+          schemaVersion: 1,
+          eventId: 'node-succeeded',
+          runId: 'run-01',
+          sequence: 4,
+          timestamp: '2026-08-20T10:00:09Z',
+          type: 'NODE_SUCCEEDED',
+          data: {
+            nodeExecutionId: 'node-execution-01',
+            attemptId: 'attempt-01',
+            outcome: 'completed',
+            output: { data: { response: 'Complete.' } },
+            durationMs: 7_000,
+          },
+        }),
+      ),
+    )
+
+    expect(graph.textContent).toContain('"identify-agent":"SUCCEEDED"')
   })
 
   it('ignores an older failed refresh after a newer reconnect refresh succeeds', async () => {
@@ -409,7 +454,15 @@ describe('LiveRun', () => {
       getAgentTrace: vi.fn(async () => trace),
       cancelRun: vi.fn(),
     }
-    render(<LiveRun runId="run-01" client={client} connect={createSubscription().subscription} />)
+    const traceSubscription = createSubscription()
+    render(
+      <LiveRun
+        runId="run-01"
+        client={client}
+        connect={createSubscription().subscription}
+        connectTrace={traceSubscription.subscription}
+      />,
+    )
 
     const panel = await screen.findByRole('complementary', { name: 'Who are you?' })
     expect(panel.getAttribute('data-layout')).toBe('workspace')
@@ -422,10 +475,28 @@ describe('LiveRun', () => {
     expect(executionSummary.className).toContain('whitespace-nowrap')
     expect(panel.textContent).toContain('Running')
     expect(panel.textContent).toContain('test-model')
-    await waitFor(() => expect(panel.textContent).toContain('read_file'))
-    expect(screen.queryByRole('button', { name: /read_file/ })).toBeNull()
+    await waitFor(() => expect(panel.textContent).toContain('read completed'))
+    fireEvent.click(within(panel).getByRole('button', { name: 'Work details' }))
+    expect(panel.textContent).toContain('read README.md')
+    expect(screen.queryByRole('button', { name: /read README/ })).toBeNull()
     expect(panel.textContent).not.toContain('Read 42 lines')
     expect(client.getAgentTrace).toHaveBeenCalledWith('run-01', 'node-execution-01', 'attempt-01')
+    await waitFor(() => expect(traceSubscription.subscription).toHaveBeenCalledOnce())
+    expect(traceSubscription.url()).toBe(
+      'ws://127.0.0.1:7311/api/runs/run-01/node-executions/node-execution-01/trace/live?attemptId=attempt-01&afterSequence=2',
+    )
+
+    act(() =>
+      traceSubscription.handlers()?.onEvent(
+        AgentTraceEventSchema.parse({
+          sequence: 3,
+          timestamp: '2026-08-20T10:00:05Z',
+          type: 'AGENT_MESSAGE',
+          data: { messageId: 'message-01', content: 'Codex live output.' },
+        }),
+      ),
+    )
+    expect(await screen.findByText('Codex live output.')).toBeTruthy()
 
     fireEvent.keyDown(document, { key: 'Escape' })
     const backgroundButton = screen.getByRole('button', { name: 'Background action' })

@@ -10,13 +10,30 @@ import { AgentTranscript } from '../components/runs/agent-transcript'
 const traceEvent = (
   sequence: number,
   type: AgentTraceEvent['type'],
-  data: AgentTraceEvent['data'],
+  data: Record<string, unknown>,
 ): AgentTraceEvent =>
   AgentTraceEventSchema.parse({
     sequence,
     timestamp: `2026-08-22T10:00:${String(sequence).padStart(2, '0')}.000Z`,
     type,
-    data,
+    data:
+      type === 'AGENT_MESSAGE' || type === 'AGENT_REASONING'
+        ? { messageId: `message-${sequence}`, ...data }
+        : type === 'AGENT_TOOL_STARTED' || type === 'AGENT_TOOL_COMPLETED'
+          ? {
+              toolKind:
+                'toolName' in data && data.toolName === 'bash'
+                  ? 'COMMAND'
+                  : 'toolName' in data && data.toolName === 'read'
+                    ? 'READ'
+                    : 'toolName' in data && data.toolName === 'write'
+                      ? 'WRITE'
+                      : 'toolName' in data && data.toolName === 'edit'
+                        ? 'EDIT'
+                        : 'OTHER',
+              ...data,
+            }
+          : data,
   })
 
 afterEach(cleanup)
@@ -97,8 +114,8 @@ describe('AgentTranscript', () => {
     expect(screen.queryByText('Read 42 lines')).toBeNull()
     const response = screen.getByText('The implementation is complete.')
     expect(response.closest('[data-message-kind="result"]')).toBeTruthy()
-    expect(screen.queryByText('Intermediate assistant text.')).toBeNull()
-    expect(container.querySelectorAll('[data-message-kind]')).toHaveLength(5)
+    expect(screen.getByText('Intermediate assistant text.')).toBeTruthy()
+    expect(container.querySelectorAll('[data-message-kind]')).toHaveLength(6)
   })
 
   it('renders direct and derived skill invocations in trace order', () => {
@@ -428,28 +445,24 @@ describe('AgentTranscript', () => {
     expect(secondAnnouncement).not.toBe(firstAnnouncement)
   })
 
-  it('uses raw harness events to group streamed reasoning updates', () => {
+  it('groups streamed reasoning updates by the harness-neutral message ID', () => {
     const { container } = render(
       <AgentTranscript
         prompt="Inspect the repository."
         result={undefined}
         streaming={false}
         events={[
-          traceEvent(1, 'HARNESS_EVENT', {
-            harnessId: 'pi',
-            event: {
-              type: 'message_update',
-              assistantMessageEvent: { type: 'thinking_start' },
-            },
+          traceEvent(1, 'AGENT_REASONING', {
+            messageId: 'reasoning-01',
+            content: 'Inspecting ',
           }),
-          traceEvent(2, 'AGENT_REASONING', { content: 'Inspecting ' }),
-          traceEvent(3, 'AGENT_REASONING', { content: 'the repository.' }),
-          traceEvent(4, 'HARNESS_EVENT', {
-            harnessId: 'pi',
-            event: {
-              type: 'message_update',
-              assistantMessageEvent: { type: 'thinking_end' },
-            },
+          traceEvent(2, 'AGENT_REASONING', {
+            messageId: 'reasoning-01',
+            content: 'the repository.',
+          }),
+          traceEvent(3, 'AGENT_REASONING', {
+            messageId: 'reasoning-02',
+            content: 'Planning the change.',
           }),
         ]}
       />,
@@ -457,6 +470,61 @@ describe('AgentTranscript', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Work details' }))
     expect(screen.getByText('Inspecting the repository.')).toBeTruthy()
-    expect(container.querySelectorAll('[data-message-kind="reasoning"]')).toHaveLength(1)
+    expect(screen.getByText('Planning the change.')).toBeTruthy()
+    expect(container.querySelectorAll('[data-message-kind="reasoning"]')).toHaveLength(2)
+  })
+
+  it('renders Codex messages and tools through generic presentation types', () => {
+    const { container } = render(
+      <AgentTranscript
+        prompt="Update the application."
+        result={undefined}
+        streaming={false}
+        events={[
+          traceEvent(1, 'HARNESS_EVENT', {
+            harnessId: 'codex',
+            event: { type: 'item.completed', item: { type: 'agent_message' } },
+          }),
+          traceEvent(2, 'AGENT_TOOL_STARTED', {
+            toolCallId: 'change-01',
+            toolKind: 'EDIT',
+            toolName: 'file_change',
+            input: { changes: [{ path: 'src/app.ts', kind: 'update' }] },
+          }),
+          traceEvent(3, 'AGENT_TOOL_COMPLETED', {
+            toolCallId: 'change-01',
+            toolKind: 'EDIT',
+            toolName: 'file_change',
+            status: 'succeeded',
+            content: 'Updated src/app.ts',
+          }),
+          traceEvent(4, 'AGENT_TOOL_STARTED', {
+            toolCallId: 'mcp-01',
+            toolKind: 'MCP',
+            toolName: 'figma.inspect',
+            input: { arguments: { nodeId: '1:2' } },
+          }),
+          traceEvent(5, 'AGENT_TOOL_COMPLETED', {
+            toolCallId: 'mcp-01',
+            toolKind: 'MCP',
+            toolName: 'figma.inspect',
+            status: 'succeeded',
+            content: 'Inspected node',
+          }),
+          traceEvent(6, 'AGENT_MESSAGE', {
+            messageId: 'message-01',
+            content: 'The Codex change is ready.',
+          }),
+        ]}
+      />,
+    )
+
+    expect(screen.getByText('The Codex change is ready.')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Work details' }))
+    expect(screen.getByText('edit src/app.ts')).toBeTruthy()
+    expect(screen.getByText('figma.inspect')).toBeTruthy()
+    expect(container.querySelector('[data-tool-kind="EDIT"]')).toBeTruthy()
+    expect(container.querySelector('[data-tool-kind="MCP"]')).toBeTruthy()
+    expect(container.textContent).not.toContain('item.completed')
   })
 })

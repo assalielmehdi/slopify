@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { parseRunEvent, reconcileRunEvents, runEventStreamUrl } from '../lib/event-stream'
+import { parseRunEvent, reconcileRunEvents, runLiveEventUrl } from '../lib/event-stream'
+import { agentTraceLiveEventUrl } from '../lib/agent-trace-stream'
 import { ApiRunEventSchema, type ApiRunEvent } from '../lib/run-api-contract'
 
 const event = (sequence: number): ApiRunEvent =>
@@ -29,11 +30,27 @@ describe('run event reconciliation', () => {
     expect(result.events.map(({ sequence }) => sequence)).toEqual([1])
   })
 
-  it('validates SSE data and uses a cursor-free same-origin URL', () => {
-    expect(parseRunEvent(JSON.stringify(event(1)))).toEqual(event(1))
-    expect(() => parseRunEvent('{"sequence":2}')).toThrow()
-    expect(runEventStreamUrl('run-01')).toBe('/api/runs/run-01/events')
-    expect(() => runEventStreamUrl('../other')).toThrow()
+  it('validates event data and builds a cursor-resumable WebSocket URL', () => {
+    expect(parseRunEvent(event(1))).toEqual(event(1))
+    expect(() => parseRunEvent({ sequence: 2 })).toThrow()
+    expect(runLiveEventUrl('http://127.0.0.1:7311', 'run-01', 3)).toBe(
+      'ws://127.0.0.1:7311/api/runs/run-01/live?afterSequence=3',
+    )
+    expect(runLiveEventUrl('https://slopify.test', 'run-01', 0)).toBe(
+      'wss://slopify.test/api/runs/run-01/live?afterSequence=0',
+    )
+    expect(
+      agentTraceLiveEventUrl(
+        'http://127.0.0.1:7311',
+        'run-01',
+        'node-execution-01',
+        'attempt-01',
+        7,
+      ),
+    ).toBe(
+      'ws://127.0.0.1:7311/api/runs/run-01/node-executions/node-execution-01/trace/live?attemptId=attempt-01&afterSequence=7',
+    )
+    expect(() => runLiveEventUrl('http://127.0.0.1:7311', '../other', 0)).toThrow()
   })
 
   it('validates filesystem journal events without rewriting their facts', () => {
@@ -47,6 +64,6 @@ describe('run event reconciliation', () => {
       data: {},
     } as const
 
-    expect(parseRunEvent(JSON.stringify(filesystemEvent))).toEqual(filesystemEvent)
+    expect(parseRunEvent(filesystemEvent)).toEqual(filesystemEvent)
   })
 })

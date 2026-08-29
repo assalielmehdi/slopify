@@ -1,5 +1,6 @@
 'use client'
 
+import type { AgentToolKind } from '@slopify/shared'
 import { DollarSignIcon, WrenchIcon } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 
@@ -9,6 +10,7 @@ import { cn } from '@/lib/utils'
 export interface AgentTraceTool {
   readonly id: string
   readonly toolCallId: string
+  toolKind: AgentToolKind
   toolName: string
   input?: unknown
   status: 'running' | 'succeeded' | 'failed'
@@ -109,14 +111,6 @@ function ExpandableLines({
   )
 }
 
-const canonicalToolName = (name: string): string => {
-  const normalized = name.toLowerCase()
-  if (normalized === 'read_file') return 'read'
-  if (normalized === 'write_file') return 'write'
-  if (normalized === 'edit_file') return 'edit'
-  return normalized
-}
-
 const readRange = (input: Record<string, unknown>): string => {
   const offset = typeof input.offset === 'number' ? input.offset : undefined
   const limit = typeof input.limit === 'number' ? input.limit : undefined
@@ -143,6 +137,14 @@ const editLines = (input: Record<string, unknown>): readonly string[] => {
     if (newText !== undefined) lines.push(...logicalLines(newText).map((line) => `+ ${line}`))
   }
   return lines
+}
+
+const changedPaths = (input: Record<string, unknown>): readonly string[] => {
+  if (!Array.isArray(input.changes)) return []
+  return input.changes.flatMap((value) => {
+    const path = text(record(value)?.path)
+    return path === undefined ? [] : [path]
+  })
 }
 
 function DiffPreview({ lines }: Readonly<{ lines: readonly string[] }>) {
@@ -217,7 +219,6 @@ function Failure({ tool }: Readonly<{ tool: AgentTraceTool }>) {
 }
 
 export function AgentTraceToolBlock({ tool }: Readonly<{ tool: AgentTraceTool }>) {
-  const name = canonicalToolName(tool.toolName)
   const input = record(tool.input) ?? {}
   const path = text(input.path)
   const currentOutput = tool.result ?? tool.updates.at(-1)
@@ -227,7 +228,7 @@ export function AgentTraceToolBlock({ tool }: Readonly<{ tool: AgentTraceTool }>
       : Math.max(0, Date.parse(tool.completedAt) - Date.parse(tool.startedAt))
   let content: ReactNode
 
-  if (name === 'read') {
+  if (tool.toolKind === 'READ') {
     const readSkill = path === undefined ? undefined : skillName(path)
     content = (
       <>
@@ -239,7 +240,7 @@ export function AgentTraceToolBlock({ tool }: Readonly<{ tool: AgentTraceTool }>
         <Failure tool={tool} />
       </>
     )
-  } else if (name === 'write') {
+  } else if (tool.toolKind === 'WRITE') {
     const lines = logicalLines(text(input.content) ?? '')
     content = (
       <>
@@ -250,16 +251,23 @@ export function AgentTraceToolBlock({ tool }: Readonly<{ tool: AgentTraceTool }>
         <Failure tool={tool} />
       </>
     )
-  } else if (name === 'edit') {
+  } else if (tool.toolKind === 'EDIT') {
     const lines = editLines(input)
+    const paths = path === undefined ? changedPaths(input) : [path]
     content = (
       <>
-        <Header>{`edit${path === undefined ? '' : ` ${path}`}`}</Header>
+        <Header>
+          {paths.length === 0
+            ? 'edit'
+            : paths.length === 1
+              ? `edit ${paths[0]}`
+              : `edit ${paths.length} files`}
+        </Header>
         {lines.length > 0 ? <DiffPreview lines={lines} /> : null}
         <Failure tool={tool} />
       </>
     )
-  } else if (name === 'bash') {
+  } else if (tool.toolKind === 'COMMAND') {
     const command = text(input.command) ?? 'Command'
     const timeout = typeof input.timeout === 'number' ? input.timeout : undefined
     const lines = currentOutput === undefined ? [] : logicalLines(currentOutput)
@@ -281,7 +289,7 @@ export function AgentTraceToolBlock({ tool }: Readonly<{ tool: AgentTraceTool }>
         )}
       </>
     )
-  } else if (name === 'slopify_complete_node') {
+  } else if (tool.toolKind === 'OTHER' && tool.toolName === 'slopify_complete_node') {
     const outcome = text(input.outcome)
     content = (
       <Header>
@@ -314,7 +322,8 @@ export function AgentTraceToolBlock({ tool }: Readonly<{ tool: AgentTraceTool }>
       className="grid min-w-0 gap-2 border-b py-3 first:pt-0 last:border-b-0 last:pb-0"
       data-message-kind="tool"
       data-status={tool.status}
-      data-tool-name={name}
+      data-tool-kind={tool.toolKind}
+      data-tool-name={tool.toolName}
     >
       <div className="flex min-w-0 items-start gap-3">
         <div className="grid min-w-0 flex-1 gap-2">{content}</div>
