@@ -214,6 +214,14 @@ describe('Codex CLI executor', () => {
   it('runs an ephemeral JSONL session in YOLO mode with structured completion', async () => {
     const process = successfulProcess(result, [
       {
+        type: 'item.completed',
+        item: {
+          id: 'message-progress-01',
+          type: 'agent_message',
+          text: 'I am checking the repository before completing the node.',
+        },
+      },
+      {
         type: 'item.started',
         item: {
           id: 'skill-command-01',
@@ -276,6 +284,14 @@ describe('Codex CLI executor', () => {
         data: { sessionId: 'thread-01' },
       }),
     )
+    expect(events.filter(({ type }) => type === 'AGENT_MESSAGE')).toEqual([
+      expect.objectContaining({
+        data: {
+          messageId: 'message-progress-01',
+          content: 'I am checking the repository before completing the node.',
+        },
+      }),
+    ])
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'HARNESS_EVENT',

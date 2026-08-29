@@ -14,7 +14,11 @@ import {
   type AgentExecutor,
   type AgentNodeResult,
 } from './contract.js'
-import { createCodexEventNormalizer, type CodexEventNormalizer } from './codex-event-normalizer.js'
+import {
+  createCodexEventNormalizer,
+  type CodexEventNormalizer,
+  type NormalizedCodexEvent,
+} from './codex-event-normalizer.js'
 import { decodeJsonLines } from './json-lines.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import { sensitiveEnvironmentValues } from './sensitive-environment.js'
@@ -405,6 +409,7 @@ export const createCodexCliAgentExecutor = (
         ])
         const iterator = decodeJsonLines(process.stdout)[Symbol.asyncIterator]()
         let finalMessage: string | undefined
+        let pendingMessage: Extract<NormalizedCodexEvent, { type: 'AGENT_MESSAGE' }> | undefined
         let finalUsage = {
           inputTokens: 0,
           outputTokens: 0,
@@ -438,8 +443,16 @@ export const createCodexCliAgentExecutor = (
               failureMessages.HARNESS_PROTOCOL_FAILED,
             )
           }
-          for (const event of normalizer.normalize(raw))
-            yield createEvent(input, event.type, event.data)
+          for (const event of normalizer.normalize(raw)) {
+            if (event.type === 'AGENT_MESSAGE') {
+              if (pendingMessage !== undefined) {
+                yield createEvent(input, pendingMessage.type, pendingMessage.data)
+              }
+              pendingMessage = event
+            } else {
+              yield createEvent(input, event.type, event.data)
+            }
+          }
 
           if (raw.type === 'thread.started') {
             if (typeof raw.thread_id !== 'string') {
@@ -461,6 +474,7 @@ export const createCodexCliAgentExecutor = (
               )
             }
             turnCompleted = true
+            pendingMessage = undefined
             finalUsage = usage(raw)
           } else if (raw.type === 'turn.failed' || raw.type === 'error') {
             throw new CodexExecutionError(
