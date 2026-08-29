@@ -4,11 +4,14 @@ import { dirname } from 'node:path'
 
 import {
   AgentExecutionEventSchema,
+  AgentToolKindSchema,
   type AgentExecutionEvent,
+  type AgentToolKind,
   AgentTraceEventSchema,
   AgentTraceHeaderSchema,
   AgentTraceSchema,
   type AgentTrace,
+  type AgentTraceEvent,
   type AgentTraceHeader,
 } from '@slopify/shared'
 import { z } from 'zod'
@@ -100,6 +103,99 @@ const matchesIdentity = (header: AgentTraceHeader, identity: TraceIdentity): boo
   header.nodeExecutionId === identity.nodeExecutionId &&
   header.attemptId === identity.attemptId
 
+const record = (value: unknown): Record<string, unknown> | undefined =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : undefined
+
+const text = (value: unknown): string | undefined =>
+  typeof value === 'string' && value !== '' ? value : undefined
+
+const visibleMessage = (content: string): string => {
+  try {
+    const parsed = record(JSON.parse(content))
+    return text(parsed?.summary) ?? content
+  } catch {
+    return content
+  }
+}
+
+interface ToolPresentation {
+  readonly kind: AgentToolKind
+  readonly name: string
+}
+
+const legacyToolPresentation = (
+  toolName: string,
+  input: Record<string, unknown> | undefined,
+): ToolPresentation => {
+  const normalized = toolName.toLowerCase()
+  if (normalized === 'bash' || normalized === 'command_execution') {
+    return { kind: 'COMMAND', name: 'bash' }
+  }
+  if (normalized === 'read' || normalized === 'read_file') {
+    return { kind: 'READ', name: 'read' }
+  }
+  if (normalized === 'write' || normalized === 'write_file') {
+    return { kind: 'WRITE', name: 'write' }
+  }
+  if (normalized === 'edit' || normalized === 'edit_file' || normalized === 'file_change') {
+    return { kind: 'EDIT', name: normalized === 'file_change' ? 'file_change' : 'edit' }
+  }
+  if (normalized === 'grep' || normalized === 'find' || normalized === 'search') {
+    return { kind: 'SEARCH', name: normalized }
+  }
+  if (normalized === 'web_search') return { kind: 'WEB', name: 'web_search' }
+  if (normalized === 'mcp_tool_call') {
+    const server = text(input?.server)
+    const tool = text(input?.tool)
+    return {
+      kind: 'MCP',
+      name: server === undefined || tool === undefined ? 'mcp_tool_call' : `${server}.${tool}`,
+    }
+  }
+  return { kind: 'OTHER', name: toolName }
+}
+
+const normalizePresentationEvents = (
+  events: readonly AgentTraceEvent[],
+): readonly AgentTraceEvent[] => {
+  const tools = new Map<string, ToolPresentation>()
+  return events.map((event) => {
+    const data = record(event.data)
+    if (data === undefined) return event
+    if (event.type === 'AGENT_MESSAGE' || event.type === 'AGENT_REASONING') {
+      const content = text(data.content)
+      if (content === undefined) return event
+      return AgentTraceEventSchema.parse({
+        ...event,
+        data: {
+          ...data,
+          messageId:
+            text(data.messageId) ??
+            `legacy-${event.type === 'AGENT_MESSAGE' ? 'message' : 'reasoning'}-${event.sequence}`,
+          content: visibleMessage(content),
+        },
+      })
+    }
+    if (event.type !== 'AGENT_TOOL_STARTED' && event.type !== 'AGENT_TOOL_COMPLETED') {
+      return event
+    }
+    const toolCallId = text(data.toolCallId)
+    const toolName = text(data.toolName)
+    if (toolCallId === undefined || toolName === undefined) return event
+    const currentKind = AgentToolKindSchema.safeParse(data.toolKind)
+    const presentation = currentKind.success
+      ? { kind: currentKind.data, name: toolName }
+      : (tools.get(toolCallId) ?? legacyToolPresentation(toolName, record(data.input)))
+    tools.set(toolCallId, presentation)
+    return AgentTraceEventSchema.parse({
+      ...event,
+      data: { ...data, toolKind: presentation.kind, toolName: presentation.name },
+    })
+  })
+}
+
 interface ParsedTrace {
   readonly trace: AgentTrace
   readonly completeBytes: number
@@ -148,7 +244,9 @@ const parse = async (path: string, expected?: TraceIdentity): Promise<ParsedTrac
   if (expected !== undefined && !matchesIdentity(first.header, expected)) {
     throw new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found')
   }
-  const events = records.flatMap((record) => (record.kind === 'event' ? [record.event] : []))
+  const events = normalizePresentationEvents(
+    records.flatMap((record) => (record.kind === 'event' ? [record.event] : [])),
+  )
   const trace = AgentTraceSchema.parse({
     header: first.header,
     events,

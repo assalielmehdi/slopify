@@ -186,6 +186,97 @@ describe('filesystem agent trace store', () => {
     })
   })
 
+  it('upgrades legacy presentation events in memory without rewriting the journal', async () => {
+    const { store, tracePath } = createStore()
+    await store.start(header)
+    const legacyEvents = [
+      {
+        sequence: 1,
+        timestamp: '2026-08-22T10:00:01.000Z',
+        type: 'AGENT_MESSAGE',
+        data: {
+          content: JSON.stringify({ summary: 'Inspecting the repository.', data: '{}' }),
+        },
+      },
+      {
+        sequence: 2,
+        timestamp: '2026-08-22T10:00:02.000Z',
+        type: 'AGENT_TOOL_STARTED',
+        data: {
+          toolCallId: 'command-01',
+          toolName: 'command_execution',
+          input: { command: '/bin/zsh -lc pwd' },
+        },
+      },
+      {
+        sequence: 3,
+        timestamp: '2026-08-22T10:00:03.000Z',
+        type: 'AGENT_TOOL_COMPLETED',
+        data: {
+          toolCallId: 'command-01',
+          toolName: 'command_execution',
+          status: 'succeeded',
+          content: '/workspace/run-01',
+        },
+      },
+      {
+        sequence: 4,
+        timestamp: '2026-08-22T10:00:04.000Z',
+        type: 'AGENT_TOOL_STARTED',
+        data: {
+          toolCallId: 'mcp-01',
+          toolName: 'mcp_tool_call',
+          input: { server: 'clickup', tool: 'get_task', arguments: { taskId: 'TASK-1' } },
+        },
+      },
+      {
+        sequence: 5,
+        timestamp: '2026-08-22T10:00:05.000Z',
+        type: 'AGENT_TOOL_COMPLETED',
+        data: {
+          toolCallId: 'mcp-01',
+          toolName: 'mcp_tool_call',
+          status: 'succeeded',
+          content: 'Task loaded',
+        },
+      },
+    ]
+    for (const event of legacyEvents) {
+      appendFileSync(tracePath, `${JSON.stringify({ kind: 'event', event })}\n`)
+    }
+    const journal = readFileSync(tracePath, 'utf8')
+
+    const trace = await store.read({
+      runId: 'run-01',
+      nodeExecutionId: 'node-execution-01',
+      attemptId: 'attempt-01',
+    })
+
+    expect(trace.events).toMatchObject([
+      {
+        type: 'AGENT_MESSAGE',
+        data: { messageId: 'legacy-message-1', content: 'Inspecting the repository.' },
+      },
+      {
+        type: 'AGENT_TOOL_STARTED',
+        data: { toolCallId: 'command-01', toolKind: 'COMMAND', toolName: 'bash' },
+      },
+      {
+        type: 'AGENT_TOOL_COMPLETED',
+        data: { toolCallId: 'command-01', toolKind: 'COMMAND', toolName: 'bash' },
+      },
+      {
+        type: 'AGENT_TOOL_STARTED',
+        data: { toolCallId: 'mcp-01', toolKind: 'MCP', toolName: 'clickup.get_task' },
+      },
+      {
+        type: 'AGENT_TOOL_COMPLETED',
+        data: { toolCallId: 'mcp-01', toolKind: 'MCP', toolName: 'clickup.get_task' },
+      },
+    ])
+    expect(readFileSync(tracePath, 'utf8')).toBe(journal)
+  })
+
   it('rejects identifiers that could escape the configured root', async () => {
     const { store } = createStore()
 

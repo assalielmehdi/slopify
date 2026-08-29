@@ -218,7 +218,10 @@ describe('Codex CLI executor', () => {
         item: {
           id: 'message-progress-01',
           type: 'agent_message',
-          text: 'I am checking the repository before completing the node.',
+          text: wireCompletion({
+            ...result,
+            summary: 'I am checking the repository before completing the node.',
+          }),
         },
       },
       {

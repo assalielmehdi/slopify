@@ -38,6 +38,18 @@ const boundedContent = (content: string): string | undefined => {
   return bounded.trim().length === 0 ? undefined : bounded
 }
 
+const agentMessageContent = (content: string): string => {
+  try {
+    const parsed = JSON.parse(content) as unknown
+    if (isRecord(parsed) && typeof parsed.summary === 'string') {
+      return parsed.summary
+    }
+  } catch {
+    // Plain assistant messages are already presentation-ready.
+  }
+  return content
+}
+
 const visibleJson = (value: unknown, redactor: EventRedactor): JsonValue => {
   try {
     const serialized = JSON.stringify(value)
@@ -191,7 +203,7 @@ export const createCodexEventNormalizer = (options: {
       if (event.type === 'item.completed' && item.type === 'agent_message') {
         const messageId = toolCallId(item)
         if (messageId === undefined || typeof item.text !== 'string') return [captured]
-        const content = boundedContent(options.redactor.redact(item.text))
+        const content = boundedContent(agentMessageContent(options.redactor.redact(item.text)))
         return content === undefined
           ? [captured]
           : [captured, { type: 'AGENT_MESSAGE', data: { messageId, content } }]
