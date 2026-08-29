@@ -118,8 +118,29 @@ describe('WorkflowNode', () => {
     expect(screen.getByText('Who are you?')).toBeTruthy()
   })
 
+  it('uses the semantic success surface for succeeded nodes', () => {
+    const node = workflow.nodes.find(({ id }) => id === 'identify-agent')
+    if (node === undefined) throw new Error('Expected agent node')
+
+    const { container } = render(
+      <WorkflowNodeContent
+        data={{
+          domainNode: node,
+          isStart: false,
+          isEnd: true,
+          recentRunStatus: 'SUCCEEDED',
+        }}
+        selected={false}
+      />,
+    )
+
+    const card = container.querySelector('[data-status]')
+    expect(card?.className).toContain('border-status-success/35')
+    expect(card?.className).toContain('bg-status-success/10')
+    expect(card?.className).not.toContain('bg-muted/55')
+  })
+
   it.each([
-    ['SUCCEEDED', 'border-status-success', 'bg-status-success'],
     ['FAILED', 'border-destructive', 'bg-destructive'],
     ['CANCELLED', 'border-status-warning', 'bg-status-warning'],
   ] as const)(

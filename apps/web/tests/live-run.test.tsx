@@ -206,24 +206,34 @@ afterEach(() => {
 })
 
 describe('LiveRun', () => {
-  it('shows run timing and status as canvas overlays while keeping live updates connected', async () => {
+  it('keeps run timing and controls in one wrapping canvas overlay', async () => {
     const subscription = createSubscription()
     const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
 
-    render(<LiveRun runId="run-01" client={client} connect={subscription.subscription} />)
+    const view = render(
+      <LiveRun runId="run-01" client={client} connect={subscription.subscription} />,
+    )
 
     const graph = await screen.findByRole('region', { name: 'Workflow graph' })
     const timing = screen.getByLabelText('Run timing')
     const status = screen.getByLabelText('Run status')
+    const overlay = timing.parentElement
+    const runSurfaceClasses = view.container.firstElementChild?.className.split(/\s+/) ?? []
 
     expect(screen.queryByLabelText('Run summary')).toBeNull()
     expect(screen.queryByText('Run ID')).toBeNull()
     expect(timing.textContent).toMatch(/^Started .+ · Took .+$/)
-    expect(timing.className).toContain('absolute')
-    expect(timing.className).toContain('left-3')
+    expect(overlay).toBe(status.parentElement)
+    expect(overlay?.className).toContain('absolute')
+    expect(overlay?.className).toContain('inset-x-3')
+    expect(overlay?.className).toContain('flex-wrap')
+    expect(timing.className).not.toContain('absolute')
     expect(status.textContent).toContain('Running')
-    expect(status.className).toContain('absolute')
-    expect(status.className).toContain('right-3')
+    expect(status.className).toContain('ml-auto')
+    expect(status.className).not.toContain('absolute')
+    expect(runSurfaceClasses).toContain('px-6')
+    expect(runSurfaceClasses).toContain('pb-6')
+    expect(runSurfaceClasses).not.toContain('p-6')
     expect(graph.textContent).toContain('test-workflow')
     expect(subscription.subscription).toHaveBeenCalledWith(
       '/api/runs/run-01/events',
@@ -393,6 +403,7 @@ describe('LiveRun', () => {
   })
 
   it('keeps captured-agent details visible beside the graph during graph interaction', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue(Date.parse('2026-08-20T10:01:10Z'))
     const client = {
       getRun: vi.fn(async () => detail),
       getAgentTrace: vi.fn(async () => trace),
@@ -406,7 +417,7 @@ describe('LiveRun', () => {
     expect(screen.getByRole('region', { name: 'Workflow graph pane' })).toBeTruthy()
     expect(screen.getByRole('region', { name: 'Workflow details pane' })).toBeTruthy()
     const executionSummary = screen.getByLabelText('Execution summary')
-    expect(executionSummary.textContent).toMatch(/^Started .+ - Took Not recorded$/)
+    expect(executionSummary.textContent).toMatch(/^Started .+ - Running for 1m 8s$/)
     expect(executionSummary.textContent).not.toContain('Completed')
     expect(executionSummary.className).toContain('whitespace-nowrap')
     expect(panel.textContent).toContain('Running')

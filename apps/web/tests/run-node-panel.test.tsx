@@ -85,7 +85,7 @@ const codexTrace = AgentTraceSchema.parse({
 afterEach(cleanup)
 
 describe('RunNodePanel', () => {
-  it('shows captured harness and isolated run workspaces', () => {
+  it('shows captured harness configuration without repeating workflow workspaces', () => {
     render(
       <RunNodePanel
         execution={{
@@ -122,18 +122,7 @@ describe('RunNodePanel', () => {
     expect(configuration.textContent).toContain('high')
     expect(configuration.textContent).toContain('Timeout')
     expect(configuration.textContent).toContain('300 seconds')
-    const workspaces = screen.getByRole('region', { name: 'Run workspaces' })
-    expect(workspaces.textContent).toContain('API')
-    expect(workspaces.textContent).toContain('Primary')
-    expect(workspaces.textContent).toContain(
-      '/Users/developer/.slopify/workflows/test-workflow/runs/run-01/workspaces/repository-api',
-    )
-    expect(workspaces.textContent).toContain('Web')
-    expect(workspaces.textContent).toContain('slopify/run-01')
-    expect(workspaces.querySelector('ul')?.className).toContain('min-w-0')
-    for (const repository of workspaces.querySelectorAll('li')) {
-      expect(repository.className).toContain('min-w-0')
-    }
+    expect(screen.queryByRole('region', { name: 'Run workspaces' })).toBeNull()
     expect(screen.queryByRole('heading', { name: 'Exchange' })).toBeNull()
     expect(
       screen.queryByText('Complete recorded prompt, model output, reasoning, and tool activity.'),

@@ -478,15 +478,15 @@ text color of their role.
   capture; it must never fetch the current workflow to reconstruct historical state.
 - Keep Started and Duration as a compact overlay at the graph's top-left. Keep Status and
   the running run's compact cancel action together at the graph's top-right. Do not add a
-  separate summary card or repeat the Run ID already present in navigation.
+  separate summary card or repeat the Run ID already present in navigation. Both groups share
+  one wrapping overlay so the controls move below the timing before they can overlap.
 - The rest of the desktop screen is the read-only workflow canvas. Do not append
   additional summary sections beneath it.
 - The run graph uses the same adaptive left pane as the workflow editor. The persistent right
   pane shows the current or selected captured agent without covering or shifting the graph.
 - The details pane shows the captured harness and version, optional model and thinking effort,
-  primary Repository and cloned run workspace paths and branches, result/timeout data,
-  execution status and
-  timing, errors or output, and available agent transcript messages.
+  result/timeout data, execution status and timing, errors or output, and available agent
+  transcript messages.
 - Selecting another graph node replaces the details pane content in place. Long content scrolls
   inside the pane; the run page does not. Configuration blocks remain flat on the base surface
   unless a semantic status requires a signal fill.

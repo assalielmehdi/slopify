@@ -56,9 +56,10 @@ export function WorkflowNodeContent({
   return (
     <div
       className={cn(
-        'relative isolate flex h-36 w-54 flex-col gap-2 overflow-hidden rounded-lg border bg-muted/55 p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
+        'relative isolate flex h-36 w-54 flex-col gap-2 overflow-hidden rounded-lg border p-3.5 text-card-foreground shadow-[var(--shadow-raised)] transition-[border-color,box-shadow,transform] duration-[var(--duration-quick)] hover:shadow-[var(--shadow-raised-hover)]',
+        status !== 'SUCCEEDED' && 'bg-muted/55',
         status === 'RUNNING' && 'workflow-node-running-fill border-status-info/35',
-        status === 'SUCCEEDED' && 'border-status-success/35',
+        status === 'SUCCEEDED' && 'border-status-success/35 bg-status-success/10',
         status === 'FAILED' && 'border-destructive/35',
         status === 'CANCELLED' && 'border-status-warning/35',
         selected && 'border-foreground/30 ring-2 ring-foreground/10',

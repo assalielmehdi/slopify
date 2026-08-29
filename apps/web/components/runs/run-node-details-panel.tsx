@@ -1,14 +1,13 @@
 import type { AgentTrace, NodeExecutionStatus } from '@slopify/contracts'
 import type { AgentNode } from '@slopify/workflow-model'
 
-import { RunNodePanel, type RunNodePanelProps } from '@/components/runs/run-node-panel'
+import { ElapsedTime } from '@/components/runs/elapsed-time'
+import { RunNodePanel } from '@/components/runs/run-node-panel'
 import { NodeStatusBadge } from '@/components/runs/run-status'
 import type { NodeExecution } from '@/lib/live-run'
 import { formatDuration, formatTimestamp } from '@/lib/run-format'
 
 interface RunNodeDetailsPanelProps {
-  readonly repositories?: RunNodePanelProps['repositories']
-  readonly repositoryWorkspaces?: RunNodePanelProps['repositoryWorkspaces']
   readonly execution: NodeExecution | undefined
   readonly node: AgentNode
   readonly status: NodeExecutionStatus
@@ -20,8 +19,6 @@ interface RunNodeDetailsPanelProps {
 export function RunNodeDetailsPanel({
   execution,
   node,
-  repositories,
-  repositoryWorkspaces,
   status,
   trace,
   traceError,
@@ -52,15 +49,24 @@ export function RunNodeDetailsPanel({
           aria-label="Execution summary"
           className="mt-2 overflow-x-auto text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
         >
-          Started {formatTimestamp(execution?.startedAt ?? null)} - Took{' '}
-          {durationMs === undefined ? 'Not recorded' : formatDuration(durationMs)}
+          Started {formatTimestamp(execution?.startedAt ?? null)} -{' '}
+          {status === 'RUNNING' ? (
+            <>
+              Running for{' '}
+              <ElapsedTime
+                completedAt={execution?.completedAt ?? null}
+                running
+                startedAt={execution?.startedAt ?? null}
+              />
+            </>
+          ) : (
+            <>Took {durationMs === undefined ? 'Not recorded' : formatDuration(durationMs)}</>
+          )}
         </div>
       </header>
       <RunNodePanel
         execution={execution}
         node={node}
-        {...(repositories === undefined ? {} : { repositories })}
-        {...(repositoryWorkspaces === undefined ? {} : { repositoryWorkspaces })}
         status={status}
         trace={trace}
         traceError={traceError}

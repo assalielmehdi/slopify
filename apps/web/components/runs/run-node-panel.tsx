@@ -19,20 +19,6 @@ interface NodeExecutionSnapshot {
 }
 
 export interface RunNodePanelProps {
-  readonly repositories?: readonly {
-    readonly baseSha: string
-    readonly defaultBranch: string
-    readonly fullName: string
-    readonly isPrimary: boolean
-    readonly name: string
-    readonly provider: 'GITHUB' | 'GITLAB'
-    readonly repositoryId: string
-  }[]
-  readonly repositoryWorkspaces?: readonly {
-    readonly branchName: string
-    readonly repositoryId: string
-    readonly workspacePath: string
-  }[]
   readonly execution: NodeExecutionSnapshot | undefined
   readonly node: AgentNode
   readonly status: NodeExecutionStatus
@@ -64,8 +50,6 @@ const harnessLabel = (harnessId: string): string =>
 export function RunNodePanel({
   execution,
   node,
-  repositories = [],
-  repositoryWorkspaces = [],
   status,
   trace,
   traceError,
@@ -80,27 +64,6 @@ export function RunNodePanel({
   const displayedModel = harnessConfiguration?.model ?? node.harness.modelId ?? 'Harness default'
   const displayedThinking =
     harnessConfiguration?.thinkingLevel ?? node.harness.thinkingLevel ?? 'Harness default'
-  const workspaceRepositories =
-    trace === undefined
-      ? repositories.map((repository) => {
-          const workspace = repositoryWorkspaces.find(
-            ({ repositoryId }) => repositoryId === repository.repositoryId,
-          )
-          return {
-            repositoryId: repository.repositoryId,
-            name: repository.name,
-            workspacePath: workspace?.workspacePath ?? 'Not recorded',
-            branchLabel: `${workspace?.branchName ?? 'Not recorded'} · ${repository.defaultBranch} at ${repository.baseSha}`,
-            repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${repository.fullName}`,
-          }
-        })
-      : trace.header.configuration.repositories.map((repository) => ({
-          repositoryId: repository.repositoryId,
-          name: repository.name,
-          workspacePath: repository.workspacePath,
-          branchLabel: `${repository.branchName} · ${repository.defaultBranch} at ${repository.baseSha}`,
-          repositoryLabel: `${repository.provider === 'GITHUB' ? 'GitHub' : 'GitLab'} · ${repository.fullName}`,
-        }))
   const configurationItems: (readonly [string, string])[] = [
     ['Harness', displayedHarness],
     ...(harnessConfiguration === undefined
@@ -112,13 +75,6 @@ export function RunNodePanel({
       ? []
       : ([['Timeout', `${harnessConfiguration.timeoutSeconds} seconds`]] as const)),
   ]
-  const primaryRepositoryId =
-    harnessConfiguration?.primaryRepositoryId ??
-    repositories.find(({ isPrimary }) => isPrimary)?.repositoryId
-  const primaryRepository = workspaceRepositories.find(
-    ({ repositoryId }) => repositoryId === primaryRepositoryId,
-  )
-
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="grid min-w-0 shrink-0 content-start gap-8 p-6">
@@ -132,42 +88,6 @@ export function RunNodePanel({
         <section className="grid" aria-label="Configuration">
           <DefinitionList items={configurationItems} />
         </section>
-
-        {workspaceRepositories.length === 0 ? null : (
-          <section className="grid min-w-0 gap-3" aria-label="Run workspaces">
-            <div>
-              <h3 className="text-sm/5 font-semibold">Run workspaces</h3>
-              <p className="mt-1 text-xs/4 text-muted-foreground">
-                The agent started in {primaryRepository?.name ?? 'the primary repository'} and
-                shared these fresh repository clones with the run.
-              </p>
-            </div>
-            <ul className="grid min-w-0 gap-2">
-              {workspaceRepositories.map((repository) => (
-                <li
-                  className="min-w-0 rounded-md border border-border p-3"
-                  key={repository.repositoryId}
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm/5 font-medium">{repository.name}</p>
-                    {repository.repositoryId === primaryRepositoryId ? (
-                      <span className="text-xs/4 font-medium text-muted-foreground">Primary</span>
-                    ) : null}
-                  </div>
-                  <p className="mt-1 break-all font-mono text-xs/4 text-muted-foreground">
-                    {repository.workspacePath}
-                  </p>
-                  <p className="mt-1 truncate font-mono text-xs/4 text-muted-foreground">
-                    {repository.branchLabel}
-                  </p>
-                  <p className="mt-1 truncate text-xs/4 text-muted-foreground">
-                    {repository.repositoryLabel}
-                  </p>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
 
       <Separator />

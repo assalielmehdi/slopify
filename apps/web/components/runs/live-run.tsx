@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-
+import { ElapsedTime } from '@/components/runs/elapsed-time'
 import { RunNodeDetailsPanel } from '@/components/runs/run-node-details-panel'
 import { RunStatusBadge } from '@/components/runs/run-status'
 import {
@@ -17,28 +16,10 @@ import { WorkflowWorkspace } from '@/components/workflow/workflow-workspace'
 import { createApiClient } from '@/lib/api-client'
 import { connectRunEventStream, type RunEventSubscription } from '@/lib/event-stream'
 import { latestExecutions, nodeStatusesFrom, runStatusFrom } from '@/lib/live-run'
-import { formatDuration, formatTimestamp } from '@/lib/run-format'
+import { formatTimestamp } from '@/lib/run-format'
 import { displayRunId } from '@/lib/run-id'
 
 const defaultClient = createApiClient()
-
-function ElapsedTime({
-  completedAt,
-  running,
-  startedAt,
-}: Readonly<{ completedAt: string | null; running: boolean; startedAt: string | null }>) {
-  const [now, setNow] = useState(() => Date.now())
-
-  useEffect(() => {
-    if (!running) return
-    const timer = window.setInterval(() => setNow(Date.now()), 1_000)
-    return () => window.clearInterval(timer)
-  }, [running])
-
-  if (startedAt === null) return <>Not started</>
-  const end = completedAt === null ? now : Date.parse(completedAt)
-  return <>{formatDuration(Math.max(0, end - Date.parse(startedAt)))}</>
-}
 
 export interface LiveRunProps {
   readonly client?: LiveRunClient
@@ -97,29 +78,34 @@ export function LiveRun({
 
   const graph = (
     <div className="relative h-full min-h-0 min-w-0">
-      <p
-        aria-label="Run timing"
-        className="pointer-events-none absolute top-3 left-3 z-10 text-xs/4 text-muted-foreground tabular-nums"
-      >
-        Started {formatTimestamp(detail.run.startedAt)} · Took{' '}
-        <ElapsedTime
-          completedAt={detail.run.completedAt}
-          running={status === 'RUNNING'}
-          startedAt={detail.run.startedAt}
-        />
-      </p>
-      <div aria-label="Run status" className="absolute top-3 right-3 z-10 flex items-center gap-2">
-        <RunStatusBadge status={status} />
-        {cancellable || stream.cancelling ? (
-          <Button
-            disabled={stream.cancelling}
-            onClick={() => void stream.cancel(cancellable)}
-            size="sm"
-            variant="destructive"
-          >
-            {stream.cancelling ? 'Cancelling…' : 'Cancel run'}
-          </Button>
-        ) : null}
+      <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start gap-x-3 gap-y-2">
+        <p
+          aria-label="Run timing"
+          className="max-w-full shrink-0 text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
+        >
+          Started {formatTimestamp(detail.run.startedAt)} · Took{' '}
+          <ElapsedTime
+            completedAt={detail.run.completedAt}
+            running={status === 'RUNNING'}
+            startedAt={detail.run.startedAt}
+          />
+        </p>
+        <div
+          aria-label="Run status"
+          className="pointer-events-auto ml-auto flex shrink-0 items-center gap-2"
+        >
+          <RunStatusBadge status={status} />
+          {cancellable || stream.cancelling ? (
+            <Button
+              disabled={stream.cancelling}
+              onClick={() => void stream.cancel(cancellable)}
+              size="sm"
+              variant="destructive"
+            >
+              {stream.cancelling ? 'Cancelling…' : 'Cancel run'}
+            </Button>
+          ) : null}
+        </div>
       </div>
       <Badge aria-live="polite" className="sr-only">
         {stream.streamStatus}
@@ -148,8 +134,6 @@ export function LiveRun({
       <RunNodeDetailsPanel
         execution={selectedExecution}
         node={selectedNode}
-        repositories={detail.repositories}
-        repositoryWorkspaces={detail.repositoryWorkspaces}
         status={statuses[selectedNode.id] ?? 'PENDING'}
         trace={panel.trace}
         traceError={panel.traceError}
@@ -158,7 +142,7 @@ export function LiveRun({
     )
 
   return (
-    <section className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden p-6">
+    <section className="relative flex h-full min-h-0 w-full flex-col gap-3 overflow-hidden px-6 pb-6">
       {stream.streamError === undefined ? null : (
         <Alert className="shrink-0" variant="destructive">
           <AlertTitle>Live updates delayed</AlertTitle>
