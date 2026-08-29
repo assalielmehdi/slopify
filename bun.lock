@@ -38,7 +38,7 @@
         "typebox": "1.3.7",
       },
     },
-    "packages/execution-runtime": {
+    "src/api": {
       "name": "@slopify/execution-runtime",
       "version": "0.0.0",
       "dependencies": {
@@ -353,7 +353,7 @@
 
     "@slopify/api": ["@slopify/api@workspace:apps/api"],
 
-    "@slopify/execution-runtime": ["@slopify/execution-runtime@workspace:packages/execution-runtime"],
+    "@slopify/execution-runtime": ["@slopify/execution-runtime@workspace:src/api"],
 
     "@slopify/shared": ["@slopify/shared@workspace:src/shared"],
 

@@ -74,7 +74,7 @@ node runner`. Node facts return through the run journal. Message handling is at 
 - `apps/api`: Hono HTTP adapters and the composition root (`src/server.ts`).
 - `src/web`: Next.js UI and API proxy.
 - `packages/workflow-model`: strict workflow and agent schemas with graph rules.
-- `packages/execution-runtime`: use cases, ports, coordinator, worker, persistence,
+- `src/api`: use cases, ports, coordinator, worker, persistence,
   clone provisioning, harness discovery, and node runners.
 - `packages/agent-runtimes`: infrastructure adapters for host harnesses; currently Pi
   CLI inspection/RPC execution and Codex CLI inspection/ephemeral JSONL execution.

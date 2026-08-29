@@ -28,11 +28,14 @@ const workspaceManifestPaths = [
   'apps/api/package.json',
   'src/web/package.json',
   'packages/agent-runtimes/package.json',
-  'packages/execution-runtime/package.json',
+  'src/api/package.json',
   'src/shared/package.json',
 ] as const
 const libraryManifestPaths = workspaceManifestPaths.filter(
-  (path) => path === 'src/shared/package.json' || path.startsWith('packages/'),
+  (path) =>
+    path === 'src/api/package.json' ||
+    path === 'src/shared/package.json' ||
+    path.startsWith('packages/'),
 )
 const libraryPackageNames = [
   '@slopify/agent-runtimes',
@@ -126,6 +129,7 @@ describe('repository toolchain', () => {
         '$TURBO_ROOT$/apps/api/package.json',
         '$TURBO_ROOT$/apps/api/src/server.ts',
         '$TURBO_ROOT$/packages/*/package.json',
+        '$TURBO_ROOT$/src/api/package.json',
         '$TURBO_ROOT$/src/shared/package.json',
       ],
       outputs: [],

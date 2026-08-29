@@ -12,7 +12,7 @@ import {
 } from '@slopify/execution-runtime'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createTestAgentWorkflow } from '../../../packages/execution-runtime/tests/support/runtime-fixture.js'
+import { createTestAgentWorkflow } from '../../../src/api/tests/support/runtime-fixture.js'
 import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []

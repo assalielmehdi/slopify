@@ -58,6 +58,7 @@
         "$TURBO_ROOT$/apps/api/package.json",
         "$TURBO_ROOT$/apps/api/src/server.ts",
         "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/src/api/package.json",
         "$TURBO_ROOT$/src/shared/package.json"
       ],
       "outputs": []
