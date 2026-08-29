@@ -1,6 +1,6 @@
 import { HarnessIdSchema } from '@slopify/shared'
 
-import type { AgentExecutionEvent } from './contract.js'
+import type { AgentExecutionEvent, AgentToolKind } from './contract.js'
 import type { EventRedactor, RedactionStream } from './redaction.js'
 
 const MAX_CONTENT_LENGTH = 1_000_000
@@ -44,6 +44,18 @@ const isToolCallId = (value: unknown): value is string =>
 
 const isToolName = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 128
+
+const canonicalTool = (toolName: string): { readonly kind: AgentToolKind; readonly name: string } => {
+  const normalized = toolName.toLowerCase()
+  if (normalized === 'bash') return { kind: 'COMMAND', name: 'bash' }
+  if (normalized === 'read' || normalized === 'read_file') return { kind: 'READ', name: 'read' }
+  if (normalized === 'write' || normalized === 'write_file') return { kind: 'WRITE', name: 'write' }
+  if (normalized === 'edit' || normalized === 'edit_file') return { kind: 'EDIT', name: 'edit' }
+  if (normalized === 'grep' || normalized === 'find' || normalized === 'search') {
+    return { kind: 'SEARCH', name: normalized }
+  }
+  return { kind: 'OTHER', name: toolName }
+}
 
 const capturedHarnessEvent = (
   event: Record<string, unknown>,
@@ -130,14 +142,18 @@ const derivedSkillEvent = (
   }
 }
 
-const messageEvent = (content: string): readonly NormalizedPiEvent[] => {
+const messageEvent = (messageId: string, content: string): readonly NormalizedPiEvent[] => {
   const bounded = boundedContent(content)
-  return bounded === undefined ? [] : [{ type: 'AGENT_MESSAGE', data: { content: bounded } }]
+  return bounded === undefined
+    ? []
+    : [{ type: 'AGENT_MESSAGE', data: { messageId, content: bounded } }]
 }
 
-const reasoningEvent = (content: string): readonly NormalizedPiEvent[] => {
+const reasoningEvent = (messageId: string, content: string): readonly NormalizedPiEvent[] => {
   const bounded = boundedContent(content)
-  return bounded === undefined ? [] : [{ type: 'AGENT_REASONING', data: { content: bounded } }]
+  return bounded === undefined
+    ? []
+    : [{ type: 'AGENT_REASONING', data: { messageId, content: bounded } }]
 }
 
 export const createPiEventNormalizer = (
@@ -145,15 +161,25 @@ export const createPiEventNormalizer = (
 ): PiEventNormalizer => {
   let assistantText: RedactionStream = options.redactor.createStream()
   let reasoningText: RedactionStream = options.redactor.createStream()
+  let assistantMessageId: string | undefined
+  let assistantMessageNumber = 0
+  let reasoningMessageId: string | undefined
+  let reasoningMessageNumber = 0
   const toolStreams = new Map<string, { observedContent: string; redaction: RedactionStream }>()
   const resetAssistantText = (): void => {
     assistantText.finish()
     assistantText = options.redactor.createStream()
+    assistantMessageId = undefined
   }
   const resetReasoningText = (): void => {
     reasoningText.finish()
     reasoningText = options.redactor.createStream()
+    reasoningMessageId = undefined
   }
+  const currentAssistantMessageId = (): string =>
+    (assistantMessageId ??= `message-${++assistantMessageNumber}`)
+  const currentReasoningMessageId = (): string =>
+    (reasoningMessageId ??= `reasoning-${++reasoningMessageNumber}`)
 
   return {
     normalize(event) {
@@ -166,7 +192,13 @@ export const createPiEventNormalizer = (
             if (!isRecord(event.assistantMessageEvent)) return [captured]
             const assistantEvent = event.assistantMessageEvent
             if (assistantEvent.type === 'text_delta' && typeof assistantEvent.delta === 'string') {
-              return [captured, ...messageEvent(assistantText.push(assistantEvent.delta))]
+              return [
+                captured,
+                ...messageEvent(
+                  currentAssistantMessageId(),
+                  assistantText.push(assistantEvent.delta),
+                ),
+              ]
             }
             switch (assistantEvent.type) {
               case 'text_end':
@@ -177,7 +209,13 @@ export const createPiEventNormalizer = (
                 return [captured]
               case 'thinking_delta':
                 return typeof assistantEvent.delta === 'string'
-                  ? [captured, ...reasoningEvent(reasoningText.push(assistantEvent.delta))]
+                  ? [
+                      captured,
+                      ...reasoningEvent(
+                        currentReasoningMessageId(),
+                        reasoningText.push(assistantEvent.delta),
+                      ),
+                    ]
                   : [captured]
               case 'thinking_end':
                 resetReasoningText()
@@ -202,13 +240,15 @@ export const createPiEventNormalizer = (
               redaction: options.redactor.createStream(),
             })
             const skill = derivedSkillEvent(event.toolCallId, event.toolName, event.args)
+            const tool = canonicalTool(event.toolName)
             return [
               captured,
               {
                 type: 'AGENT_TOOL_STARTED',
                 data: {
                   toolCallId: event.toolCallId,
-                  toolName: event.toolName,
+                  toolKind: tool.kind,
+                  toolName: tool.name,
                   input: visibleToolInput(event.args, options.redactor),
                 },
               },
@@ -247,6 +287,7 @@ export const createPiEventNormalizer = (
             toolStreams.get(event.toolCallId)?.redaction.finish()
             toolStreams.delete(event.toolCallId)
             const isError = event.isError === true
+            const tool = canonicalTool(event.toolName)
             const content =
               boundedContent(options.redactor.redact(visibleToolContent(event.result))) ??
               (isError ? 'Tool failed' : 'Tool completed')
@@ -256,7 +297,8 @@ export const createPiEventNormalizer = (
                 type: 'AGENT_TOOL_COMPLETED',
                 data: {
                   toolCallId: event.toolCallId,
-                  toolName: event.toolName,
+                  toolKind: tool.kind,
+                  toolName: tool.name,
                   status: isError ? 'failed' : 'succeeded',
                   content,
                 },

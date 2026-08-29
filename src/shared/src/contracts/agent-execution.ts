@@ -141,6 +141,18 @@ const eventBase = {
 
 const toolCallId = z.string().min(1).max(512)
 const toolName = z.string().min(1).max(128)
+const messageId = z.string().min(1).max(512)
+
+export const AgentToolKindSchema = z.enum([
+  'COMMAND',
+  'READ',
+  'WRITE',
+  'EDIT',
+  'SEARCH',
+  'WEB',
+  'MCP',
+  'OTHER',
+])
 
 const AgentStartedEventSchema = z.strictObject({
   ...eventBase,
@@ -157,13 +169,13 @@ const AgentSessionIdentifiedEventSchema = z.strictObject({
 const AgentMessageEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_MESSAGE'),
-  data: z.strictObject({ content }),
+  data: z.strictObject({ messageId, content }),
 })
 
 const AgentReasoningEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_REASONING'),
-  data: z.strictObject({ content }),
+  data: z.strictObject({ messageId, content }),
 })
 
 const HarnessEventSchema = z.strictObject({
@@ -177,6 +189,7 @@ const AgentToolStartedEventSchema = z.strictObject({
   type: z.literal('AGENT_TOOL_STARTED'),
   data: z.strictObject({
     toolCallId,
+    toolKind: AgentToolKindSchema,
     toolName,
     input: z.json().optional(),
   }),
@@ -193,6 +206,7 @@ const AgentToolCompletedEventSchema = z.strictObject({
   type: z.literal('AGENT_TOOL_COMPLETED'),
   data: z.strictObject({
     toolCallId,
+    toolKind: AgentToolKindSchema,
     toolName,
     status: z.enum(['succeeded', 'failed']),
     content,
@@ -263,6 +277,7 @@ export type AgentWorkspace = z.infer<typeof AgentWorkspaceSchema>
 export type AgentExecutionInput = z.infer<typeof AgentExecutionInputSchema>
 export type AgentNodeResult = z.infer<typeof AgentNodeResultSchema>
 export type AgentExecutionEvent = z.infer<typeof AgentExecutionEventSchema>
+export type AgentToolKind = z.infer<typeof AgentToolKindSchema>
 export type AgentCancelResult = z.infer<typeof AgentCancelResultSchema>
 
 export interface AgentExecutor {

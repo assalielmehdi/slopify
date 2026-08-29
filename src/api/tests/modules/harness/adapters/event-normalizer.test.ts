@@ -41,9 +41,15 @@ describe('Pi event normalizer', () => {
     })
 
     expect(applicationEvents([...first, ...thinking, ...second, ...ended])).toEqual([
-      { type: 'AGENT_MESSAGE', data: { content: 'Visible [REDACTED]. ' } },
-      { type: 'AGENT_REASONING', data: { content: 'Hidden reasoning with [REDACTED]' } },
-      { type: 'AGENT_MESSAGE', data: { content: 'Done.' } },
+      {
+        type: 'AGENT_MESSAGE',
+        data: { messageId: 'message-1', content: 'Visible [REDACTED]. ' },
+      },
+      {
+        type: 'AGENT_REASONING',
+        data: { messageId: 'reasoning-1', content: 'Hidden reasoning with [REDACTED]' },
+      },
+      { type: 'AGENT_MESSAGE', data: { messageId: 'message-1', content: 'Done.' } },
     ])
   })
 
@@ -84,6 +90,7 @@ describe('Pi event normalizer', () => {
         type: 'AGENT_TOOL_STARTED',
         data: {
           toolCallId: 'tool-01',
+          toolKind: 'COMMAND',
           toolName: 'bash',
           input: { command: 'echo [REDACTED]' },
         },
@@ -96,6 +103,7 @@ describe('Pi event normalizer', () => {
         type: 'AGENT_TOOL_COMPLETED',
         data: {
           toolCallId: 'tool-01',
+          toolKind: 'COMMAND',
           toolName: 'bash',
           status: 'succeeded',
           content: 'completed with [REDACTED]',
@@ -124,6 +132,7 @@ describe('Pi event normalizer', () => {
         type: 'AGENT_TOOL_COMPLETED',
         data: {
           toolCallId: 'tool-02',
+          toolKind: 'READ',
           toolName: 'read',
           status: 'failed',
           content: 'Tool failed',
@@ -229,6 +238,7 @@ describe('Pi event normalizer', () => {
         type: 'AGENT_TOOL_STARTED',
         data: {
           toolCallId: 'call_JkP9a|fc_72ZQ',
+          toolKind: 'COMMAND',
           toolName: 'bash',
           input: { command: 'pwd' },
         },

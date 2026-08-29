@@ -212,7 +212,18 @@ const createExecutor = (
 
 describe('Codex CLI executor', () => {
   it('runs an ephemeral JSONL session in YOLO mode with structured completion', async () => {
-    const process = successfulProcess(result, [{ type: 'future.event', value: 1 }])
+    const process = successfulProcess(result, [
+      {
+        type: 'item.started',
+        item: {
+          id: 'skill-command-01',
+          type: 'command_execution',
+          command: "sed -n '1,120p' /Users/developer/.agents/skills/browser-testing/SKILL.md",
+          status: 'in_progress',
+        },
+      },
+      { type: 'future.event', value: 1 },
+    ])
     const { executor, getSpawnInput, getCompletionSchema } = createExecutor(process, {
       now: () => Date.parse('2026-08-26T12:00:00Z'),
     })
@@ -276,10 +287,21 @@ describe('Codex CLI executor', () => {
         type: 'AGENT_TOOL_COMPLETED',
         data: expect.objectContaining({
           toolCallId: 'command-01',
-          toolName: 'command_execution',
+          toolKind: 'COMMAND',
+          toolName: 'bash',
           status: 'succeeded',
           content: '3 tests passed',
         }),
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'AGENT_SKILL_INVOKED',
+        data: {
+          skillName: 'browser-testing',
+          evidence: 'DERIVED',
+          sourceToolCallId: 'skill-command-01',
+        },
       }),
     )
     expect(events.at(-1)).toMatchObject({

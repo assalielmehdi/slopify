@@ -209,8 +209,16 @@ describe('agent execution event contract', () => {
         type: 'AGENT_SESSION_IDENTIFIED',
         data: { sessionId: 'session-01' },
       },
-      { ...eventBase, type: 'AGENT_MESSAGE', data: { content: 'Visible assistant text.' } },
-      { ...eventBase, type: 'AGENT_REASONING', data: { content: 'Visible reasoning.' } },
+      {
+        ...eventBase,
+        type: 'AGENT_MESSAGE',
+        data: { messageId: 'message-01', content: 'Visible assistant text.' },
+      },
+      {
+        ...eventBase,
+        type: 'AGENT_REASONING',
+        data: { messageId: 'reasoning-01', content: 'Visible reasoning.' },
+      },
       {
         ...eventBase,
         type: 'HARNESS_EVENT',
@@ -219,7 +227,11 @@ describe('agent execution event contract', () => {
       {
         ...eventBase,
         type: 'AGENT_TOOL_STARTED',
-        data: { toolCallId: 'call_JkP9a|fc_72ZQ', toolName: 'read' },
+        data: {
+          toolCallId: 'call_JkP9a|fc_72ZQ',
+          toolKind: 'READ',
+          toolName: 'read',
+        },
       },
       {
         ...eventBase,
@@ -231,6 +243,7 @@ describe('agent execution event contract', () => {
         type: 'AGENT_TOOL_COMPLETED',
         data: {
           toolCallId: 'tool-call-01',
+          toolKind: 'READ',
           toolName: 'read',
           status: 'succeeded',
           content: 'Read 20 lines.',
@@ -289,7 +302,25 @@ describe('agent execution event contract', () => {
       AgentExecutionEventSchema.safeParse({
         ...eventBase,
         type: 'AGENT_MESSAGE',
-        data: { content: 'Visible text', thinking: 'hidden chain of thought' },
+        data: {
+          messageId: 'message-01',
+          content: 'Visible text',
+          thinking: 'hidden chain of thought',
+        },
+      }).success,
+    ).toBe(false)
+    expect(
+      AgentExecutionEventSchema.safeParse({
+        ...eventBase,
+        type: 'AGENT_MESSAGE',
+        data: { content: 'Visible text' },
+      }).success,
+    ).toBe(false)
+    expect(
+      AgentExecutionEventSchema.safeParse({
+        ...eventBase,
+        type: 'AGENT_TOOL_STARTED',
+        data: { toolCallId: 'tool-01', toolName: 'read' },
       }).success,
     ).toBe(false)
   })

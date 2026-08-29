@@ -95,7 +95,7 @@ describe('filesystem agent trace store', () => {
       nodeId: 'identify-agent',
       timestamp: '2026-08-22T10:00:01.000Z',
       type: 'AGENT_REASONING',
-      data: { content: 'I should inspect the files.' },
+      data: { messageId: 'reasoning-01', content: 'I should inspect the files.' },
     })
     await store.append(header, {
       executionId: 'node-execution-01',
@@ -103,7 +103,12 @@ describe('filesystem agent trace store', () => {
       nodeId: 'identify-agent',
       timestamp: '2026-08-22T10:00:02.000Z',
       type: 'AGENT_TOOL_STARTED',
-      data: { toolCallId: 'tool-01', toolName: 'read', input: { path: '/workspace/README.md' } },
+      data: {
+        toolCallId: 'tool-01',
+        toolKind: 'READ',
+        toolName: 'read',
+        input: { path: '/workspace/README.md' },
+      },
     })
     const trace = await store.read({
       runId: 'run-01',
@@ -237,7 +242,7 @@ describe('filesystem agent trace store', () => {
         nodeId: 'identify-agent',
         timestamp: '2026-08-22T10:00:02.000Z',
         type: 'AGENT_MESSAGE',
-        data: { content: 'Wrong execution.' },
+        data: { messageId: 'message-01', content: 'Wrong execution.' },
       }),
     ).rejects.toMatchObject({ code: 'TRACE_REQUEST_INVALID' })
 
@@ -248,7 +253,7 @@ describe('filesystem agent trace store', () => {
       nodeId: 'identify-agent',
       timestamp: '2026-08-22T10:00:03.000Z',
       type: 'AGENT_MESSAGE',
-      data: { content: 'Recovered after a partial write.' },
+      data: { messageId: 'message-01', content: 'Recovered after a partial write.' },
     })
     await expect(
       store.read({
@@ -261,7 +266,10 @@ describe('filesystem agent trace store', () => {
     ).resolves.toMatchObject({
       events: [
         { type: 'AGENT_SKILL_INVOKED' },
-        { type: 'AGENT_MESSAGE', data: { content: 'Recovered after a partial write.' } },
+        {
+          type: 'AGENT_MESSAGE',
+          data: { messageId: 'message-01', content: 'Recovered after a partial write.' },
+        },
       ],
     })
     await expect(

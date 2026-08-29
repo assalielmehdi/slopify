@@ -1,6 +1,6 @@
 import { HarnessIdSchema } from '@slopify/shared'
 
-import type { AgentExecutionEvent } from './contract.js'
+import type { AgentExecutionEvent, AgentToolKind } from './contract.js'
 import type { EventRedactor } from './redaction.js'
 
 const MAX_CONTENT_LENGTH = 1_000_000
@@ -16,6 +16,7 @@ type ObservableAgentEvent = Extract<
       | 'HARNESS_EVENT'
       | 'AGENT_TOOL_STARTED'
       | 'AGENT_TOOL_COMPLETED'
+      | 'AGENT_SKILL_INVOKED'
   }
 >
 
@@ -91,16 +92,42 @@ const capturedHarnessEvent = (
 const toolCallId = (item: Record<string, unknown>): string | undefined =>
   typeof item.id === 'string' && item.id.length > 0 && item.id.length <= 512 ? item.id : undefined
 
-const toolName = (item: Record<string, unknown>): string | undefined => {
+const tool = (
+  item: Record<string, unknown>,
+): { readonly kind: AgentToolKind; readonly name: string } | undefined => {
   switch (item.type) {
     case 'command_execution':
+      return { kind: 'COMMAND', name: 'bash' }
     case 'file_change':
-    case 'mcp_tool_call':
+      return { kind: 'EDIT', name: 'file_change' }
+    case 'mcp_tool_call': {
+      const server = typeof item.server === 'string' ? item.server : undefined
+      const name = typeof item.tool === 'string' ? item.tool : undefined
+      return {
+        kind: 'MCP',
+        name: server === undefined || name === undefined ? 'mcp_tool_call' : `${server}.${name}`,
+      }
+    }
     case 'web_search':
-      return item.type
+      return { kind: 'WEB', name: 'web_search' }
     default:
       return undefined
   }
+}
+
+const derivedSkills = (item: Record<string, unknown>, toolCallId: string): NormalizedCodexEvent[] => {
+  if (item.type !== 'command_execution' || typeof item.command !== 'string') return []
+  const names = new Set<string>()
+  for (const match of item.command.matchAll(
+    /(?:^|[\s'"\\/])skills[\\/]([a-z0-9]+(?:[._-][a-z0-9]+)*)[\\/]SKILL\.md\b/gu,
+  )) {
+    const skillName = match[1]
+    if (skillName !== undefined && skillName.length <= 128) names.add(skillName)
+  }
+  return [...names].map((skillName) => ({
+    type: 'AGENT_SKILL_INVOKED' as const,
+    data: { skillName, evidence: 'DERIVED' as const, sourceToolCallId: toolCallId },
+  }))
 }
 
 const toolInput = (item: Record<string, unknown>, redactor: EventRedactor): JsonValue => {
@@ -159,30 +186,38 @@ export const createCodexEventNormalizer = (options: {
 
       const item = event.item
       if (event.type === 'item.completed' && item.type === 'agent_message') {
-        if (typeof item.text !== 'string') return [captured]
+        const messageId = toolCallId(item)
+        if (messageId === undefined || typeof item.text !== 'string') return [captured]
         const content = boundedContent(options.redactor.redact(item.text))
         return content === undefined
           ? [captured]
-          : [captured, { type: 'AGENT_MESSAGE', data: { content } }]
+          : [captured, { type: 'AGENT_MESSAGE', data: { messageId, content } }]
       }
       if (event.type === 'item.completed' && item.type === 'reasoning') {
-        if (typeof item.text !== 'string') return [captured]
+        const messageId = toolCallId(item)
+        if (messageId === undefined || typeof item.text !== 'string') return [captured]
         const content = boundedContent(options.redactor.redact(item.text))
         return content === undefined
           ? [captured]
-          : [captured, { type: 'AGENT_REASONING', data: { content } }]
+          : [captured, { type: 'AGENT_REASONING', data: { messageId, content } }]
       }
 
       const id = toolCallId(item)
-      const name = toolName(item)
-      if (id === undefined || name === undefined) return [captured]
+      const normalizedTool = tool(item)
+      if (id === undefined || normalizedTool === undefined) return [captured]
       if (event.type === 'item.started') {
         return [
           captured,
           {
             type: 'AGENT_TOOL_STARTED',
-            data: { toolCallId: id, toolName: name, input: toolInput(item, options.redactor) },
+            data: {
+              toolCallId: id,
+              toolKind: normalizedTool.kind,
+              toolName: normalizedTool.name,
+              input: toolInput(item, options.redactor),
+            },
           },
+          ...derivedSkills(item, id),
         ]
       }
       return [
@@ -191,7 +226,8 @@ export const createCodexEventNormalizer = (options: {
           type: 'AGENT_TOOL_COMPLETED',
           data: {
             toolCallId: id,
-            toolName: name,
+            toolKind: normalizedTool.kind,
+            toolName: normalizedTool.name,
             status: item.status === 'failed' ? 'failed' : 'succeeded',
             content: toolContent(item, options.redactor),
           },
