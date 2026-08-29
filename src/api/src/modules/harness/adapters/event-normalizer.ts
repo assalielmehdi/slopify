@@ -45,7 +45,9 @@ const isToolCallId = (value: unknown): value is string =>
 const isToolName = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 128
 
-const canonicalTool = (toolName: string): { readonly kind: AgentToolKind; readonly name: string } => {
+const canonicalTool = (
+  toolName: string,
+): { readonly kind: AgentToolKind; readonly name: string } => {
   const normalized = toolName.toLowerCase()
   if (normalized === 'bash') return { kind: 'COMMAND', name: 'bash' }
   if (normalized === 'read' || normalized === 'read_file') return { kind: 'READ', name: 'read' }

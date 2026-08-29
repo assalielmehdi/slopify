@@ -133,8 +133,6 @@ describe('filesystem agent trace event feed', () => {
           attemptId: 'attempt-01',
         }),
       ),
-    ).rejects.toEqual(
-      new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found'),
-    )
+    ).rejects.toEqual(new AgentTraceStoreError('TRACE_NOT_FOUND', 'Agent trace was not found'))
   })
 })

@@ -115,7 +115,10 @@ const tool = (
   }
 }
 
-const derivedSkills = (item: Record<string, unknown>, toolCallId: string): NormalizedCodexEvent[] => {
+const derivedSkills = (
+  item: Record<string, unknown>,
+  toolCallId: string,
+): NormalizedCodexEvent[] => {
   if (item.type !== 'command_execution' || typeof item.command !== 'string') return []
   const names = new Set<string>()
   for (const match of item.command.matchAll(

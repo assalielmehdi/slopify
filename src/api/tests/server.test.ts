@@ -180,10 +180,7 @@ describe('API server configuration', () => {
     const home = mkdtempSync(join(tmpdir(), 'slopify-configured-filesystem-'))
     directories.push(home)
     let fetchHandler:
-      | ((
-          request: Request,
-          server: Bun.Server<BunWebSocketData>,
-        ) => Response | Promise<Response>)
+      | ((request: Request, server: Bun.Server<BunWebSocketData>) => Response | Promise<Response>)
       | undefined
     const stop = vi.fn(async () => undefined)
     const serve = vi.fn((options) => {

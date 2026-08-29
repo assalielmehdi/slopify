@@ -1,7 +1,4 @@
-import {
-  AgentTraceStoreError,
-  type FilesystemAgentTraceEventFeed,
-} from '../../../index.js'
+import { AgentTraceStoreError, type FilesystemAgentTraceEventFeed } from '../../../index.js'
 import type { Hono } from 'hono'
 import { upgradeWebSocket } from 'hono/bun'
 
