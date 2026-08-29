@@ -233,6 +233,64 @@ describe('Codex CLI executor', () => {
           status: 'in_progress',
         },
       },
+      {
+        type: 'item.started',
+        item: {
+          id: 'file-change-01',
+          type: 'file_change',
+          changes: [{ path: 'src/app.ts', kind: 'update' }],
+          status: 'in_progress',
+        },
+      },
+      {
+        type: 'item.completed',
+        item: {
+          id: 'file-change-01',
+          type: 'file_change',
+          changes: [{ path: 'src/app.ts', kind: 'update' }],
+          status: 'completed',
+        },
+      },
+      {
+        type: 'item.started',
+        item: {
+          id: 'mcp-01',
+          type: 'mcp_tool_call',
+          server: 'figma',
+          tool: 'inspect',
+          arguments: { nodeId: '1:2' },
+          status: 'in_progress',
+        },
+      },
+      {
+        type: 'item.completed',
+        item: {
+          id: 'mcp-01',
+          type: 'mcp_tool_call',
+          server: 'figma',
+          tool: 'inspect',
+          result: 'Inspected node 1:2',
+          status: 'completed',
+        },
+      },
+      {
+        type: 'item.started',
+        item: {
+          id: 'web-search-01',
+          type: 'web_search',
+          query: 'Codex CLI JSONL format',
+          status: 'in_progress',
+        },
+      },
+      {
+        type: 'item.completed',
+        item: {
+          id: 'web-search-01',
+          type: 'web_search',
+          query: 'Codex CLI JSONL format',
+          status: 'completed',
+        },
+      },
       { type: 'future.event', value: 1 },
     ])
     const { executor, getSpawnInput, getCompletionSchema } = createExecutor(process, {
@@ -294,6 +352,12 @@ describe('Codex CLI executor', () => {
           content: 'I am checking the repository before completing the node.',
         },
       }),
+      expect.objectContaining({
+        data: {
+          messageId: 'message-01',
+          content: 'Prepared a bounded plan.',
+        },
+      }),
     ])
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -321,6 +385,39 @@ describe('Codex CLI executor', () => {
           evidence: 'DERIVED',
           sourceToolCallId: 'skill-command-01',
         },
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'AGENT_TOOL_STARTED',
+        data: expect.objectContaining({
+          toolCallId: 'file-change-01',
+          toolKind: 'EDIT',
+          toolName: 'file_change',
+          input: { changes: [{ path: 'src/app.ts', kind: 'update' }] },
+        }),
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'AGENT_TOOL_COMPLETED',
+        data: expect.objectContaining({
+          toolCallId: 'mcp-01',
+          toolKind: 'MCP',
+          toolName: 'figma.inspect',
+          content: 'Inspected node 1:2',
+        }),
+      }),
+    )
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'AGENT_TOOL_STARTED',
+        data: expect.objectContaining({
+          toolCallId: 'web-search-01',
+          toolKind: 'WEB',
+          toolName: 'web_search',
+          input: { query: 'Codex CLI JSONL format' },
+        }),
       }),
     )
     expect(events.at(-1)).toMatchObject({
