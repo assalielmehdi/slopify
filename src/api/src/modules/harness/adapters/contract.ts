@@ -6,6 +6,7 @@ export {
   AgentNodeResultSchema,
   AgentToolKindSchema,
   AgentWorkspaceSchema,
+  LiveEventEnvelopeSchema,
   type AgentCancelResult,
   type AgentExecutionEvent,
   type AgentExecutionId,
@@ -14,4 +15,5 @@ export {
   type AgentNodeResult,
   type AgentToolKind,
   type AgentWorkspace,
+  type LiveEventEnvelope,
 } from '@slopify/shared'

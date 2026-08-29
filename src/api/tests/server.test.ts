@@ -4,8 +4,15 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { resolveSlopifyPaths, type HarnessAdapter, type ResourceEventFeed } from '../src/index.js'
-import type { AgentExecutor } from '@slopify/shared'
+import {
+  resolveSlopifyPaths,
+  type FilesystemAgentTraceEventFeed,
+  type FilesystemRunEventFeed,
+  type HarnessAdapter,
+  type ResourceEventFeed,
+} from '../src/index.js'
+import { LiveEventEnvelopeSchema, type AgentExecutor } from '@slopify/shared'
+import type { BunWebSocketData } from 'hono/bun'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,
@@ -87,13 +94,95 @@ describe('API server configuration', () => {
     expect(stop).toHaveBeenCalledOnce()
   })
 
+  it('upgrades run and trace live routes and streams typed event envelopes', async () => {
+    const runEvent = {
+      schemaVersion: 1,
+      eventId: 'run-started',
+      runId: 'run-01',
+      sequence: 1,
+      timestamp: '2026-08-29T10:00:00.000Z',
+      type: 'RUN_STARTED',
+      data: {},
+    } as const
+    const traceEvent = {
+      sequence: 1,
+      timestamp: '2026-08-29T10:00:01.000Z',
+      type: 'AGENT_REASONING',
+      data: { messageId: 'reasoning-01', content: 'Inspecting the repository.' },
+    } as const
+    const eventFeed = {
+      subscribe: vi.fn(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield runEvent
+        },
+      })),
+    } as unknown as FilesystemRunEventFeed
+    const traceEvents = {
+      subscribe: vi.fn(() => ({
+        async *[Symbol.asyncIterator]() {
+          yield traceEvent
+        },
+      })),
+    } as unknown as FilesystemAgentTraceEventFeed
+    const server = startApiServer({
+      app: createApiApp({ eventFeed, traceEvents }),
+      configuration: {
+        hostname: '127.0.0.1',
+        port: 0,
+        shutdownGracePeriodMs: 10_000,
+      },
+    })
+    const receive = (path: string) =>
+      new Promise<unknown>((resolve, reject) => {
+        const socket = new WebSocket(`ws://${server.hostname}:${server.port}${path}`)
+        const timeout = setTimeout(() => {
+          socket.close()
+          reject(new Error('WebSocket event timed out'))
+        }, 2_000)
+        socket.addEventListener('message', (event) => {
+          clearTimeout(timeout)
+          socket.close()
+          resolve(LiveEventEnvelopeSchema.parse(JSON.parse(String(event.data))))
+        })
+        socket.addEventListener('error', () => {
+          clearTimeout(timeout)
+          reject(new Error('WebSocket connection failed'))
+        })
+      })
+
+    try {
+      await expect(receive('/api/runs/run-01/live?afterSequence=0')).resolves.toEqual({
+        type: 'EVENT',
+        event: runEvent,
+      })
+      await expect(
+        receive(
+          '/api/runs/run-01/node-executions/node-execution-01/trace/live?attemptId=attempt-01&afterSequence=0',
+        ),
+      ).resolves.toEqual({ type: 'EVENT', event: traceEvent })
+      expect(eventFeed.subscribe).toHaveBeenCalledWith(
+        expect.objectContaining({ runId: 'run-01', afterSequence: 0 }),
+      )
+      expect(traceEvents.subscribe).toHaveBeenCalledWith(
+        expect.objectContaining({
+          runId: 'run-01',
+          nodeExecutionId: 'node-execution-01',
+          attemptId: 'attempt-01',
+          afterSequence: 0,
+        }),
+      )
+    } finally {
+      await server.stop(true)
+    }
+  })
+
   it('starts the configured application exclusively from filesystem state', async () => {
     const home = mkdtempSync(join(tmpdir(), 'slopify-configured-filesystem-'))
     directories.push(home)
     let fetchHandler:
       | ((
           request: Request,
-          server: Pick<Bun.Server<unknown>, 'timeout'>,
+          server: Bun.Server<BunWebSocketData>,
         ) => Response | Promise<Response>)
       | undefined
     const stop = vi.fn(async () => undefined)
@@ -114,7 +203,7 @@ describe('API server configuration', () => {
     expect(fetchHandler).toBeDefined()
     const response = await fetchHandler?.(new Request('http://localhost/healthz'), {
       timeout: vi.fn(),
-    } as unknown as Pick<Bun.Server<unknown>, 'timeout'>)
+    } as unknown as Bun.Server<BunWebSocketData>)
     expect(response?.status).toBe(200)
     expect(
       readdirSync(home, { recursive: true }).some((path) => String(path).endsWith('.db')),

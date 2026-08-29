@@ -211,6 +211,11 @@ export {
   type RunAgentTraceStore,
 } from './modules/run/traces/filesystem-agent-trace-store.js'
 export {
+  createFilesystemAgentTraceEventFeed,
+  type FilesystemAgentTraceEventFeed,
+  type SubscribeToAgentTraceEventsInput,
+} from './modules/run/services/agent-trace-event-feed.js'
+export {
   createAgentNodeRunner,
   type AgentNodeRunRecord,
 } from './modules/run/orchestration/agent-node-runner.js'

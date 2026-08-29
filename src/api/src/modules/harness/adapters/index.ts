@@ -4,14 +4,18 @@ export {
   AgentExecutionIdSchema,
   AgentExecutionInputSchema,
   AgentNodeResultSchema,
+  AgentToolKindSchema,
   AgentWorkspaceSchema,
+  LiveEventEnvelopeSchema,
   type AgentCancelResult,
   type AgentExecutionEvent,
   type AgentExecutionId,
   type AgentExecutionInput,
   type AgentExecutor,
   type AgentNodeResult,
+  type AgentToolKind,
   type AgentWorkspace,
+  type LiveEventEnvelope,
 } from './contract.js'
 export {
   createCodexCliAgentExecutor,
