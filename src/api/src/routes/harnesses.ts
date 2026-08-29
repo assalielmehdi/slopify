@@ -1,5 +1,5 @@
 import { HarnessCatalogResponseSchema } from '@slopify/shared'
-import type { HarnessCatalog } from '@slopify/execution-runtime'
+import type { HarnessCatalog } from '../index.js'
 import type { Hono } from 'hono'
 
 export const registerHarnessRoutes = (app: Hono, harnesses: HarnessCatalog): void => {

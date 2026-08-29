@@ -4,7 +4,7 @@ import {
   type WorkflowDefinitionCatalogEntry,
   type WorkflowDefinitionService,
   type WorkflowSource,
-} from '@slopify/execution-runtime'
+} from '../index.js'
 import type { Context, Hono } from 'hono'
 
 import { ApiApplicationError, parseJsonBody } from '../api-error.js'

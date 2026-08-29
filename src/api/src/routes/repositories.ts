@@ -3,7 +3,7 @@ import {
   RepositoryCatalogResponseSchema,
   RepositorySchema,
 } from '@slopify/shared'
-import type { RepositoryService } from '@slopify/execution-runtime'
+import type { RepositoryService } from '../index.js'
 import type { Hono } from 'hono'
 
 import { parseJsonBody } from '../api-error.js'

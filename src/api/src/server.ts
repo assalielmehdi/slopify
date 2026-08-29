@@ -30,7 +30,7 @@ import {
   type ResourceWatcher,
   type SlopifyPaths,
   type WatchedResource,
-} from '@slopify/execution-runtime'
+} from './index.js'
 import { WorkflowSlugSchema } from '@slopify/shared'
 import type { Hono } from 'hono'
 

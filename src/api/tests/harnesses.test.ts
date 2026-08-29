@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { HarnessCatalog } from '@slopify/execution-runtime'
+import type { HarnessCatalog } from '../src/index.js'
 
 import { createApiApp } from '../src/app.js'
 

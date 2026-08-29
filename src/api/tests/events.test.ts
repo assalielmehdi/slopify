@@ -14,7 +14,7 @@ import {
   resolveSlopifyPaths,
   RunEventFeedError,
   type FilesystemRunEventFeed,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import { createApiApp } from '../src/app.js'
 
 const directories: string[] = []

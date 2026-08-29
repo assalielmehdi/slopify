@@ -5,7 +5,7 @@ import {
   type SettingsRevision,
   type SettingsStore,
   type VersionedSettingsRecord,
-} from '@slopify/execution-runtime'
+} from '../index.js'
 import type { Context, Hono } from 'hono'
 
 import { ApiApplicationError, parseJsonBody } from '../api-error.js'

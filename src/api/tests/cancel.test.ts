@@ -8,7 +8,7 @@ import {
   JournalCoordinatorError,
   type JournalCancellationService,
   type RunProjectionState,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import { createApiApp } from '../src/app.js'
 
 const filesystemProjection: RunProjectionState = {

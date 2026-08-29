@@ -12,7 +12,7 @@ import {
   type FilesystemRunReader,
   type JournalCancellationService,
   type RunAgentTraceStore,
-} from '@slopify/execution-runtime'
+} from '../index.js'
 import type { Context, Hono } from 'hono'
 
 import { ApiApplicationError } from '../api-error.js'

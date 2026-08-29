@@ -1,4 +1,4 @@
-import { RunEventFeedError, type FilesystemRunEventFeed } from '@slopify/execution-runtime'
+import { RunEventFeedError, type FilesystemRunEventFeed } from '../index.js'
 import type { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 

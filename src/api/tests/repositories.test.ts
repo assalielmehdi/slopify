@@ -9,7 +9,7 @@ import {
   createRepositoryService,
   resolveSlopifyPaths,
   type RemoteGitHost,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createTestAgentWorkflow } from '../../../src/api/tests/support/runtime-fixture.js'

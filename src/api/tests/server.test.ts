@@ -4,11 +4,7 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import {
-  resolveSlopifyPaths,
-  type HarnessAdapter,
-  type ResourceEventFeed,
-} from '@slopify/execution-runtime'
+import { resolveSlopifyPaths, type HarnessAdapter, type ResourceEventFeed } from '../src/index.js'
 import type { AgentExecutor } from '@slopify/shared'
 import { createApiApp } from '../src/app.js'
 import {

@@ -17,7 +17,7 @@ import {
   type ResourceEventFeed,
   type SettingsStore,
   type WorkflowDefinitionService,
-} from '@slopify/execution-runtime'
+} from './index.js'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 

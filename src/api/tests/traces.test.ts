@@ -4,7 +4,7 @@ import type {
   FilesystemRunIndex,
   FilesystemRunReader,
   RunAgentTraceStore,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import { describe, expect, it, vi } from 'vitest'
 
 import { createApiApp } from '../src/app.js'

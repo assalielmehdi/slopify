@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ResourceChangeEvent } from '@slopify/shared'
-import { ResourceEventFeedError, type ResourceEventFeed } from '@slopify/execution-runtime'
+import { ResourceEventFeedError, type ResourceEventFeed } from '../src/index.js'
 import { createApiApp } from '../src/app.js'
 
 const events: readonly ResourceChangeEvent[] = [

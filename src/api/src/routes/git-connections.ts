@@ -4,7 +4,7 @@ import {
   GitConnectionSchema,
   GitRepositoryCatalogResponseSchema,
 } from '@slopify/shared'
-import type { GitConnectionService } from '@slopify/execution-runtime'
+import type { GitConnectionService } from '../index.js'
 import type { Hono } from 'hono'
 
 import { parseJsonBody } from '../api-error.js'

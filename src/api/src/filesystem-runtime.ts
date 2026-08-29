@@ -45,7 +45,7 @@ import {
   type SlopifyPaths,
   type WorkflowDefinitionService,
   type WorkflowStore,
-} from '@slopify/execution-runtime'
+} from './index.js'
 import { workflowFileToWorkflow } from '@slopify/shared'
 
 import type { CreateApiAppOptions } from './app.js'

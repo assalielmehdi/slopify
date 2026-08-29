@@ -25,23 +25,15 @@ interface TurboConfiguration {
 
 const repositoryRoot = new URL('../../../', import.meta.url)
 const workspaceManifestPaths = [
-  'apps/api/package.json',
   'src/web/package.json',
   'packages/agent-runtimes/package.json',
   'src/api/package.json',
   'src/shared/package.json',
 ] as const
 const libraryManifestPaths = workspaceManifestPaths.filter(
-  (path) =>
-    path === 'src/api/package.json' ||
-    path === 'src/shared/package.json' ||
-    path.startsWith('packages/'),
+  (path) => path === 'src/shared/package.json' || path.startsWith('packages/'),
 )
-const libraryPackageNames = [
-  '@slopify/agent-runtimes',
-  '@slopify/execution-runtime',
-  '@slopify/shared',
-] as const
+const libraryPackageNames = ['@slopify/agent-runtimes', '@slopify/shared'] as const
 const forbiddenCommand =
   /(?:^|(?:&&|\|\||;)\s*)(?:node|npm|npx|pnpm|yarn|tsx|ts-node|deno|corepack)(?:\s|$)/u
 
@@ -126,10 +118,9 @@ describe('repository toolchain', () => {
         '$TURBO_ROOT$/.bun-version',
         '$TURBO_ROOT$/package.json',
         '$TURBO_ROOT$/turbo.json',
-        '$TURBO_ROOT$/apps/api/package.json',
-        '$TURBO_ROOT$/apps/api/src/server.ts',
         '$TURBO_ROOT$/packages/*/package.json',
         '$TURBO_ROOT$/src/api/package.json',
+        '$TURBO_ROOT$/src/api/src/server.ts',
         '$TURBO_ROOT$/src/shared/package.json',
       ],
       outputs: [],
@@ -161,8 +152,8 @@ describe('repository toolchain', () => {
 
   it('runs the Next.js and Hono lifecycle through Bun', () => {
     const webManifest = readJson<PackageManifest>('src/web/package.json')
-    const apiManifest = readJson<PackageManifest>('apps/api/package.json')
-    const apiServer = readFileSync(new URL('apps/api/src/server.ts', repositoryRoot), 'utf8')
+    const apiManifest = readJson<PackageManifest>('src/api/package.json')
+    const apiServer = readFileSync(new URL('src/api/src/server.ts', repositoryRoot), 'utf8')
 
     expect(webManifest.scripts.clean).toContain("rmSync('.next'")
     expect(webManifest.scripts.build).toMatch(/^bun run clean &&/u)

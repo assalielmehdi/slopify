@@ -8,7 +8,7 @@ import {
   createProcessRunner,
   type FilesystemRunRepositoryResolution,
   type ProcessRunner,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import type { WorkflowFile } from '@slopify/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 

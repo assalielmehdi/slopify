@@ -26,11 +26,6 @@
       "cache": false,
       "persistent": true
     },
-    "@slopify/execution-runtime#dev": {
-      "dependsOn": ["build", "^build"],
-      "cache": false,
-      "persistent": true
-    },
     "@slopify/shared#dev": {
       "dependsOn": ["build", "^build"],
       "cache": false,
@@ -55,10 +50,9 @@
         "$TURBO_ROOT$/.bun-version",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/turbo.json",
-        "$TURBO_ROOT$/apps/api/package.json",
-        "$TURBO_ROOT$/apps/api/src/server.ts",
         "$TURBO_ROOT$/packages/*/package.json",
         "$TURBO_ROOT$/src/api/package.json",
+        "$TURBO_ROOT$/src/api/src/server.ts",
         "$TURBO_ROOT$/src/shared/package.json"
       ],
       "outputs": []

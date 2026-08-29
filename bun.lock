@@ -19,17 +19,6 @@
         "vitest": "4.1.11",
       },
     },
-    "apps/api": {
-      "name": "@slopify/api",
-      "version": "0.0.0",
-      "dependencies": {
-        "@slopify/agent-runtimes": "workspace:*",
-        "@slopify/execution-runtime": "workspace:*",
-        "@slopify/shared": "workspace:*",
-        "hono": "4.13.3",
-        "zod": "4.4.3",
-      },
-    },
     "packages/agent-runtimes": {
       "name": "@slopify/agent-runtimes",
       "version": "0.0.0",
@@ -39,11 +28,13 @@
       },
     },
     "src/api": {
-      "name": "@slopify/execution-runtime",
+      "name": "@slopify/api",
       "version": "0.0.0",
       "dependencies": {
+        "@slopify/agent-runtimes": "workspace:*",
         "@slopify/shared": "workspace:*",
         "execa": "10.0.1",
+        "hono": "4.13.3",
         "zod": "4.4.3",
       },
     },
@@ -351,9 +342,7 @@
 
     "@slopify/agent-runtimes": ["@slopify/agent-runtimes@workspace:packages/agent-runtimes"],
 
-    "@slopify/api": ["@slopify/api@workspace:apps/api"],
-
-    "@slopify/execution-runtime": ["@slopify/execution-runtime@workspace:src/api"],
+    "@slopify/api": ["@slopify/api@workspace:src/api"],
 
     "@slopify/shared": ["@slopify/shared@workspace:src/shared"],
 

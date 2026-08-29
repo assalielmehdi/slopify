@@ -1,9 +1,5 @@
 import { WorkflowIdSchema } from '@slopify/shared'
-import type {
-  HarnessCatalog,
-  RepositoryService,
-  WorkflowDefinitionService,
-} from '@slopify/execution-runtime'
+import type { HarnessCatalog, RepositoryService, WorkflowDefinitionService } from '../index.js'
 import type { Hono } from 'hono'
 
 export const registerWorkflowScreenRoute = (

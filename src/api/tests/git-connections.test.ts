@@ -10,7 +10,7 @@ import {
   type GitConnectionService,
   type GitSecretStore,
   type RemoteGitHost,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { createApiApp } from '../src/app.js'

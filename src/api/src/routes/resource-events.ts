@@ -1,4 +1,4 @@
-import { ResourceEventFeedError, type ResourceEventFeed } from '@slopify/execution-runtime'
+import { ResourceEventFeedError, type ResourceEventFeed } from '../index.js'
 import type { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 

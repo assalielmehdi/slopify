@@ -8,7 +8,7 @@ import {
   createWorkflowDefinitionService,
   resolveSlopifyPaths,
   type RepositoryService,
-} from '@slopify/execution-runtime'
+} from '../src/index.js'
 import { WorkflowFileSchema, type WorkflowFile } from '@slopify/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 

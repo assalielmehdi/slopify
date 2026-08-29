@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createFilesystemSettingsStore, resolveSlopifyPaths } from '@slopify/execution-runtime'
+import { createFilesystemSettingsStore, resolveSlopifyPaths } from '../src/index.js'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createApiApp } from '../src/app.js'
