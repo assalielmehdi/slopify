@@ -3,7 +3,7 @@ import {
   GitConnectionCatalogResponseSchema,
   GitConnectionSchema,
   GitRepositoryCatalogResponseSchema,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 import type { GitConnectionService } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 
-import { NodeIdSchema } from '@slopify/contracts'
-import { WorkflowSchema } from '@slopify/workflow-model'
+import { NodeIdSchema } from '@slopify/shared'
+import { WorkflowSchema } from '@slopify/shared'
 
 import type { RunDomainEvent } from '../runs/run-events.js'
 import type { RunJournal } from '../runs/run-journal.js'

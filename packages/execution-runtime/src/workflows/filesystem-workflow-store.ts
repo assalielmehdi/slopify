@@ -7,7 +7,7 @@ import {
   validateWorkflow,
   workflowFileToWorkflow,
   type WorkflowFile,
-} from '@slopify/workflow-model'
+} from '@slopify/shared'
 
 import {
   createAtomicJsonResourceIO,

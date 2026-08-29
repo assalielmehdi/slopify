@@ -1,4 +1,4 @@
-import { GitConnectionSchema, GitProviderSchema, ThemePreferenceSchema } from '@slopify/contracts'
+import { GitConnectionSchema, GitProviderSchema, ThemePreferenceSchema } from '@slopify/shared'
 import { z } from 'zod'
 
 export const SettingsRevisionSchema = z

@@ -1,4 +1,4 @@
-import { workflowFileToWorkflow, type Workflow } from '@slopify/workflow-model'
+import { workflowFileToWorkflow, type Workflow } from '@slopify/shared'
 
 import {
   createAtomicJsonResourceIO,

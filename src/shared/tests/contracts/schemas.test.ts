@@ -24,7 +24,7 @@ import {
   type HarnessId,
   type RunId,
   type WorkflowId,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 describe('branded identifiers', () => {
   it('keeps workflow, run, and harness identifiers distinct', () => {

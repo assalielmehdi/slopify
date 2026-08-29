@@ -1,6 +1,6 @@
 import { lstat, mkdir, realpath, rm } from 'node:fs/promises'
 import { isAbsolute, join, relative, resolve, sep } from 'node:path'
-import { RunIdSchema, type RepositoryId, type RunId } from '@slopify/contracts'
+import { RunIdSchema, type RepositoryId, type RunId } from '@slopify/shared'
 
 import type { ProcessRunResult, ProcessRunner } from '../processes/process-runner.js'
 import type {

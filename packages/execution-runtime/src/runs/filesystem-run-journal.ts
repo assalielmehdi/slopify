@@ -1,4 +1,4 @@
-import { RunIdSchema } from '@slopify/contracts'
+import { RunIdSchema } from '@slopify/shared'
 import { isDeepStrictEqual } from 'node:util'
 import type { z } from 'zod'
 

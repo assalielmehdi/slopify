@@ -1,7 +1,7 @@
 'use client'
 
-import type { Repository, RunStatus } from '@slopify/contracts'
-import type { Workflow } from '@slopify/workflow-model'
+import type { Repository, RunStatus } from '@slopify/shared'
+import type { Workflow } from '@slopify/shared'
 import {
   ActivityIcon,
   ArrowLeftIcon,

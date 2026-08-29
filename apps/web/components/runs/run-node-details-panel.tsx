@@ -1,5 +1,5 @@
-import type { AgentTrace, NodeExecutionStatus } from '@slopify/contracts'
-import type { AgentNode } from '@slopify/workflow-model'
+import type { AgentTrace, NodeExecutionStatus } from '@slopify/shared'
+import type { AgentNode } from '@slopify/shared'
 
 import { ElapsedTime } from '@/components/runs/elapsed-time'
 import { RunNodePanel } from '@/components/runs/run-node-panel'

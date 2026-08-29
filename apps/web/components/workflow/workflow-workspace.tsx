@@ -1,6 +1,6 @@
 import type { CSSProperties, ReactNode } from 'react'
 
-import type { Workflow } from '@slopify/workflow-model'
+import type { Workflow } from '@slopify/shared'
 
 import { workflowGraphPaneWidth } from '@/lib/workflow-graph-layout'
 

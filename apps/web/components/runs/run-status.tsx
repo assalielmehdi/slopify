@@ -1,4 +1,4 @@
-import type { NodeExecutionStatus, RunStatus } from '@slopify/contracts'
+import type { NodeExecutionStatus, RunStatus } from '@slopify/shared'
 import type { ComponentProps } from 'react'
 
 import { Badge } from '@/components/ui/badge'

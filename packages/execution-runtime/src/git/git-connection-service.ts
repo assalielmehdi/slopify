@@ -5,7 +5,7 @@ import {
   type GitConnection,
   type GitProvider,
   type GitRepository,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 
 import type { GitConnectionRepository } from './git-connection-repository.js'
 import type { GitSecretStore } from './git-secret-store.js'

@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { RepositorySchema, RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
-import { createWorkflowDraft } from '@slopify/workflow-model'
+import { RepositorySchema, RunIdSchema, WorkflowIdSchema } from '@slopify/shared'
+import { createWorkflowDraft } from '@slopify/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import RunsPage from '../app/runs/page'

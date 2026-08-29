@@ -2,7 +2,7 @@ import Ajv2020 from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 import { describe, expect, it } from 'vitest'
 
-import { createWorkflowFileJsonSchema } from '../src/index.js'
+import { createWorkflowFileJsonSchema } from '../../src/index.js'
 
 const workflowFile = {
   schemaVersion: 3,

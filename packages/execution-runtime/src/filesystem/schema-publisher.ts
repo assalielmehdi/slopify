@@ -1,6 +1,6 @@
 import { join } from 'node:path'
 
-import { createWorkflowFileJsonSchema } from '@slopify/workflow-model'
+import { createWorkflowFileJsonSchema } from '@slopify/shared'
 import { z } from 'zod'
 
 import { RepositoryCollectionSchema } from '../repositories/repository-store.js'

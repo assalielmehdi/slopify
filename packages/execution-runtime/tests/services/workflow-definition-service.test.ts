@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { WorkflowFileSchema, type WorkflowFile } from '@slopify/workflow-model'
+import { WorkflowFileSchema, type WorkflowFile } from '@slopify/shared'
 
 import {
   HarnessCatalogError,

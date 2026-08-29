@@ -3,8 +3,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { RepositorySchema } from '@slopify/contracts'
-import { createWorkflowDraft, type Workflow } from '@slopify/workflow-model'
+import { RepositorySchema } from '@slopify/shared'
+import { createWorkflowDraft, type Workflow } from '@slopify/shared'
 
 import { WorkflowConfigPanel } from '../components/workflow/workflow-config-panel'
 

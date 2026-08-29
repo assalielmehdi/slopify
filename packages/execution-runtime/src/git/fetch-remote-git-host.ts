@@ -4,7 +4,7 @@ import {
   GitShaSchema,
   type GitProvider,
   type GitRepository,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 import { z } from 'zod'
 
 import type { RemoteGitHost } from './remote-git-host.js'

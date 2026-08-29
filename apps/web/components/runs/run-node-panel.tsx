@@ -1,5 +1,5 @@
-import type { AgentTrace, NodeExecutionStatus } from '@slopify/contracts'
-import type { AgentNode } from '@slopify/workflow-model'
+import type { AgentTrace, NodeExecutionStatus } from '@slopify/shared'
+import type { AgentNode } from '@slopify/shared'
 
 import { AgentTranscript } from '@/components/runs/agent-transcript'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'

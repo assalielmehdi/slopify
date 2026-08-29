@@ -3,7 +3,7 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { AgentNodeSchema } from '@slopify/workflow-model'
+import { AgentNodeSchema } from '@slopify/shared'
 
 import { WorkflowNodeContent } from '../components/workflow/workflow-node'
 import { createAgentWorkflowFixture } from './fixtures/workflow'

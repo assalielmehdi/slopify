@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { ResourceChangeEvent } from '@slopify/contracts'
+import type { ResourceChangeEvent } from '@slopify/shared'
 import { ResourceEventFeedError, type ResourceEventFeed } from '@slopify/execution-runtime'
 import { createApiApp } from '../src/app.js'
 

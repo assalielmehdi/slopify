@@ -1,4 +1,4 @@
-import { GitConnectionSchema, GitProviderSchema, type GitProvider } from '@slopify/contracts'
+import { GitConnectionSchema, GitProviderSchema, type GitProvider } from '@slopify/shared'
 
 import type {
   GitConnectionRecord,

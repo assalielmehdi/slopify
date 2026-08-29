@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { RepositoryIdSchema, RunStatusSchema, WorkflowIdSchema } from '@slopify/contracts'
+import { RepositoryIdSchema, RunStatusSchema, WorkflowIdSchema } from '@slopify/shared'
 
 import { RunHistory } from '@/components/runs/run-history'
 import { emptyRunFilters, runFilterSearch, type RunFilters } from '@/lib/run-filters'

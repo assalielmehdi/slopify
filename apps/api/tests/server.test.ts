@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { resolveSlopifyPaths, type ResourceEventFeed } from '@slopify/execution-runtime'
-import type { AgentExecutor } from '@slopify/contracts'
+import type { AgentExecutor } from '@slopify/shared'
 import { createApiApp } from '../src/app.js'
 import {
   ServerConfigurationError,

@@ -1,4 +1,4 @@
-import type { GitProvider } from '@slopify/contracts'
+import type { GitProvider } from '@slopify/shared'
 
 export interface GitSecretStore {
   get(provider: GitProvider): Promise<string | null>

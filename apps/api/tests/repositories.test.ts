@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { GitProvider, GitRepository } from '@slopify/contracts'
+import type { GitProvider, GitRepository } from '@slopify/shared'
 import {
   createFilesystemRepositoryStore,
   GitConnectionServiceError,

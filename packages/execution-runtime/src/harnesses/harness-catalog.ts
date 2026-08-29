@@ -4,7 +4,7 @@ import {
   type HarnessDescriptor,
   type HarnessId,
   type HarnessThinkingLevel,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 
 export type HarnessCatalogErrorCode =
   | 'HARNESS_NOT_FOUND'

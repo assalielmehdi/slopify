@@ -7,7 +7,7 @@ import {
   createPiCliAgentExecutor,
   createPiHarnessInspector,
 } from '@slopify/agent-runtimes'
-import { WorkflowIdSchema, type AgentExecutor } from '@slopify/contracts'
+import { WorkflowIdSchema, type AgentExecutor } from '@slopify/shared'
 import {
   createBunGitSecretStore,
   createFetchRemoteGitHost,
@@ -31,7 +31,7 @@ import {
   type SlopifyPaths,
   type WatchedResource,
 } from '@slopify/execution-runtime'
-import { WorkflowSlugSchema } from '@slopify/workflow-model'
+import { WorkflowSlugSchema } from '@slopify/shared'
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'

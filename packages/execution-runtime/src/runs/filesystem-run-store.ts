@@ -2,8 +2,8 @@ import { constants } from 'node:fs'
 import { lstat, mkdir, open, rename, rm } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 
-import { RunIdSchema } from '@slopify/contracts'
-import { WorkflowSlugSchema } from '@slopify/workflow-model'
+import { RunIdSchema } from '@slopify/shared'
+import { WorkflowSlugSchema } from '@slopify/shared'
 
 import {
   createAtomicJsonResourceIO,

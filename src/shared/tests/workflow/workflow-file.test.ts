@@ -7,7 +7,7 @@ import {
   validateWorkflow,
   type Workflow,
   type WorkflowFile,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const currentWorkflow = {
   schemaVersion: 3,

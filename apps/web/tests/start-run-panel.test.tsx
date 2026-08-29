@@ -3,8 +3,8 @@
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/contracts'
-import { WorkflowSchema } from '@slopify/workflow-model'
+import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/shared'
+import { WorkflowSchema } from '@slopify/shared'
 
 import { StartRunPanel } from '../components/runs/start-run-panel'
 import type { ApiClient, StartRunResponse } from '../lib/api-client'

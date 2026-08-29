@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react'
 
-import type { AgentTrace } from '@slopify/contracts'
+import type { AgentTrace } from '@slopify/shared'
 
 import type { ApiClient, RunDetailResponse } from '@/lib/api-client'
 import {

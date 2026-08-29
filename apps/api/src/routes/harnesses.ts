@@ -1,4 +1,4 @@
-import { HarnessCatalogResponseSchema } from '@slopify/contracts'
+import { HarnessCatalogResponseSchema } from '@slopify/shared'
 import type { HarnessCatalog } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 

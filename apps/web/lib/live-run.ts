@@ -1,4 +1,4 @@
-import type { NodeExecutionStatus, RunStatus } from '@slopify/contracts'
+import type { NodeExecutionStatus, RunStatus } from '@slopify/shared'
 
 import type { RunDetailResponse } from '@/lib/api-client'
 import type { RunEvent } from '@/lib/event-stream'

@@ -3,8 +3,8 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useReducer, useRef } from 'react'
 
-import type { HarnessDescriptor, Repository } from '@slopify/contracts'
-import type { AgentNode, Workflow } from '@slopify/workflow-model'
+import type { HarnessDescriptor, Repository } from '@slopify/shared'
+import type { AgentNode, Workflow } from '@slopify/shared'
 
 import { StartRunPanel } from '@/components/runs/start-run-panel'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'

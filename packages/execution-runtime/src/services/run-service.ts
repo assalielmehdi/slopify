@@ -6,8 +6,8 @@ import {
   type GitSha,
   type GitProvider,
   type RepositoryId,
-} from '@slopify/contracts'
-import { validateWorkflow, workflowFileToWorkflow } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { validateWorkflow, workflowFileToWorkflow } from '@slopify/shared'
 
 import type { HarnessCatalog } from '../harnesses/harness-catalog.js'
 import type { FilesystemRunStore } from '../runs/filesystem-run-store.js'

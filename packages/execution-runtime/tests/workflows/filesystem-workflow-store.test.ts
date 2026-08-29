@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { WorkflowFile } from '@slopify/workflow-model'
+import type { WorkflowFile } from '@slopify/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {

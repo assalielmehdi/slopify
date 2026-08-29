@@ -1,4 +1,4 @@
-import type { GitProvider, GitRepository, GitSha } from '@slopify/contracts'
+import type { GitProvider, GitRepository, GitSha } from '@slopify/shared'
 
 export interface RemoteGitAccount {
   readonly provider: GitProvider

@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
-import type { GitProvider } from '@slopify/contracts'
+import type { GitProvider } from '@slopify/shared'
 
 import { createBunGitSecretStore } from './bun-git-secret-store.js'
 

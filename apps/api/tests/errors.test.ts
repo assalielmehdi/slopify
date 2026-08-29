@@ -1,4 +1,4 @@
-import { ApiErrorSchema } from '@slopify/contracts'
+import { ApiErrorSchema } from '@slopify/shared'
 import { z } from 'zod'
 import { describe, expect, it } from 'vitest'
 

@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { AgentNodeSchema, WorkflowEdgeSchema, type Workflow } from '@slopify/workflow-model'
+import { AgentNodeSchema, WorkflowEdgeSchema, type Workflow } from '@slopify/shared'
 
 import { WorkflowCanvas } from '../components/workflow/workflow-canvas'
 import { createAgentWorkflowFixture } from './fixtures/workflow'

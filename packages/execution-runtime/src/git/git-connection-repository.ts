@@ -1,4 +1,4 @@
-import type { GitProvider } from '@slopify/contracts'
+import type { GitProvider } from '@slopify/shared'
 
 export interface GitConnectionRecord {
   readonly provider: GitProvider

@@ -1,6 +1,6 @@
 'use client'
 
-import type { HarnessDescriptor } from '@slopify/contracts'
+import type { HarnessDescriptor } from '@slopify/shared'
 import { ExternalLinkIcon, XIcon } from 'lucide-react'
 import Image from 'next/image'
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react'

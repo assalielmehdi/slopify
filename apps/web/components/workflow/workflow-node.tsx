@@ -1,5 +1,5 @@
-import type { NodeExecutionStatus } from '@slopify/contracts'
-import type { AgentNode } from '@slopify/workflow-model'
+import type { NodeExecutionStatus } from '@slopify/shared'
+import type { AgentNode } from '@slopify/shared'
 import { BotIcon } from 'lucide-react'
 import Image from 'next/image'
 

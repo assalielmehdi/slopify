@@ -1,4 +1,4 @@
-import { RunIdSchema } from '@slopify/contracts'
+import { RunIdSchema } from '@slopify/shared'
 
 import { ApiRunEventSchema, type ApiRunEvent } from '@/lib/run-api-contract'
 

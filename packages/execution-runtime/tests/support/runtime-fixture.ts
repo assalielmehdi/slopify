@@ -1,5 +1,5 @@
-import { RunIdSchema, WorkflowIdSchema } from '@slopify/contracts'
-import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
+import { RunIdSchema, WorkflowIdSchema } from '@slopify/shared'
+import { WorkflowSchema, type Workflow } from '@slopify/shared'
 
 import {
   type HarnessCatalog,

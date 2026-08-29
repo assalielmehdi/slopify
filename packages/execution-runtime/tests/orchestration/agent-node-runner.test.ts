@@ -4,8 +4,8 @@ import {
   AgentExecutionEventSchema,
   type AgentExecutionInput,
   type AgentExecutor,
-} from '@slopify/contracts'
-import { WorkflowSchema } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { WorkflowSchema } from '@slopify/shared'
 
 import {
   RunWorkspaceProvisioningError,

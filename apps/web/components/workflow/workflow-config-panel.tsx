@@ -1,11 +1,7 @@
 'use client'
 
-import type { Repository } from '@slopify/contracts'
-import {
-  workflowToWorkflowFile,
-  type Workflow,
-  type WorkflowConfiguration,
-} from '@slopify/workflow-model'
+import type { Repository } from '@slopify/shared'
+import { workflowToWorkflowFile, type Workflow, type WorkflowConfiguration } from '@slopify/shared'
 import { BracesIcon, FolderGit2Icon, PlusIcon, Settings2Icon, Trash2Icon } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 

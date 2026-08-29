@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { WorkflowFileSchema } from '@slopify/workflow-model'
+import { WorkflowFileSchema } from '@slopify/shared'
 
 import {
   WorkflowGraphJsonEditor,

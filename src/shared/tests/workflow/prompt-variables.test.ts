@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { renderPromptVariables } from '../src/index.js'
+import { renderPromptVariables } from '../../src/index.js'
 
 describe('prompt variables', () => {
   it('renders only workflow-declared variables and leaves undeclared placeholders literal', () => {

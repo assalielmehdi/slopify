@@ -4,7 +4,7 @@ import {
   createWorkflowDraft,
   workflowToWorkflowFile,
   type WorkflowFile,
-} from '@slopify/workflow-model'
+} from '@slopify/shared'
 import { z } from 'zod'
 
 import {

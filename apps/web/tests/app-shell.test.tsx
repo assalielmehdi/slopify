@@ -4,8 +4,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AnchorHTMLAttributes } from 'react'
 
-import { WorkflowRunOutcomeCatalogResponseSchema } from '@slopify/contracts'
-import { createWorkflowDraft } from '@slopify/workflow-model'
+import { WorkflowRunOutcomeCatalogResponseSchema } from '@slopify/shared'
+import { createWorkflowDraft } from '@slopify/shared'
 
 import { AppShell } from '../components/app-shell'
 import type { SettingsSnapshot } from '../lib/api-client'

@@ -12,8 +12,8 @@ import {
   WorkflowIcon,
 } from 'lucide-react'
 
-import type { WorkflowRunOutcome } from '@slopify/contracts'
-import { WorkflowSlugSchema } from '@slopify/workflow-model'
+import type { WorkflowRunOutcome } from '@slopify/shared'
+import { WorkflowSlugSchema } from '@slopify/shared'
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Button } from '@/components/ui/button'

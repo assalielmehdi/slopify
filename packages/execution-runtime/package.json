@@ -24,8 +24,7 @@
     "test": "bun --bun vitest run --root ../.. packages/execution-runtime/tests"
   },
   "dependencies": {
-    "@slopify/contracts": "workspace:*",
-    "@slopify/workflow-model": "workspace:*",
+    "@slopify/shared": "workspace:*",
     "execa": "10.0.1",
     "zod": "4.4.3"
   }

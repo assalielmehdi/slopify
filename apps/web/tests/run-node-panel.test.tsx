@@ -3,8 +3,8 @@
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { AgentTraceSchema } from '@slopify/contracts'
-import { AgentNodeSchema } from '@slopify/workflow-model'
+import { AgentTraceSchema } from '@slopify/shared'
+import { AgentNodeSchema } from '@slopify/shared'
 
 import { RunNodePanel } from '../components/runs/run-node-panel'
 

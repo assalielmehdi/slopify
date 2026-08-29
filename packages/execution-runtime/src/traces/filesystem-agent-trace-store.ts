@@ -10,7 +10,7 @@ import {
   AgentTraceSchema,
   type AgentTrace,
   type AgentTraceHeader,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 import { z } from 'zod'
 
 import type { SlopifyPaths } from '../filesystem/slopify-home.js'

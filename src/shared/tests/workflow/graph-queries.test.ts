@@ -7,7 +7,7 @@ import {
   getOutgoingEdges,
   getReachableNodeIds,
   hasDirectedCycle,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const agent = (id: string) => ({
   type: 'agent',

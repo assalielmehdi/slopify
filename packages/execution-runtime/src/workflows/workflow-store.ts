@@ -1,4 +1,4 @@
-import type { WorkflowFile } from '@slopify/workflow-model'
+import type { WorkflowFile } from '@slopify/shared'
 
 import type { ResourceRevision } from '../filesystem/resource-revision.js'
 import type { WorkflowSource } from './workflow-source.js'

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { RepositorySchema } from '@slopify/contracts'
+import { RepositorySchema } from '@slopify/shared'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { RepositorySettings } from '../components/settings/repository-settings'

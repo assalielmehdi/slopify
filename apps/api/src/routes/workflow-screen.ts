@@ -1,4 +1,4 @@
-import { WorkflowIdSchema } from '@slopify/contracts'
+import { WorkflowIdSchema } from '@slopify/shared'
 import type {
   HarnessCatalog,
   RepositoryService,

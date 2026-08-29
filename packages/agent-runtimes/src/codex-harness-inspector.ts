@@ -3,7 +3,7 @@ import {
   HarnessThinkingLevelSchema,
   type HarnessDescriptor,
   type HarnessModelOption,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 
 import {
   createHostCommandRunner,

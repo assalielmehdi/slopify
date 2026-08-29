@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { HarnessDescriptorSchema } from '@slopify/contracts'
+import { HarnessDescriptorSchema } from '@slopify/shared'
 
 import { HarnessSettings } from '../components/settings/harness-settings'
 

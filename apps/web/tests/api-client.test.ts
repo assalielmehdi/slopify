@@ -5,8 +5,8 @@ import {
   HarnessCatalogResponseSchema,
   RepositorySchema,
   SettingsSchema,
-} from '@slopify/contracts'
-import { workflowToWorkflowFile, type Workflow } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { workflowToWorkflowFile, type Workflow } from '@slopify/shared'
 
 import { ApiClientError, createApiClient } from '../lib/api-client'
 import { createAgentWorkflowFixture } from './fixtures/workflow'

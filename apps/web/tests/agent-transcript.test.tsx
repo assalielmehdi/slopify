@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { AgentTraceEventSchema, type AgentTraceEvent } from '@slopify/contracts'
+import { AgentTraceEventSchema, type AgentTraceEvent } from '@slopify/shared'
 
 import { AgentTranscript } from '../components/runs/agent-transcript'
 

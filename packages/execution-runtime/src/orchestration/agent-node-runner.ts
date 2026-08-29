@@ -8,8 +8,8 @@ import {
   type RunId,
   type AgentExecutionEvent,
   type AgentExecutor,
-} from '@slopify/contracts'
-import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@slopify/shared'
 import { z } from 'zod'
 
 import type { HarnessCatalog } from '../harnesses/harness-catalog.js'

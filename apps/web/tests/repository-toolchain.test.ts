@@ -28,16 +28,16 @@ const workspaceManifestPaths = [
   'apps/api/package.json',
   'apps/web/package.json',
   'packages/agent-runtimes/package.json',
-  'packages/contracts/package.json',
   'packages/execution-runtime/package.json',
-  'packages/workflow-model/package.json',
+  'src/shared/package.json',
 ] as const
-const libraryManifestPaths = workspaceManifestPaths.filter((path) => path.startsWith('packages/'))
+const libraryManifestPaths = workspaceManifestPaths.filter(
+  (path) => path === 'src/shared/package.json' || path.startsWith('packages/'),
+)
 const libraryPackageNames = [
   '@slopify/agent-runtimes',
-  '@slopify/contracts',
   '@slopify/execution-runtime',
-  '@slopify/workflow-model',
+  '@slopify/shared',
 ] as const
 const forbiddenCommand =
   /(?:^|(?:&&|\|\||;)\s*)(?:node|npm|npx|pnpm|yarn|tsx|ts-node|deno|corepack)(?:\s|$)/u
@@ -126,6 +126,7 @@ describe('repository toolchain', () => {
         '$TURBO_ROOT$/apps/api/package.json',
         '$TURBO_ROOT$/apps/api/src/server.ts',
         '$TURBO_ROOT$/packages/*/package.json',
+        '$TURBO_ROOT$/src/shared/package.json',
       ],
       outputs: [],
     })

@@ -1,5 +1,5 @@
 {
-  "name": "@slopify/workflow-model",
+  "name": "@slopify/shared",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -21,10 +21,9 @@
     "dev": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --watch --preserveWatchOutput",
     "typecheck": "bun ../../node_modules/typescript-go/bin/tsc --project tsconfig.json --noEmit",
     "lint": "bun --bun eslint . --max-warnings 0",
-    "test": "bun --bun vitest run --root ../.. packages/workflow-model/tests"
+    "test": "bun --bun vitest run --root ../.. src/shared/tests"
   },
   "dependencies": {
-    "@slopify/contracts": "workspace:*",
     "zod": "4.4.3"
   }
 }

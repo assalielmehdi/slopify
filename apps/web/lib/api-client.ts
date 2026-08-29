@@ -30,7 +30,7 @@ import {
   type UpdateSettingsRequest,
   type RunStatus,
   type WorkflowRunOutcome,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 import {
   WorkflowFileSchema,
   WorkflowSchema,
@@ -38,7 +38,7 @@ import {
   workflowFileToWorkflow,
   workflowToWorkflowFile,
   type Workflow,
-} from '@slopify/workflow-model'
+} from '@slopify/shared'
 import { z } from 'zod'
 
 import {

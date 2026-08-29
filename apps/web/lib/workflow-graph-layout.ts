@@ -1,7 +1,7 @@
 import dagre from '@dagrejs/dagre'
 
-import type { NodeExecutionStatus } from '@slopify/contracts'
-import type { Workflow } from '@slopify/workflow-model'
+import type { NodeExecutionStatus } from '@slopify/shared'
+import type { Workflow } from '@slopify/shared'
 
 import type { WorkflowNodeData } from '@/components/workflow/workflow-node'
 

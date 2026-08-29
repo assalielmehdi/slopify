@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { WORKFLOW_DRAFT_TRANSITION_LIMIT, createWorkflowDraft } from '../src/index.js'
+import { WORKFLOW_DRAFT_TRANSITION_LIMIT, createWorkflowDraft } from '../../src/index.js'
 
 describe('workflow draft', () => {
   it('creates a canonical empty draft with caller-provided identity and configuration', () => {

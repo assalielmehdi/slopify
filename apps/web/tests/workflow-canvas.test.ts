@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { AgentNodeSchema, WorkflowEdgeSchema, type Workflow } from '@slopify/workflow-model'
+import { AgentNodeSchema, WorkflowEdgeSchema, type Workflow } from '@slopify/shared'
 
 import { layoutWorkflowGraph, workflowGraphPaneWidth } from '../lib/workflow-graph-layout'
 import { createAgentWorkflowFixture } from './fixtures/workflow'

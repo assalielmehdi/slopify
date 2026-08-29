@@ -1,4 +1,4 @@
-import { RepositorySchema, type GitProvider } from '@slopify/contracts'
+import { RepositorySchema, type GitProvider } from '@slopify/shared'
 import { z } from 'zod'
 
 export const RepositoryRecordSchema = RepositorySchema.omit({ availability: true })

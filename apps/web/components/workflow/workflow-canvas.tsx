@@ -1,7 +1,7 @@
 'use client'
 
-import type { NodeExecutionStatus } from '@slopify/contracts'
-import type { Workflow } from '@slopify/workflow-model'
+import type { NodeExecutionStatus } from '@slopify/shared'
+import type { Workflow } from '@slopify/shared'
 import { PlayIcon, Settings2Icon } from 'lucide-react'
 import { useEffect, useId, useMemo, useRef } from 'react'
 

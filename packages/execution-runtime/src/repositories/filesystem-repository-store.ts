@@ -1,4 +1,4 @@
-import { GitProviderSchema, RepositoryIdSchema } from '@slopify/contracts'
+import { GitProviderSchema, RepositoryIdSchema } from '@slopify/shared'
 
 import {
   createAtomicJsonResourceIO,

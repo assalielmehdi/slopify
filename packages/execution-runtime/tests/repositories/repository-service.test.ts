@@ -1,4 +1,4 @@
-import type { GitProvider, GitRepository } from '@slopify/contracts'
+import type { GitProvider, GitRepository } from '@slopify/shared'
 import { describe, expect, it, vi } from 'vitest'
 
 import {

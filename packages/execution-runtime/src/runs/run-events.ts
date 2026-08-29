@@ -1,4 +1,4 @@
-import { NodeIdSchema, RepositoryIdSchema, RunIdSchema } from '@slopify/contracts'
+import { NodeIdSchema, RepositoryIdSchema, RunIdSchema } from '@slopify/shared'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 

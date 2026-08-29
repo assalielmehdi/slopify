@@ -1,4 +1,4 @@
-import { ResourceChangeEventSchema, type ResourceChangeEvent } from '@slopify/contracts'
+import { ResourceChangeEventSchema, type ResourceChangeEvent } from '@slopify/shared'
 
 export const resourceEventStreamUrl = '/api/resource-events'
 

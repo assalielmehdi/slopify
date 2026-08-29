@@ -1,7 +1,7 @@
 import { constants } from 'node:fs'
 import { access, mkdir } from 'node:fs/promises'
 
-import type { AgentExecutor } from '@slopify/contracts'
+import type { AgentExecutor } from '@slopify/shared'
 import {
   createAgentNodeRunner,
   createFilesystemRunArtifactDirectory,
@@ -46,7 +46,7 @@ import {
   type WorkflowDefinitionService,
   type WorkflowStore,
 } from '@slopify/execution-runtime'
-import { workflowFileToWorkflow } from '@slopify/workflow-model'
+import { workflowFileToWorkflow } from '@slopify/shared'
 
 import type { CreateApiAppOptions } from './app.js'
 import { createFilesystemExecutionPump, type FilesystemExecutionPump } from './execution-pump.js'

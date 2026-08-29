@@ -1,4 +1,4 @@
-import { RunIdSchema } from '@slopify/contracts'
+import { RunIdSchema } from '@slopify/shared'
 
 import type { SlopifyPaths } from '../filesystem/slopify-home.js'
 import { createFilesystemRunJournal } from '../runs/filesystem-run-journal.js'

@@ -9,7 +9,7 @@ import {
   resolveSlopifyPaths,
   type RepositoryService,
 } from '@slopify/execution-runtime'
-import { WorkflowFileSchema, type WorkflowFile } from '@slopify/workflow-model'
+import { WorkflowFileSchema, type WorkflowFile } from '@slopify/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/support/runtime-fixture.js'

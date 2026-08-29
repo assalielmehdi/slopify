@@ -26,17 +26,12 @@
       "cache": false,
       "persistent": true
     },
-    "@slopify/contracts#dev": {
-      "dependsOn": ["build", "^build"],
-      "cache": false,
-      "persistent": true
-    },
     "@slopify/execution-runtime#dev": {
       "dependsOn": ["build", "^build"],
       "cache": false,
       "persistent": true
     },
-    "@slopify/workflow-model#dev": {
+    "@slopify/shared#dev": {
       "dependsOn": ["build", "^build"],
       "cache": false,
       "persistent": true
@@ -62,7 +57,8 @@
         "$TURBO_ROOT$/turbo.json",
         "$TURBO_ROOT$/apps/api/package.json",
         "$TURBO_ROOT$/apps/api/src/server.ts",
-        "$TURBO_ROOT$/packages/*/package.json"
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/src/shared/package.json"
       ],
       "outputs": []
     },

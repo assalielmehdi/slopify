@@ -8,8 +8,8 @@ import {
   type RepositoryId,
   type RunStatus,
   type WorkflowRunOutcome,
-} from '@slopify/contracts'
-import { WorkflowSlugSchema } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { WorkflowSlugSchema } from '@slopify/shared'
 
 import {
   createAtomicJsonResourceIO,

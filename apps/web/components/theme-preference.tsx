@@ -1,6 +1,6 @@
 'use client'
 
-import { ThemePreferenceSchema, type ThemePreference } from '@slopify/contracts'
+import { ThemePreferenceSchema, type ThemePreference } from '@slopify/shared'
 import {
   createContext,
   useCallback,

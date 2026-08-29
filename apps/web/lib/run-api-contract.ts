@@ -7,8 +7,8 @@ import {
   RunIdSchema,
   RunStatusSchema,
   WorkflowIdSchema,
-} from '@slopify/contracts'
-import { WorkflowFileSchema, WorkflowSchema, workflowFileToWorkflow } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { WorkflowFileSchema, WorkflowSchema, workflowFileToWorkflow } from '@slopify/shared'
 import { z } from 'zod'
 
 const JsonValueSchema = z.json()

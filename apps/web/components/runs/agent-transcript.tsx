@@ -1,6 +1,6 @@
 'use client'
 
-import type { AgentTraceEvent } from '@slopify/contracts'
+import type { AgentTraceEvent } from '@slopify/shared'
 import { BookOpenIcon, BrainIcon, ChevronRightIcon } from 'lucide-react'
 import { useState } from 'react'
 import Markdown from 'react-markdown'

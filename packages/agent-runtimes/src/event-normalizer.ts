@@ -1,4 +1,4 @@
-import { HarnessIdSchema } from '@slopify/contracts'
+import { HarnessIdSchema } from '@slopify/shared'
 
 import type { AgentExecutionEvent } from './contract.js'
 import type { EventRedactor, RedactionStream } from './redaction.js'

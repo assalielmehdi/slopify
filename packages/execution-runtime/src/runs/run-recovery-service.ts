@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 
-import { RepositoryIdSchema } from '@slopify/contracts'
+import { RepositoryIdSchema } from '@slopify/shared'
 
 import type { JournalCoordinatorStore } from '../orchestration/journal-coordinator-store.js'
 import type {

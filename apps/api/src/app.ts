@@ -1,4 +1,4 @@
-import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/contracts'
+import { ApiErrorSchema, HealthResponseSchema, type ApiError } from '@slopify/shared'
 import {
   AgentTraceStoreError,
   GitConnectionServiceError,

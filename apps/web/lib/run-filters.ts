@@ -1,4 +1,4 @@
-import type { RepositoryId, RunStatus, WorkflowId } from '@slopify/contracts'
+import type { RepositoryId, RunStatus, WorkflowId } from '@slopify/shared'
 
 export interface RunFilters {
   readonly runId: string

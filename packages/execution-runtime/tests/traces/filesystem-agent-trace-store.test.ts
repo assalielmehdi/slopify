@@ -11,7 +11,7 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 
-import { AgentTraceHeaderSchema } from '@slopify/contracts'
+import { AgentTraceHeaderSchema } from '@slopify/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import {

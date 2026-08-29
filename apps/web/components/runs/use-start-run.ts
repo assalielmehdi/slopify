@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 
-import type { HarnessDescriptor, Repository } from '@slopify/contracts'
-import type { Workflow } from '@slopify/workflow-model'
+import type { HarnessDescriptor, Repository } from '@slopify/shared'
+import type { Workflow } from '@slopify/shared'
 
 import type { RunVariableRow } from '@/components/runs/run-configuration-fields'
 import {

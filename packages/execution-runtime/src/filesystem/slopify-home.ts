@@ -1,8 +1,8 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 
-import { RunIdSchema } from '@slopify/contracts'
-import { WorkflowSlugSchema } from '@slopify/workflow-model'
+import { RunIdSchema } from '@slopify/shared'
+import { WorkflowSlugSchema } from '@slopify/shared'
 import type { z } from 'zod'
 
 export interface SlopifyWorkflowPaths {

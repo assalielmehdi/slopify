@@ -1,4 +1,4 @@
-import { SettingsSchema, UpdateSettingsRequestSchema, type Settings } from '@slopify/contracts'
+import { SettingsSchema, UpdateSettingsRequestSchema, type Settings } from '@slopify/shared'
 import {
   SettingsRevisionSchema,
   type SettingsRecord,

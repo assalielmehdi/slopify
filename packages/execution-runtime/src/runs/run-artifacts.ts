@@ -7,8 +7,8 @@ import {
   RunIdSchema,
   RunStatusSchema,
   WorkflowIdSchema,
-} from '@slopify/contracts'
-import { WorkflowFileSchema, WorkflowVariableNameSchema } from '@slopify/workflow-model'
+} from '@slopify/shared'
+import { WorkflowFileSchema, WorkflowVariableNameSchema } from '@slopify/shared'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 

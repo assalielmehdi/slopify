@@ -1,4 +1,4 @@
-import type { RepositoryId, RunId } from '@slopify/contracts'
+import type { RepositoryId, RunId } from '@slopify/shared'
 
 import type { JournalRunLocator } from '../orchestration/journal-execution-worker.js'
 import type {

@@ -2,7 +2,7 @@ import {
   AddRepositoryRequestSchema,
   RepositoryCatalogResponseSchema,
   RepositorySchema,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 import type { RepositoryService } from '@slopify/execution-runtime'
 import type { Hono } from 'hono'
 

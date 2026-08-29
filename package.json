@@ -6,7 +6,8 @@
   "packageManager": "bun@1.4.0",
   "workspaces": [
     "apps/*",
-    "packages/*"
+    "packages/*",
+    "src/*"
   ],
   "engines": {
     "bun": "1.4.0"

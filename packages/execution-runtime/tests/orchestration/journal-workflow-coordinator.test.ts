@@ -1,4 +1,4 @@
-import type { Workflow } from '@slopify/workflow-model'
+import type { Workflow } from '@slopify/shared'
 import { describe, expect, it } from 'vitest'
 
 import {

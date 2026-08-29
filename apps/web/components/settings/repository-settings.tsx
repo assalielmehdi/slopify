@@ -1,6 +1,6 @@
 'use client'
 
-import type { GitConnection, GitProvider, GitRepository, Repository } from '@slopify/contracts'
+import type { GitConnection, GitProvider, GitRepository, Repository } from '@slopify/shared'
 import { FolderGit2Icon, PlusIcon, Trash2Icon, XIcon } from 'lucide-react'
 import Link from 'next/link'
 import {

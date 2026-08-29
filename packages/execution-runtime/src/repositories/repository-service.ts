@@ -3,7 +3,7 @@ import {
   RepositoryIdSchema,
   RepositorySchema,
   type Repository,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 
 import {
   GitConnectionServiceError,

@@ -12,4 +12,4 @@ export {
   type AgentExecutor,
   type AgentNodeResult,
   type AgentWorkspace,
-} from '@slopify/contracts'
+} from '@slopify/shared'

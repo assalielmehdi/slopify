@@ -1,5 +1,5 @@
-import type { HarnessDescriptor, Repository } from '@slopify/contracts'
-import { validateWorkflow, type Workflow } from '@slopify/workflow-model'
+import type { HarnessDescriptor, Repository } from '@slopify/shared'
+import { validateWorkflow, type Workflow } from '@slopify/shared'
 
 export interface WorkflowRunReadinessInput {
   readonly harnesses?: readonly HarnessDescriptor[] | undefined

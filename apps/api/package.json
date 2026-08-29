@@ -19,9 +19,8 @@
   },
   "dependencies": {
     "@slopify/agent-runtimes": "workspace:*",
-    "@slopify/contracts": "workspace:*",
     "@slopify/execution-runtime": "workspace:*",
-    "@slopify/workflow-model": "workspace:*",
+    "@slopify/shared": "workspace:*",
     "hono": "4.13.3",
     "zod": "4.4.3"
   }

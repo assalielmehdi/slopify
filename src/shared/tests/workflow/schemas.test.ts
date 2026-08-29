@@ -8,7 +8,7 @@ import {
   WorkflowSlugSchema,
   type CreateWorkflowInput,
   type Workflow,
-} from '../src/index.js'
+} from '../../src/index.js'
 
 const agentNode = {
   type: 'agent',

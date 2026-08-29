@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { validateWorkflow } from '../src/index.js'
+import { validateWorkflow } from '../../src/index.js'
 
 const agent = (id: string) => ({
   type: 'agent',

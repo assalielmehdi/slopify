@@ -3,8 +3,8 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { WorkflowSchema, type Workflow } from '@slopify/workflow-model'
-import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/contracts'
+import { WorkflowSchema, type Workflow } from '@slopify/shared'
+import { HarnessDescriptorSchema, RepositorySchema } from '@slopify/shared'
 
 import { WorkflowWorkbench } from '../components/workflow/workflow-workbench'
 import type { ResourceEventStreamHandlers } from '../lib/resource-event-stream'

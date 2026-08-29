@@ -1,4 +1,4 @@
-import { AgentTraceSchema } from '@slopify/contracts'
+import { AgentTraceSchema } from '@slopify/shared'
 import type {
   FilesystemRunAdmissionService,
   FilesystemRunIndex,

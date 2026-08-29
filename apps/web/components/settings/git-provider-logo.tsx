@@ -1,4 +1,4 @@
-import type { GitProvider } from '@slopify/contracts'
+import type { GitProvider } from '@slopify/shared'
 import type { SVGProps } from 'react'
 
 type GitProviderLogoProps = SVGProps<SVGSVGElement> & {

@@ -3,7 +3,7 @@ import {
   CreateRunRequestSchema,
   RunPaginationQuerySchema,
   WorkflowRunOutcomeCatalogResponseSchema,
-} from '@slopify/contracts'
+} from '@slopify/shared'
 import {
   AgentTraceStoreError,
   RunServiceError,

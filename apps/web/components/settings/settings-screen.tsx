@@ -1,6 +1,6 @@
 'use client'
 
-import { ThemePreferenceSchema, type GitConnection, type GitProvider } from '@slopify/contracts'
+import { ThemePreferenceSchema, type GitConnection, type GitProvider } from '@slopify/shared'
 import { CheckCircle2Icon } from 'lucide-react'
 import { useEffect, useReducer, useRef, useState, type FormEvent } from 'react'
 

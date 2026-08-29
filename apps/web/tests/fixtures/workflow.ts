@@ -3,7 +3,7 @@ import {
   WorkflowSchema,
   createWorkflowDraft,
   type Workflow,
-} from '@slopify/workflow-model'
+} from '@slopify/shared'
 
 interface AgentWorkflowFixtureInput {
   readonly configuration?: Workflow['configuration']

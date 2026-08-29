@@ -1,12 +1,12 @@
 import { useEffect, useState, type FormEvent } from 'react'
 
-import type { HarnessDescriptor, Repository } from '@slopify/contracts'
+import type { HarnessDescriptor, Repository } from '@slopify/shared'
 import {
   MAX_AGENT_TIMEOUT_SECONDS,
   MIN_AGENT_TIMEOUT_SECONDS,
   type AgentNode,
   type Workflow,
-} from '@slopify/workflow-model'
+} from '@slopify/shared'
 import { BotIcon, WorkflowIcon } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'

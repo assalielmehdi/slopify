@@ -1,4 +1,4 @@
-import { GitProviderSchema, type GitProvider } from '@slopify/contracts'
+import { GitProviderSchema, type GitProvider } from '@slopify/shared'
 
 import type { GitSecretStore } from './git-secret-store.js'
 

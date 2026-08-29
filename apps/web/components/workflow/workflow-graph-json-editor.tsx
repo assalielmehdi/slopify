@@ -6,7 +6,7 @@ import {
   workflowFileToWorkflow,
   type WorkflowFile,
   type WorkflowGraph,
-} from '@slopify/workflow-model'
+} from '@slopify/shared'
 
 import { Button } from '@/components/ui/button'
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field'

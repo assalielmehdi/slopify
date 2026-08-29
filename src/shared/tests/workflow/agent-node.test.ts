@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { AgentNodeSchema, WorkflowSchema, getDeclaredOutcomes } from '../src/index.js'
+import { AgentNodeSchema, WorkflowSchema, getDeclaredOutcomes } from '../../src/index.js'
 
 const agent = (id: string) => ({
   type: 'agent' as const,

@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { lstat, realpath, rm } from 'node:fs/promises'
 
-import { RepositoryIdSchema, RunIdSchema } from '@slopify/contracts'
+import { RepositoryIdSchema, RunIdSchema } from '@slopify/shared'
 
 import {
   createAtomicJsonResourceIO,

@@ -3,13 +3,13 @@ import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import type { AgentExecutor, AgentExecutionInput } from '@slopify/contracts'
+import type { AgentExecutor, AgentExecutionInput } from '@slopify/shared'
 import {
   createProcessRunner,
   type FilesystemRunRepositoryResolution,
   type ProcessRunner,
 } from '@slopify/execution-runtime'
-import type { WorkflowFile } from '@slopify/workflow-model'
+import type { WorkflowFile } from '@slopify/shared'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createTestHarnessCatalog } from '../../../packages/execution-runtime/tests/support/runtime-fixture.js'

@@ -5,7 +5,7 @@ import {
   OutcomeNameSchema,
   RepositoryIdSchema,
   WorkflowIdSchema,
-} from '@slopify/contracts'
+} from '../contracts/index.js'
 import { z } from 'zod'
 
 const nonBlankString = z.string().trim().min(1)
