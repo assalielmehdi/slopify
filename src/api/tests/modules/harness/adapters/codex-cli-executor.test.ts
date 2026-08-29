@@ -211,7 +211,7 @@ const createExecutor = (
 }
 
 describe('Codex CLI executor', () => {
-  it('runs an ephemeral JSONL session with bounded workspace access and structured completion', async () => {
+  it('runs an ephemeral JSONL session in YOLO mode with structured completion', async () => {
     const process = successfulProcess(result, [{ type: 'future.event', value: 1 }])
     const { executor, getSpawnInput, getCompletionSchema } = createExecutor(process, {
       now: () => Date.parse('2026-08-26T12:00:00Z'),
@@ -230,12 +230,7 @@ describe('Codex CLI executor', () => {
       '--json',
       '--color',
       'never',
-      '--sandbox',
-      'workspace-write',
-      '--add-dir',
-      '/workspaces/run-01/web',
-      '--add-dir',
-      '/runs/run-01/artifacts',
+      '--yolo',
       '--output-schema',
       expect.stringMatching(/slopify-codex-.+\/node-result\.schema\.json$/u),
       '--model',
@@ -244,7 +239,8 @@ describe('Codex CLI executor', () => {
       'model_reasoning_effort="high"',
       '-',
     ])
-    expect(spawnInput?.args).not.toContain('--dangerously-bypass-approvals-and-sandbox')
+    expect(spawnInput?.args).not.toContain('--sandbox')
+    expect(spawnInput?.args).not.toContain('--add-dir')
     expect(spawnInput?.args).not.toContain('--skip-git-repo-check')
     expect(getCompletionSchema()).toMatchObject({
       type: 'object',

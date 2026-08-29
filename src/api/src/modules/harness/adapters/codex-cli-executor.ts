@@ -373,15 +373,7 @@ export const createCodexCliAgentExecutor = (
           '--json',
           '--color',
           'never',
-          '--sandbox',
-          'workspace-write',
-          ...input.workspace.repositories.flatMap((repository) =>
-            repository.repositoryId === input.workspace.primaryRepositoryId
-              ? []
-              : ['--add-dir', repository.path],
-          ),
-          '--add-dir',
-          input.artifactsPath,
+          '--yolo',
           '--output-schema',
           schemaPath,
           ...(input.model === undefined ? [] : ['--model', input.model]),
