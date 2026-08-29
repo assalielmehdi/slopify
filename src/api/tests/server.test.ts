@@ -150,13 +150,13 @@ describe('API server configuration', () => {
       },
       executor: local,
     }
-    const runtime = createSupportedHarnessRuntime({
+    const harnesses = createSupportedHarnessRuntime({
       adapters: [adapter],
     })
 
-    await expect(runtime.harnesses.list()).resolves.toMatchObject([{ harnessId: 'local' }])
-    expect(runtime.resolveHarness('local')).toBe(local)
-    expect(runtime.resolveHarness('unsupported')).toBeUndefined()
+    await expect(harnesses.list()).resolves.toMatchObject([{ harnessId: 'local' }])
+    expect(harnesses.resolveExecutor('local')).toBe(local)
+    expect(harnesses.resolveExecutor('unsupported')).toBeUndefined()
   })
 
   it('disables the idle timeout only for exact GET event streams', async () => {

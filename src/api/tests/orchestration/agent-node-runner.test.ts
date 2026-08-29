@@ -80,7 +80,7 @@ const createWorkspaces = (): RunWorkspaceProvisioner => ({
   cleanup: vi.fn(async () => undefined),
 })
 
-const createAvailableHarnesses = () => ({
+const createAvailableHarnesses = (executor?: AgentExecutor) => ({
   requireAvailable: vi.fn(async () => ({
     harnessId: 'pi' as const,
     name: 'Pi',
@@ -92,6 +92,7 @@ const createAvailableHarnesses = () => ({
     installLabel: 'Install Pi',
     models: [],
   })),
+  resolveExecutor: () => executor,
 })
 
 const createSuccessfulAgent = (
@@ -155,8 +156,7 @@ describe('agent node runner', () => {
         read: vi.fn(),
       }
       const runner = createAgentNodeRunner({
-        harnesses: createAvailableHarnesses(),
-        resolveHarness: (harnessId) => (harnessId === 'pi' ? agent : undefined),
+        harnesses: createAvailableHarnesses(agent),
         artifacts,
         workspaces,
         runs: fixture.runs,
@@ -280,8 +280,7 @@ describe('agent node runner', () => {
         cleanup: vi.fn(async () => undefined),
       }
       const runner = createAgentNodeRunner({
-        harnesses: createAvailableHarnesses(),
-        resolveHarness: () => agent,
+        harnesses: createAvailableHarnesses(agent),
         artifacts: { ensure: vi.fn(async () => artifactsPath) },
         workspaces,
         runs: fixture.runs,
@@ -316,7 +315,6 @@ describe('agent node runner', () => {
       createRun(fixture, workflow)
       const runner = createAgentNodeRunner({
         harnesses: createAvailableHarnesses(),
-        resolveHarness: () => undefined,
         artifacts: { ensure: vi.fn(async () => artifactsPath) },
         workspaces: createWorkspaces(),
         runs: fixture.runs,

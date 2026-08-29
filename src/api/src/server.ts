@@ -7,7 +7,7 @@ import {
   createPiCliAgentExecutor,
   createPiHarnessInspector,
 } from './modules/harness/adapters/index.js'
-import { WorkflowIdSchema, type AgentExecutor } from '@slopify/shared'
+import { WorkflowIdSchema } from '@slopify/shared'
 import {
   createBunGitSecretStore,
   createFetchRemoteGitHost,
@@ -22,10 +22,11 @@ import {
   createResourceWatcher,
   createRepositoryService,
   createRemoteRunRepositoryResolver,
+  createSettingsService,
   gitCredentialHelperPath,
   resolveSlopifyPaths,
   type HarnessAdapter,
-  type HarnessCatalog,
+  type HarnessService,
   type ResourceEventFeed,
   type ResourceWatcher,
   type SlopifyPaths,
@@ -35,12 +36,15 @@ import { WorkflowSlugSchema } from '@slopify/shared'
 import type { Hono } from 'hono'
 
 import { createApiApp } from './app.js'
-import { createFilesystemRuntime, startFilesystemRuntime } from './filesystem-runtime.js'
+import {
+  createFilesystemRuntime,
+  startFilesystemRuntime,
+} from './platform/runtime/filesystem-runtime.js'
 import {
   createFilesystemShutdownCoordinator,
   registerShutdownSignals,
   type ShutdownCoordinator,
-} from './shutdown.js'
+} from './platform/runtime/shutdown.js'
 
 export type ServerConfigurationErrorCode =
   'API_HOST_INVALID' | 'API_PORT_INVALID' | 'API_SHUTDOWN_GRACE_INVALID'
@@ -96,11 +100,8 @@ export const createSupportedHarnessRuntime = (
   options: Readonly<{
     adapters?: readonly HarnessAdapter[]
   }> = {},
-): Readonly<{
-  harnesses: HarnessCatalog
-  resolveHarness: (harnessId: string) => AgentExecutor | undefined
-}> => {
-  const service = createHarnessService({
+): HarnessService =>
+  createHarnessService({
     adapters: options.adapters ?? [
       {
         inspector: createPiHarnessInspector(),
@@ -112,12 +113,6 @@ export const createSupportedHarnessRuntime = (
       },
     ],
   })
-
-  return {
-    harnesses: service,
-    resolveHarness: (harnessId) => service.resolveExecutor(harnessId),
-  }
-}
 
 const workflowResources = async (paths: SlopifyPaths): Promise<readonly WatchedResource[]> => {
   let entries
@@ -274,13 +269,13 @@ export const startConfiguredApiServer = async (
       },
     }
   }
-  const settings = createFilesystemSettingsStore({ paths })
+  const settingsStore = createFilesystemSettingsStore({ paths })
+  const settings = createSettingsService({ settings: settingsStore })
   const processRunner = createProcessRunner({ maxOutputBytes: 64 * 1_024 })
-  const harnessRuntime = createSupportedHarnessRuntime()
-  const harnesses = harnessRuntime.harnesses
+  const harnesses = createSupportedHarnessRuntime()
   const remoteGit = createFetchRemoteGitHost()
   const gitConnections = createGitConnectionService({
-    connections: createFilesystemGitConnectionRepository({ settings }),
+    connections: createFilesystemGitConnectionRepository({ settings: settingsStore }),
     secrets: createBunGitSecretStore(),
     remote: remoteGit,
   })
@@ -293,7 +288,6 @@ export const startConfiguredApiServer = async (
   const runtime = createFilesystemRuntime({
     paths,
     harnesses,
-    resolveHarness: harnessRuntime.resolveHarness,
     resolveRepository: createRemoteRunRepositoryResolver({
       repositories,
       connections: gitConnections,

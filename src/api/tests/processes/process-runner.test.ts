@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { createProcessRunner } from '../../src/processes/process-runner.js'
+import { createProcessRunner } from '../../src/platform/processes/process-runner.js'
 
 const fixturePath = (name: string): string =>
   fileURLToPath(new URL(`./fixtures/${name}`, import.meta.url))

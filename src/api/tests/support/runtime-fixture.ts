@@ -1,8 +1,8 @@
 import { RunIdSchema, WorkflowIdSchema } from '@slopify/shared'
-import { WorkflowSchema, type Workflow } from '@slopify/shared'
+import { WorkflowSchema, type AgentExecutor, type Workflow } from '@slopify/shared'
 
 import {
-  type HarnessCatalog,
+  type HarnessService,
   type AgentNodeRunRecord,
   type RunRepositoryResolution,
   type RunRepositorySnapshotArtifact,
@@ -24,7 +24,7 @@ export const TEST_RUN_REPOSITORY: RunRepositoryResolution = {
   baseSha: 'a'.repeat(40) as RunRepositoryResolution['baseSha'],
 }
 
-export const createTestHarnessCatalog = (): HarnessCatalog => ({
+export const createTestHarnessCatalog = (executor?: AgentExecutor): HarnessService => ({
   list: async () => [],
   get: async () => undefined,
   requireAvailable: async () => ({
@@ -38,6 +38,7 @@ export const createTestHarnessCatalog = (): HarnessCatalog => ({
     installLabel: 'Install Pi',
     models: [{ id: 'test-model', name: 'test-model', thinkingLevels: ['medium'] }],
   }),
+  resolveExecutor: () => executor,
 })
 
 export interface CreateTestAgentWorkflowInput {

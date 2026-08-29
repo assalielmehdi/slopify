@@ -2,7 +2,11 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { createFilesystemSettingsStore, resolveSlopifyPaths } from '../src/index.js'
+import {
+  createFilesystemSettingsStore,
+  createSettingsService,
+  resolveSlopifyPaths,
+} from '../src/index.js'
 import { afterEach, describe, expect, it } from 'vitest'
 
 import { createApiApp } from '../src/app.js'
@@ -15,7 +19,7 @@ const createFixture = () => {
   const settings = createFilesystemSettingsStore({ paths })
   return {
     app: createApiApp({
-      settings,
+      settings: createSettingsService({ settings }),
       filesystemHealth: { status: async () => ({ owned: true, writable: true }) },
     }),
     paths,

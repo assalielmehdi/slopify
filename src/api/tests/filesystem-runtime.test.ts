@@ -14,7 +14,10 @@ import { afterEach, describe, expect, it } from 'vitest'
 
 import { createTestHarnessCatalog } from '../../../src/api/tests/support/runtime-fixture.js'
 import { createApiApp } from '../src/app.js'
-import { createFilesystemRuntime, startFilesystemRuntime } from '../src/filesystem-runtime.js'
+import {
+  createFilesystemRuntime,
+  startFilesystemRuntime,
+} from '../src/platform/runtime/filesystem-runtime.js'
 
 const timestamp = '2026-08-25T10:00:00.000Z'
 const directories: string[] = []
@@ -135,8 +138,7 @@ describe('filesystem runtime composition', () => {
     }
     const runtime = createFilesystemRuntime({
       environment: { SLOPIFY_HOME: home },
-      harnesses: createTestHarnessCatalog(),
-      resolveHarness: (harnessId) => (harnessId === 'pi' ? executor : undefined),
+      harnesses: createTestHarnessCatalog(executor),
       resolveRepository: async () => repository,
       processRunner: localCloneRunner(remote.remote),
       credentialHelper: '!bun /opt/slopify/git-credential-helper.js',

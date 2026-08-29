@@ -3,7 +3,7 @@ export {
   type SlopifyPaths,
   type SlopifyRunPaths,
   type SlopifyWorkflowPaths,
-} from './filesystem/slopify-home.js'
+} from './platform/filesystem/slopify-home.js'
 export {
   RUN_ARTIFACT_AUTHORITY,
   NodeExecutionProjectionSchema,
@@ -22,22 +22,25 @@ export {
   type RunWorkspaceProjection,
   type RunWorkspacesProjection,
   type RunWorkspaceStatus,
-} from './runs/run-artifacts.js'
-export { resolveNodeExecutionPaths, type NodeExecutionPaths } from './runs/run-layout.js'
+} from './modules/run/runs/run-artifacts.js'
+export {
+  resolveNodeExecutionPaths,
+  type NodeExecutionPaths,
+} from './modules/run/runs/run-layout.js'
 export {
   FilesystemRunStoreError,
   createFilesystemRunStore,
   type FilesystemRunAdmissionInput,
   type FilesystemRunStore,
   type FilesystemRunStoreErrorCode,
-} from './runs/filesystem-run-store.js'
+} from './modules/run/runs/filesystem-run-store.js'
 export {
   createFilesystemRunArtifactDirectory,
   type FilesystemRunArtifactDirectory,
   type RunArtifactLocator,
-} from './runs/filesystem-run-artifact-directory.js'
-export { RunDomainEventSchema, type RunDomainEvent } from './runs/run-events.js'
-export { createFilesystemRunJournal } from './runs/filesystem-run-journal.js'
+} from './modules/run/runs/filesystem-run-artifact-directory.js'
+export { RunDomainEventSchema, type RunDomainEvent } from './modules/run/runs/run-events.js'
+export { createFilesystemRunJournal } from './modules/run/runs/filesystem-run-journal.js'
 export {
   createFilesystemRunIndex,
   createFilesystemRunReader,
@@ -49,7 +52,7 @@ export {
   type FilesystemRunLocator,
   type ListRunsInput,
   type FilesystemRunReader,
-} from './runs/run-index.js'
+} from './modules/run/runs/run-index.js'
 export {
   RunJournalError,
   type NewRunDomainEvent,
@@ -59,7 +62,7 @@ export {
   type RunJournalErrorCode,
   type RunJournalReplay,
   type RunProjectionRepair,
-} from './runs/run-journal.js'
+} from './modules/run/runs/run-journal.js'
 export {
   RunRecoveryError,
   createRunRecoveryService,
@@ -68,7 +71,7 @@ export {
   type RunRecoveryStore,
   type RunRecoverySummary,
   type RunRecoveryWorkspaceCleaner,
-} from './runs/run-recovery-service.js'
+} from './modules/run/runs/run-recovery-service.js'
 export {
   RunProjectionError,
   createRunProjectionState,
@@ -76,11 +79,11 @@ export {
   type RunProjectionErrorCode,
   type RunProjectionState,
   type RunRoutingProjection,
-} from './runs/run-projection.js'
+} from './modules/run/runs/run-projection.js'
 export {
   FilesystemResourceError,
   type FilesystemResourceErrorCode,
-} from './filesystem/filesystem-errors.js'
+} from './platform/filesystem/filesystem-errors.js'
 export {
   createAtomicJsonResourceIO,
   type AtomicJsonResourceIO,
@@ -90,7 +93,7 @@ export {
   type VersionedResourceSource,
   type WriteJsonResourceInput,
   type WriteVersionedJsonResourceInput,
-} from './filesystem/atomic-json-resource.js'
+} from './platform/filesystem/atomic-json-resource.js'
 export {
   InstanceLockError,
   InstanceLockOwnerSchema,
@@ -99,20 +102,20 @@ export {
   type InstanceLockHandle,
   type InstanceLockManager,
   type InstanceLockOwner,
-} from './filesystem/instance-lock.js'
+} from './platform/filesystem/instance-lock.js'
 export {
   AppendOnlyJsonlError,
   createAppendOnlyJsonl,
   type AppendOnlyJsonl,
   type AppendOnlyJsonlErrorCode,
   type JsonlReplay,
-} from './filesystem/append-only-jsonl.js'
+} from './platform/filesystem/append-only-jsonl.js'
 export {
   ResourceRevisionSchema,
   calculateResourceRevision,
   readResourceRevision,
   type ResourceRevision,
-} from './filesystem/resource-revision.js'
+} from './platform/filesystem/resource-revision.js'
 export {
   createResourceWatcher,
   type ResourceChangeEvent,
@@ -121,12 +124,12 @@ export {
   type WatchDirectory,
   type WatchedResource,
   type WatchedResourceInventory,
-} from './filesystem/resource-watcher.js'
+} from './platform/filesystem/resource-watcher.js'
 export {
   createManagedJsonSchemas,
   publishManagedJsonSchemas,
   type ManagedJsonSchema,
-} from './filesystem/schema-publisher.js'
+} from './platform/filesystem/schema-publisher.js'
 export {
   SettingsCredentialReferenceSchema,
   SettingsGitConnectionRecordSchema,
@@ -141,18 +144,23 @@ export {
   type SettingsStoreErrorCode,
   type VersionedSettingsRecord,
   type WriteSettingsInput,
-} from './settings/settings-store.js'
-export { createFilesystemSettingsStore } from './settings/filesystem-settings-store.js'
+} from './modules/settings/settings-store.js'
+export { createFilesystemSettingsStore } from './modules/settings/filesystem-settings-store.js'
+export {
+  createSettingsService,
+  type SettingsService,
+  type UpdateSettingsAppearanceInput,
+} from './modules/settings/settings-service.js'
 export {
   createFilesystemGitConnectionRepository,
   gitCredentialReference,
-} from './settings/filesystem-git-connection-repository.js'
+} from './modules/repository/git/filesystem-git-connection-repository.js'
 export {
   GitConnectionServiceError,
   createGitConnectionService,
   type GitConnectionService,
   type GitConnectionServiceErrorCode,
-} from './git/git-connection-service.js'
+} from './modules/repository/git/git-connection-service.js'
 export {
   createGitCredentialHelperCommand,
   gitCredentialHelperPath,
@@ -161,19 +169,25 @@ export {
   type GitCredentialAction,
   type GitCredentialInput,
   type GitCredentialTokenReader,
-} from './git/git-credential-helper.js'
+} from './modules/repository/git/git-credential-helper.js'
 export {
   type GitConnectionRecord,
   type GitConnectionRepository,
-} from './git/git-connection-repository.js'
-export { type GitSecretStore } from './git/git-secret-store.js'
-export { createBunGitSecretStore, type BunSecretsAdapter } from './git/bun-git-secret-store.js'
+} from './modules/repository/git/git-connection-repository.js'
+export { type GitSecretStore } from './modules/repository/git/git-secret-store.js'
+export {
+  createBunGitSecretStore,
+  type BunSecretsAdapter,
+} from './modules/repository/git/bun-git-secret-store.js'
 export {
   type RemoteGitAccount,
   type RemoteGitHost,
   type RemoteGitRepositoryReference,
-} from './git/remote-git-host.js'
-export { RemoteGitHostError, createFetchRemoteGitHost } from './git/fetch-remote-git-host.js'
+} from './modules/repository/git/remote-git-host.js'
+export {
+  RemoteGitHostError,
+  createFetchRemoteGitHost,
+} from './modules/repository/git/fetch-remote-git-host.js'
 export {
   HarnessCatalogError,
   createHarnessCatalog,
@@ -195,17 +209,17 @@ export {
   type RunAgentTraceContext,
   type RunAgentTraceReadInput,
   type RunAgentTraceStore,
-} from './traces/filesystem-agent-trace-store.js'
+} from './modules/run/traces/filesystem-agent-trace-store.js'
 export {
   createAgentNodeRunner,
   type AgentNodeRunRecord,
-} from './orchestration/agent-node-runner.js'
+} from './modules/run/orchestration/agent-node-runner.js'
 export {
   RepositoryServiceError,
   createRepositoryService,
   type RepositoryService,
   type RepositoryServiceErrorCode,
-} from './repositories/repository-service.js'
+} from './modules/repository/repositories/repository-service.js'
 export {
   RepositoryCollectionSchema,
   RepositoryRecordSchema,
@@ -214,15 +228,15 @@ export {
   type RepositoryRecord,
   type RepositoryStore,
   type RepositoryStoreErrorCode,
-} from './repositories/repository-store.js'
-export { createFilesystemRepositoryStore } from './repositories/filesystem-repository-store.js'
+} from './modules/repository/repositories/repository-store.js'
+export { createFilesystemRepositoryStore } from './modules/repository/repositories/filesystem-repository-store.js'
 export {
   WorkflowStoreError,
   type VersionedWorkflowFile,
   type WorkflowStore,
   type WorkflowStoreEntry,
   type WorkflowStoreErrorCode,
-} from './workflows/workflow-store.js'
+} from './modules/workflow/workflows/workflow-store.js'
 export {
   invalidWorkflowSource,
   parseWorkflowSource,
@@ -230,17 +244,17 @@ export {
   type WorkflowDiagnostic,
   type WorkflowDiagnosticCode,
   type WorkflowSource,
-} from './workflows/workflow-source.js'
-export { createFilesystemWorkflowStore } from './workflows/filesystem-workflow-store.js'
-export { createRemoteRunRepositoryResolver } from './repositories/remote-run-repository-resolver.js'
+} from './modules/workflow/workflows/workflow-source.js'
+export { createFilesystemWorkflowStore } from './modules/workflow/workflows/filesystem-workflow-store.js'
+export { createRemoteRunRepositoryResolver } from './modules/repository/repositories/remote-run-repository-resolver.js'
 export {
   createNativeGitRunWorkspaceProvisioner,
   type CreateNativeGitRunWorkspaceProvisionerOptions,
-} from './workspaces/native-git-run-workspace-provisioner.js'
+} from './modules/run/workspaces/native-git-run-workspace-provisioner.js'
 export {
   createFilesystemGitRunWorkspaceProvisioner,
   type CreateFilesystemGitRunWorkspaceProvisionerOptions,
-} from './workspaces/filesystem-git-run-workspace-provisioner.js'
+} from './modules/run/workspaces/filesystem-git-run-workspace-provisioner.js'
 export {
   RunWorkspaceProvisioningError,
   type FilesystemRunWorkspaceProvisioner,
@@ -248,49 +262,49 @@ export {
   type ProvisionedRunRepository,
   type RunWorkspaceProvisioner,
   type RunWorkspaceProvisioningFailure,
-} from './workspaces/run-workspace-provisioner.js'
+} from './modules/run/workspaces/run-workspace-provisioner.js'
 export {
   type NodeRunInput,
   type NodeRunResult,
   type NodeRunner,
-} from './orchestration/node-runner.js'
+} from './modules/run/orchestration/node-runner.js'
 export {
   createFilesystemJournalCoordinatorStore,
   type JournalCoordinatorRun,
   type JournalCoordinatorStore,
-} from './orchestration/journal-coordinator-store.js'
+} from './modules/run/orchestration/journal-coordinator-store.js'
 export {
   JournalCoordinatorError,
   createJournalWorkflowCoordinator,
   type JournalCoordinatorErrorCode,
   type JournalWorkflowCoordinator,
-} from './orchestration/journal-workflow-coordinator.js'
+} from './modules/run/orchestration/journal-workflow-coordinator.js'
 export {
   JournalExecutionWorkerError,
   createJournalExecutionWorker,
   type JournalExecutionWorker,
   type JournalExecutionWorkerErrorCode,
   type JournalRunLocator,
-} from './orchestration/journal-execution-worker.js'
+} from './modules/run/orchestration/journal-execution-worker.js'
 export {
   createScheduledNodeClaims,
   type ScheduledNodeClaim,
   type ScheduledNodeClaims,
-} from './orchestration/scheduled-node-claims.js'
-export { type JsonPrimitive, type JsonValue } from './json-value.js'
+} from './modules/run/orchestration/scheduled-node-claims.js'
+export { type JsonPrimitive, type JsonValue } from './platform/json-value.js'
 export {
   createProcessRunner,
   type CreateProcessRunnerOptions,
   type ProcessRunInput,
   type ProcessRunResult,
   type ProcessRunner,
-} from './processes/process-runner.js'
+} from './platform/processes/process-runner.js'
 export {
   JournalCancellationServiceError,
   createJournalCancellationService,
   type JournalCancellationService,
   type JournalCancellationServiceErrorCode,
-} from './services/journal-cancellation-service.js'
+} from './modules/run/services/journal-cancellation-service.js'
 export {
   RunServiceError,
   createFilesystemRunAdmissionService,
@@ -300,8 +314,11 @@ export {
   type FilesystemRunRepositoryResolution,
   type RunServiceErrorCode,
   type RunRepositoryResolution,
-} from './services/run-service.js'
-export { WorkflowServiceError, type WorkflowServiceErrorCode } from './services/workflow-error.js'
+} from './modules/run/services/run-service.js'
+export {
+  WorkflowServiceError,
+  type WorkflowServiceErrorCode,
+} from './modules/workflow/services/workflow-error.js'
 export {
   createWorkflowDefinitionService,
   type WorkflowDefinitionCatalogEntry,
@@ -309,14 +326,14 @@ export {
   type WorkflowRunActivity,
   type WorkflowReadinessCode,
   type WorkflowReadinessFinding,
-} from './services/workflow-definition-service.js'
+} from './modules/workflow/services/workflow-definition-service.js'
 export {
   RunEventFeedError,
   createFilesystemRunEventFeed,
   type CreateFilesystemRunEventFeedOptions,
   type FilesystemRunEventFeed,
   type SubscribeToRunEventsInput,
-} from './services/run-event-feed.js'
+} from './modules/run/services/run-event-feed.js'
 export {
   ResourceEventFeedError,
   createResourceEventFeed,
@@ -324,4 +341,4 @@ export {
   type PublishResourceChangeInput,
   type ResourceEventFeed,
   type SubscribeToResourceEventsInput,
-} from './services/resource-event-feed.js'
+} from './platform/services/resource-event-feed.js'

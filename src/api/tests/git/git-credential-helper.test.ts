@@ -4,7 +4,7 @@ import {
   createGitCredentialHelperCommand,
   handleGitCredentialRequest,
   parseGitCredentialInput,
-} from '../../src/git/git-credential-helper.js'
+} from '../../src/modules/repository/git/git-credential-helper.js'
 
 describe('Git credential helper', () => {
   it('parses the bounded key-value credential protocol', () => {

@@ -5,7 +5,7 @@ import {
   createFilesystemShutdownCoordinator,
   registerShutdownSignals,
   type ShutdownProcess,
-} from '../src/shutdown.js'
+} from '../src/platform/runtime/shutdown.js'
 
 afterEach(() => {
   vi.useRealTimers()

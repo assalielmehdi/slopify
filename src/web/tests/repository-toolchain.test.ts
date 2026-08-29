@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
@@ -8,6 +8,7 @@ interface PackageManifest {
   engines?: Record<string, string>
   packageManager?: string
   scripts: Record<string, string>
+  workspaces?: string[]
 }
 
 interface TurboTask {
@@ -39,6 +40,24 @@ function readJson<T>(path: string): T {
 }
 
 describe('repository toolchain', () => {
+  it('uses one src workspace tree with the five explicit API domain modules', () => {
+    const rootManifest = readJson<PackageManifest>('package.json')
+    const apiModules = readdirSync(new URL('src/api/src/modules', repositoryRoot), {
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+
+    expect(rootManifest.workspaces).toEqual(['src/*'])
+    expect(workspaceManifestPaths).toEqual([
+      'src/web/package.json',
+      'src/api/package.json',
+      'src/shared/package.json',
+    ])
+    expect(apiModules).toEqual(['harness', 'repository', 'run', 'settings', 'workflow'])
+  })
+
   it('uses Bun as the only JavaScript package manager and runtime entry point', () => {
     const rootManifest = readJson<PackageManifest>('package.json')
     const manifests = [

@@ -15,22 +15,25 @@ import {
   type HarnessCatalog,
   type RepositoryService,
   type ResourceEventFeed,
-  type SettingsStore,
+  type SettingsService,
   type WorkflowDefinitionService,
 } from './index.js'
 import { Hono, type Context } from 'hono'
 import { z } from 'zod'
 
 import { ApiApplicationError } from './api-error.js'
-import { registerGitConnectionRoutes } from './routes/git-connections.js'
-import { registerHarnessRoutes } from './routes/harnesses.js'
-import { registerRepositoryRoutes } from './routes/repositories.js'
-import { registerFilesystemRunRoutes, type FilesystemRunRouteServices } from './routes/runs.js'
-import { registerRunEventRoutes } from './routes/run-events.js'
-import { registerResourceEventRoutes } from './routes/resource-events.js'
-import { registerSettingsRoutes } from './routes/settings.js'
-import { registerWorkflowRoutes } from './routes/workflows.js'
-import { registerWorkflowScreenRoute } from './routes/workflow-screen.js'
+import { registerHarnessRoutes } from './modules/harness/harness-routes.js'
+import { registerGitConnectionRoutes } from './modules/repository/routes/git-connection-routes.js'
+import { registerRepositoryRoutes } from './modules/repository/routes/repository-routes.js'
+import { registerRunEventRoutes } from './modules/run/routes/run-event-routes.js'
+import {
+  registerFilesystemRunRoutes,
+  type FilesystemRunRouteServices,
+} from './modules/run/routes/run-routes.js'
+import { registerSettingsRoutes } from './modules/settings/routes/settings-routes.js'
+import { registerWorkflowRoutes } from './modules/workflow/routes/workflow-routes.js'
+import { registerWorkflowScreenRoute } from './modules/workflow/routes/workflow-screen-routes.js'
+import { registerResourceEventRoutes } from './platform/routes/resource-event-routes.js'
 
 export { ApiApplicationError, parseJsonBody } from './api-error.js'
 
@@ -40,7 +43,7 @@ export interface CreateApiAppOptions {
   readonly harnesses?: HarnessCatalog
   readonly repositories?: RepositoryService
   readonly filesystemRuns?: FilesystemRunRouteServices
-  readonly settings?: SettingsStore
+  readonly settings?: SettingsService
   readonly eventFeed?: FilesystemRunEventFeed
   readonly resourceEvents?: ResourceEventFeed
   readonly workflows?: WorkflowDefinitionService

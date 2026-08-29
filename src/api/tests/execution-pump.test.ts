@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { createFilesystemExecutionPump } from '../src/execution-pump.js'
+import { createFilesystemExecutionPump } from '../src/platform/runtime/execution-pump.js'
 
 describe('filesystem execution pump', () => {
   it('coalesces journal recovery cycles and heartbeats after durable work settles', async () => {
