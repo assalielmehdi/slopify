@@ -20,7 +20,7 @@ export default defineConfig({
     },
   },
   test: {
-    include: ['apps/web/tests/**/*.test.{ts,tsx}'],
+    include: ['src/web/tests/**/*.test.{ts,tsx}'],
     passWithNoTests: false,
   },
 })

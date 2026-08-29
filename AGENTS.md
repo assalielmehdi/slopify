@@ -72,7 +72,7 @@ node runner`. Node facts return through the run journal. Message handling is at 
 ## Code map
 
 - `apps/api`: Hono HTTP adapters and the composition root (`src/server.ts`).
-- `apps/web`: Next.js UI and API proxy.
+- `src/web`: Next.js UI and API proxy.
 - `packages/workflow-model`: strict workflow and agent schemas with graph rules.
 - `packages/execution-runtime`: use cases, ports, coordinator, worker, persistence,
   clone provisioning, harness discovery, and node runners.
@@ -83,12 +83,12 @@ node runner`. Node facts return through the run journal. Message handling is at 
 ## Frontend
 
 - Use Next.js, React, Tailwind CSS, and the existing ShadCN component system.
-- ShadCN is configured in `apps/web/components.json` with the `base-lyra` style, zinc
+- ShadCN is configured in `src/web/components.json` with the `base-lyra` style, zinc
   base color, CSS variables, and Lucide icons.
 - Root `DESIGN.md` is the canonical visual identity and design-system contract. Read it
   before changing application UI, and keep implementations consistent in light and dark
   modes.
-- Always reuse components from `apps/web/components/ui` before adding anything new.
+- Always reuse components from `src/web/components/ui` before adding anything new.
   Do not create bespoke replacements or introduce another component preset/library.
 - Keep server/client boundaries explicit and preserve accessible labels, keyboard
   behavior, loading, empty, and error states.

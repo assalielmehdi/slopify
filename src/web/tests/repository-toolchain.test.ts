@@ -26,7 +26,7 @@ interface TurboConfiguration {
 const repositoryRoot = new URL('../../../', import.meta.url)
 const workspaceManifestPaths = [
   'apps/api/package.json',
-  'apps/web/package.json',
+  'src/web/package.json',
   'packages/agent-runtimes/package.json',
   'packages/execution-runtime/package.json',
   'src/shared/package.json',
@@ -156,7 +156,7 @@ describe('repository toolchain', () => {
   })
 
   it('runs the Next.js and Hono lifecycle through Bun', () => {
-    const webManifest = readJson<PackageManifest>('apps/web/package.json')
+    const webManifest = readJson<PackageManifest>('src/web/package.json')
     const apiManifest = readJson<PackageManifest>('apps/api/package.json')
     const apiServer = readFileSync(new URL('apps/api/src/server.ts', repositoryRoot), 'utf8')
 
