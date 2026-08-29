@@ -181,7 +181,12 @@ export {
   type HarnessCatalog,
   type HarnessCatalogErrorCode,
   type HarnessInspector,
-} from './harnesses/harness-catalog.js'
+} from './modules/harness/harness-catalog.js'
+export {
+  createHarnessService,
+  type HarnessAdapter,
+  type HarnessService,
+} from './modules/harness/harness-service.js'
 export {
   AgentTraceStoreError,
   createRunFilesystemAgentTraceStore,

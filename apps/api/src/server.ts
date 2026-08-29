@@ -16,7 +16,7 @@ import {
   createFilesystemSettingsStore,
   createGitConnectionService,
   createGitCredentialHelperCommand,
-  createHarnessCatalog,
+  createHarnessService,
   createProcessRunner,
   createResourceEventFeed,
   createResourceWatcher,
@@ -24,8 +24,8 @@ import {
   createRemoteRunRepositoryResolver,
   gitCredentialHelperPath,
   resolveSlopifyPaths,
+  type HarnessAdapter,
   type HarnessCatalog,
-  type HarnessInspector,
   type ResourceEventFeed,
   type ResourceWatcher,
   type SlopifyPaths,
@@ -94,22 +94,28 @@ export interface EditableResourceWatcher {
 
 export const createSupportedHarnessRuntime = (
   options: Readonly<{
-    inspectors?: readonly HarnessInspector[]
-    pi?: AgentExecutor
-    codex?: AgentExecutor
+    adapters?: readonly HarnessAdapter[]
   }> = {},
 ): Readonly<{
   harnesses: HarnessCatalog
   resolveHarness: (harnessId: string) => AgentExecutor | undefined
 }> => {
-  const pi = options.pi ?? createPiCliAgentExecutor()
-  const codex = options.codex ?? createCodexCliAgentExecutor()
+  const service = createHarnessService({
+    adapters: options.adapters ?? [
+      {
+        inspector: createPiHarnessInspector(),
+        executor: createPiCliAgentExecutor(),
+      },
+      {
+        inspector: createCodexHarnessInspector(),
+        executor: createCodexCliAgentExecutor(),
+      },
+    ],
+  })
+
   return {
-    harnesses: createHarnessCatalog({
-      inspectors: options.inspectors ?? [createPiHarnessInspector(), createCodexHarnessInspector()],
-    }),
-    resolveHarness: (harnessId) =>
-      harnessId === 'pi' ? pi : harnessId === 'codex' ? codex : undefined,
+    harnesses: service,
+    resolveHarness: (harnessId) => service.resolveExecutor(harnessId),
   }
 }
 

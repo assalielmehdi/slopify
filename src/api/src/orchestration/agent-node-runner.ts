@@ -12,7 +12,7 @@ import {
 import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@slopify/shared'
 import { z } from 'zod'
 
-import type { HarnessCatalog } from '../harnesses/harness-catalog.js'
+import type { HarnessCatalog } from '../modules/harness/harness-catalog.js'
 import type { JsonValue } from '../json-value.js'
 import type { AgentTraceStore } from '../traces/filesystem-agent-trace-store.js'
 import {

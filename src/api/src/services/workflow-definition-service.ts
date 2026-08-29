@@ -11,7 +11,7 @@ import {
   HarnessCatalogError,
   type HarnessCatalog,
   type HarnessCatalogErrorCode,
-} from '../harnesses/harness-catalog.js'
+} from '../modules/harness/harness-catalog.js'
 import { ResourceRevisionSchema, type ResourceRevision } from '../filesystem/resource-revision.js'
 import { WorkflowStoreError, type WorkflowStore } from '../workflows/workflow-store.js'
 import type { WorkflowDiagnostic, WorkflowSource } from '../workflows/workflow-source.js'

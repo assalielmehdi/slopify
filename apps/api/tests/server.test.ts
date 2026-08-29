@@ -4,7 +4,11 @@ import { join } from 'node:path'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { resolveSlopifyPaths, type ResourceEventFeed } from '@slopify/execution-runtime'
+import {
+  resolveSlopifyPaths,
+  type HarnessAdapter,
+  type ResourceEventFeed,
+} from '@slopify/execution-runtime'
 import type { AgentExecutor } from '@slopify/shared'
 import { createApiApp } from '../src/app.js'
 import {
@@ -126,40 +130,36 @@ describe('API server configuration', () => {
     expect(await Bun.file(join(home, 'runtime/instance.lock')).exists()).toBe(false)
   })
 
-  it('registers and routes Pi and Codex as supported host harnesses', async () => {
+  it('registers and routes harness adapters without variant-specific branching', async () => {
     const executor = (): AgentExecutor => ({
       execute: async function* () {
         return
       },
       cancel: vi.fn(async () => ({ status: 'cancelled' })),
     })
-    const pi = executor()
-    const codex = executor()
-    const harness = (harnessId: 'pi' | 'codex', name: 'Pi' | 'Codex') => ({
-      harnessId,
-      inspect: vi.fn(async () => ({
-        harnessId,
-        name,
-        description: `${name} harness`,
-        availability: 'UNAVAILABLE' as const,
-        unavailableReason: `${name} unavailable`,
-        installHref: 'https://example.com/',
-        installLabel: `Install ${name}`,
-        models: [],
-      })),
-    })
+    const local = executor()
+    const adapter: HarnessAdapter = {
+      inspector: {
+        harnessId: 'local',
+        inspect: vi.fn(async () => ({
+          harnessId: 'local',
+          name: 'Local',
+          description: 'Local harness',
+          availability: 'UNAVAILABLE' as const,
+          unavailableReason: 'Local unavailable',
+          installHref: 'https://example.com/',
+          installLabel: 'Install Local',
+          models: [],
+        })),
+      },
+      executor: local,
+    }
     const runtime = createSupportedHarnessRuntime({
-      inspectors: [harness('pi', 'Pi'), harness('codex', 'Codex')],
-      pi,
-      codex,
+      adapters: [adapter],
     })
 
-    await expect(runtime.harnesses.list()).resolves.toMatchObject([
-      { harnessId: 'pi' },
-      { harnessId: 'codex' },
-    ])
-    expect(runtime.resolveHarness('pi')).toBe(pi)
-    expect(runtime.resolveHarness('codex')).toBe(codex)
+    await expect(runtime.harnesses.list()).resolves.toMatchObject([{ harnessId: 'local' }])
+    expect(runtime.resolveHarness('local')).toBe(local)
     expect(runtime.resolveHarness('unsupported')).toBeUndefined()
   })
 

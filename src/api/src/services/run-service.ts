@@ -9,7 +9,7 @@ import {
 } from '@slopify/shared'
 import { validateWorkflow, workflowFileToWorkflow } from '@slopify/shared'
 
-import type { HarnessCatalog } from '../harnesses/harness-catalog.js'
+import type { HarnessCatalog } from '../modules/harness/harness-catalog.js'
 import type { FilesystemRunStore } from '../runs/filesystem-run-store.js'
 import type { RunProjection } from '../runs/run-artifacts.js'
 import type { WorkflowStore } from '../workflows/workflow-store.js'

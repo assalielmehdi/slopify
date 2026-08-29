@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import { HarnessCatalogError, createHarnessCatalog } from '../../src/index.js'
+import { HarnessCatalogError, createHarnessCatalog } from '../../../src/index.js'
 
 const availablePi = {
   harnessId: 'pi',
