@@ -2,7 +2,6 @@ import type { Metadata } from 'next'
 import { notFound } from 'next/navigation'
 
 import { LiveRun } from '@/components/runs/live-run'
-import { internalApiOrigin } from '@/lib/api-origin'
 import { displayRunId } from '@/lib/run-id'
 
 type RunPageProps = Readonly<{ params: Promise<{ runId: string }> }>
@@ -19,5 +18,5 @@ export async function generateMetadata({ params }: RunPageProps): Promise<Metada
 
 export default async function RunPage({ params }: RunPageProps) {
   const runId = generatedRunId((await params).runId)
-  return <LiveRun runId={runId} webSocketOrigin={internalApiOrigin()} />
+  return <LiveRun runId={runId} />
 }

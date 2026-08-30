@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { LiveRun } from '../components/runs/live-run'
 import type { RunDetailResponse } from '../lib/api-client'
-import type { RunEventSubscription } from '../lib/event-stream'
 import { createAgentWorkflowFixture } from './fixtures/workflow'
 
 vi.mock('../components/workflow/workflow-canvas', () => ({
@@ -107,16 +106,15 @@ afterEach(() => {
 
 describe('historical run', () => {
   it('uses the captured workflow and node configuration without opening a live stream', async () => {
-    const subscription: RunEventSubscription = vi.fn()
     const client = {
       getRun: vi.fn(async () => detail),
       cancelRun: vi.fn(),
     }
 
-    render(<LiveRun runId="run-historical" client={client} connect={subscription} />)
+    render(<LiveRun runId="run-historical" client={client} />)
 
     expect(await screen.findByText('Captured graph test-workflow')).toBeTruthy()
-    expect(subscription).not.toHaveBeenCalled()
+    expect(client.getRun).toHaveBeenCalledOnce()
     const panel = await screen.findByRole('complementary', { name: 'Who are you?' })
     expect(panel.getAttribute('data-layout')).toBe('workspace')
     expect(await screen.findByText('Pi')).toBeTruthy()
