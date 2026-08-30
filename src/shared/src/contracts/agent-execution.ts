@@ -279,17 +279,6 @@ export const AgentCancelResultSchema = z.discriminatedUnion('status', [
   z.strictObject({ status: z.literal('unconfirmed') }),
 ])
 
-export const LiveEventEnvelopeSchema = z.discriminatedUnion('type', [
-  z.strictObject({ type: z.literal('EVENT'), event: z.json() }),
-  z.strictObject({
-    type: z.literal('ERROR'),
-    error: z.strictObject({
-      code: z.string().min(1).max(128).regex(ERROR_CODE_PATTERN),
-      message: z.string().trim().min(1).max(4_096),
-    }),
-  }),
-])
-
 export type AgentExecutionId = z.infer<typeof AgentExecutionIdSchema>
 export type AgentSessionReference = z.infer<typeof AgentSessionReferenceSchema>
 export type AgentWorkspace = z.infer<typeof AgentWorkspaceSchema>
@@ -298,7 +287,6 @@ export type AgentNodeResult = z.infer<typeof AgentNodeResultSchema>
 export type AgentExecutionEvent = z.infer<typeof AgentExecutionEventSchema>
 export type AgentToolKind = z.infer<typeof AgentToolKindSchema>
 export type AgentCancelResult = z.infer<typeof AgentCancelResultSchema>
-export type LiveEventEnvelope = z.infer<typeof LiveEventEnvelopeSchema>
 
 export interface AgentExecutor {
   execute(input: AgentExecutionInput): AsyncIterable<AgentExecutionEvent>

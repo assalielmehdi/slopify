@@ -14,7 +14,6 @@ import {
   createFilesystemGitConnectionRepository,
   createFilesystemRepositoryStore,
   createFilesystemSettingsStore,
-  createFilesystemAgentTraceEventFeed,
   createGitConnectionService,
   createGitCredentialHelperCommand,
   createHarnessService,
@@ -35,7 +34,6 @@ import {
 } from './index.js'
 import { WorkflowSlugSchema } from '@slopify/shared'
 import type { Hono } from 'hono'
-import { websocket, type BunWebSocketHandler, type BunWebSocketData } from 'hono/bun'
 
 import { createApiApp } from './app.js'
 import {
@@ -73,17 +71,16 @@ export interface ApiServer {
   stop(closeActiveConnections?: boolean): Promise<void>
 }
 
-type ApiRequestServer = Bun.Server<BunWebSocketData>
+type ApiRequestServer = Bun.Server<undefined>
 
 type ApiServerFactory = (options: {
   readonly fetch: (request: Request, server: ApiRequestServer) => ReturnType<Hono['fetch']>
   readonly hostname: string
   readonly port: number
-  readonly websocket: BunWebSocketHandler<BunWebSocketData>
 }) => ApiServer
 
 const createBunApiServer: ApiServerFactory = (options) => {
-  const server = Bun.serve<BunWebSocketData>(options)
+  const server = Bun.serve(options)
   return {
     hostname: server.hostname ?? options.hostname,
     port: server.port ?? options.port,
@@ -224,18 +221,13 @@ export const startApiServer = (input: {
 }): ApiServer =>
   (input.serve ?? createBunApiServer)({
     fetch(request, server) {
-      if (
-        request.method === 'GET' &&
-        (/^\/api\/runs\/[^/]+\/events$/u.test(new URL(request.url).pathname) ||
-          new URL(request.url).pathname === '/api/resource-events')
-      ) {
+      if (request.method === 'GET' && new URL(request.url).pathname === '/api/resource-events') {
         server.timeout(request, 0)
       }
       return input.app.fetch(request, server)
     },
     hostname: input.configuration.hostname,
     port: input.configuration.port,
-    websocket,
   })
 
 export const startConfiguredApiServer = async (
@@ -307,13 +299,6 @@ export const startConfiguredApiServer = async (
   })
   let transport: ApiServer
   try {
-    const traceEvents =
-      runtime.api.filesystemRuns?.traces === undefined
-        ? undefined
-        : createFilesystemAgentTraceEventFeed({
-            reader: runtime.api.filesystemRuns.reader,
-            traces: runtime.api.filesystemRuns.traces,
-          })
     transport = startWithResourceWatcher(
       createApiApp({
         ...runtime.api,
@@ -335,7 +320,6 @@ export const startConfiguredApiServer = async (
         repositories,
         resourceEvents,
         settings,
-        ...(traceEvents === undefined ? {} : { traceEvents }),
       }),
     )
   } catch (cause) {

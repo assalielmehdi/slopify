@@ -7,7 +7,6 @@ import {
   createFilesystemGitRunWorkspaceProvisioner,
   createFilesystemJournalCoordinatorStore,
   createFilesystemRunAdmissionService,
-  createFilesystemRunEventFeed,
   createFilesystemRunIndex,
   createFilesystemRunReader,
   createFilesystemRunStore,
@@ -25,7 +24,6 @@ import {
   type AgentNodeRunRecord,
   type FilesystemRunArtifactDirectory,
   type FilesystemRunAdmissionService,
-  type FilesystemRunEventFeed,
   type FilesystemRunIndex,
   type FilesystemRunReader,
   type FilesystemRunRepositoryResolution,
@@ -71,7 +69,6 @@ export interface FilesystemRuntime {
   readonly admissions: FilesystemRunAdmissionService
   readonly index: FilesystemRunIndex
   readonly reader: FilesystemRunReader
-  readonly eventFeed: FilesystemRunEventFeed
   readonly traces: RunAgentTraceStore
   readonly artifacts: FilesystemRunArtifactDirectory
   readonly workspaces: FilesystemRunWorkspaceProvisioner
@@ -232,7 +229,6 @@ export const createFilesystemRuntime = (
     ...(options.createRunId === undefined ? {} : { createRunId: options.createRunId }),
   })
   const reader = createFilesystemRunReader({ index, paths })
-  const eventFeed = createFilesystemRunEventFeed({ index, paths })
   const traces = createRunFilesystemAgentTraceStore({ paths })
   const artifacts = createFilesystemRunArtifactDirectory({ paths })
   const workspaces = createFilesystemGitRunWorkspaceProvisioner({
@@ -288,7 +284,6 @@ export const createFilesystemRuntime = (
     admissions,
     index,
     reader,
-    eventFeed,
     traces,
     artifacts,
     workspaces,
@@ -298,7 +293,6 @@ export const createFilesystemRuntime = (
     recovery,
     api: {
       filesystemRuns: { admissions, index, reader, cancellation, traces },
-      eventFeed,
       workflows,
     },
   }

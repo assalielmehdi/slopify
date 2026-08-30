@@ -5,14 +5,11 @@ import {
   JournalCancellationServiceError,
   JournalCoordinatorError,
   RepositoryServiceError,
-  RunEventFeedError,
   ResourceEventFeedError,
   RunServiceError,
   SettingsStoreError,
   WorkflowServiceError,
   type GitConnectionService,
-  type FilesystemAgentTraceEventFeed,
-  type FilesystemRunEventFeed,
   type HarnessCatalog,
   type RepositoryService,
   type ResourceEventFeed,
@@ -26,8 +23,6 @@ import { ApiApplicationError } from './api-error.js'
 import { registerHarnessRoutes } from './modules/harness/harness-routes.js'
 import { registerGitConnectionRoutes } from './modules/repository/routes/git-connection-routes.js'
 import { registerRepositoryRoutes } from './modules/repository/routes/repository-routes.js'
-import { registerRunEventRoutes } from './modules/run/routes/run-event-routes.js'
-import { registerRunTraceEventRoutes } from './modules/run/routes/run-trace-event-routes.js'
 import {
   registerFilesystemRunRoutes,
   type FilesystemRunRouteServices,
@@ -46,8 +41,6 @@ export interface CreateApiAppOptions {
   readonly repositories?: RepositoryService
   readonly filesystemRuns?: FilesystemRunRouteServices
   readonly settings?: SettingsService
-  readonly eventFeed?: FilesystemRunEventFeed
-  readonly traceEvents?: FilesystemAgentTraceEventFeed
   readonly resourceEvents?: ResourceEventFeed
   readonly workflows?: WorkflowDefinitionService
 }
@@ -108,8 +101,6 @@ export const createApiApp = (options: CreateApiAppOptions = {}): Hono => {
     })
   }
   if (options.filesystemRuns !== undefined) registerFilesystemRunRoutes(app, options.filesystemRuns)
-  if (options.eventFeed !== undefined) registerRunEventRoutes(app, options.eventFeed)
-  if (options.traceEvents !== undefined) registerRunTraceEventRoutes(app, options.traceEvents)
   if (options.resourceEvents !== undefined) registerResourceEventRoutes(app, options.resourceEvents)
   if (options.settings !== undefined) registerSettingsRoutes(app, options.settings)
 
@@ -154,11 +145,6 @@ export const createApiApp = (options: CreateApiAppOptions = {}): Hono => {
             : error.code === 'JOURNAL_RECONCILE_LIMIT_EXCEEDED'
               ? 503
               : 409
-      return context.json(errorBody({ code: error.code, message: error.message }), status)
-    }
-    if (error instanceof RunEventFeedError) {
-      const status =
-        error.code === 'RUN_NOT_FOUND' ? 404 : error.code === 'RUN_JOURNAL_CORRUPT' ? 409 : 400
       return context.json(errorBody({ code: error.code, message: error.message }), status)
     }
     if (error instanceof ResourceEventFeedError) {

@@ -211,11 +211,6 @@ export {
   type RunAgentTraceStore,
 } from './modules/run/traces/filesystem-agent-trace-store.js'
 export {
-  createFilesystemAgentTraceEventFeed,
-  type FilesystemAgentTraceEventFeed,
-  type SubscribeToAgentTraceEventsInput,
-} from './modules/run/services/agent-trace-event-feed.js'
-export {
   createAgentNodeRunner,
   type AgentNodeRunRecord,
 } from './modules/run/orchestration/agent-node-runner.js'
@@ -332,13 +327,6 @@ export {
   type WorkflowReadinessCode,
   type WorkflowReadinessFinding,
 } from './modules/workflow/services/workflow-definition-service.js'
-export {
-  RunEventFeedError,
-  createFilesystemRunEventFeed,
-  type CreateFilesystemRunEventFeedOptions,
-  type FilesystemRunEventFeed,
-  type SubscribeToRunEventsInput,
-} from './modules/run/services/run-event-feed.js'
 export {
   ResourceEventFeedError,
   createResourceEventFeed,

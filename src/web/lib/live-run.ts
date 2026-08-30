@@ -1,18 +1,15 @@
 import type { NodeExecutionStatus, RunStatus } from '@slopify/shared'
 
 import type { RunDetailResponse } from '@/lib/api-client'
-import type { RunEvent } from '@/lib/event-stream'
+import type { ApiRunEvent } from '@/lib/run-api-contract'
 
 export type NodeExecution = RunDetailResponse['nodeExecutions'][number]
 
 export const terminalRunStatuses = new Set<RunStatus>(['SUCCEEDED', 'FAILED', 'CANCELLED'])
 
-export const lastRunEventSequence = (events: readonly RunEvent[]): number =>
-  events.at(-1)?.sequence ?? 0
-
 export const runStatusFrom = (
   snapshotStatus: RunStatus,
-  events: readonly RunEvent[],
+  events: readonly ApiRunEvent[],
 ): RunStatus => {
   if (terminalRunStatuses.has(snapshotStatus)) return snapshotStatus
   let status = snapshotStatus
@@ -39,7 +36,7 @@ export const latestExecutions = (
 
 export const nodeStatusesFrom = (
   detail: RunDetailResponse,
-  events: readonly RunEvent[] = detail.events,
+  events: readonly ApiRunEvent[] = detail.events,
 ): Readonly<Record<string, NodeExecutionStatus>> => {
   const statuses: Record<string, NodeExecutionStatus> = Object.fromEntries(
     detail.run.workflowSnapshot.nodes.map((node) => [node.id, 'PENDING' as const]),

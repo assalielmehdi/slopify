@@ -5,7 +5,6 @@ import {
   AgentExecutionEventSchema,
   AgentExecutionInputSchema,
   AgentNodeResultSchema,
-  LiveEventEnvelopeSchema,
 } from '../../../../src/modules/harness/adapters/index.js'
 
 const executionInput = {
@@ -341,29 +340,5 @@ describe('agent cancellation contract', () => {
 
   it('rejects an invented cancellation result', () => {
     expect(AgentCancelResultSchema.safeParse({ status: 'probably-cancelled' }).success).toBe(false)
-  })
-})
-
-describe('live event transport contract', () => {
-  it('wraps typed stream events and bounded stream errors without transport-specific data', () => {
-    expect(
-      LiveEventEnvelopeSchema.parse({ type: 'EVENT', event: { sequence: 1, type: 'RUN_STARTED' } }),
-    ).toEqual({ type: 'EVENT', event: { sequence: 1, type: 'RUN_STARTED' } })
-    expect(
-      LiveEventEnvelopeSchema.parse({
-        type: 'ERROR',
-        error: { code: 'RUN_NOT_FOUND', message: 'Run was not found' },
-      }),
-    ).toEqual({
-      type: 'ERROR',
-      error: { code: 'RUN_NOT_FOUND', message: 'Run was not found' },
-    })
-    expect(
-      LiveEventEnvelopeSchema.safeParse({
-        type: 'EVENT',
-        event: {},
-        harnessId: 'codex',
-      }).success,
-    ).toBe(false)
   })
 })

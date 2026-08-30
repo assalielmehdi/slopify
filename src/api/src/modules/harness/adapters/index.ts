@@ -7,7 +7,6 @@ export {
   AgentSessionReferenceSchema,
   AgentToolKindSchema,
   AgentWorkspaceSchema,
-  LiveEventEnvelopeSchema,
   type AgentCancelResult,
   type AgentExecutionEvent,
   type AgentExecutionId,
@@ -17,7 +16,6 @@ export {
   type AgentSessionReference,
   type AgentToolKind,
   type AgentWorkspace,
-  type LiveEventEnvelope,
 } from './contract.js'
 export {
   createCodexCliAgentExecutor,

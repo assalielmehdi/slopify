@@ -1,11 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  AgentTraceSchema,
-  HarnessCatalogResponseSchema,
-  RepositorySchema,
-  SettingsSchema,
-} from '@slopify/shared'
+import { HarnessCatalogResponseSchema, RepositorySchema, SettingsSchema } from '@slopify/shared'
 import { workflowToWorkflowFile, type Workflow } from '@slopify/shared'
 
 import { ApiClientError, createApiClient } from '../lib/api-client'
@@ -68,54 +63,6 @@ describe('API client', () => {
       headers: { accept: 'application/json' },
       method: 'GET',
     })
-  })
-
-  it('loads a typed agent trace for one captured node execution', async () => {
-    const trace = AgentTraceSchema.parse({
-      header: {
-        version: 4,
-        runId: 'run-01',
-        nodeExecutionId: 'node-execution-01',
-        attemptId: 'attempt-01',
-        nodeId: 'identify-agent',
-        createdAt: '2026-08-22T10:00:00.000Z',
-        configuration: {
-          harnessId: 'pi',
-          harnessVersion: '0.84.2',
-          model: 'test/model',
-          thinkingLevel: 'medium',
-          renderedPrompt: 'Inspect the repository.',
-          workspaceRoot: '/workflows/test-workflow/runs/run-01/workspaces',
-          artifactsPath: '/workflows/test-workflow/runs/run-01/artifacts/node-execution-01',
-          primaryRepositoryId: 'repository-api',
-          repositories: [
-            {
-              repositoryId: 'repository-api',
-              name: 'API',
-              provider: 'GITHUB',
-              fullName: 'operator/api',
-              workspacePath: '/workflows/test-workflow/runs/run-01/workspaces/repository-api',
-              branchName: 'slopify/run-01',
-              baseSha: 'a'.repeat(40),
-              defaultBranch: 'main',
-            },
-          ],
-          timeoutSeconds: 600,
-        },
-      },
-      events: [],
-      complete: false,
-    })
-    const fetchImplementation = vi.fn(async () => Response.json(trace))
-    const client = createApiClient({ fetch: fetchImplementation })
-
-    await expect(
-      client.getAgentTrace('run-01', 'node-execution-01', 'attempt-01'),
-    ).resolves.toEqual(trace)
-    expect(fetchImplementation).toHaveBeenCalledWith(
-      '/api/runs/run-01/node-executions/node-execution-01/trace?attemptId=attempt-01',
-      { headers: { accept: 'application/json' }, method: 'GET' },
-    )
   })
 
   it('loads typed health data from the same-origin Hono boundary', async () => {

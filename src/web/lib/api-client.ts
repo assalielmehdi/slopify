@@ -1,7 +1,6 @@
 import {
   ApiErrorSchema,
   AddRepositoryRequestSchema,
-  AgentTraceSchema,
   CancelRunRequestSchema,
   CreateRunRequestSchema,
   HealthResponseSchema,
@@ -24,7 +23,6 @@ import {
   type GitConnection,
   type GitProvider,
   type GitRepository,
-  type AgentTrace,
   type Repository,
   type Settings,
   type UpdateSettingsRequest,
@@ -190,7 +188,6 @@ export interface ApiClient {
   startRun(input: StartRunInput): Promise<StartRunResponse>
   listRuns(input: ListRunsInput): Promise<RunHistoryPage>
   getRun(runId: string): Promise<RunDetailResponse>
-  getAgentTrace(runId: string, nodeExecutionId: string, attemptId: string): Promise<AgentTrace>
   cancelRun(runId: string, input?: { readonly reason?: string }): Promise<StartRunResponse>
 }
 
@@ -552,14 +549,6 @@ export const createApiClient = (
         })
       }
       return detail.value
-    },
-
-    async getAgentTrace(runId, nodeExecutionId, attemptId) {
-      const search = new URLSearchParams({ attemptId })
-      return get(
-        `/api/runs/${encodeURIComponent(RunIdSchema.parse(runId))}/node-executions/${encodeURIComponent(nodeExecutionId)}/trace?${search.toString()}`,
-        AgentTraceSchema,
-      )
     },
 
     async cancelRun(runId, input = {}) {
