@@ -131,9 +131,6 @@ export function LiveRun({ client = defaultClient, runId }: LiveRunProps) {
         execution={selectedExecution}
         node={selectedNode}
         status={statuses[selectedNode.id] ?? 'PENDING'}
-        trace={undefined}
-        traceError={undefined}
-        traceLoading={false}
       />
     )
 

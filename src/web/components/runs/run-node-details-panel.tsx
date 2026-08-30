@@ -1,29 +1,18 @@
-import type { AgentTrace, NodeExecutionStatus } from '@slopify/shared'
-import type { AgentNode } from '@slopify/shared'
+import type { AgentNode, NodeExecutionStatus } from '@slopify/shared'
 
 import { ElapsedTime } from '@/components/runs/elapsed-time'
 import { RunNodePanel } from '@/components/runs/run-node-panel'
+import type { NodeExecutionSnapshot } from '@/components/runs/run-node-panel'
 import { NodeStatusBadge } from '@/components/runs/run-status'
-import type { NodeExecution } from '@/lib/live-run'
 import { formatDuration, formatTimestamp } from '@/lib/run-format'
 
 interface RunNodeDetailsPanelProps {
-  readonly execution: NodeExecution | undefined
+  readonly execution: NodeExecutionSnapshot | undefined
   readonly node: AgentNode
   readonly status: NodeExecutionStatus
-  readonly trace: AgentTrace | undefined
-  readonly traceError: string | undefined
-  readonly traceLoading: boolean
 }
 
-export function RunNodeDetailsPanel({
-  execution,
-  node,
-  status,
-  trace,
-  traceError,
-  traceLoading,
-}: RunNodeDetailsPanelProps) {
+export function RunNodeDetailsPanel({ execution, node, status }: RunNodeDetailsPanelProps) {
   const durationMs =
     execution?.durationMs ??
     (execution?.startedAt === null ||
@@ -39,39 +28,39 @@ export function RunNodeDetailsPanel({
       data-layout="workspace"
     >
       <header className="relative shrink-0 border-b border-border p-6">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-[18px]/6 font-semibold tracking-[-0.01em]" id="run-node-panel-title">
+        <div className="flex min-w-0 items-start justify-between gap-3">
+          <h2
+            className="min-w-0 text-[18px]/6 font-semibold tracking-[-0.01em]"
+            id="run-node-panel-title"
+          >
             {node.name}
           </h2>
           <NodeStatusBadge status={status} />
         </div>
         <div
-          aria-label="Execution summary"
-          className="mt-2 overflow-x-auto text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
+          aria-label="Execution timing"
+          className="mt-2 flex flex-col overflow-x-auto text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
         >
-          Started {formatTimestamp(execution?.startedAt ?? null)} -{' '}
-          {status === 'RUNNING' ? (
-            <>
-              Running for{' '}
-              <ElapsedTime
-                completedAt={execution?.completedAt ?? null}
-                running
-                startedAt={execution?.startedAt ?? null}
-              />
-            </>
-          ) : (
-            <>Took {durationMs === undefined ? 'Not recorded' : formatDuration(durationMs)}</>
-          )}
+          <span>Started {formatTimestamp(execution?.startedAt ?? null)}</span>
+          <span>
+            {status === 'RUNNING' ? (
+              <>
+                Working for{' '}
+                <ElapsedTime
+                  completedAt={execution?.completedAt ?? null}
+                  running
+                  startedAt={execution?.startedAt ?? null}
+                />
+              </>
+            ) : (
+              <>
+                Worked for {durationMs === undefined ? 'Not recorded' : formatDuration(durationMs)}
+              </>
+            )}
+          </span>
         </div>
       </header>
-      <RunNodePanel
-        execution={execution}
-        node={node}
-        status={status}
-        trace={trace}
-        traceError={traceError}
-        traceLoading={traceLoading}
-      />
+      <RunNodePanel execution={execution} node={node} status={status} />
     </aside>
   )
 }

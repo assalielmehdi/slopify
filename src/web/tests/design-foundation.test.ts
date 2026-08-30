@@ -170,12 +170,10 @@ describe('the application design foundation', () => {
     const badge = source('components/ui/badge.tsx')
     const runFilters = source('components/runs/run-filters.tsx')
     const runStatus = source('components/runs/run-status.tsx')
-    const agentTranscript = source('components/runs/agent-transcript.tsx')
 
     expect(badge).not.toMatch(/\bborder(?:-|\b)/)
     expect(badge).toContain("outline: 'bg-muted text-foreground")
     expect(runFilters).not.toContain('rounded-full border border-border bg-background')
     expect(runStatus).not.toContain('border-status')
-    expect(agentTranscript).not.toContain('border-status-success')
   })
 })
