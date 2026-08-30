@@ -22,8 +22,8 @@ traces. Harness installation and setup stay external to Slopify.
   source of truth.
 - **Runs** start through the same local API used by the UI. Admission captures immutable
   workflow, variable, and Repository snapshots before asynchronous execution begins.
-  Run history and agent panels expose execution state, prompts, reasoning, tool activity,
-  results, and captured workspace context from those snapshots and append-only journals.
+  Run history and agent panels expose execution state, duration, the final structured
+  result, and the exact terminal command for reopening the persisted harness session.
 
 ## Requirements
 
@@ -96,8 +96,10 @@ configuration. Fresh run clones isolate Git state between concurrent runs. They 
 restrict access to the rest of the host, so run Slopify only with harnesses and
 repositories you trust.
 
-Slopify starts each node in a fresh harness process without repository-local approval.
-Pi uses its RPC protocol and a small completion bridge; Codex uses ephemeral JSONL
-execution and an adapter-owned structured output schema. Sensitive-looking environment
-values are redacted from events and structured results, but the harness can still read
-other user files. Execution traces therefore remain trusted, owner-local data.
+Slopify starts each node in a fresh harness process without repository-local approval and
+creates a fresh persisted harness session. Pi uses its RPC protocol and a small completion
+bridge; Codex uses JSONL execution with `--yolo` and an adapter-owned structured output
+schema. Slopify never resumes a session automatically, but the agent panel exposes the exact
+Pi or Codex command for reopening it in a terminal. Sensitive-looking environment values
+are redacted from structured results, but the harness can still read other user files.
+Minimal execution traces and resumable sessions therefore remain trusted, owner-local data.

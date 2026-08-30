@@ -353,8 +353,8 @@ text color of their role.
 - Invalid files remain visible as actionable error states. Name the resource and explain
   that its JSON must match the published schema without exposing private paths or file
   contents in generic error surfaces.
-- Run snapshots, event journals, projections, and traces are historical inspection data.
-  The UI never offers controls that imply they are editable resources.
+- Run snapshots, event journals, projections, and minimal technical traces are historical
+  inspection data. The UI never offers controls that imply they are editable resources.
 
 ### Workflow editor
 
@@ -484,9 +484,17 @@ text color of their role.
   additional summary sections beneath it.
 - The run graph uses the same adaptive left pane as the workflow editor. The persistent right
   pane shows the current or selected captured agent without covering or shifting the graph.
-- The details pane shows the captured harness and version, optional model and thinking effort,
-  result/timeout data, execution status and timing, errors or output, and available agent
-  transcript messages.
+- Keep the agent name and status on the first details-header row, with status aligned to the
+  right. Put `Started` and `Working for` or `Worked for` on two separate timing lines below.
+- The details pane shows the configured harness, optional model and thinking effort, timeout,
+  execution errors, and only the agent's final structured result. It never renders the prompt,
+  intermediate messages, reasoning, skills, tools, or raw harness events.
+- When a persisted session reference is available, show its exact terminal reopen command in a
+  horizontally scrollable code row with an accessible copy action. The command opens the full
+  owner-local Pi or Codex session for deeper inspection.
+- While a run is pending or running, refresh its durable projection once per second. Keep the
+  last valid projection visible across transient failures, retry on the next interval, refresh
+  immediately after cancellation, and stop polling at a terminal status.
 - Selecting another graph node replaces the details pane content in place. Long content scrolls
   inside the pane; the run page does not. Configuration blocks remain flat on the base surface
   unless a semantic status requires a signal fill.

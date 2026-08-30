@@ -44,25 +44,32 @@ node runner`. Node facts return through the run journal. Message handling is at 
   when their task requires it. Once a run reaches `SUCCEEDED`, `FAILED`, or `CANCELLED`,
   Slopify removes its cloned workspace by default. Durable workspace state lets startup
   polling retry cleanup after interruption.
-- Each agent execution receives a fresh harness process with no persisted session: Pi
-  uses CLI RPC and Codex uses ephemeral JSONL execution. It starts in the primary run
-  clone without repository-local approval and receives the provider, repository,
+- Each agent execution receives a fresh harness process and creates a fresh persisted
+  harness session; Slopify never resumes an earlier session automatically. Pi uses CLI
+  RPC and Codex uses JSONL execution with `--yolo`. The process starts in the primary
+  run clone without repository-local approval and receives the provider, repository,
   workspace path, branch, and base commit in its execution contract. The adapter-owned
   result protocol is the only routable agent result: Pi uses the `slopify_complete_node`
-  bridge and Codex uses a structured output schema.
+  bridge and Codex uses a structured output schema. Terminal run projections retain a
+  harness-neutral session reference and the exact command for reopening that session.
 - Harnesses run directly as the Slopify host user and use the existing host-level setup.
   Harness setup is external to Slopify. Fresh Git clones isolate concurrent run state;
   they do not restrict access to other host paths.
 - Harness availability and model metadata are discovered live through application
   ports. Infrastructure adapters implement those ports; workflow and execution code
-  must not branch on Pi-specific protocols. Agent traces record the selected harness
-  and immutable cloned-workspace context without credentials.
+  must not branch on Pi-specific protocols. Minimal agent traces record the selected
+  harness, immutable cloned-workspace context, lifecycle, session reference, and final
+  result without capturing the intermediate message, reasoning, skill, or tool stream.
 - Before every harness launch, Slopify verifies the Git clone, origin, branch, and exact
   deterministic path under the canonical workspaces root. Symbolic-link or
   parent-directory substitutions fail the node instead of changing its workspace.
 - Trace capture redacts bounded sensitive-looking values inherited from the harness
-  process environment and applies the same redaction to structured node results. Since
-  the host harness can read other user files, traces are trusted owner-local data.
+  process environment from structured node results. Since the host harness can read
+  other user files, traces and resumable harness sessions are trusted owner-local data.
+- The run detail client short-polls the durable run projection once per second only while
+  a run is active and stops at a terminal status. Run and agent execution updates do not
+  use WebSockets or server-sent events; editable-resource notifications remain a separate
+  server-sent event channel.
 - `~/.slopify` owns settings, non-secret Git connection metadata, Repositories,
   workflows, immutable run snapshots, projections, journals, workspaces, and owner-local
   JSONL agent traces. Harness state remains owned by the harness on the host.
