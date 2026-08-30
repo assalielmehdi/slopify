@@ -264,13 +264,11 @@ describe('Pi CLI executor', () => {
         },
       }),
     )
-    expect(events.map(({ type }) => type)).toContain('HARNESS_EVENT')
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'HARNESS_EVENT',
-        data: { harnessId: 'pi', event: { type: 'future_event', value: 1 } },
-      }),
-    )
+    expect(events.map(({ type }) => type)).toEqual([
+      'AGENT_STARTED',
+      'AGENT_SESSION_IDENTIFIED',
+      'AGENT_RESULT',
+    ])
     expect(events.at(-1)).toMatchObject({
       type: 'AGENT_RESULT',
       data: {

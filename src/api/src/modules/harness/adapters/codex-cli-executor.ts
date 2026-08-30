@@ -14,7 +14,6 @@ import {
   type AgentExecutor,
   type AgentNodeResult,
 } from './contract.js'
-import { createCodexEventNormalizer, type CodexEventNormalizer } from './codex-event-normalizer.js'
 import { decodeJsonLines } from './json-lines.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import { sensitiveEnvironmentValues } from './sensitive-environment.js'
@@ -364,7 +363,6 @@ export const createCodexCliAgentExecutor = (
         const redactor = createEventRedactor({
           sensitiveValues: sensitiveEnvironmentValues(environment),
         })
-        const normalizer: CodexEventNormalizer = createCodexEventNormalizer({ redactor })
         schemaDirectory = await mkdtemp(join(tmpdir(), 'slopify-codex-'))
         const schemaPath = join(schemaDirectory, 'node-result.schema.json')
         await writeFile(schemaPath, JSON.stringify(completionSchema(input)), { mode: 0o600 })
@@ -438,9 +436,6 @@ export const createCodexCliAgentExecutor = (
               failureMessages.HARNESS_PROTOCOL_FAILED,
             )
           }
-          for (const event of normalizer.normalize(raw))
-            yield createEvent(input, event.type, event.data)
-
           if (raw.type === 'thread.started') {
             if (typeof raw.thread_id !== 'string') {
               throw new CodexExecutionError(

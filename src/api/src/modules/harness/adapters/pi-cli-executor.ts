@@ -14,7 +14,6 @@ import {
   type AgentExecutor,
   type AgentNodeResult,
 } from './contract.js'
-import { createPiEventNormalizer, type PiEventNormalizer } from './event-normalizer.js'
 import { decodeJsonLines } from './json-lines.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import { sensitiveEnvironmentValues } from './sensitive-environment.js'
@@ -262,12 +261,8 @@ const request = async (
   id: string,
   command: Readonly<Record<string, unknown>>,
   termination: Promise<'cancelled' | 'timeout'>,
-): Promise<{
-  readonly response: RpcResponse
-  readonly events: readonly Record<string, unknown>[]
-}> => {
+): Promise<RpcResponse> => {
   process.write(`${JSON.stringify({ id, ...command })}\n`)
-  const events: Record<string, unknown>[] = []
   for (;;) {
     const next = await Promise.race([
       nextRecord(iterator).then((record) => ({ kind: 'record' as const, record })),
@@ -281,17 +276,14 @@ const request = async (
     }
     const { record } = next
     const response = rpcResponse(record)
-    if (response === undefined) {
-      events.push(record)
-      continue
-    }
+    if (response === undefined) continue
     if (response.id !== id) {
       throw new PiExecutionError('HARNESS_PROTOCOL_FAILED', failureMessages.HARNESS_PROTOCOL_FAILED)
     }
     if (response.command !== command.type || !response.success) {
       throw new PiExecutionError('HARNESS_PROTOCOL_FAILED', failureMessages.HARNESS_PROTOCOL_FAILED)
     }
-    return { response, events }
+    return response
   }
 }
 
@@ -417,7 +409,6 @@ export const createPiCliAgentExecutor = (
       const startedAt = now()
       const durationMs = (): number => Math.max(0, now() - startedAt)
       let active: ActiveExecution | undefined
-      let normalizer: PiEventNormalizer | undefined
       let timeoutId: ReturnType<typeof setTimeout> | undefined
       let stderrDrain: Promise<void> | undefined
 
@@ -456,9 +447,6 @@ export const createPiCliAgentExecutor = (
         activeExecutions.set(input.executionId, active)
         stderrDrain = drain(process.stderr).catch(() => undefined)
         const records = decodePiJsonLines(process.stdout)[Symbol.asyncIterator]()
-        normalizer = createPiEventNormalizer({
-          redactor,
-        })
         let requestNumber = 0
         const requestId = (): string => `${input.executionId}-${++requestNumber}`
         const timeout = new Promise<'timeout'>((resolve) => {
@@ -476,14 +464,9 @@ export const createPiCliAgentExecutor = (
           { type: 'get_state' },
           termination,
         )
-        for (const observation of state.events) {
-          for (const normalized of normalizer.normalize(observation)) {
-            yield createEvent(input, normalized.type, normalized.data)
-          }
-        }
-        yield createEvent(input, 'AGENT_SESSION_IDENTIFIED', sessionReference(state.response))
+        yield createEvent(input, 'AGENT_SESSION_IDENTIFIED', sessionReference(state))
 
-        const accepted = await request(
+        await request(
           process,
           records,
           requestId(),
@@ -493,11 +476,6 @@ export const createPiCliAgentExecutor = (
           },
           termination,
         )
-        for (const observation of accepted.events) {
-          for (const normalized of normalizer.normalize(observation)) {
-            yield createEvent(input, normalized.type, normalized.data)
-          }
-        }
 
         const candidates: unknown[] = []
         let settled = false
@@ -542,9 +520,6 @@ export const createPiCliAgentExecutor = (
           }
           const candidate = completionCandidate(next.record)
           if (candidate !== undefined) candidates.push(candidate)
-          for (const normalized of normalizer.normalize(next.record)) {
-            yield createEvent(input, normalized.type, normalized.data)
-          }
           settled = next.record.type === 'agent_settled'
         }
 
@@ -556,11 +531,6 @@ export const createPiCliAgentExecutor = (
           { type: 'get_session_stats' },
           termination,
         )
-        for (const observation of stats.events) {
-          for (const normalized of normalizer.normalize(observation)) {
-            yield createEvent(input, normalized.type, normalized.data)
-          }
-        }
         const stopped = await stopProcess(active, terminationOptions, false)
         if (!stopped) {
           yield createEvent(input, 'AGENT_FAILED', {
@@ -572,7 +542,7 @@ export const createPiCliAgentExecutor = (
         }
         yield createEvent(input, 'AGENT_RESULT', {
           result,
-          usage: usage(stats.response),
+          usage: usage(stats),
           durationMs: durationMs(),
         })
       } catch (error) {
@@ -610,7 +580,6 @@ export const createPiCliAgentExecutor = (
           })
         }
       } finally {
-        normalizer?.finish()
         if (timeoutId !== undefined) clearTimeout(timeoutId)
         if (active !== undefined) {
           await stopProcess(active, terminationOptions, active.cancelRequested)

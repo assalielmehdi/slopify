@@ -345,81 +345,11 @@ describe('Codex CLI executor', () => {
         data: { sessionId: 'thread-01', openCommand: 'codex resume thread-01' },
       }),
     )
-    expect(events.filter(({ type }) => type === 'AGENT_MESSAGE')).toEqual([
-      expect.objectContaining({
-        data: {
-          messageId: 'message-progress-01',
-          content: 'I am checking the repository before completing the node.',
-        },
-      }),
-      expect.objectContaining({
-        data: {
-          messageId: 'message-01',
-          content: 'Prepared a bounded plan.',
-        },
-      }),
+    expect(events.map(({ type }) => type)).toEqual([
+      'AGENT_STARTED',
+      'AGENT_SESSION_IDENTIFIED',
+      'AGENT_RESULT',
     ])
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'HARNESS_EVENT',
-        data: { harnessId: 'codex', event: { type: 'future.event', value: 1 } },
-      }),
-    )
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'AGENT_TOOL_COMPLETED',
-        data: expect.objectContaining({
-          toolCallId: 'command-01',
-          toolKind: 'COMMAND',
-          toolName: 'bash',
-          status: 'succeeded',
-          content: '3 tests passed',
-        }),
-      }),
-    )
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'AGENT_SKILL_INVOKED',
-        data: {
-          skillName: 'browser-testing',
-          evidence: 'DERIVED',
-          sourceToolCallId: 'skill-command-01',
-        },
-      }),
-    )
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'AGENT_TOOL_STARTED',
-        data: expect.objectContaining({
-          toolCallId: 'file-change-01',
-          toolKind: 'EDIT',
-          toolName: 'file_change',
-          input: { changes: [{ path: 'src/app.ts', kind: 'update' }] },
-        }),
-      }),
-    )
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'AGENT_TOOL_COMPLETED',
-        data: expect.objectContaining({
-          toolCallId: 'mcp-01',
-          toolKind: 'MCP',
-          toolName: 'figma.inspect',
-          content: 'Inspected node 1:2',
-        }),
-      }),
-    )
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: 'AGENT_TOOL_STARTED',
-        data: expect.objectContaining({
-          toolCallId: 'web-search-01',
-          toolKind: 'WEB',
-          toolName: 'web_search',
-          input: { query: 'Codex CLI JSONL format' },
-        }),
-      }),
-    )
     expect(events.at(-1)).toMatchObject({
       type: 'AGENT_RESULT',
       data: {
@@ -546,7 +476,6 @@ describe('Codex CLI executor', () => {
     })
     const { executor } = createExecutor(process)
     const iterator = executor.execute(input)[Symbol.asyncIterator]()
-    await iterator.next()
     await iterator.next()
     await iterator.next()
     const terminal = iterator.next()
