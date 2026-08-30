@@ -250,7 +250,7 @@ describe('run history page', () => {
     expect(screen.queryByRole('search')).toBeNull()
     expect(screen.getByText('Succeeded').className).toContain('text-status-success')
     expect(screen.getByText('Failed').className).toContain('text-destructive')
-    expect(screen.getByText('2m 0s')).toBeTruthy()
+    expect(screen.getByText('2m')).toBeTruthy()
     expect(screen.getByRole('button', { name: 'Filters' }).className).toContain('border-0')
     expect(screen.getByText('Previous').className).toContain('border-0')
     expect(screen.getByText('Next').className).toContain('border-0')

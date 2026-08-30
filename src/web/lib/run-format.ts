@@ -14,9 +14,17 @@ const sameUtcDay = (left: Date, right: Date): boolean =>
 export const formatDuration = (durationMs: number): string => {
   if (durationMs < 1_000) return `${durationMs} ms`
   if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(1)} s`
-  const minutes = Math.floor(durationMs / 60_000)
-  const seconds = Math.floor((durationMs % 60_000) / 1_000)
-  return `${minutes}m ${seconds}s`
+  const totalSeconds = Math.floor(durationMs / 1_000)
+  const hours = Math.floor(totalSeconds / 3_600)
+  const minutes = Math.floor((totalSeconds % 3_600) / 60)
+  const seconds = totalSeconds % 60
+  return [
+    hours === 0 ? undefined : `${hours}h`,
+    minutes === 0 ? undefined : `${minutes}m`,
+    seconds === 0 ? undefined : `${seconds}s`,
+  ]
+    .filter((part) => part !== undefined)
+    .join(' ')
 }
 
 export const formatTimestamp = (timestamp: string | null): string =>

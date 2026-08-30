@@ -55,7 +55,7 @@ describe('RunNodePanel', () => {
     expect(configuration.textContent).toContain('Codex')
     expect(configuration.textContent).toContain('gpt-5.6-sol')
     expect(configuration.textContent).toContain('high')
-    expect(configuration.textContent).toContain('300 seconds')
+    expect(configuration.textContent).toContain('5m')
 
     const result = screen.getByRole('region', { name: 'Agent result' })
     expect(result.textContent).toContain('Implemented session reopening and verified the run.')

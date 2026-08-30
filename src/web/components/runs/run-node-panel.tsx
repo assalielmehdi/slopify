@@ -9,6 +9,7 @@ import remarkGfm from 'remark-gfm'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
+import { formatDuration } from '@/lib/run-format'
 
 export interface NodeExecutionSnapshot {
   readonly attemptId: string
@@ -137,7 +138,7 @@ export function RunNodePanel({ execution, node, status }: RunNodePanelProps) {
     ['Harness', harnessLabel(node.harness.harnessId)],
     ['Model', node.harness.modelId ?? 'Harness default'],
     ['Thinking', node.harness.thinkingLevel ?? 'Harness default'],
-    ['Timeout', `${node.timeoutSeconds} seconds`],
+    ['Timeout', formatDuration(node.timeoutSeconds * 1_000)],
   ]
   const result = resultMessage(execution?.output)
   const running = status === 'PENDING' || status === 'RUNNING'

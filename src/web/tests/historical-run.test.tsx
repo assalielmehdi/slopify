@@ -120,7 +120,7 @@ describe('historical run', () => {
     expect(await screen.findByText('Pi')).toBeTruthy()
     expect(panel.textContent).toContain('historical-model')
     expect(panel.textContent).toContain('xhigh')
-    expect(panel.textContent).toContain('Worked for 1m 0s')
+    expect(panel.textContent).toContain('Worked for 1m')
     expect(screen.queryByRole('region', { name: 'Run workspaces' })).toBeNull()
     expect(panel.textContent).toContain('Captured response from July.')
   })
