@@ -118,7 +118,11 @@ const successfulProcess = (
         type: 'response',
         command: 'get_state',
         success: true,
-        data: { sessionId: 'session-01', isStreaming: false },
+        data: {
+          sessionId: 'session-01',
+          sessionFile: '/Users/developer/.pi/agent/sessions/project with space/session-01.jsonl',
+          isStreaming: false,
+        },
       })
     }
     if (command.type === 'prompt') {
@@ -213,7 +217,6 @@ describe('Pi CLI executor', () => {
       args: [
         '--mode',
         'rpc',
-        '--no-session',
         '--no-approve',
         '--extension',
         '/Users/developer/slopify/slopify-completion-extension.js',
@@ -225,6 +228,7 @@ describe('Pi CLI executor', () => {
       cwd: '/workspaces/run-01/backend',
     })
     expect(getSpawnInput()?.args).not.toContain('--approve')
+    expect(getSpawnInput()?.args).not.toContain('--no-session')
     expect(getSpawnInput()?.env.HOME).toBe(globalThis.process.env.HOME)
     expect(process.writes.map((command) => (command as { type: string }).type)).toEqual([
       'get_state',
@@ -250,6 +254,16 @@ describe('Pi CLI executor', () => {
       message: expect.stringContaining('planned, blocked'),
     })
     expect(events.every((event) => AgentExecutionEventSchema.safeParse(event).success)).toBe(true)
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: 'AGENT_SESSION_IDENTIFIED',
+        data: {
+          sessionId: 'session-01',
+          openCommand:
+            "pi --session '/Users/developer/.pi/agent/sessions/project with space/session-01.jsonl'",
+        },
+      }),
+    )
     expect(events.map(({ type }) => type)).toContain('HARNESS_EVENT')
     expect(events).toContainEqual(
       expect.objectContaining({
@@ -284,7 +298,6 @@ describe('Pi CLI executor', () => {
     expect(getSpawnInput()?.args).toEqual([
       '--mode',
       'rpc',
-      '--no-session',
       '--no-approve',
       '--extension',
       '/Users/developer/slopify/slopify-completion-extension.js',
@@ -347,7 +360,10 @@ describe('Pi CLI executor', () => {
           type: 'response',
           command: 'get_state',
           success: true,
-          data: { sessionId: 'session-01' },
+          data: {
+            sessionId: 'session-01',
+            sessionFile: '/Users/developer/.pi/agent/sessions/session-01.jsonl',
+          },
         })
       }
       if (command.type === 'prompt') {
@@ -390,7 +406,10 @@ describe('Pi CLI executor', () => {
           type: 'response',
           command: 'get_state',
           success: true,
-          data: { sessionId: 'session-01' },
+          data: {
+            sessionId: 'session-01',
+            sessionFile: '/Users/developer/.pi/agent/sessions/session-01.jsonl',
+          },
         })
       }
       if (command.type === 'prompt') {
@@ -426,7 +445,10 @@ describe('Pi CLI executor', () => {
           type: 'response',
           command: 'get_state',
           success: true,
-          data: { sessionId: 'session-01' },
+          data: {
+            sessionId: 'session-01',
+            sessionFile: '/Users/developer/.pi/agent/sessions/session-01.jsonl',
+          },
         })
       }
       if (command.type === 'prompt') {

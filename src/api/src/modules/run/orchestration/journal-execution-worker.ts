@@ -177,6 +177,7 @@ export const createJournalExecutionWorker = (options: {
             attemptId: execution.input.attemptId,
             code: 'NODE_RESULT_INVALID',
             message: 'Node runner produced an invalid result',
+            session: result.session ?? null,
             durationMs,
           },
         })
@@ -191,6 +192,7 @@ export const createJournalExecutionWorker = (options: {
           attemptId: execution.input.attemptId,
           outcome: result.outcome,
           output: output.data,
+          session: result.session ?? null,
           durationMs,
         },
       })
@@ -203,6 +205,7 @@ export const createJournalExecutionWorker = (options: {
           nodeExecutionId: execution.input.nodeExecutionId,
           attemptId: execution.input.attemptId,
           reason: result.reason,
+          session: result.session ?? null,
           durationMs,
         },
       })
@@ -216,6 +219,7 @@ export const createJournalExecutionWorker = (options: {
           attemptId: execution.input.attemptId,
           code: result.code,
           message: result.message,
+          session: result.session ?? null,
           durationMs,
         },
       })
@@ -281,15 +285,15 @@ export const createJournalExecutionWorker = (options: {
     for (const event of started) {
       const key = `${locator.runId}\0${event.data.attemptId}`
       const execution = active.get(key)
-      let status: 'cancelled' | 'unconfirmed' = 'unconfirmed'
+      let cancellation: Awaited<ReturnType<NodeRunner['cancel']>> = { status: 'unconfirmed' }
       if (execution !== undefined) {
         try {
-          status = (await options.runner.cancel(execution.input)).status
+          cancellation = await options.runner.cancel(execution.input)
         } catch {
-          status = 'unconfirmed'
+          cancellation = { status: 'unconfirmed' }
         }
       }
-      if (status === 'cancelled') {
+      if (cancellation.status === 'cancelled') {
         await serializeTerminal(key, async () => {
           const current = await run.journal.replay()
           if (current.status === 'CORRUPT') {
@@ -312,6 +316,7 @@ export const createJournalExecutionWorker = (options: {
               nodeExecutionId: event.data.nodeExecutionId,
               attemptId: event.data.attemptId,
               reason,
+              session: cancellation.session ?? null,
               durationMs: Math.max(0, Date.parse(completedAt) - Date.parse(event.timestamp)),
             },
           })

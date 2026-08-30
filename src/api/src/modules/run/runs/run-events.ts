@@ -1,4 +1,9 @@
-import { NodeIdSchema, RepositoryIdSchema, RunIdSchema } from '@slopify/shared'
+import {
+  AgentSessionReferenceSchema,
+  NodeIdSchema,
+  RepositoryIdSchema,
+  RunIdSchema,
+} from '@slopify/shared'
 import { isAbsolute } from 'node:path'
 import { z } from 'zod'
 
@@ -66,6 +71,7 @@ export const RunDomainEventSchema = z.discriminatedUnion('type', [
       attemptId: identifier,
       outcome: z.string().trim().min(1).max(128),
       output: z.json(),
+      session: AgentSessionReferenceSchema.nullable().optional(),
       durationMs,
     }),
   ),
@@ -76,6 +82,7 @@ export const RunDomainEventSchema = z.discriminatedUnion('type', [
       attemptId: identifier,
       code: errorCode,
       message,
+      session: AgentSessionReferenceSchema.nullable().optional(),
       durationMs,
     }),
   ),
@@ -85,6 +92,7 @@ export const RunDomainEventSchema = z.discriminatedUnion('type', [
       nodeExecutionId: identifier,
       attemptId: identifier,
       reason: z.string().trim().min(1).max(1_024),
+      session: AgentSessionReferenceSchema.nullable().optional(),
       durationMs,
     }),
   ),

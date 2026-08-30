@@ -29,6 +29,13 @@ const tokenCount = z.number().int().nonnegative().safe()
 
 export const AgentExecutionIdSchema = identifier.brand<'AgentExecutionId'>()
 
+export const AgentSessionReferenceSchema = z
+  .strictObject({
+    sessionId: identifier,
+    openCommand: z.string().trim().min(1).max(4_096),
+  })
+  .readonly()
+
 const AgentWorkspaceRepositorySchema = z
   .strictObject({
     repositoryId: RepositoryIdSchema,
@@ -163,7 +170,7 @@ const AgentStartedEventSchema = z.strictObject({
 const AgentSessionIdentifiedEventSchema = z.strictObject({
   ...eventBase,
   type: z.literal('AGENT_SESSION_IDENTIFIED'),
-  data: z.strictObject({ sessionId: identifier }),
+  data: AgentSessionReferenceSchema,
 })
 
 const AgentMessageEventSchema = z.strictObject({
@@ -284,6 +291,7 @@ export const LiveEventEnvelopeSchema = z.discriminatedUnion('type', [
 ])
 
 export type AgentExecutionId = z.infer<typeof AgentExecutionIdSchema>
+export type AgentSessionReference = z.infer<typeof AgentSessionReferenceSchema>
 export type AgentWorkspace = z.infer<typeof AgentWorkspaceSchema>
 export type AgentExecutionInput = z.infer<typeof AgentExecutionInputSchema>
 export type AgentNodeResult = z.infer<typeof AgentNodeResultSchema>

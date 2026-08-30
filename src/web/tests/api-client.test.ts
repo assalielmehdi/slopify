@@ -649,7 +649,29 @@ describe('API client', () => {
           },
         ],
       },
-      executions: [],
+      executions: [
+        {
+          schemaVersion: 1,
+          runId: 'run-filesystem-01',
+          nodeExecutionId: 'node-execution-01',
+          attemptId: 'attempt-01',
+          nodeId: 'review',
+          executionIndex: 0,
+          status: 'SUCCEEDED',
+          lastEventSequence: 2,
+          output: { summary: 'Review complete' },
+          outcome: 'completed',
+          errorCode: null,
+          errorMessage: null,
+          startedAt: '2026-08-25T10:00:01Z',
+          completedAt: '2026-08-25T10:00:02Z',
+          durationMs: 1_000,
+          session: {
+            sessionId: 'session-01',
+            openCommand: 'codex resume session-01',
+          },
+        },
+      ],
       events: [
         {
           schemaVersion: 1,
@@ -671,7 +693,14 @@ describe('API client', () => {
         variables: { task: 'Review the release.' },
       },
       events: response.events,
-      nodeExecutions: [],
+      nodeExecutions: [
+        expect.objectContaining({
+          session: {
+            sessionId: 'session-01',
+            openCommand: 'codex resume session-01',
+          },
+        }),
+      ],
       repositories: [expect.objectContaining({ repositoryId: 'repository-api' })],
       repositoryWorkspaces: [
         expect.objectContaining({

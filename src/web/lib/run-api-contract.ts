@@ -1,6 +1,7 @@
 import {
   GitProviderSchema,
   GitShaSchema,
+  AgentSessionReferenceSchema,
   NodeExecutionStatusSchema,
   NodeIdSchema,
   RepositoryIdSchema,
@@ -156,6 +157,7 @@ export const ApiRunEventSchema = z.discriminatedUnion('type', [
       attemptId: executionIdentifier,
       outcome: z.string().trim().min(1).max(128),
       output: z.json(),
+      session: AgentSessionReferenceSchema.nullable().optional(),
       durationMs: runDuration,
     }),
   ),
@@ -166,6 +168,7 @@ export const ApiRunEventSchema = z.discriminatedUnion('type', [
       attemptId: executionIdentifier,
       code: runErrorCode,
       message: runMessage,
+      session: AgentSessionReferenceSchema.nullable().optional(),
       durationMs: runDuration,
     }),
   ),
@@ -175,6 +178,7 @@ export const ApiRunEventSchema = z.discriminatedUnion('type', [
       nodeExecutionId: executionIdentifier,
       attemptId: executionIdentifier,
       reason: z.string().trim().min(1).max(1_024),
+      session: AgentSessionReferenceSchema.nullable().optional(),
       durationMs: runDuration,
     }),
   ),
@@ -219,6 +223,7 @@ const FilesystemNodeExecutionSchema = z.strictObject({
   startedAt: z.iso.datetime({ offset: true }).nullable(),
   completedAt: z.iso.datetime({ offset: true }).nullable(),
   durationMs: runDuration.nullable(),
+  session: AgentSessionReferenceSchema.nullable().default(null),
 })
 
 const RunNodeExecutionSchema = FilesystemNodeExecutionSchema.omit({

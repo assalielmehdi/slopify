@@ -85,6 +85,10 @@ describe('run projection reducer', () => {
         attemptId: 'attempt-start',
         outcome: 'ready',
         output: { reviewed: true },
+        session: {
+          sessionId: 'session-start',
+          openCommand: 'codex resume session-start',
+        },
         durationMs: 25,
       }),
       event(7, 'ROUTE_TRAVERSED', {
@@ -132,8 +136,12 @@ describe('run projection reducer', () => {
         status: 'SUCCEEDED',
         outcome: 'ready',
         output: { reviewed: true },
+        session: {
+          sessionId: 'session-start',
+          openCommand: 'codex resume session-start',
+        },
       }),
-      expect.objectContaining({ nodeId: 'finish', status: 'SUCCEEDED' }),
+      expect.objectContaining({ nodeId: 'finish', status: 'SUCCEEDED', session: null }),
     ])
     expect(state.workspaces.workspaces).toEqual([
       expect.objectContaining({ repositoryId: 'repository-api', status: 'CLEANED' }),

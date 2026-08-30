@@ -211,7 +211,7 @@ const createExecutor = (
 }
 
 describe('Codex CLI executor', () => {
-  it('runs an ephemeral JSONL session in YOLO mode with structured completion', async () => {
+  it('runs a persisted JSONL session in YOLO mode with structured completion', async () => {
     const process = successfulProcess(result, [
       {
         type: 'item.completed',
@@ -306,7 +306,6 @@ describe('Codex CLI executor', () => {
     })
     expect(spawnInput?.args).toEqual([
       'exec',
-      '--ephemeral',
       '--json',
       '--color',
       'never',
@@ -320,6 +319,7 @@ describe('Codex CLI executor', () => {
       '-',
     ])
     expect(spawnInput?.args).not.toContain('--sandbox')
+    expect(spawnInput?.args).not.toContain('--ephemeral')
     expect(spawnInput?.args).not.toContain('--add-dir')
     expect(spawnInput?.args).not.toContain('--skip-git-repo-check')
     expect(getCompletionSchema()).toMatchObject({
@@ -342,7 +342,7 @@ describe('Codex CLI executor', () => {
     expect(events).toContainEqual(
       expect.objectContaining({
         type: 'AGENT_SESSION_IDENTIFIED',
-        data: { sessionId: 'thread-01' },
+        data: { sessionId: 'thread-01', openCommand: 'codex resume thread-01' },
       }),
     )
     expect(events.filter(({ type }) => type === 'AGENT_MESSAGE')).toEqual([

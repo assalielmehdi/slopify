@@ -253,6 +253,7 @@ const applyRunEvent = (
             startedAt: null,
             completedAt: null,
             durationMs: null,
+            session: null,
           }),
         ],
       }
@@ -282,6 +283,7 @@ const applyRunEvent = (
           outcome: event.data.outcome,
           completedAt: event.timestamp,
           durationMs: event.data.durationMs,
+          session: event.data.session ?? null,
         }),
       )
       break
@@ -297,6 +299,7 @@ const applyRunEvent = (
           errorMessage: event.data.message,
           completedAt: event.timestamp,
           durationMs: event.data.durationMs,
+          session: event.data.session ?? null,
         }),
       )
       break
@@ -311,6 +314,7 @@ const applyRunEvent = (
           errorMessage: event.data.reason,
           completedAt: event.timestamp,
           durationMs: event.data.durationMs,
+          session: event.data.session ?? null,
         }),
       )
       break

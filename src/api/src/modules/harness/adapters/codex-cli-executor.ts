@@ -18,6 +18,7 @@ import { createCodexEventNormalizer, type CodexEventNormalizer } from './codex-e
 import { decodeJsonLines } from './json-lines.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import { sensitiveEnvironmentValues } from './sensitive-environment.js'
+import { formatSessionCommand } from './session-command.js'
 
 const MAX_COMPLETION_RESULT_BYTES = 262_144
 
@@ -369,7 +370,6 @@ export const createCodexCliAgentExecutor = (
         await writeFile(schemaPath, JSON.stringify(completionSchema(input)), { mode: 0o600 })
         const args = [
           'exec',
-          '--ephemeral',
           '--json',
           '--color',
           'never',
@@ -448,7 +448,10 @@ export const createCodexCliAgentExecutor = (
                 failureMessages.HARNESS_PROTOCOL_FAILED,
               )
             }
-            yield createEvent(input, 'AGENT_SESSION_IDENTIFIED', { sessionId: raw.thread_id })
+            yield createEvent(input, 'AGENT_SESSION_IDENTIFIED', {
+              sessionId: raw.thread_id,
+              openCommand: formatSessionCommand('codex', ['resume', raw.thread_id]),
+            })
           } else if (raw.type === 'item.completed' && isRecord(raw.item)) {
             if (raw.item.type === 'agent_message' && typeof raw.item.text === 'string') {
               finalMessage = raw.item.text

@@ -92,7 +92,15 @@ describe('journal execution worker', () => {
     const runner: NodeRunner = {
       run: vi.fn(async () => {
         expect(fixture.events.map(({ type }) => type)).toEqual(['NODE_SCHEDULED', 'NODE_STARTED'])
-        return { status: 'succeeded', outcome: 'completed', output: { summary: 'Done' } }
+        return {
+          status: 'succeeded',
+          outcome: 'completed',
+          output: { summary: 'Done' },
+          session: {
+            sessionId: 'session-01',
+            openCommand: 'codex resume session-01',
+          },
+        }
       }),
       cancel: vi.fn(async () => ({ status: 'cancelled' })),
     }
@@ -115,6 +123,14 @@ describe('journal execution worker', () => {
       'NODE_STARTED',
       'NODE_SUCCEEDED',
     ])
+    expect(fixture.events.at(-1)).toMatchObject({
+      data: {
+        session: {
+          sessionId: 'session-01',
+          openCommand: 'codex resume session-01',
+        },
+      },
+    })
     expect(reconcile).toHaveBeenCalledWith(locator)
   })
 
@@ -220,7 +236,13 @@ describe('journal execution worker', () => {
 
   it('records confirmed and unconfirmed process termination distinctly', async () => {
     const confirmed = createFixture()
-    let finishConfirmed: ((result: { status: 'cancelled'; reason: string }) => void) | undefined
+    let finishConfirmed:
+      | ((result: {
+          status: 'cancelled'
+          reason: string
+          session: { sessionId: string; openCommand: string }
+        }) => void)
+      | undefined
     const confirmedWorker = createJournalExecutionWorker({
       runs: confirmed.runs,
       coordinator: { reconcile: async () => undefined as never },
@@ -230,8 +252,21 @@ describe('journal execution worker', () => {
             finishConfirmed = resolve
           }),
         async cancel() {
-          finishConfirmed?.({ status: 'cancelled', reason: 'Stopped by user' })
-          return { status: 'cancelled' }
+          finishConfirmed?.({
+            status: 'cancelled',
+            reason: 'Stopped by user',
+            session: {
+              sessionId: 'session-cancelled',
+              openCommand: 'codex resume session-cancelled',
+            },
+          })
+          return {
+            status: 'cancelled',
+            session: {
+              sessionId: 'session-cancelled',
+              openCommand: 'codex resume session-cancelled',
+            },
+          }
         },
       },
       now: () => timestamp,
@@ -244,6 +279,14 @@ describe('journal execution worker', () => {
     })
     await confirmedRun
     expect(confirmed.events.filter(({ type }) => type === 'NODE_CANCELLED')).toHaveLength(1)
+    expect(confirmed.events.find(({ type }) => type === 'NODE_CANCELLED')).toMatchObject({
+      data: {
+        session: {
+          sessionId: 'session-cancelled',
+          openCommand: 'codex resume session-cancelled',
+        },
+      },
+    })
     expect(
       confirmed.events.filter(({ type }) => type === 'NODE_TERMINATION_UNCONFIRMED'),
     ).toHaveLength(0)

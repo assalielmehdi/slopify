@@ -115,6 +115,17 @@ const createSuccessfulAgent = (
         runId: input.runId,
         nodeId: input.nodeId,
         timestamp: '2026-08-23T12:00:02.000Z',
+        type: 'AGENT_SESSION_IDENTIFIED',
+        data: {
+          sessionId: 'session-01',
+          openCommand: "pi --session '/tmp/session-01.jsonl'",
+        },
+      })
+      yield AgentExecutionEventSchema.parse({
+        executionId: input.executionId,
+        runId: input.runId,
+        nodeId: input.nodeId,
+        timestamp: '2026-08-23T12:00:03.000Z',
         type: 'AGENT_RESULT',
         data: {
           result: {
@@ -181,6 +192,10 @@ describe('agent node runner', () => {
           summary: 'Plan complete',
           data: { plan: ['api', 'web'] },
           usage: { inputTokens: 10, outputTokens: 20 },
+        },
+        session: {
+          sessionId: 'session-01',
+          openCommand: "pi --session '/tmp/session-01.jsonl'",
         },
       })
       expect(workspaces.ensure).toHaveBeenCalledWith(TEST_RUN_ID)
@@ -257,7 +272,7 @@ describe('agent node runner', () => {
           timeoutSeconds: 1_200,
         },
       })
-      expect(traces.append).toHaveBeenCalledTimes(2)
+      expect(traces.append).toHaveBeenCalledTimes(3)
     } finally {
       fixture.cleanup()
     }

@@ -1,6 +1,7 @@
 import {
   GitProviderSchema,
   GitShaSchema,
+  AgentSessionReferenceSchema,
   NodeExecutionStatusSchema,
   NodeIdSchema,
   RepositoryIdSchema,
@@ -141,6 +142,7 @@ export const NodeExecutionProjectionSchema = z.strictObject({
   startedAt: timestamp.nullable(),
   completedAt: timestamp.nullable(),
   durationMs: z.number().int().nonnegative().safe().nullable(),
+  session: AgentSessionReferenceSchema.nullable().default(null),
 })
 
 export const RUN_ARTIFACT_AUTHORITY = {

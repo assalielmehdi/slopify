@@ -142,7 +142,7 @@ describe('run artifact contracts', () => {
         completedAt: null,
         durationMs: null,
       }),
-    ).toMatchObject({ executionIndex: 0, status: 'PENDING' })
+    ).toMatchObject({ executionIndex: 0, status: 'PENDING', session: null })
   })
 
   it.each([

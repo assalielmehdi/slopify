@@ -208,7 +208,7 @@ describe('agent execution event contract', () => {
       {
         ...eventBase,
         type: 'AGENT_SESSION_IDENTIFIED',
-        data: { sessionId: 'session-01' },
+        data: { sessionId: 'session-01', openCommand: "pi --session '/tmp/session-01.jsonl'" },
       },
       {
         ...eventBase,
@@ -298,6 +298,13 @@ describe('agent execution event contract', () => {
   it('rejects unknown event types and extra harness-private fields', () => {
     expect(
       AgentExecutionEventSchema.safeParse({ ...eventBase, type: 'TURN_STARTED', data: {} }).success,
+    ).toBe(false)
+    expect(
+      AgentExecutionEventSchema.safeParse({
+        ...eventBase,
+        type: 'AGENT_SESSION_IDENTIFIED',
+        data: { sessionId: 'session-01' },
+      }).success,
     ).toBe(false)
     expect(
       AgentExecutionEventSchema.safeParse({

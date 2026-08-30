@@ -18,6 +18,7 @@ import { createPiEventNormalizer, type PiEventNormalizer } from './event-normali
 import { decodeJsonLines } from './json-lines.js'
 import { createEventRedactor, redactAgentNodeResult } from './redaction.js'
 import { sensitiveEnvironmentValues } from './sensitive-environment.js'
+import { formatSessionCommand } from './session-command.js'
 
 const MAX_COMPLETION_RESULT_BYTES = 262_144
 const COMPLETION_PROTOCOL = 'slopify.node-result'
@@ -294,11 +295,19 @@ const request = async (
   }
 }
 
-const sessionId = (response: RpcResponse): string => {
-  if (!isRecord(response.data) || typeof response.data.sessionId !== 'string') {
+const sessionReference = (response: RpcResponse) => {
+  if (
+    !isRecord(response.data) ||
+    typeof response.data.sessionId !== 'string' ||
+    typeof response.data.sessionFile !== 'string' ||
+    !isAbsolute(response.data.sessionFile)
+  ) {
     throw new PiExecutionError('HARNESS_PROTOCOL_FAILED', failureMessages.HARNESS_PROTOCOL_FAILED)
   }
-  return response.data.sessionId
+  return {
+    sessionId: response.data.sessionId,
+    openCommand: formatSessionCommand('pi', ['--session', response.data.sessionFile]),
+  }
 }
 
 const usage = (response: RpcResponse) => {
@@ -431,7 +440,6 @@ export const createPiCliAgentExecutor = (
         const args = [
           '--mode',
           'rpc',
-          '--no-session',
           '--no-approve',
           '--extension',
           extensionPath,
@@ -473,9 +481,7 @@ export const createPiCliAgentExecutor = (
             yield createEvent(input, normalized.type, normalized.data)
           }
         }
-        yield createEvent(input, 'AGENT_SESSION_IDENTIFIED', {
-          sessionId: sessionId(state.response),
-        })
+        yield createEvent(input, 'AGENT_SESSION_IDENTIFIED', sessionReference(state.response))
 
         const accepted = await request(
           process,

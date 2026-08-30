@@ -7,6 +7,7 @@ import {
   RunIdSchema,
   type RunId,
   type AgentExecutionEvent,
+  type AgentSessionReference,
 } from '@slopify/shared'
 import { getDeclaredOutcomes, renderPromptVariables, WorkflowSchema } from '@slopify/shared'
 import { z } from 'zod'
@@ -83,187 +84,229 @@ export const createAgentNodeRunner = (
     traces?: AgentTraceStore
     now?: () => string
   }>,
-): NodeRunner => ({
-  async run(input) {
-    const run = options.runs.get(RunIdSchema.parse(input.runId))
-    if (run === undefined) return failed('RUN_NOT_FOUND', 'Run was not found')
-    const workflow = WorkflowSchema.safeParse(run.workflowSnapshot)
-    if (!workflow.success) return failed('WORKFLOW_INVALID', 'Effective workflow is invalid')
-    const node = workflow.data.nodes.find(({ id }) => id === input.nodeId)
-    if (node === undefined) return failed('AGENT_NODE_NOT_FOUND', 'Agent node was not found')
+): NodeRunner => {
+  const activeSessions = new Map<string, AgentSessionReference>()
 
-    const agent = options.harnesses.resolveExecutor(node.harness.harnessId)
-    if (agent === undefined)
-      return failed(
-        'HARNESS_EXECUTOR_UNAVAILABLE',
-        'No executor is registered for the configured harness',
-      )
-    let harness
-    try {
-      harness = await options.harnesses.requireAvailable(
-        node.harness.harnessId,
-        node.harness.modelId,
-        node.harness.thinkingLevel,
-        { fresh: true },
-      )
-    } catch (cause) {
-      return harnessFailure(cause)
-    }
+  return {
+    async run(input) {
+      const run = options.runs.get(RunIdSchema.parse(input.runId))
+      if (run === undefined) return failed('RUN_NOT_FOUND', 'Run was not found')
+      const workflow = WorkflowSchema.safeParse(run.workflowSnapshot)
+      if (!workflow.success) return failed('WORKFLOW_INVALID', 'Effective workflow is invalid')
+      const node = workflow.data.nodes.find(({ id }) => id === input.nodeId)
+      if (node === undefined) return failed('AGENT_NODE_NOT_FOUND', 'Agent node was not found')
 
-    let repositories: readonly ProvisionedRunRepository[]
-    try {
-      repositories = await options.workspaces.ensure(run.runId)
-    } catch (cause) {
-      if (cause instanceof RunWorkspaceProvisioningError) {
-        return failed(cause.code, cause.failures[0]?.message ?? cause.message)
+      const agent = options.harnesses.resolveExecutor(node.harness.harnessId)
+      if (agent === undefined)
+        return failed(
+          'HARNESS_EXECUTOR_UNAVAILABLE',
+          'No executor is registered for the configured harness',
+        )
+      let harness
+      try {
+        harness = await options.harnesses.requireAvailable(
+          node.harness.harnessId,
+          node.harness.modelId,
+          node.harness.thinkingLevel,
+          { fresh: true },
+        )
+      } catch (cause) {
+        return harnessFailure(cause)
       }
-      return failed(
-        'RUN_WORKSPACE_PROVISIONING_FAILED',
-        'Run repository workspaces could not be prepared',
-      )
-    }
-    const context = workspaceContext(repositories)
-    if (context === undefined)
-      return failed('RUN_WORKSPACE_INVALID', 'Run repository workspaces are invalid')
-    const configuredIds = workflow.data.configuration.repositoryIds
-    if (
-      repositories.length !== configuredIds.length ||
-      repositories.some((repository, index) => repository.repositoryId !== configuredIds[index]) ||
-      context.primary.repositoryId !== workflow.data.configuration.primaryRepositoryId
-    ) {
-      return failed('RUN_WORKSPACE_INVALID', 'Run repository workspaces do not match the workflow')
-    }
 
-    let artifactsPath: string
-    try {
-      artifactsPath = await options.artifacts.ensure(run.runId)
-    } catch {
-      return failed('RUN_ARTIFACTS_INVALID', 'Run artifacts directory is invalid')
-    }
+      let repositories: readonly ProvisionedRunRepository[]
+      try {
+        repositories = await options.workspaces.ensure(run.runId)
+      } catch (cause) {
+        if (cause instanceof RunWorkspaceProvisioningError) {
+          return failed(cause.code, cause.failures[0]?.message ?? cause.message)
+        }
+        return failed(
+          'RUN_WORKSPACE_PROVISIONING_FAILED',
+          'Run repository workspaces could not be prepared',
+        )
+      }
+      const context = workspaceContext(repositories)
+      if (context === undefined)
+        return failed('RUN_WORKSPACE_INVALID', 'Run repository workspaces are invalid')
+      const configuredIds = workflow.data.configuration.repositoryIds
+      if (
+        repositories.length !== configuredIds.length ||
+        repositories.some(
+          (repository, index) => repository.repositoryId !== configuredIds[index],
+        ) ||
+        context.primary.repositoryId !== workflow.data.configuration.primaryRepositoryId
+      ) {
+        return failed(
+          'RUN_WORKSPACE_INVALID',
+          'Run repository workspaces do not match the workflow',
+        )
+      }
 
-    const routableOutcomes = getDeclaredOutcomes(workflow.data, node.id)
-    const declaredOutcomes =
-      routableOutcomes.length === 0 ? (['completed'] as const) : routableOutcomes
-    let renderedPrompt: string
-    try {
-      renderedPrompt = `${renderPromptVariables(
-        node.prompt,
-        workflow.data.configuration.variables,
-        run.variables,
-      )}${configuredRepositoriesPrompt(repositories)}\n\nShared artifacts: ${artifactsPath}\nUse this directory for run-scoped handoff files. It is outside the repositories and is not committed with repository changes.\n\nExecution contract:\nFinish exactly once using the configured harness completion protocol.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
-      z.string().min(1).max(1_000_000).parse(renderedPrompt)
-    } catch {
-      return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')
-    }
+      let artifactsPath: string
+      try {
+        artifactsPath = await options.artifacts.ensure(run.runId)
+      } catch {
+        return failed('RUN_ARTIFACTS_INVALID', 'Run artifacts directory is invalid')
+      }
 
-    const executionInput = AgentExecutionInputSchema.parse({
-      executionId: input.nodeExecutionId,
-      runId: run.runId,
-      nodeId: node.id,
-      artifactsPath,
-      workspace: {
-        rootPath: context.rootPath,
-        primaryRepositoryId: context.primary.repositoryId,
-        repositories: repositories.map((repository) => ({
-          repositoryId: repository.repositoryId,
-          path: repository.workspacePath,
-        })),
-      },
-      ...(node.harness.modelId === undefined ? {} : { model: node.harness.modelId }),
-      ...(node.harness.thinkingLevel === undefined
-        ? {}
-        : { thinkingLevel: node.harness.thinkingLevel }),
-      renderedPrompt,
-      declaredOutcomes,
-      timeoutSeconds: node.timeoutSeconds,
-    })
-    const traceHeader = AgentTraceHeaderSchema.parse({
-      version: 4,
-      runId: run.runId,
-      nodeExecutionId: input.nodeExecutionId,
-      attemptId: input.attemptId,
-      nodeId: node.id,
-      createdAt: (options.now ?? (() => new Date().toISOString()))(),
-      configuration: {
-        harnessId: harness.harnessId,
-        harnessVersion: harness.version,
+      const routableOutcomes = getDeclaredOutcomes(workflow.data, node.id)
+      const declaredOutcomes =
+        routableOutcomes.length === 0 ? (['completed'] as const) : routableOutcomes
+      let renderedPrompt: string
+      try {
+        renderedPrompt = `${renderPromptVariables(
+          node.prompt,
+          workflow.data.configuration.variables,
+          run.variables,
+        )}${configuredRepositoriesPrompt(repositories)}\n\nShared artifacts: ${artifactsPath}\nUse this directory for run-scoped handoff files. It is outside the repositories and is not committed with repository changes.\n\nExecution contract:\nFinish exactly once using the configured harness completion protocol.\nDeclared outcomes: ${declaredOutcomes.join(', ')}\nProvide a concise summary, JSON data, and evidence.`
+        z.string().min(1).max(1_000_000).parse(renderedPrompt)
+      } catch {
+        return failed('AGENT_PROMPT_INVALID', 'Agent prompt is invalid')
+      }
+
+      const executionInput = AgentExecutionInputSchema.parse({
+        executionId: input.nodeExecutionId,
+        runId: run.runId,
+        nodeId: node.id,
+        artifactsPath,
+        workspace: {
+          rootPath: context.rootPath,
+          primaryRepositoryId: context.primary.repositoryId,
+          repositories: repositories.map((repository) => ({
+            repositoryId: repository.repositoryId,
+            path: repository.workspacePath,
+          })),
+        },
         ...(node.harness.modelId === undefined ? {} : { model: node.harness.modelId }),
         ...(node.harness.thinkingLevel === undefined
           ? {}
           : { thinkingLevel: node.harness.thinkingLevel }),
         renderedPrompt,
-        artifactsPath,
-        workspaceRoot: context.rootPath,
-        primaryRepositoryId: context.primary.repositoryId,
-        repositories: repositories.map((repository) => ({
-          repositoryId: repository.repositoryId,
-          name: repository.name,
-          provider: repository.provider,
-          fullName: repository.fullName,
-          workspacePath: repository.workspacePath,
-          branchName: repository.branchName,
-          baseSha: repository.baseSha,
-          defaultBranch: repository.defaultBranch,
-        })),
+        declaredOutcomes,
         timeoutSeconds: node.timeoutSeconds,
-      },
-    })
-    try {
-      await options.traces?.start(traceHeader)
-    } catch {
-      return failed('TRACE_WRITE_FAILED', 'Agent trace could not be created')
-    }
-    let terminal:
-      | Readonly<{
-          status: 'succeeded'
-          event: Extract<AgentExecutionEvent, { type: 'AGENT_RESULT' }>
-        }>
-      | Readonly<{ status: 'failed'; code: string; message: string }>
-      | Readonly<{ status: 'cancelled'; reason: string }>
-      | undefined
-    for await (const event of agent.execute(executionInput)) {
+      })
+      const traceHeader = AgentTraceHeaderSchema.parse({
+        version: 4,
+        runId: run.runId,
+        nodeExecutionId: input.nodeExecutionId,
+        attemptId: input.attemptId,
+        nodeId: node.id,
+        createdAt: (options.now ?? (() => new Date().toISOString()))(),
+        configuration: {
+          harnessId: harness.harnessId,
+          harnessVersion: harness.version,
+          ...(node.harness.modelId === undefined ? {} : { model: node.harness.modelId }),
+          ...(node.harness.thinkingLevel === undefined
+            ? {}
+            : { thinkingLevel: node.harness.thinkingLevel }),
+          renderedPrompt,
+          artifactsPath,
+          workspaceRoot: context.rootPath,
+          primaryRepositoryId: context.primary.repositoryId,
+          repositories: repositories.map((repository) => ({
+            repositoryId: repository.repositoryId,
+            name: repository.name,
+            provider: repository.provider,
+            fullName: repository.fullName,
+            workspacePath: repository.workspacePath,
+            branchName: repository.branchName,
+            baseSha: repository.baseSha,
+            defaultBranch: repository.defaultBranch,
+          })),
+          timeoutSeconds: node.timeoutSeconds,
+        },
+      })
       try {
-        await options.traces?.append(traceHeader, event)
+        await options.traces?.start(traceHeader)
       } catch {
-        await agent.cancel(executionInput.executionId).catch(() => undefined)
-        return failed('TRACE_WRITE_FAILED', 'Agent trace could not be written')
+        return failed('TRACE_WRITE_FAILED', 'Agent trace could not be created')
       }
-      if (event.type === 'AGENT_RESULT') {
-        if (terminal !== undefined)
-          return failed('AGENT_RESULT_INVALID', 'Agent produced more than one terminal result')
-        terminal = { status: 'succeeded', event }
-      } else if (event.type === 'AGENT_FAILED') {
-        terminal = { status: 'failed', code: event.data.code, message: event.data.message }
-      } else if (event.type === 'AGENT_CANCELLED') {
-        terminal = { status: 'cancelled', reason: event.data.reason }
+      let terminal:
+        | Readonly<{
+            status: 'succeeded'
+            event: Extract<AgentExecutionEvent, { type: 'AGENT_RESULT' }>
+          }>
+        | Readonly<{ status: 'failed'; code: string; message: string }>
+        | Readonly<{ status: 'cancelled'; reason: string }>
+        | undefined
+      let session: AgentSessionReference | undefined
+      try {
+        for await (const event of agent.execute(executionInput)) {
+          try {
+            await options.traces?.append(traceHeader, event)
+          } catch {
+            await agent.cancel(executionInput.executionId).catch(() => undefined)
+            return {
+              ...failed('TRACE_WRITE_FAILED', 'Agent trace could not be written'),
+              ...(session === undefined ? {} : { session }),
+            }
+          }
+          if (event.type === 'AGENT_SESSION_IDENTIFIED') {
+            if (session !== undefined)
+              return {
+                ...failed(
+                  'AGENT_SESSION_INVALID',
+                  'Agent produced more than one session reference',
+                ),
+                session,
+              }
+            session = event.data
+            activeSessions.set(input.nodeExecutionId, session)
+          } else if (event.type === 'AGENT_RESULT') {
+            if (terminal !== undefined)
+              return {
+                ...failed('AGENT_RESULT_INVALID', 'Agent produced more than one terminal result'),
+                ...(session === undefined ? {} : { session }),
+              }
+            terminal = { status: 'succeeded', event }
+          } else if (event.type === 'AGENT_FAILED') {
+            terminal = { status: 'failed', code: event.data.code, message: event.data.message }
+          } else if (event.type === 'AGENT_CANCELLED') {
+            terminal = { status: 'cancelled', reason: event.data.reason }
+          }
+        }
+        if (terminal === undefined)
+          return {
+            ...failed('AGENT_RESULT_MISSING', 'Agent did not produce a terminal result'),
+            ...(session === undefined ? {} : { session }),
+          }
+        if (terminal.status === 'failed')
+          return {
+            ...failed(terminal.code, terminal.message),
+            ...(session === undefined ? {} : { session }),
+          }
+        if (terminal.status === 'cancelled')
+          return { ...terminal, ...(session === undefined ? {} : { session }) }
+        const { result, usage, durationMs } = terminal.event.data
+        return {
+          status: 'succeeded',
+          outcome: result.outcome,
+          output: z.json().parse({
+            summary: result.summary,
+            data: result.data,
+            evidence: result.evidence,
+            usage,
+            durationMs,
+          }),
+          ...(session === undefined ? {} : { session }),
+        }
+      } finally {
+        activeSessions.delete(input.nodeExecutionId)
       }
-    }
-    if (terminal === undefined)
-      return failed('AGENT_RESULT_MISSING', 'Agent did not produce a terminal result')
-    if (terminal.status === 'failed') return failed(terminal.code, terminal.message)
-    if (terminal.status === 'cancelled') return terminal
-    const { result, usage, durationMs } = terminal.event.data
-    return {
-      status: 'succeeded',
-      outcome: result.outcome,
-      output: z.json().parse({
-        summary: result.summary,
-        data: result.data,
-        evidence: result.evidence,
-        usage,
-        durationMs,
-      }),
-    }
-  },
-  async cancel(input) {
-    const run = options.runs.get(RunIdSchema.parse(input.runId))
-    if (run === undefined) return { status: 'unconfirmed' }
-    const workflow = WorkflowSchema.safeParse(run.workflowSnapshot)
-    if (!workflow.success) return { status: 'unconfirmed' }
-    const node = workflow.data.nodes.find(({ id }) => id === input.nodeId)
-    if (node === undefined) return { status: 'unconfirmed' }
-    const agent = options.harnesses.resolveExecutor(node.harness.harnessId)
-    if (agent === undefined) return { status: 'unconfirmed' }
-    return agent.cancel(AgentExecutionIdSchema.parse(input.nodeExecutionId))
-  },
-})
+    },
+    async cancel(input) {
+      const run = options.runs.get(RunIdSchema.parse(input.runId))
+      if (run === undefined) return { status: 'unconfirmed' }
+      const workflow = WorkflowSchema.safeParse(run.workflowSnapshot)
+      if (!workflow.success) return { status: 'unconfirmed' }
+      const node = workflow.data.nodes.find(({ id }) => id === input.nodeId)
+      if (node === undefined) return { status: 'unconfirmed' }
+      const agent = options.harnesses.resolveExecutor(node.harness.harnessId)
+      if (agent === undefined) return { status: 'unconfirmed' }
+      const session = activeSessions.get(input.nodeExecutionId)
+      const result = await agent.cancel(AgentExecutionIdSchema.parse(input.nodeExecutionId))
+      return { ...result, ...(session === undefined ? {} : { session }) }
+    },
+  }
+}

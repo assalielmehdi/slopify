@@ -1,3 +1,5 @@
+import type { AgentSessionReference } from '@slopify/shared'
+
 export interface NodeRunInput {
   readonly runId: string
   readonly nodeExecutionId: string
@@ -10,15 +12,19 @@ export type NodeRunResult =
       status: 'succeeded'
       outcome: string
       output: unknown
+      session?: AgentSessionReference
     }>
   | Readonly<{
       status: 'failed'
       code: string
       message: string
+      session?: AgentSessionReference
     }>
-  | Readonly<{ status: 'cancelled'; reason: string }>
+  | Readonly<{ status: 'cancelled'; reason: string; session?: AgentSessionReference }>
 
 export interface NodeRunner {
   run(input: NodeRunInput): Promise<NodeRunResult>
-  cancel(input: NodeRunInput): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed' }>>
+  cancel(
+    input: NodeRunInput,
+  ): Promise<Readonly<{ status: 'cancelled' | 'unconfirmed'; session?: AgentSessionReference }>>
 }
