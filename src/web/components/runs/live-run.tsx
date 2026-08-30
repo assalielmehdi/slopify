@@ -91,17 +91,20 @@ export function LiveRun({
   const graph = (
     <div className="relative h-full min-h-0 min-w-0">
       <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex flex-wrap items-start gap-x-3 gap-y-2">
-        <p
+        <div
           aria-label="Run timing"
-          className="max-w-full shrink-0 text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
+          className="flex max-w-full shrink-0 flex-col text-xs/4 whitespace-nowrap text-muted-foreground tabular-nums"
         >
-          Started {formatTimestamp(detail.run.startedAt)} · Took{' '}
-          <ElapsedTime
-            completedAt={detail.run.completedAt}
-            running={status === 'RUNNING'}
-            startedAt={detail.run.startedAt}
-          />
-        </p>
+          <span>Started {formatTimestamp(detail.run.startedAt)}</span>
+          <span>
+            Took{' '}
+            <ElapsedTime
+              completedAt={detail.run.completedAt}
+              running={status === 'RUNNING'}
+              startedAt={detail.run.startedAt}
+            />
+          </span>
+        </div>
         <div
           aria-label="Run status"
           className="pointer-events-auto ml-auto flex shrink-0 items-center gap-2"

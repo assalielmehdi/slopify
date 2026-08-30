@@ -215,7 +215,7 @@ afterEach(() => {
 })
 
 describe('LiveRun', () => {
-  it('keeps run timing and controls in one wrapping canvas overlay', async () => {
+  it('stacks run timing beside the top-aligned run controls', async () => {
     const subscription = createSubscription()
     const client = { getRun: vi.fn(async () => detail), cancelRun: vi.fn() }
 
@@ -231,11 +231,15 @@ describe('LiveRun', () => {
 
     expect(screen.queryByLabelText('Run summary')).toBeNull()
     expect(screen.queryByText('Run ID')).toBeNull()
-    expect(timing.textContent).toMatch(/^Started .+ · Took .+$/)
+    expect(timing.children).toHaveLength(2)
+    expect(timing.children[0]?.textContent).toMatch(/^Started .+$/)
+    expect(timing.children[1]?.textContent).toMatch(/^Took .+$/)
+    expect(timing.textContent).not.toContain(' · ')
     expect(overlay).toBe(status.parentElement)
     expect(overlay?.className).toContain('absolute')
     expect(overlay?.className).toContain('inset-x-3')
     expect(overlay?.className).toContain('flex-wrap')
+    expect(timing.className).toContain('flex-col')
     expect(timing.className).not.toContain('absolute')
     expect(status.textContent).toContain('Running')
     expect(status.className).toContain('ml-auto')
